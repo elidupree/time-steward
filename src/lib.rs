@@ -28,7 +28,7 @@ impl BaseTime for i64 {
 }
 
 pub trait Field {
-  type Data;// = Self;
+  type Data: Any;// = Self;
   fn unique_identifier ()->u64;
 }
 
@@ -63,6 +63,7 @@ pub trait Mutator <B: Basics>: Accessor {
   fn random_bits (&mut self, bits:u32)->u64;
   fn random_id (&mut self)->SiphashID;
   fn now (& self)->B::Time;
+  fn constants (& self)->& B::Constants;
 }
 pub trait PredictorAccessor <B: Basics>: Accessor {
 
@@ -77,21 +78,16 @@ enum Prediction <B: Basics> {
 
 pub trait TimeSteward <B: Basics> {
   type A: Accessor;
-  type M: Mutator<B>;
-  type P: PredictorAccessor<B>;
-  type Predictor;// = Box <Fn(&mut P)->Prediction>;
-  
-  fn new (constants: B::Constants, predictors: Vec<Self::Predictor>)->Self;
   fn insert_fiat_event (&mut self, time: B::Time, distinguisher: u64, event: Event<B>)->bool;
   fn erase_fiat_event (&mut self, time: B::Time, distinguisher: u64)->bool;
-  fn accessor_after (&mut self, time: B::Time)->Accessor;
+  fn accessor_after (&mut self, time: B::Time)->A;
 }
 
 pub trait FlatTimeSteward <B: Basics>:TimeSteward <B> {
   fn valid_strictly_between (& self)->(B::Time, B::Time);
 }
 
-
+type StandardFlatTimeStewardPredictor <B: Basics> = Box <for <'a, 'b> Fn (& 'a mut StandardFlatTimeStewardPredictorAccessor <'b, B>)->Prediction <B>>;
 pub struct StandardFlatTimeSteward <B: Basics> {
   entity_states: HashMap< SiphashID, Box <Any>>,
   last_change: B::Time,
@@ -100,37 +96,33 @@ pub struct StandardFlatTimeSteward <B: Basics> {
   upcoming_event_times: BinaryHeap <ExtendedTime <B>>,
     
 }
-struct StandardFlatTimeStewardAccessor <'a, B: Basics> {
+struct StandardFlatTimeStewardAccessor <'a, B: Basics + 'a> {
   steward: &'a StandardFlatTimeSteward <B>,
 }
-struct StandardFlatTimeStewardMutator <'a, B: Basics> {
+struct StandardFlatTimeStewardMutator <'a, B: Basics + 'a> {
   steward: & 'a mut StandardFlatTimeSteward <B>,
 }
-struct StandardFlatTimeStewardPredictorAccessor <'a, B: Basics> {
+struct StandardFlatTimeStewardPredictorAccessor <'a, B: Basics + 'a> {
   steward: & 'a mut StandardFlatTimeSteward <B>,
 }
-
+impl <B: Basics>StandardFlatTimeSteward <B> {
+  fn new (constants: B::Constants, predictors: Vec<StandardFlatTimeStewardPredictor <B> >)->Self {}
+}
 impl <'a, B: Basics> Accessor for StandardFlatTimeStewardAccessor <'a, B> {
   pub fn get <Type: Field> (&mut self, id: SiphashID)-> Option <& Type::Data> {
-    self.steward.entity_states.get (id).map (| something | something.downcast ::<Field::Data> ().unwrap ().borrow ())
+    self.steward.entity_states.get (& id).map (| something | something.downcast ::<Type::Data> ().unwrap ().borrow ())
   }
 }
 impl <'a, B: Basics> Accessor for StandardFlatTimeStewardMutator <'a, B> {
   pub fn get <Type: Field> (&mut self, id: SiphashID)-> Option <& Type::Data> {
-    self.steward.entity_states.get (id)
+    self.steward.entity_states.get (& id).map (| something | something.downcast ::<Type::Data> ().unwrap ().borrow ())
   }
 }
 
 
 
 impl <B: Basics> TimeSteward <B> for StandardFlatTimeSteward <B> {
-  pub type A = StandardFlatTimeStewardAccessor<'a, B> ;
-  pub type M = StandardFlatTimeStewardMutator<'a, B> ;
-  pub type P = StandardFlatTimeStewardPredictorAccessor<'a, B> ;
-  pub type Predictor = Box <Fn(&mut Self::P)->Prediction>;
-  
-  pub fn new (constants: B::Constants, predictors: Vec<Self::Predictor>)->Self {}
-  pub fn insert_fiat_event (&mut self, time: B::Time, distinguisher: u64, event: Event)->bool {}
+  pub fn insert_fiat_event (&mut self, time: B::Time, distinguisher: u64, event: Event <B>)->bool {}
   pub fn erase_fiat_event (&mut self, time: B::Time, distinguisher: u64)->bool {}
   pub fn accessor_after (&mut self, time: B::Time)->Accessor {}
 }
