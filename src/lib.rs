@@ -1,7 +1,6 @@
-use std::collections::{HashMap, BinaryHeap};
+
 use std::hash::{Hash, Hasher,SipHasher};
 use std::any::Any;
-use std::borrow::Borrow;
 use std::rc::Rc;
 
 #[derive (Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -94,65 +93,75 @@ pub trait FlatTimeSteward <'a, B: Basics>:TimeSteward <'a, B> {
 }
 
 
-type GenericEvent <B: Basics, M: Mutator <B>> =Rc <Fn (&mut M)>;
-enum GenericPrediction <B: Basics, Event> {
+type Event <B: Basics, M: Mutator <B>> =Rc <Fn (&mut M)>;
+enum Prediction <B: Basics, M: Mutator <B>> {
   Nothing,
-  Immediately (Event),
-  At (B::Time, Event),
+  Immediately (Event <B, M>),
+  At (B::Time, Event <B, M>),
 }
+type Predictor <B: Basics, M: Mutator <B>, PA: PredictorAccessor <B>> =Rc <for <'b, 'c> Fn (& 'b mut PA)->Prediction <B, M>>;
 
 
 
+mod StandardFlatTimeSteward {
+use super::{SiphashID, FieldID, Field, ExtendedTime, Basics, TimeSteward};
+use std::collections::{HashMap, BinaryHeap};
+use std::any::Any;
+use std::borrow::Borrow;
+use std::rc::Rc;
 
 
-
-pub struct StandardFlatTimeSteward <'a, B: Basics> {
+pub struct Steward <'a, B: Basics> {
   entity_states: HashMap< FieldID, Box <Any>>,
   last_change: B::Time,
-  //fiat_events: HashMap< ExtendedTime <B>, Self::Event>,
-  //predictions: HashMap<ExtendedTime <B>, Prediction<B>>,
+  fiat_events: HashMap< ExtendedTime <B>, Event <'a, B>>,
+  predictions: HashMap<ExtendedTime <B>, Prediction <'a, B>>,
   upcoming_event_times: BinaryHeap <ExtendedTime <B>>,
     
 }
-pub struct StandardFlatTimeStewardAccessor <'a, B: Basics + 'a> {
-  steward: &'a StandardFlatTimeSteward <'a, B>,
+pub struct Accessor <'a, B: Basics + 'a> {
+  steward: &'a Steward <'a, B>,
 }
-pub struct StandardFlatTimeStewardMutator <'a, B: Basics + 'a> {
-  steward: & 'a mut StandardFlatTimeSteward <'a, B>,
+pub struct Mutator <'a, B: Basics + 'a> {
+  steward: & 'a mut Steward <'a, B>,
 }
-pub struct StandardFlatTimeStewardPredictorAccessor <'a, B: Basics + 'a> {
-  steward: & 'a mut StandardFlatTimeSteward <'a, B>,
+pub struct PredictorAccessor <'a, B: Basics + 'a> {
+  steward: & 'a mut Steward <'a, B>,
 }
-impl <'a, B: Basics>StandardFlatTimeSteward <'a, B> {
-  fn new (constants: B::Constants, predictors: Vec<Self::Predictor>)->Self {}
+type Event <'a, B: Basics + 'a> = super::Event <B, Mutator <'a, B>>;
+type Prediction <'a, B: Basics + 'a> = super::Prediction <B, Mutator <'a, B>>;
+type Predictor <'a, B: Basics + 'a> = super::Predictor <B, Mutator <'a, B>, PredictorAccessor <'a, B>>;
+
+
+impl <'a, B: Basics>Steward <'a, B> {
+  fn new (constants: B::Constants, predictors: Vec<Predictor <'a, B>>)->Self {}
 }
-impl <'a, B: Basics> Accessor for StandardFlatTimeStewardAccessor <'a, B> {
+impl <'a, B: Basics> super::Accessor for Accessor <'a, B> {
   fn get <Type: Field> (&mut self, id: SiphashID)-> Option <& Type::Data> {
     self.steward.entity_states.get (& FieldID {entity: id, field: Type::unique_identifier ()}).map (| something | something.downcast ::<Type::Data> ().unwrap ().borrow ())
   }
 }
-impl <'a, B: Basics> Accessor for StandardFlatTimeStewardMutator <'a, B> {
+impl <'a, B: Basics> super::Accessor for Mutator <'a, B> {
   fn get <Type: Field> (&mut self, id: SiphashID)-> Option <& Type::Data> {
     self.steward.entity_states.get (& FieldID {entity: id, field: Type::unique_identifier ()}).map (| something | something.downcast ::<Type::Data> ().unwrap ().borrow ())
   }
 }
 
-impl <'a, B: Basics> TimeSteward <'a, B> for StandardFlatTimeSteward <'a, B> {
-  type A =StandardFlatTimeStewardAccessor <'a, B>;
-  type M =StandardFlatTimeStewardMutator <'a, B>;
+impl <'a, B: Basics> super::TimeSteward <'a, B> for Steward <'a, B> {
+  type A =Accessor <'a, B>;
+  type M =Mutator <'a, B>;
+  type P =PredictorAccessor <'a, B>;
     
-  type P =StandardFlatTimeStewardPredictorAccessor <'a, B>;
-    
-  type Event = GenericEvent <B, Self::M>;
-  type Prediction = GenericPrediction <B, Self::Event>;
-  type Predictor =Rc <for <'b, 'c> Fn (& 'b mut StandardFlatTimeStewardPredictorAccessor <'c, B>)->Self::Prediction>;
+  type Event = Event <'a, B>;
+  type Prediction = super::Prediction <B, Self::Event>;
+  type Predictor = super::Predictor <B, Self::P, Self::Prediction>;
 
   fn insert_fiat_event (&mut self, time: B::Time, distinguisher: u64, event: Self::Event)->bool {}
   fn erase_fiat_event (&mut self, time: B::Time, distinguisher: u64)->bool {}
   fn accessor_after (&mut self, time: B::Time)->Self::A {}
 }
 
-
+}
 
  #[test]
 fn it_works() {
