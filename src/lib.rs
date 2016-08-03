@@ -1,6 +1,7 @@
 use std::collections::{HashMap, BinaryHeap};
 use std::hash::{Hash, Hasher,SipHasher};
 use std::any::Any;
+use std::borrow::Borrow;
 
 #[derive (Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SiphashID {
@@ -76,14 +77,14 @@ enum Prediction <B: Basics> {
   At (B::Time, Event <B>),
 }
 
-pub trait TimeSteward <B: Basics> {
+pub trait TimeSteward <'a, B: Basics> {
   type A: Accessor;
   fn insert_fiat_event (&mut self, time: B::Time, distinguisher: u64, event: Event<B>)->bool;
   fn erase_fiat_event (&mut self, time: B::Time, distinguisher: u64)->bool;
-  fn accessor_after (&mut self, time: B::Time)->A;
+  fn accessor_after (&mut self, time: B::Time)->Self::A;
 }
 
-pub trait FlatTimeSteward <B: Basics>:TimeSteward <B> {
+pub trait FlatTimeSteward <'a, B: Basics>:TimeSteward <'a, B> {
   fn valid_strictly_between (& self)->(B::Time, B::Time);
 }
 
@@ -96,35 +97,36 @@ pub struct StandardFlatTimeSteward <B: Basics> {
   upcoming_event_times: BinaryHeap <ExtendedTime <B>>,
     
 }
-struct StandardFlatTimeStewardAccessor <'a, B: Basics + 'a> {
+pub struct StandardFlatTimeStewardAccessor <'a, B: Basics + 'a> {
   steward: &'a StandardFlatTimeSteward <B>,
 }
-struct StandardFlatTimeStewardMutator <'a, B: Basics + 'a> {
+pub struct StandardFlatTimeStewardMutator <'a, B: Basics + 'a> {
   steward: & 'a mut StandardFlatTimeSteward <B>,
 }
-struct StandardFlatTimeStewardPredictorAccessor <'a, B: Basics + 'a> {
+pub struct StandardFlatTimeStewardPredictorAccessor <'a, B: Basics + 'a> {
   steward: & 'a mut StandardFlatTimeSteward <B>,
 }
-impl <B: Basics>StandardFlatTimeSteward <B> {
+impl <'a, B: Basics>StandardFlatTimeSteward <B> {
   fn new (constants: B::Constants, predictors: Vec<StandardFlatTimeStewardPredictor <B> >)->Self {}
 }
 impl <'a, B: Basics> Accessor for StandardFlatTimeStewardAccessor <'a, B> {
-  pub fn get <Type: Field> (&mut self, id: SiphashID)-> Option <& Type::Data> {
+  fn get <Type: Field> (&mut self, id: SiphashID)-> Option <& Type::Data> {
     self.steward.entity_states.get (& id).map (| something | something.downcast ::<Type::Data> ().unwrap ().borrow ())
   }
 }
 impl <'a, B: Basics> Accessor for StandardFlatTimeStewardMutator <'a, B> {
-  pub fn get <Type: Field> (&mut self, id: SiphashID)-> Option <& Type::Data> {
+  fn get <Type: Field> (&mut self, id: SiphashID)-> Option <& Type::Data> {
     self.steward.entity_states.get (& id).map (| something | something.downcast ::<Type::Data> ().unwrap ().borrow ())
   }
 }
 
 
 
-impl <B: Basics> TimeSteward <B> for StandardFlatTimeSteward <B> {
-  pub fn insert_fiat_event (&mut self, time: B::Time, distinguisher: u64, event: Event <B>)->bool {}
-  pub fn erase_fiat_event (&mut self, time: B::Time, distinguisher: u64)->bool {}
-  pub fn accessor_after (&mut self, time: B::Time)->Accessor {}
+impl <'a, B: Basics> TimeSteward <'a, B> for StandardFlatTimeSteward <B> {
+  type A =StandardFlatTimeStewardAccessor <'a, B>;
+  fn insert_fiat_event (&mut self, time: B::Time, distinguisher: u64, event: Event <B>)->bool {}
+  fn erase_fiat_event (&mut self, time: B::Time, distinguisher: u64)->bool {}
+  fn accessor_after (&mut self, time: B::Time)->Self::A {}
 }
 
 
