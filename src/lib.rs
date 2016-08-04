@@ -19,6 +19,8 @@ impl SiphashID_Generator {
 fn generate (& self)->SiphashID {SiphashID {data: [self.data [0].finish (), self.data [1].finish ()]}}
 }
 
+
+//TODO: Shouldn't "ordered type with minimum and maximum values" be a trait common to other situations as well? Find out if there's a standard name for that.
 pub trait BaseTime: Ord {
   fn min_time ()->Self;
   fn max_time ()->Self;
@@ -30,7 +32,29 @@ impl BaseTime for i64 {
 
 pub trait Field {
   type Data: Any;// = Self;
+  
+  /**
+  Returns a constant identifier for the type, which must be 64 bits of random data.
+  
+  Thanks to the [birthday problem](https://en.wikipedia.org/wiki/Birthday_problem), this would have a >1% chance of a collision with a mere 700 million Field implementors. I don't think we need to worry about this. 128 bit IDs are necessary for entities, because computers can generate billions of them easily, but this isn't the same situation.
+  
+  It might seem desirable to default to a hash of the TypeId of Self, for the convenience of some implementations. However, Rust does not guarantee that the TypeId remains the same across different compilations or different compiler versions. And it certainly doesn't remain the same when you add or remove types from your code, which would be desirable for compatibility between different versions of your program. Also, the Rust interface for getting the TypeId is currently unstable. Using an explicit constant is simply better.
+  
+  TODO: change this into an associated constant once associated constants become stable.
+  */
   fn unique_identifier ()->u64;
+  
+  /**
+  Implementors MAY return true if first and second are indistinguishable.
+  
+  This is labeled "unsafe" because imperfect implementations can easily cause nondeterminism in the TimeSteward. Using the default is fine, and implementing it is only an optimization. Don't implement this unless you know what you're doing.
+  
+  This is similar to requiring Data to be PartialEq, but with an important difference. PartialEq only requires the comparison to be an equivalence relation, but does NOT require that (first == second) guarantee that there is no observable difference between the values. Therefore, trusting arbitrary implementations of PartialEq would be unsafe (in the sense that it would allow the TimeSteward to behave non-deterministically).
+  
+  TODO: perhaps we can create default implementations of this for POD types.
+  TODO: can we create automated tests for implementations of this function?
+  */
+  fn guaranteed_equal__unsafe (first: & Self::Data, second: & Self::Data)->bool {false}
 }
 
 #[derive (Clone, PartialEq, Eq, Hash)]
@@ -75,18 +99,65 @@ pub trait Mutator <B: Basics>: Accessor <B> {
 pub trait PredictorAccessor <B: Basics>: Accessor <B> {
 
 }
+pub trait Snapshot <B: Basics>: Accessor <B> {
+
+}
+
+enum FiatEventOperationResult {
+  Success,
+  InvalidInput,
+  InvalidTime,
+}
 
 pub trait TimeSteward <'a, B: Basics> {
-  type A: Accessor <B>;
+  type S: Snapshot <B>;
   type M: Mutator <B>;
   type P: PredictorAccessor <B>;
   type Event;
   type Prediction;
   type Predictor;
-  fn insert_fiat_event (&mut self, time: B::Time, distinguisher: u64, event: Self::Event)->bool;
-  fn erase_fiat_event (&mut self, time: B::Time, distinguisher: u64)->bool;
-  //note: "before" only because we might be banning events that happen during max_time
-  fn snapshot_before (&mut self, time: B::Time)->Self::A;
+  
+  /**
+  TimeSteward implementors are permitted, but not required, to discard old data in order to save memory. This may make the TimeSteward unusable at some points in its history.
+  
+  Newly created stewards should generally have valid_from() == B::Time::min_time().
+  
+  All implementors must obey certain restrictions on how other TimeSteward methods may change the result of valid_from(). Implementors may have their own methods that can alter this in customized ways, which should be documented with those individual methods.
+  */
+  fn valid_from (& self)->B::Time;
+  
+  /**
+  Inserts a fiat event at some point in the history.
+  
+  If time < valid_from(), this does nothing and returns InvalidTime. If there is already a fiat event with the same time and distinguisher, this does nothing and returns InvalidInput. Otherwise, it inserts the event and returns Success.
+  
+  steward.insert_fiat_event(time, _) must not return InvalidTime if time >= steward.valid_from().
+  steward.insert_fiat_event() may not change steward.valid_from().
+  */
+  fn insert_fiat_event (&mut self, time: B::Time, distinguisher: u64, event: Self::Event)->FiatEventOperationResult ;
+  
+  /**
+  Erases a fiat event that has been inserted previously.
+  
+  If time < valid_from(), this does nothing and returns InvalidTime. If there is no fiat event with the specified time and distinguisher, this does nothing and returns InvalidInput. Otherwise, it erases the event and returns Success.
+  
+  steward.erase_fiat_event(time, _) must not return InvalidTime if time >= steward.valid_from().
+  steward.erase_fiat_event() may not change steward.valid_from().
+  */
+  fn erase_fiat_event (&mut self, time: B::Time, distinguisher: u64)->FiatEventOperationResult ;
+  
+  /**
+  Returns a "snapshot" into the TimeSteward.
+  
+  The snapshot is guaranteed to be valid and unchanging for the full lifetime of the TimeSteward. It is specific to both the time argument, and the current collection of fiat events. Callers may freely call mutable methods of the same TimeSteward after taking a snapshot, without changing the contents of the snapshot.
+  
+  Each TimeSteward implementor determines exactly how to provide these guarantees. Implementors should provide individual guarantees about the processor-time bounds of snapshot operations.
+  
+  steward.snapshot_before(time) must return Some if time >= steward.valid_from().
+  steward.snapshot_before(time) may not increase steward.valid_from() beyond time.
+  */
+  //note: we implement "before" and not "after" because we might be banning events that happen during max_time
+  fn snapshot_before (&mut self, time: B::Time)->Option <Self::S>;
 }
 
 pub trait FlatTimeSteward <'a, B: Basics>:TimeSteward <'a, B> {
@@ -105,7 +176,7 @@ type Predictor <B: Basics, M: Mutator <B>, PA: PredictorAccessor <B>> =Rc <for <
 
 
 mod StandardFlatTimeSteward {
-use super::{SiphashID, FieldID, Field, ExtendedTime, Basics, TimeSteward};
+use super::{SiphashID, FieldID, Field, ExtendedTime, Basics, TimeSteward, FiatEventOperationResult};
 use std::collections::{HashMap, BinaryHeap};
 use std::any::Any;
 use std::borrow::Borrow;
@@ -120,7 +191,7 @@ pub struct Steward <'a, B: Basics> {
   upcoming_event_times: BinaryHeap <ExtendedTime <B>>,
     
 }
-pub struct Accessor <'a, B: Basics + 'a> {
+pub struct Snapshot <'a, B: Basics + 'a> {
   steward: &'a Steward <'a, B>,
 }
 pub struct Mutator <'a, B: Basics + 'a> {
@@ -137,7 +208,7 @@ type Predictor <'a, B: Basics + 'a> = super::Predictor <B, Mutator <'a, B>, Pred
 impl <'a, B: Basics>Steward <'a, B> {
   fn new (constants: B::Constants, predictors: Vec<Predictor <'a, B>>)->Self {}
 }
-impl <'a, B: Basics> super::Accessor <B> for Accessor <'a, B> {
+impl <'a, B: Basics> super::Accessor <B> for Snapshot <'a, B> {
   fn get <F: Field> (&mut self, id: SiphashID)-> Option <& F::Data> {
     self.steward.entity_states.get (& FieldID {entity: id, field: F::unique_identifier ()}).map (| something | something.downcast ::<F::Data> ().unwrap ().borrow ())
   }
@@ -149,7 +220,7 @@ impl <'a, B: Basics> super::Accessor <B> for Mutator <'a, B> {
 }
 
 impl <'a, B: Basics> super::TimeSteward <'a, B> for Steward <'a, B> {
-  type A =Accessor <'a, B>;
+  type S = Snapshot <'a, B>;
   type M =Mutator <'a, B>;
   type P =PredictorAccessor <'a, B>;
     
@@ -157,9 +228,9 @@ impl <'a, B: Basics> super::TimeSteward <'a, B> for Steward <'a, B> {
   type Prediction = super::Prediction <B, Self::Event>;
   type Predictor = super::Predictor <B, Self::P, Self::Prediction>;
 
-  fn insert_fiat_event (&mut self, time: B::Time, distinguisher: u64, event: Self::Event)->bool {}
-  fn erase_fiat_event (&mut self, time: B::Time, distinguisher: u64)->bool {}
-  fn snapshot_before (&mut self, time: B::Time)->Self::A {}
+  fn insert_fiat_event (&mut self, time: B::Time, distinguisher: u64, event: Self::Event)->FiatEventOperationResult {}
+  fn erase_fiat_event (&mut self, time: B::Time, distinguisher: u64)->FiatEventOperationResult {}
+  fn snapshot_before (&mut self, time: B::Time)->Option <Self::S> {}
 }
 
 }
