@@ -60,24 +60,24 @@ impl <Base: BaseTime> Hash for GenericExtendedTime <Base>{
   fn hash <H: Hasher> (& self, state: &mut H) {self.id.hash (state);}
 }
 
-pub trait Accessor {
-  fn get <Type: Field> (&mut self, id: SiphashID)-> Option <& Type::Data>;
-}
-
-pub trait Mutator <B: Basics>: Accessor {
-  fn get_mutable <Type: Field> (&mut self, id: SiphashID)->Option <&mut Type::Data>;
-  fn set <Type: Field> (&mut self, id: SiphashID, data: Option <Type::Data>);
-  fn random_bits (&mut self, bits:u32)->u64;
-  fn random_id (&mut self)->SiphashID;
-  fn now (& self)->B::Time;
+pub trait Accessor <B: Basics> {
+  fn get <F: Field> (&mut self, id: SiphashID)-> Option <& F::Data>;
   fn constants (& self)->& B::Constants;
 }
-pub trait PredictorAccessor <B: Basics>: Accessor {
+
+pub trait Mutator <B: Basics>: Accessor <B> {
+  fn get_mut <F: Field> (&mut self, id: SiphashID)->Option <&mut F::Data> where F::Data: Clone;
+  fn set <F: Field> (&mut self, id: SiphashID, data: Option <F::Data>);
+  fn random_bits (&mut self, num_bits:u32)->u64;
+  fn random_id (&mut self)->SiphashID;
+  fn now (& self)->B::Time;
+}
+pub trait PredictorAccessor <B: Basics>: Accessor <B> {
 
 }
 
 pub trait TimeSteward <'a, B: Basics> {
-  type A: Accessor;
+  type A: Accessor <B>;
   type M: Mutator <B>;
   type P: PredictorAccessor <B>;
   type Event;
@@ -85,7 +85,8 @@ pub trait TimeSteward <'a, B: Basics> {
   type Predictor;
   fn insert_fiat_event (&mut self, time: B::Time, distinguisher: u64, event: Self::Event)->bool;
   fn erase_fiat_event (&mut self, time: B::Time, distinguisher: u64)->bool;
-  fn accessor_after (&mut self, time: B::Time)->Self::A;
+  //note: "before" only because we might be banning events that happen during max_time
+  fn snapshot_before (&mut self, time: B::Time)->Self::A;
 }
 
 pub trait FlatTimeSteward <'a, B: Basics>:TimeSteward <'a, B> {
@@ -136,14 +137,14 @@ type Predictor <'a, B: Basics + 'a> = super::Predictor <B, Mutator <'a, B>, Pred
 impl <'a, B: Basics>Steward <'a, B> {
   fn new (constants: B::Constants, predictors: Vec<Predictor <'a, B>>)->Self {}
 }
-impl <'a, B: Basics> super::Accessor for Accessor <'a, B> {
-  fn get <Type: Field> (&mut self, id: SiphashID)-> Option <& Type::Data> {
-    self.steward.entity_states.get (& FieldID {entity: id, field: Type::unique_identifier ()}).map (| something | something.downcast ::<Type::Data> ().unwrap ().borrow ())
+impl <'a, B: Basics> super::Accessor <B> for Accessor <'a, B> {
+  fn get <F: Field> (&mut self, id: SiphashID)-> Option <& F::Data> {
+    self.steward.entity_states.get (& FieldID {entity: id, field: F::unique_identifier ()}).map (| something | something.downcast ::<F::Data> ().unwrap ().borrow ())
   }
 }
-impl <'a, B: Basics> super::Accessor for Mutator <'a, B> {
-  fn get <Type: Field> (&mut self, id: SiphashID)-> Option <& Type::Data> {
-    self.steward.entity_states.get (& FieldID {entity: id, field: Type::unique_identifier ()}).map (| something | something.downcast ::<Type::Data> ().unwrap ().borrow ())
+impl <'a, B: Basics> super::Accessor <B> for Mutator <'a, B> {
+  fn get <F: Field> (&mut self, id: SiphashID)-> Option <& F::Data> {
+    self.steward.entity_states.get (& FieldID {entity: id, field: F::unique_identifier ()}).map (| something | something.downcast ::<F::Data> ().unwrap ().borrow ())
   }
 }
 
@@ -158,7 +159,7 @@ impl <'a, B: Basics> super::TimeSteward <'a, B> for Steward <'a, B> {
 
   fn insert_fiat_event (&mut self, time: B::Time, distinguisher: u64, event: Self::Event)->bool {}
   fn erase_fiat_event (&mut self, time: B::Time, distinguisher: u64)->bool {}
-  fn accessor_after (&mut self, time: B::Time)->Self::A {}
+  fn snapshot_before (&mut self, time: B::Time)->Self::A {}
 }
 
 }
