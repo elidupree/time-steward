@@ -69,7 +69,10 @@ struct GenericExtendedTime <Base: BaseTime> {
   id: SiphashID,
 }
 
-pub trait Basics {
+/**
+This is intended to be implemented on an empty struct. Requiring Clone is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
+*/
+pub trait Basics: Clone {
   type Time: BaseTime;
   type Constants;
 }
@@ -105,7 +108,7 @@ pub trait PredictorAccessor <B: Basics>: Accessor <B> {
 pub trait Snapshot <B: Basics>: MomentaryAccessor <B> {
 }
 
-enum FiatEventOperationResult {
+pub enum FiatEventOperationResult {
   Success,
   InvalidInput,
   InvalidTime,
@@ -113,11 +116,7 @@ enum FiatEventOperationResult {
 
 pub trait TimeSteward <'a, B: Basics> {
   type S: Snapshot <B>;
-  type M: Mutator <B>;
-  type P: PredictorAccessor <B>;
   type Event;
-  type Prediction;
-  type Predictor;
   
   /**
   TimeSteward implementors are permitted, but not required, to discard old data in order to save memory. This may make the TimeSteward unusable at some points in its history.
@@ -167,13 +166,14 @@ pub trait FlatTimeSteward <'a, B: Basics>:TimeSteward <'a, B> {
 }
 
 
-type Event <B: Basics, M: Mutator <B>> =Rc <Fn (&mut M)>;
-enum Prediction <B: Basics, M: Mutator <B>> {
+type Event <M> =Rc <Fn (&mut M)>;
+#[derive (Clone)]
+enum Prediction <B: Basics, E> {
   Nothing,
-  Immediately (Event <B, M>),
-  At (B::Time, Event <B, M>),
+  Immediately (E),
+  At (B::Time, E),
 }
-type Predictor <B: Basics, M: Mutator <B>, PA: PredictorAccessor <B>> =Rc <for <'b, 'c> Fn (& 'b mut PA)->Prediction <B, M>>;
+type Predictor <B: Basics, M: Mutator <B>, PA: PredictorAccessor <B>> =Rc <for <'b, 'c> Fn (& 'b mut PA)->Prediction <B, Event <M>>>;
 
 
 
@@ -185,13 +185,13 @@ use std::borrow::{Borrow, Cow};
 use std::rc::Rc;
 
 
-struct ConstantPart <'a, B: Basics> {
+struct ConstantPart <'a, B: Basics + 'a> {
   predictors: Vec<Predictor <'a, B>>,
   constants: B::Constants,
 }
 #[derive (Clone)]
-struct BothParts <'a, B: Basics> {
-  entity_states: HashMap< FieldID, Box <Any>>,
+struct BothParts <'a, B: Basics + 'a> {
+  entity_states: HashMap< FieldID, Rc<Any>>,
   last_change: B::Time,
   fiat_events: BTreeMap<ExtendedTime <B>, Event <'a, B>>,
   predictions: BTreeMap<ExtendedTime <B>, Prediction <'a, B>>,
@@ -208,13 +208,13 @@ pub struct Snapshot <'a, B: Basics + 'a> {
 }
 pub struct Mutator <'a, B: Basics + 'a> {
   now: B::Time,
-  steward: & 'a mut BothParts <'a, B>,
+  data: & 'a mut BothParts <'a, B>,
 }
 pub struct PredictorAccessor <'a, B: Basics + 'a> {
-  steward: & 'a mut BothParts <'a, B>,
+  data: & 'a mut BothParts <'a, B>,
 }
-type Event <'a, B: Basics + 'a> = super::Event <B, Mutator <'a, B>>;
-type Prediction <'a, B: Basics + 'a> = super::Prediction <B, Mutator <'a, B>>;
+pub type Event <'a, B: Basics + 'a> = super::Event <Mutator <'a, B>>;
+type Prediction <'a, B: Basics + 'a> = super::Prediction <B, Event <'a, B>>;
 type Predictor <'a, B: Basics + 'a> = super::Predictor <B, Mutator <'a, B>, PredictorAccessor <'a, B>>;
 
 
@@ -223,16 +223,19 @@ impl <'a, B: Basics> super::Accessor <B> for Snapshot <'a, B> {
   fn get <F: Field> (&mut self, id: SiphashID)-> Option <& F::Data> {
     self. data.get ::<F> (id)
   }
+  fn constants (& self)->& B::Constants {& self.data.constant_part.constants}
 }
 impl <'a, B: Basics> super::Accessor <B> for Mutator <'a, B> {
   fn get <F: Field> (&mut self, id: SiphashID)-> Option <& F::Data> {
     self. data.get::<F> (id)
   }
+  fn constants (& self)->& B::Constants {& self.data.constant_part.constants}
 }
 impl <'a, B: Basics> super::Accessor <B> for PredictorAccessor <'a, B> {
   fn get <F: Field> (&mut self, id: SiphashID)-> Option <& F::Data> {
     self. data.get::<F> (id)
   }
+  fn constants (& self)->& B::Constants {& self.data.constant_part.constants}
 }
 
 impl <'a, B: Basics> super::MomentaryAccessor <B> for Snapshot <'a, B> {
@@ -258,7 +261,7 @@ impl <'a, B: Basics> super::Mutator <B> for Mutator <'a, B> {
 
 impl <'a, B: Basics>BothParts <'a, B> {
   fn get <F: Field> (&mut self, id: SiphashID)-> Option <& F::Data> {
-    self.entity_states.get (& FieldID {entity: id, field: F::unique_identifier ()}).map (| something | something.downcast ::<F::Data> ().unwrap ().borrow ())
+    self.entity_states.get (& FieldID {entity: id, field: F::unique_identifier ()}).map (| something | something.downcast_ref ::<F::Data> ().unwrap ().borrow ())
   }
 }
 
@@ -268,13 +271,9 @@ impl <'a, B: Basics>Steward <'a, B> {
 }
 impl <'a, B: Basics> super::TimeSteward <'a, B> for Steward <'a, B> {
   type S = Snapshot <'a, B>;
-  type M =Mutator <'a, B>;
-  type P =PredictorAccessor <'a, B>;
-    
   type Event = Event <'a, B>;
-  type Prediction = super::Prediction <B, Self::Event>;
-  type Predictor = super::Predictor <B, Self::P, Self::Prediction>;
 
+  fn valid_from (& self)->B::Time {}
   fn insert_fiat_event (&mut self, time: B::Time, distinguisher: u64, event: Self::Event)->FiatEventOperationResult {}
   fn erase_fiat_event (&mut self, time: B::Time, distinguisher: u64)->FiatEventOperationResult {}
   fn snapshot_before (&mut self, time: B::Time)->Option <Self::S> {}
