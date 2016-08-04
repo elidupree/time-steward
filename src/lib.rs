@@ -1,4 +1,3 @@
-
 use std::hash::{Hash, Hasher,SipHasher};
 use std::any::Any;
 use std::rc::Rc;
@@ -21,7 +20,7 @@ fn generate (& self)->SiphashID {SiphashID {data: [self.data [0].finish (), self
 
 
 //TODO: Shouldn't "ordered type with minimum and maximum values" be a trait common to other situations as well? Find out if there's a standard name for that.
-pub trait BaseTime: Ord {
+pub trait BaseTime: Clone + Ord {
   fn min_time ()->Self;
   fn max_time ()->Self;
 }
@@ -89,18 +88,21 @@ pub trait Accessor <B: Basics> {
   fn constants (& self)->& B::Constants;
 }
 
-pub trait Mutator <B: Basics>: Accessor <B> {
+pub trait MomentaryAccessor <B: Basics>: Accessor <B> {
+  fn now (& self)->B::Time;
+}
+
+
+pub trait Mutator <B: Basics>: MomentaryAccessor <B> {
   fn get_mut <F: Field> (&mut self, id: SiphashID)->Option <&mut F::Data> where F::Data: Clone;
   fn set <F: Field> (&mut self, id: SiphashID, data: Option <F::Data>);
   fn random_bits (&mut self, num_bits:u32)->u64;
   fn random_id (&mut self)->SiphashID;
-  fn now (& self)->B::Time;
 }
 pub trait PredictorAccessor <B: Basics>: Accessor <B> {
 
 }
-pub trait Snapshot <B: Basics>: Accessor <B> {
-
+pub trait Snapshot <B: Basics>: MomentaryAccessor <B> {
 }
 
 enum FiatEventOperationResult {
@@ -175,50 +177,95 @@ type Predictor <B: Basics, M: Mutator <B>, PA: PredictorAccessor <B>> =Rc <for <
 
 
 
-mod StandardFlatTimeSteward {
+mod SimpleFlatTimeSteward {
 use super::{SiphashID, FieldID, Field, ExtendedTime, Basics, TimeSteward, FiatEventOperationResult};
-use std::collections::{HashMap, BinaryHeap};
+use std::collections::{HashMap, BTreeMap};
 use std::any::Any;
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 use std::rc::Rc;
 
 
-pub struct Steward <'a, B: Basics> {
+struct ConstantPart <'a, B: Basics> {
+  predictors: Vec<Predictor <'a, B>>,
+  constants: B::Constants,
+}
+#[derive (Clone)]
+struct BothParts <'a, B: Basics> {
   entity_states: HashMap< FieldID, Box <Any>>,
   last_change: B::Time,
-  fiat_events: HashMap< ExtendedTime <B>, Event <'a, B>>,
-  predictions: HashMap<ExtendedTime <B>, Prediction <'a, B>>,
-  upcoming_event_times: BinaryHeap <ExtendedTime <B>>,
-    
+  fiat_events: BTreeMap<ExtendedTime <B>, Event <'a, B>>,
+  predictions: BTreeMap<ExtendedTime <B>, Prediction <'a, B>>,
+  prediction_dependencies: HashMap<FieldID, Vec<ExtendedTime <B>>>,
+  constant_part: Rc< ConstantPart <'a, B>>,
+}
+
+pub struct Steward <'a, B: Basics + 'a> {
+  data: Cow <'a, BothParts <'a, B>>,
 }
 pub struct Snapshot <'a, B: Basics + 'a> {
-  steward: &'a Steward <'a, B>,
+  now: B::Time,
+  data: &'a BothParts <'a, B>,
 }
 pub struct Mutator <'a, B: Basics + 'a> {
-  steward: & 'a mut Steward <'a, B>,
+  now: B::Time,
+  steward: & 'a mut BothParts <'a, B>,
 }
 pub struct PredictorAccessor <'a, B: Basics + 'a> {
-  steward: & 'a mut Steward <'a, B>,
+  steward: & 'a mut BothParts <'a, B>,
 }
 type Event <'a, B: Basics + 'a> = super::Event <B, Mutator <'a, B>>;
 type Prediction <'a, B: Basics + 'a> = super::Prediction <B, Mutator <'a, B>>;
 type Predictor <'a, B: Basics + 'a> = super::Predictor <B, Mutator <'a, B>, PredictorAccessor <'a, B>>;
 
 
-impl <'a, B: Basics>Steward <'a, B> {
-  fn new (constants: B::Constants, predictors: Vec<Predictor <'a, B>>)->Self {}
-}
+
 impl <'a, B: Basics> super::Accessor <B> for Snapshot <'a, B> {
   fn get <F: Field> (&mut self, id: SiphashID)-> Option <& F::Data> {
-    self.steward.entity_states.get (& FieldID {entity: id, field: F::unique_identifier ()}).map (| something | something.downcast ::<F::Data> ().unwrap ().borrow ())
+    self. data.get ::<F> (id)
   }
 }
 impl <'a, B: Basics> super::Accessor <B> for Mutator <'a, B> {
   fn get <F: Field> (&mut self, id: SiphashID)-> Option <& F::Data> {
-    self.steward.entity_states.get (& FieldID {entity: id, field: F::unique_identifier ()}).map (| something | something.downcast ::<F::Data> ().unwrap ().borrow ())
+    self. data.get::<F> (id)
+  }
+}
+impl <'a, B: Basics> super::Accessor <B> for PredictorAccessor <'a, B> {
+  fn get <F: Field> (&mut self, id: SiphashID)-> Option <& F::Data> {
+    self. data.get::<F> (id)
   }
 }
 
+impl <'a, B: Basics> super::MomentaryAccessor <B> for Snapshot <'a, B> {
+  fn now (& self)->B::Time {self.now}
+}
+impl <'a, B: Basics> super::MomentaryAccessor <B> for Mutator <'a, B> {
+  fn now (& self)->B::Time {self.now}
+}
+impl <'a, B: Basics> super::PredictorAccessor <B> for PredictorAccessor <'a, B> {}
+impl <'a, B: Basics> super::Snapshot <B> for Snapshot <'a, B> {}
+
+impl <'a, B: Basics> super::Mutator <B> for Mutator <'a, B> {
+  fn get_mut <F: Field> (&mut self, id: SiphashID)->Option <&mut F::Data> where F::Data: Clone {}
+  fn set <F: Field> (&mut self, id: SiphashID, data: Option <F::Data>) {}
+  fn random_bits (&mut self, num_bits:u32)->u64 {}
+  fn random_id (&mut self)->SiphashID {}
+}
+
+
+
+
+
+
+impl <'a, B: Basics>BothParts <'a, B> {
+  fn get <F: Field> (&mut self, id: SiphashID)-> Option <& F::Data> {
+    self.entity_states.get (& FieldID {entity: id, field: F::unique_identifier ()}).map (| something | something.downcast ::<F::Data> ().unwrap ().borrow ())
+  }
+}
+
+
+impl <'a, B: Basics>Steward <'a, B> {
+  fn new (constants: B::Constants, predictors: Vec<Predictor <'a, B>>)->Self {}
+}
 impl <'a, B: Basics> super::TimeSteward <'a, B> for Steward <'a, B> {
   type S = Snapshot <'a, B>;
   type M =Mutator <'a, B>;
