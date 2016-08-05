@@ -1,6 +1,7 @@
 
 use super::{SiphashID, FieldID, Field, ExtendedTime, Basics, TimeSteward, FiatEventOperationResult};
 use std::collections::{HashMap, BTreeMap};
+// use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::any::Any;
 use std::borrow::{Borrow, Cow};
 use std::rc::Rc;
@@ -37,7 +38,7 @@ pub struct Mutator<'a, B: Basics + 'a> {
   data: &'a mut StewardImpl<B>,
 }
 pub struct PredictorAccessor<'a, B: Basics + 'a> {
-  data: &'a mut StewardImpl<B>,
+  data: &'a StewardImpl<B>,
 }
 // pub type Event<'a, B: Basics + 'a> = super::Event<Mutator<'a, B>>;
 pub type Event<B: Basics> = Rc<for<'d, 'e> Fn(&'d mut Mutator<'e, B>)>;
@@ -158,9 +159,36 @@ impl<B: Basics> StewardImpl<B> {
     }
   }
 
-  fn next_event(&self) -> Option<Box<(ExtendedTime<B>, Event<B>)>> {
-    // self.state.fiat_events.range(Excluded(&self.state.last_change), Unbounded)
-    None //TODO fix
+  fn next_event(&self) -> Option<(ExtendedTime<B>, Event<B>)> {
+    let first_fiat_event_iter =
+    // range is unstable
+    // https://doc.rust-lang.org/std/collections/struct.BTreeMap.html#method.range
+    // and cannot be enabled in stable rustc
+    // https://stackoverflow.com/questions/30975088/use-of-unstable-library-feature-how-can-i-fix-those
+    // so use something else...
+    //  self.state.fiat_events.range(Excluded(&self.state.last_change), Unbounded).next();
+      self.state.fiat_events.iter().map(|ev| (ev.0.clone(), ev.1.clone()));
+    let predicted_events_iter = self.settings
+      .predictors
+      .iter()
+      .enumerate()
+      .flat_map(|(predictor_idx, predictor)|
+      // TODO change predictors and entity_states
+      // to separate by field type, for efficiency,
+      // like the haskell does?
+      self.state.entity_states.keys().filter_map(move |field_id|
+        match predictor(&mut PredictorAccessor{data: self}, field_id.entity) {
+          super::Prediction::Nothing => None,
+          super::Prediction::Immediately(_) => panic!("Eli will have to justify this"),
+          super::Prediction::At(event_base_time, event) =>
+            super::extended_time_of_predicted_event(
+              predictor_idx as u32,
+              field_id.entity,
+              event_base_time,
+              &self.state.last_change
+            ).map(|event_time| (event_time, event))}));
+    let events_iter = first_fiat_event_iter.chain(predicted_events_iter);
+    events_iter.min_by_key(|ev| ev.0.clone())
   }
 
   fn execute_event(&mut self, event_time: ExtendedTime<B>, event: Event<B>) {
@@ -178,8 +206,7 @@ impl<B: Basics> StewardImpl<B> {
       panic!("not defined for past times");
     }
     while let Some(ev) = self.next_event().filter(|ev| ev.0 < future_t) {
-      let ev2 = *ev;
-      let (event_time, event) = ev2;
+      let (event_time, event) = ev;
       self.execute_event(event_time, event);
     }
   }

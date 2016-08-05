@@ -1,8 +1,10 @@
 use std::hash::{Hash, Hasher, SipHasher};
 use std::any::Any;
 use std::rc::Rc;
+use std::cmp::Ordering;
 
-#[derive (Clone, PartialEq, Eq, PartialOrd, Ord)]
+// TODO check whether hashes in rust vary by CPU endianness?
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SiphashID {
   data: [u64; 2],
 }
@@ -23,6 +25,15 @@ impl SiphashID_Generator {
   fn generate(&self) -> SiphashID {
     SiphashID { data: [self.data[0].finish(), self.data[1].finish()] }
   }
+  fn new() -> SiphashID_Generator {
+    SiphashID_Generator { data: [SipHasher::new(), SipHasher::new()] }
+  }
+}
+// other possible names: hash_up_a_siphash_id?
+fn collision_resistant_hash<T: Hash>(data: &T) -> SiphashID {
+  let mut s = SiphashID_Generator::new();
+  data.hash(&mut s);
+  s.generate()
 }
 
 
@@ -88,6 +99,30 @@ fn beginning_of_moment<Base: BaseTime>(base_time: Base) -> GenericExtendedTime<B
     iteration: 0,
     id: SiphashID { data: [0, 0] },
   }
+}
+// predictor_idx is zero-based
+fn extended_time_of_predicted_event<Base: BaseTime>(predictor_idx: u32,
+                                       entity_id: SiphashID,
+                                       event_base_time: Base,
+                                       when_event_was_predicted: &GenericExtendedTime<Base>)
+                                       -> Option<GenericExtendedTime<Base>> {
+  let id = collision_resistant_hash(&(predictor_idx, entity_id));
+  let iteration = match event_base_time.cmp(&when_event_was_predicted.base) {
+    Ordering::Less => return None, // short-circuit
+    Ordering::Greater => 0,
+    Ordering::Equal => {
+      if id > when_event_was_predicted.id {
+        when_event_was_predicted.iteration
+      } else {
+        when_event_was_predicted.iteration + 1
+      }
+    }
+  };
+  Some(GenericExtendedTime {
+    base: event_base_time,
+    id: id,
+    iteration: iteration,
+  })
 }
 
 /**
