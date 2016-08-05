@@ -1,5 +1,5 @@
 
-use super::{SiphashId, FieldId, Field, ExtendedTime, Basics, TimeSteward, FiatEventOperationResult};
+use super::{SiphashId, RowId, FieldId, Column, ExtendedTime, Basics, TimeSteward, FiatEventOperationResult};
 use std::collections::{HashMap, BTreeMap};
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::any::Any;
@@ -11,7 +11,7 @@ use std::rc::Rc;
 // struct StewardState<'a, B: Basics + 'a> {
 struct StewardState<B: Basics> {
   last_change: ExtendedTime<B>, // B::Time,
-  entity_states: HashMap<FieldId, Rc<Any>>,
+  field_states: HashMap<FieldId, Rc<Any>>,
   // fiat_events: BTreeMap<ExtendedTime<B>, Event<'a, B>>,
   fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
 }
@@ -48,7 +48,7 @@ type Prediction<B: Basics> = super::Prediction<B, Event<B>>;
 
 type Predictor<B: Basics> = super::Predictor<PredictorFn<B>>;
 
-type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, SiphashId)
+type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId)
                                               -> Prediction<B>>;
 // -> Prediction<B, Event<B>>>;
 // -> Prediction<B, Rc<for<'d, 'e> Fn(&'d mut Mutator<'e, B>)>>>;
@@ -56,24 +56,24 @@ type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>
 
 
 impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
-  fn get<F: Field>(&mut self, id: SiphashId) -> Option<&F::Data> {
-    self.data.get::<F>(id)
+  fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
+    self.data.get::<C>(id)
   }
   fn constants(&self) -> &B::Constants {
     &self.data.settings.constants
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
-  fn get<F: Field>(&mut self, id: SiphashId) -> Option<&F::Data> {
-    self.data.get::<F>(id)
+  fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
+    self.data.get::<C>(id)
   }
   fn constants(&self) -> &B::Constants {
     &self.data.settings.constants
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
-  fn get<F: Field>(&mut self, id: SiphashId) -> Option<&F::Data> {
-    self.data.get::<F>(id)
+  fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
+    self.data.get::<C>(id)
   }
   fn constants(&self) -> &B::Constants {
     &self.data.settings.constants
@@ -94,13 +94,13 @@ impl<'a, B: Basics> super::PredictorAccessor<B> for PredictorAccessor<'a, B> {}
 impl<'a, B: Basics> super::Snapshot<B> for Snapshot<'a, B> {}
 
 impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
-  fn get_mut<F: Field>(&mut self, id: SiphashId) -> Option<&mut F::Data>
-    where F::Data: Clone
+  fn get_mut<C: Column>(&mut self, id: RowId) -> Option<&mut C::FieldType>
+    where C::FieldType: Clone
   {
     panic!("are we really doing this");
   }
-  fn set<F: Field>(&mut self, id: SiphashId, data: Option<F::Data>) {
-    self.data.set_opt::<F>(id, data);
+  fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
+    self.data.set_opt::<C>(id, data);
   }
   fn random_bits(&mut self, num_bits: u32) -> u64 {
     panic!("no randomness yet 1");
@@ -127,37 +127,37 @@ impl<T> Filter<T> for Option<T> {
 
 
 impl<B: Basics> StewardImpl<B> {
-  fn get<F: Field>(&self, id: SiphashId) -> Option<&F::Data> {
+  fn get<C: Column>(&self, id: RowId) -> Option<&C::FieldType> {
     self.state
-      .entity_states
+      .field_states
       .get(&FieldId {
-        entity: id,
-        field: F::unique_identifier(),
+        row_id: id,
+        column_id: C::column_id(),
       })
-      .map(|something| something.downcast_ref::<F::Data>().unwrap().borrow())
+      .map(|something| something.downcast_ref::<C::FieldType>().unwrap().borrow())
   }
-  fn set<F: Field>(&mut self, id: SiphashId, value: F::Data) {
+  fn set<C: Column>(&mut self, id: RowId, value: C::FieldType) {
     self.state
-      .entity_states
+      .field_states
       .insert(FieldId {
-                entity: id,
-                field: F::unique_identifier(),
+                row_id: id,
+                column_id: C::column_id(),
               },
               Rc::new(value));
   }
-  fn remove<F: Field>(&mut self, id: SiphashId) {
+  fn remove<C: Column>(&mut self, id: RowId) {
     self.state
-      .entity_states
+      .field_states
       .remove(&FieldId {
-        entity: id,
-        field: F::unique_identifier(),
+        row_id: id,
+        column_id: C::column_id(),
       });
   }
-  fn set_opt<F: Field>(&mut self, id: SiphashId, value_opt: Option<F::Data>) {
+  fn set_opt<C: Column>(&mut self, id: RowId, value_opt: Option<C::FieldType>) {
     if let Some(value) = value_opt {
-      self.set::<F>(id, value);
+      self.set::<C>(id, value);
     } else {
-      self.remove::<F>(id);
+      self.remove::<C>(id);
     }
   }
 
@@ -174,20 +174,20 @@ impl<B: Basics> StewardImpl<B> {
       .predictors
       .iter()
       .flat_map(|predictor|
-      // TODO change entity_states
+      // TODO change field_states
       // to separate by field type, for efficiency,
       // like the haskell does?
-      self.state.entity_states.keys().filter_map(move |field_id|
-        if field_id.field != predictor.field_id {
+      self.state.field_states.keys().filter_map(move |field_id|
+        if field_id.column_id != predictor.column_id {
           None
         } else {
-          match (predictor.function)(&mut PredictorAccessor{data: self}, field_id.entity) {
+          match (predictor.function)(&mut PredictorAccessor{data: self}, field_id.row_id) {
             super::Prediction::Nothing => None,
             super::Prediction::Immediately(_) => panic!("Eli will have to justify this"),
             super::Prediction::At(event_base_time, event) =>
               super::extended_time_of_predicted_event(
                 predictor.predictor_id,
-                field_id.entity,
+                field_id.row_id,
                 event_base_time,
                 &self.state.last_change
               ).map(|event_time| (event_time, event))}}));
@@ -223,7 +223,7 @@ impl<B: Basics> Steward<B> {
     StewardImpl {
       state: StewardState {
         last_change: super::beginning_of_moment(super::BaseTime::min_time()),
-        entity_states: HashMap::new(),
+        field_states: HashMap::new(),
         fiat_events: BTreeMap::new(),
       },
       settings: Rc::new(StewardSettings {

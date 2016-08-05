@@ -57,39 +57,56 @@ impl BaseTime for i64 {
   }
 }
 
-pub trait Field {
-  type Data: Any;// = Self;
+
+// Database analogy: time stewards kind of contain a database table.
+// Rows' ids are special; there isn't an "id" column.
+// Row ids are random 128 bit ids.
+// Rows aren't explicitly inserted and deleted.
+// Only the existence or nonexistence of a (row, column) pair
+// -- a field -- is meaningful.
+// Generally, space usage is proportional to the number of
+// existent fields.  For example, a row with only one existent field
+// only takes up the space of one field.
+
+pub type RowId = SiphashId;
+
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ColumnId(u64);
+
+
+pub trait Column {
+  type FieldType: Any;// = Self;
 
   /**
   Returns a constant identifier for the type, which must be 64 bits of random data.
   
-  Thanks to the [birthday problem](https://en.wikipedia.org/wiki/Birthday_problem), this would have a >1% chance of a collision with a mere 700 million Field implementors. I don't think we need to worry about this. 128 bit IDs are necessary for entities, because computers can generate billions of them easily, but this isn't the same situation.
+  Thanks to the [birthday problem](https://en.wikipedia.org/wiki/Birthday_problem), this would have a >1% chance of a collision with a mere 700 million Column implementors. I don't think we need to worry about this. 128 bit IDs are necessary for rows, because computers can generate billions of them easily, but this isn't the same situation.
   
   It might seem desirable to default to a hash of the TypeId of Self, for the convenience of some implementations. However, Rust does not guarantee that the TypeId remains the same across different compilations or different compiler versions. And it certainly doesn't remain the same when you add or remove types from your code, which would be desirable for compatibility between different versions of your program. Also, the Rust interface for getting the TypeId is currently unstable. Using an explicit constant is simply better.
   
   TODO: change this into an associated constant once associated constants become stable.
   */
-  fn unique_identifier() -> u64;
+  fn column_id() -> ColumnId;
 
   /**
   Implementors MAY return true if first and second are indistinguishable.
   
   This is labeled "unsafe" because imperfect implementations can easily cause nondeterminism in the TimeSteward. Using the default is fine, and implementing it is only an optimization. Don't implement this unless you know what you're doing.
   
-  This is similar to requiring Data to be PartialEq, but with an important difference. PartialEq only requires the comparison to be an equivalence relation, but does NOT require that (first == second) guarantee that there is no observable difference between the values. Therefore, trusting arbitrary implementations of PartialEq would be unsafe (in the sense that it would allow the TimeSteward to behave non-deterministically).
+  This is similar to requiring FieldType to be PartialEq, but with an important difference. PartialEq only requires the comparison to be an equivalence relation, but does NOT require that (first == second) guarantee that there is no observable difference between the values. Therefore, trusting arbitrary implementations of PartialEq would be unsafe (in the sense that it would allow the TimeSteward to behave non-deterministically).
   
   TODO: perhaps we can create default implementations of this for POD types.
   TODO: can we create automated tests for implementations of this function?
   */
-  fn guaranteed_equal__unsafe(first: &Self::Data, second: &Self::Data) -> bool {
+  fn guaranteed_equal__unsafe(first: &Self::FieldType, second: &Self::FieldType) -> bool {
     false
   }
 }
 
 #[derive (Clone, PartialEq, Eq, Hash)]
 struct FieldId {
-  entity: SiphashId,
-  field: u64,
+  row_id: RowId,
+  column_id: ColumnId,
 }
 
 #[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -109,11 +126,11 @@ fn beginning_of_moment<Base: BaseTime>(base_time: Base) -> GenericExtendedTime<B
 
 fn extended_time_of_predicted_event<Base: BaseTime>(
                                        predictor_id: u64,
-                                       entity_id: SiphashId,
+                                       row_id: RowId,
                                        event_base_time: Base,
                                        when_event_was_predicted: &GenericExtendedTime<Base>)
                                        -> Option<GenericExtendedTime<Base>> {
-  let id = collision_resistant_hash(&(predictor_id, entity_id));
+  let id = collision_resistant_hash(&(predictor_id, row_id));
   let iteration = match event_base_time.cmp(&when_event_was_predicted.base) {
     Ordering::Less => return None, // short-circuit
     Ordering::Greater => 0,
@@ -156,7 +173,7 @@ type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 // }
 
 pub trait Accessor<B: Basics> {
-  fn get<F: Field>(&mut self, id: SiphashId) -> Option<&F::Data>;
+  fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType>;
   fn constants(&self) -> &B::Constants;
 }
 
@@ -166,8 +183,8 @@ pub trait MomentaryAccessor<B: Basics>: Accessor<B> {
 
 
 pub trait Mutator<B: Basics>: MomentaryAccessor<B> {
-  fn get_mut<F: Field>(&mut self, id: SiphashId) -> Option<&mut F::Data> where F::Data: Clone;
-  fn set<F: Field>(&mut self, id: SiphashId, data: Option<F::Data>);
+  fn get_mut<C: Column>(&mut self, id: RowId) -> Option<&mut C::FieldType> where C::FieldType: Clone;
+  fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>);
   fn random_bits(&mut self, num_bits: u32) -> u64;
   fn random_id(&mut self) -> SiphashId;
 }
@@ -244,13 +261,13 @@ enum Prediction<B: Basics, E> {
 }
 struct Predictor<PredictorFn> {
   predictor_id: u64,
-  field_id: u64,
+  column_id: ColumnId,
   function: PredictorFn,
 }
 
 //type Event<M> = Rc<for<'d> Fn(&'d mut M)>;
 //type PredictorFn<B: Basics, M: Mutator<B>, PA: PredictorAccessor<B>> =
-//  Rc<for<'b, 'c> Fn(&'b mut PA, SiphashId) -> Prediction<B, Event<M>>>;
+//  Rc<for<'b, 'c> Fn(&'b mut PA, RowId) -> Prediction<B, Event<M>>>;
 
 
 pub mod inefficient_flat_time_steward;
