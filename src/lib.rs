@@ -4,7 +4,10 @@ use std::rc::Rc;
 use std::cmp::Ordering;
 
 // TODO check whether hashes in rust vary by CPU endianness?
-#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+// Answer: they do, so maybe stop using Hash for this sometime
+// ( https://doc.rust-lang.org/std/hash/trait.Hasher.html
+// "represents the ability to hash an arbitrary stream of bytes").
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SiphashID {
   data: [u64; 2],
 }
@@ -26,7 +29,10 @@ impl SiphashID_Generator {
     SiphashID { data: [self.data[0].finish(), self.data[1].finish()] }
   }
   fn new() -> SiphashID_Generator {
-    SiphashID_Generator { data: [SipHasher::new(), SipHasher::new()] }
+    SiphashID_Generator { data: [
+      SipHasher::new_with_keys(0xb82a9426fd1a574f, 0x9d9d5b703dcb1bcc),
+      SipHasher::new_with_keys(0x03e0d6037ff980a4, 0x65b790a0825b83bd),
+      ] }
   }
 }
 // other possible names: hash_up_a_siphash_id?
@@ -86,7 +92,7 @@ struct FieldID {
   field: u64,
 }
 
-#[derive (Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct GenericExtendedTime<Base: BaseTime> {
   base: Base,
   iteration: u64,
@@ -135,16 +141,18 @@ pub trait Basics: Clone {
 type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 
 // Note: in the future, we expect we might use a custom hash table type that knows it can rely on SiphashID to already be random, so we don't need to hash it again. This also applies to FieldID, although there may be some complications in that case.
-impl Hash for SiphashID {
-  fn hash<H: Hasher>(&self, state: &mut H) {
-    self.data[0].hash(state);
-  }
-}
-impl<Base: BaseTime> Hash for GenericExtendedTime<Base> {
-  fn hash<H: Hasher>(&self, state: &mut H) {
-    self.id.hash(state);
-  }
-}
+// (for now, we need to be able to hash full siphash ids to create other siphash ids.)
+// ( Also -- do we ever try to hash GenericExtendedTime with id of 0 from beginning_of_moment.... )
+// impl Hash for SiphashID {
+//  fn hash<H: Hasher>(&self, state: &mut H) {
+//    self.data[0].hash(state);
+//  }
+// }
+// impl<Base: BaseTime> Hash for GenericExtendedTime<Base> {
+//  fn hash<H: Hasher>(&self, state: &mut H) {
+//    self.id.hash(state);
+//  }
+// }
 
 pub trait Accessor<B: Basics> {
   fn get<F: Field>(&mut self, id: SiphashID) -> Option<&F::Data>;
