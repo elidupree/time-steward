@@ -106,13 +106,14 @@ fn beginning_of_moment<Base: BaseTime>(base_time: Base) -> GenericExtendedTime<B
     id: SiphashID { data: [0, 0] },
   }
 }
-// predictor_idx is zero-based
-fn extended_time_of_predicted_event<Base: BaseTime>(predictor_idx: u32,
+
+fn extended_time_of_predicted_event<Base: BaseTime>(
+                                       predictor_id: u64,
                                        entity_id: SiphashID,
                                        event_base_time: Base,
                                        when_event_was_predicted: &GenericExtendedTime<Base>)
                                        -> Option<GenericExtendedTime<Base>> {
-  let id = collision_resistant_hash(&(predictor_idx, entity_id));
+  let id = collision_resistant_hash(&(predictor_id, entity_id));
   let iteration = match event_base_time.cmp(&when_event_was_predicted.base) {
     Ordering::Less => return None, // short-circuit
     Ordering::Greater => 0,
@@ -235,15 +236,21 @@ pub trait FlatTimeSteward<'a, B: Basics>: TimeSteward<'a, B> {
 }
 
 
-type Event<M> = Rc<for<'d> Fn(&'d mut M)>;
 #[derive (Clone)]
 enum Prediction<B: Basics, E> {
   Nothing,
   Immediately(E),
   At(B::Time, E),
 }
-type Predictor<B: Basics, M: Mutator<B>, PA: PredictorAccessor<B>> =
-  Rc<for<'b, 'c> Fn(&'b mut PA, SiphashID) -> Prediction<B, Event<M>>>;
+struct Predictor<PredictorFn> {
+  predictor_id: u64,
+  field_id: u64,
+  function: PredictorFn,
+}
+
+//type Event<M> = Rc<for<'d> Fn(&'d mut M)>;
+//type PredictorFn<B: Basics, M: Mutator<B>, PA: PredictorAccessor<B>> =
+//  Rc<for<'b, 'c> Fn(&'b mut PA, SiphashID) -> Prediction<B, Event<M>>>;
 
 
 mod inefficient_flat_time_steward;

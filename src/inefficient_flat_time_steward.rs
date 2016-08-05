@@ -46,7 +46,9 @@ type Prediction<B: Basics> = super::Prediction<B, Event<B>>;
 // it seems impossible to write the lifetimes this way
 // type Predictor<'a, B: Basics + 'a> = super::Predictor<B, Mutator<'a, B>, PredictorAccessor<'a, B>>;
 
-type Predictor<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, SiphashID)
+type Predictor<B: Basics> = super::Predictor<PredictorFn<B>>;
+
+type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, SiphashID)
                                               -> Prediction<B>>;
 // -> Prediction<B, Event<B>>>;
 // -> Prediction<B, Rc<for<'d, 'e> Fn(&'d mut Mutator<'e, B>)>>>;
@@ -171,22 +173,24 @@ impl<B: Basics> StewardImpl<B> {
     let predicted_events_iter = self.settings
       .predictors
       .iter()
-      .enumerate()
-      .flat_map(|(predictor_idx, predictor)|
-      // TODO change predictors and entity_states
+      .flat_map(|predictor|
+      // TODO change entity_states
       // to separate by field type, for efficiency,
       // like the haskell does?
       self.state.entity_states.keys().filter_map(move |field_id|
-        match predictor(&mut PredictorAccessor{data: self}, field_id.entity) {
-          super::Prediction::Nothing => None,
-          super::Prediction::Immediately(_) => panic!("Eli will have to justify this"),
-          super::Prediction::At(event_base_time, event) =>
-            super::extended_time_of_predicted_event(
-              predictor_idx as u32,
-              field_id.entity,
-              event_base_time,
-              &self.state.last_change
-            ).map(|event_time| (event_time, event))}));
+        if field_id.field != predictor.field_id {
+          None
+        } else {
+          match (predictor.function)(&mut PredictorAccessor{data: self}, field_id.entity) {
+            super::Prediction::Nothing => None,
+            super::Prediction::Immediately(_) => panic!("Eli will have to justify this"),
+            super::Prediction::At(event_base_time, event) =>
+              super::extended_time_of_predicted_event(
+                predictor.predictor_id,
+                field_id.entity,
+                event_base_time,
+                &self.state.last_change
+              ).map(|event_time| (event_time, event))}}));
     let events_iter = first_fiat_event_iter.chain(predicted_events_iter);
     events_iter.min_by_key(|ev| ev.0.clone())
   }
