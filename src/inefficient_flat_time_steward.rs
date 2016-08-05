@@ -1,5 +1,5 @@
 
-use super::{SiphashID, FieldID, Field, ExtendedTime, Basics, TimeSteward, FiatEventOperationResult};
+use super::{SiphashId, FieldId, Field, ExtendedTime, Basics, TimeSteward, FiatEventOperationResult};
 use std::collections::{HashMap, BTreeMap};
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::any::Any;
@@ -11,7 +11,7 @@ use std::rc::Rc;
 // struct StewardState<'a, B: Basics + 'a> {
 struct StewardState<B: Basics> {
   last_change: ExtendedTime<B>, // B::Time,
-  entity_states: HashMap<FieldID, Rc<Any>>,
+  entity_states: HashMap<FieldId, Rc<Any>>,
   // fiat_events: BTreeMap<ExtendedTime<B>, Event<'a, B>>,
   fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
 }
@@ -48,7 +48,7 @@ type Prediction<B: Basics> = super::Prediction<B, Event<B>>;
 
 type Predictor<B: Basics> = super::Predictor<PredictorFn<B>>;
 
-type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, SiphashID)
+type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, SiphashId)
                                               -> Prediction<B>>;
 // -> Prediction<B, Event<B>>>;
 // -> Prediction<B, Rc<for<'d, 'e> Fn(&'d mut Mutator<'e, B>)>>>;
@@ -56,7 +56,7 @@ type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>
 
 
 impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
-  fn get<F: Field>(&mut self, id: SiphashID) -> Option<&F::Data> {
+  fn get<F: Field>(&mut self, id: SiphashId) -> Option<&F::Data> {
     self.data.get::<F>(id)
   }
   fn constants(&self) -> &B::Constants {
@@ -64,7 +64,7 @@ impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
-  fn get<F: Field>(&mut self, id: SiphashID) -> Option<&F::Data> {
+  fn get<F: Field>(&mut self, id: SiphashId) -> Option<&F::Data> {
     self.data.get::<F>(id)
   }
   fn constants(&self) -> &B::Constants {
@@ -72,7 +72,7 @@ impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
-  fn get<F: Field>(&mut self, id: SiphashID) -> Option<&F::Data> {
+  fn get<F: Field>(&mut self, id: SiphashId) -> Option<&F::Data> {
     self.data.get::<F>(id)
   }
   fn constants(&self) -> &B::Constants {
@@ -94,18 +94,18 @@ impl<'a, B: Basics> super::PredictorAccessor<B> for PredictorAccessor<'a, B> {}
 impl<'a, B: Basics> super::Snapshot<B> for Snapshot<'a, B> {}
 
 impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
-  fn get_mut<F: Field>(&mut self, id: SiphashID) -> Option<&mut F::Data>
+  fn get_mut<F: Field>(&mut self, id: SiphashId) -> Option<&mut F::Data>
     where F::Data: Clone
   {
     panic!("are we really doing this");
   }
-  fn set<F: Field>(&mut self, id: SiphashID, data: Option<F::Data>) {
+  fn set<F: Field>(&mut self, id: SiphashId, data: Option<F::Data>) {
     self.data.set_opt::<F>(id, data);
   }
   fn random_bits(&mut self, num_bits: u32) -> u64 {
     panic!("no randomness yet 1");
   }
-  fn random_id(&mut self) -> SiphashID {
+  fn random_id(&mut self) -> SiphashId {
     panic!("no randomness yet 2");
   }
 }
@@ -127,33 +127,33 @@ impl<T> Filter<T> for Option<T> {
 
 
 impl<B: Basics> StewardImpl<B> {
-  fn get<F: Field>(&self, id: SiphashID) -> Option<&F::Data> {
+  fn get<F: Field>(&self, id: SiphashId) -> Option<&F::Data> {
     self.state
       .entity_states
-      .get(&FieldID {
+      .get(&FieldId {
         entity: id,
         field: F::unique_identifier(),
       })
       .map(|something| something.downcast_ref::<F::Data>().unwrap().borrow())
   }
-  fn set<F: Field>(&mut self, id: SiphashID, value: F::Data) {
+  fn set<F: Field>(&mut self, id: SiphashId, value: F::Data) {
     self.state
       .entity_states
-      .insert(FieldID {
+      .insert(FieldId {
                 entity: id,
                 field: F::unique_identifier(),
               },
               Rc::new(value));
   }
-  fn remove<F: Field>(&mut self, id: SiphashID) {
+  fn remove<F: Field>(&mut self, id: SiphashId) {
     self.state
       .entity_states
-      .remove(&FieldID {
+      .remove(&FieldId {
         entity: id,
         field: F::unique_identifier(),
       });
   }
-  fn set_opt<F: Field>(&mut self, id: SiphashID, value_opt: Option<F::Data>) {
+  fn set_opt<F: Field>(&mut self, id: SiphashId, value_opt: Option<F::Data>) {
     if let Some(value) = value_opt {
       self.set::<F>(id, value);
     } else {

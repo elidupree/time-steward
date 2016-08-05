@@ -8,36 +8,36 @@ use std::cmp::Ordering;
 // ( https://doc.rust-lang.org/std/hash/trait.Hasher.html
 // "represents the ability to hash an arbitrary stream of bytes").
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SiphashID {
+pub struct SiphashId {
   data: [u64; 2],
 }
-pub struct SiphashID_Generator {
+pub struct SiphashId_Generator {
   data: [SipHasher; 2],
 }
-impl Hasher for SiphashID_Generator {
+impl Hasher for SiphashId_Generator {
   fn finish(&self) -> u64 {
     panic!()
-  }//Hack: this is actually for generating SiphashID, not 64-bit
+  }//Hack: this is actually for generating SiphashId, not 64-bit
   fn write(&mut self, bytes: &[u8]) {
     self.data[0].write(bytes);
     self.data[1].write(bytes);
   }
   // TODO: should we implement the others for efficiency?
 }
-impl SiphashID_Generator {
-  fn generate(&self) -> SiphashID {
-    SiphashID { data: [self.data[0].finish(), self.data[1].finish()] }
+impl SiphashId_Generator {
+  fn generate(&self) -> SiphashId {
+    SiphashId { data: [self.data[0].finish(), self.data[1].finish()] }
   }
-  fn new() -> SiphashID_Generator {
-    SiphashID_Generator { data: [
+  fn new() -> SiphashId_Generator {
+    SiphashId_Generator { data: [
       SipHasher::new_with_keys(0xb82a9426fd1a574f, 0x9d9d5b703dcb1bcc),
       SipHasher::new_with_keys(0x03e0d6037ff980a4, 0x65b790a0825b83bd),
       ] }
   }
 }
 // other possible names: hash_up_a_siphash_id?
-fn collision_resistant_hash<T: Hash>(data: &T) -> SiphashID {
-  let mut s = SiphashID_Generator::new();
+fn collision_resistant_hash<T: Hash>(data: &T) -> SiphashId {
+  let mut s = SiphashId_Generator::new();
   data.hash(&mut s);
   s.generate()
 }
@@ -87,8 +87,8 @@ pub trait Field {
 }
 
 #[derive (Clone, PartialEq, Eq, Hash)]
-struct FieldID {
-  entity: SiphashID,
+struct FieldId {
+  entity: SiphashId,
   field: u64,
 }
 
@@ -96,20 +96,20 @@ struct FieldID {
 struct GenericExtendedTime<Base: BaseTime> {
   base: Base,
   iteration: u64,
-  id: SiphashID,
+  id: SiphashId,
 }
 
 fn beginning_of_moment<Base: BaseTime>(base_time: Base) -> GenericExtendedTime<Base> {
   GenericExtendedTime {
     base: base_time,
     iteration: 0,
-    id: SiphashID { data: [0, 0] },
+    id: SiphashId { data: [0, 0] },
   }
 }
 
 fn extended_time_of_predicted_event<Base: BaseTime>(
                                        predictor_id: u64,
-                                       entity_id: SiphashID,
+                                       entity_id: SiphashId,
                                        event_base_time: Base,
                                        when_event_was_predicted: &GenericExtendedTime<Base>)
                                        -> Option<GenericExtendedTime<Base>> {
@@ -141,10 +141,10 @@ pub trait Basics: Clone {
 }
 type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 
-// Note: in the future, we expect we might use a custom hash table type that knows it can rely on SiphashID to already be random, so we don't need to hash it again. This also applies to FieldID, although there may be some complications in that case.
+// Note: in the future, we expect we might use a custom hash table type that knows it can rely on SiphashId to already be random, so we don't need to hash it again. This also applies to FieldId, although there may be some complications in that case.
 // (for now, we need to be able to hash full siphash ids to create other siphash ids.)
 // ( Also -- do we ever try to hash GenericExtendedTime with id of 0 from beginning_of_moment.... )
-// impl Hash for SiphashID {
+// impl Hash for SiphashId {
 //  fn hash<H: Hasher>(&self, state: &mut H) {
 //    self.data[0].hash(state);
 //  }
@@ -156,7 +156,7 @@ type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 // }
 
 pub trait Accessor<B: Basics> {
-  fn get<F: Field>(&mut self, id: SiphashID) -> Option<&F::Data>;
+  fn get<F: Field>(&mut self, id: SiphashId) -> Option<&F::Data>;
   fn constants(&self) -> &B::Constants;
 }
 
@@ -166,10 +166,10 @@ pub trait MomentaryAccessor<B: Basics>: Accessor<B> {
 
 
 pub trait Mutator<B: Basics>: MomentaryAccessor<B> {
-  fn get_mut<F: Field>(&mut self, id: SiphashID) -> Option<&mut F::Data> where F::Data: Clone;
-  fn set<F: Field>(&mut self, id: SiphashID, data: Option<F::Data>);
+  fn get_mut<F: Field>(&mut self, id: SiphashId) -> Option<&mut F::Data> where F::Data: Clone;
+  fn set<F: Field>(&mut self, id: SiphashId, data: Option<F::Data>);
   fn random_bits(&mut self, num_bits: u32) -> u64;
-  fn random_id(&mut self) -> SiphashID;
+  fn random_id(&mut self) -> SiphashId;
 }
 pub trait PredictorAccessor<B: Basics>: Accessor<B> {}
 pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {}
@@ -250,7 +250,7 @@ struct Predictor<PredictorFn> {
 
 //type Event<M> = Rc<for<'d> Fn(&'d mut M)>;
 //type PredictorFn<B: Basics, M: Mutator<B>, PA: PredictorAccessor<B>> =
-//  Rc<for<'b, 'c> Fn(&'b mut PA, SiphashID) -> Prediction<B, Event<M>>>;
+//  Rc<for<'b, 'c> Fn(&'b mut PA, SiphashId) -> Prediction<B, Event<M>>>;
 
 
 mod inefficient_flat_time_steward;
