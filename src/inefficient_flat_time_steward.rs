@@ -27,18 +27,18 @@ pub struct Steward<B: Basics> {
 }
 type StewardImpl<B: Basics> = Steward<B>;
 // pub struct Steward<'a, B: Basics + 'a> {
-// data: Cow<'a, StewardImpl<B>>,
+// steward: Cow<'a, StewardImpl<B>>,
 // }
 pub struct Snapshot<'a, B: Basics + 'a> {
   now: B::Time,
-  data: &'a StewardImpl<B>,
+  steward: &'a StewardImpl<B>,
 }
 pub struct Mutator<'a, B: Basics + 'a> {
   now: B::Time,
-  data: &'a mut StewardImpl<B>,
+  steward: &'a mut StewardImpl<B>,
 }
 pub struct PredictorAccessor<'a, B: Basics + 'a> {
-  data: &'a StewardImpl<B>,
+  steward: &'a StewardImpl<B>,
   soonest_prediction: Option<(B::Time, Event<B>)>,
 }
 // pub type Event<'a, B: Basics + 'a> = super::Event<Mutator<'a, B>>;
@@ -59,26 +59,26 @@ type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>
 
 impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
   fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.data.get::<C>(id)
+    self.steward.get::<C>(id)
   }
   fn constants(&self) -> &B::Constants {
-    &self.data.settings.constants
+    &self.steward.settings.constants
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
   fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.data.get::<C>(id)
+    self.steward.get::<C>(id)
   }
   fn constants(&self) -> &B::Constants {
-    &self.data.settings.constants
+    &self.steward.settings.constants
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
   fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.data.get::<C>(id)
+    self.steward.get::<C>(id)
   }
   fn constants(&self) -> &B::Constants {
-    &self.data.settings.constants
+    &self.steward.settings.constants
   }
 }
 
@@ -95,7 +95,7 @@ impl<'a, B: Basics> super::MomentaryAccessor<B> for Mutator<'a, B> {
 impl<'a, B: Basics> super::PredictorAccessor<B> for PredictorAccessor<'a, B> {
   type Event = Event<B>;
   fn predict_immediately(&mut self, event: Event<B>) {
-    self.predict_at_time(&self.data.state.last_change.base, event);
+    self.predict_at_time(&self.steward.state.last_change.base, event);
   }
   fn predict_at_time(&mut self, time: &B::Time, event: Event<B>) {
     if let Some((ref old_time, _)) = self.soonest_prediction {
@@ -115,7 +115,7 @@ impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
     panic!("are we really doing this");
   }
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
-    self.data.set_opt::<C>(id, data);
+    self.steward.set_opt::<C>(id, data);
   }
   fn random_bits(&mut self, num_bits: u32) -> u64 {
     panic!("no randomness yet 1");
@@ -197,7 +197,7 @@ impl<B: Basics> StewardImpl<B> {
           None
         } else {
           let mut pa = PredictorAccessor{
-              data: self,
+              steward: self,
               soonest_prediction: None,
             };
           (predictor.function)(&mut pa, field_id.row_id);
@@ -215,7 +215,7 @@ impl<B: Basics> StewardImpl<B> {
   fn execute_event(&mut self, event_time: ExtendedTime<B>, event: Event<B>) {
     event(&mut Mutator {
       now: event_time.base.clone(),
-      data: &mut *self,
+      steward: &mut *self,
     });
     // if it was a fiat event, clean it up:
     self.state.fiat_events.remove(&event_time);
