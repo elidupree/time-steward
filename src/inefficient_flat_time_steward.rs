@@ -39,17 +39,19 @@ pub struct Mutator<'a, B: Basics + 'a> {
 }
 pub struct PredictorAccessor<'a, B: Basics + 'a> {
   data: &'a StewardImpl<B>,
+  soonest_prediction: Option<(B::Time, Event<B>)>,
 }
 // pub type Event<'a, B: Basics + 'a> = super::Event<Mutator<'a, B>>;
 pub type Event<B: Basics> = Rc<for<'d, 'e> Fn(&'d mut Mutator<'e, B>)>;
-type Prediction<B: Basics> = super::Prediction<B, Event<B>>;
+//type Prediction<B: Basics> = super::Prediction<B, Event<B>>;
 // it seems impossible to write the lifetimes this way
 // type Predictor<'a, B: Basics + 'a> = super::Predictor<B, Mutator<'a, B>, PredictorAccessor<'a, B>>;
 
 type Predictor<B: Basics> = super::Predictor<PredictorFn<B>>;
 
-type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId)
-                                              -> Prediction<B>>;
+type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId)>;
+//type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId)
+//                                              -> Prediction<B>>;
 // -> Prediction<B, Event<B>>>;
 // -> Prediction<B, Rc<for<'d, 'e> Fn(&'d mut Mutator<'e, B>)>>>;
 
@@ -90,7 +92,20 @@ impl<'a, B: Basics> super::MomentaryAccessor<B> for Mutator<'a, B> {
     &self.now
   }
 }
-impl<'a, B: Basics> super::PredictorAccessor<B> for PredictorAccessor<'a, B> {}
+impl<'a, B: Basics> super::PredictorAccessor<B> for PredictorAccessor<'a, B> {
+  type Event = Event<B>;
+  fn predict_immediately(&mut self, event: Event<B>) {
+    self.predict_at_time(&self.data.state.last_change.base, event);
+  }
+  fn predict_at_time(&mut self, time: &B::Time, event: Event<B>) {
+    if let Some((ref old_time, _)) = self.soonest_prediction {
+      if old_time <= time {
+        return;
+      }
+    }
+    self.soonest_prediction = Some((time.clone(), event));
+  }
+}
 impl<'a, B: Basics> super::Snapshot<B> for Snapshot<'a, B> {}
 
 impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
@@ -181,16 +196,18 @@ impl<B: Basics> StewardImpl<B> {
         if field_id.column_id != predictor.column_id {
           None
         } else {
-          match (predictor.function)(&mut PredictorAccessor{data: self}, field_id.row_id) {
-            super::Prediction::Nothing => None,
-            super::Prediction::Immediately(_) => panic!("Eli will have to justify this"),
-            super::Prediction::At(event_base_time, event) =>
-              super::extended_time_of_predicted_event(
-                predictor.predictor_id,
-                field_id.row_id,
-                event_base_time,
-                &self.state.last_change
-              ).map(|event_time| (event_time, event))}}));
+          let mut pa = PredictorAccessor{
+              data: self,
+              soonest_prediction: None,
+            };
+          (predictor.function)(&mut pa, field_id.row_id);
+          pa.soonest_prediction.and_then(|(event_base_time, event)|
+            super::extended_time_of_predicted_event(
+              predictor.predictor_id,
+              field_id.row_id,
+              event_base_time,
+              &self.state.last_change
+            ).map(|event_time| (event_time, event)))}));
     let events_iter = first_fiat_event_iter.chain(predicted_events_iter);
     events_iter.min_by_key(|ev| ev.0.clone())
   }

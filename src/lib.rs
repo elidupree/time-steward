@@ -188,7 +188,12 @@ pub trait Mutator<B: Basics>: MomentaryAccessor<B> {
   fn random_bits(&mut self, num_bits: u32) -> u64;
   fn random_id(&mut self) -> SiphashId;
 }
-pub trait PredictorAccessor<B: Basics>: Accessor<B> {}
+pub trait PredictorAccessor<B: Basics>: Accessor<B> {
+  type Event;
+  // it is unclear whether predict_immediately is sketchy
+  fn predict_immediately(&mut self, event: Self::Event);
+  fn predict_at_time(&mut self, time: &B::Time, event: Self::Event);
+}
 pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {}
 
 pub enum FiatEventOperationResult {
@@ -253,12 +258,12 @@ pub trait FlatTimeSteward<'a, B: Basics>: TimeSteward<'a, B> {
 }
 
 
-#[derive (Clone)]
-enum Prediction<B: Basics, E> {
-  Nothing,
-  Immediately(E),
-  At(B::Time, E),
-}
+// #[derive (Clone)]
+// enum Prediction<B: Basics, E> {
+//   Nothing,
+//   Immediately(E),
+//   At(B::Time, E),
+// }
 struct Predictor<PredictorFn> {
   predictor_id: u64,
   column_id: ColumnId,
