@@ -82,6 +82,14 @@ struct GenericExtendedTime<Base: BaseTime> {
   id: SiphashID,
 }
 
+fn beginning_of_moment<Base: BaseTime>(base_time: Base) -> GenericExtendedTime<Base> {
+  GenericExtendedTime {
+    base: base_time,
+    iteration: 0,
+    id: SiphashID { data: [0, 0] },
+  }
+}
+
 /**
 This is intended to be implemented on an empty struct. Requiring Clone is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 */
@@ -109,7 +117,7 @@ pub trait Accessor<B: Basics> {
 }
 
 pub trait MomentaryAccessor<B: Basics>: Accessor<B> {
-  fn now(&self) -> B::Time;
+  fn now(&self) -> &B::Time;
 }
 
 
@@ -184,7 +192,7 @@ pub trait FlatTimeSteward<'a, B: Basics>: TimeSteward<'a, B> {
 }
 
 
-type Event<M> = Rc<Fn(&mut M)>;
+type Event<M> = Rc<for<'d> Fn(&'d mut M)>;
 #[derive (Clone)]
 enum Prediction<B: Basics, E> {
   Nothing,
@@ -192,10 +200,11 @@ enum Prediction<B: Basics, E> {
   At(B::Time, E),
 }
 type Predictor<B: Basics, M: Mutator<B>, PA: PredictorAccessor<B>> =
-  Rc<for<'b, 'c> Fn(&'b mut PA) -> Prediction<B, Event<M>>>;
+  Rc<for<'b, 'c> Fn(&'b mut PA, SiphashID) -> Prediction<B, Event<M>>>;
 
 
-mod simple_flat_time_steward;
+mod inefficient_flat_time_steward;
+// mod simple_flat_time_steward;
 
 #[test]
 fn it_works() {}
