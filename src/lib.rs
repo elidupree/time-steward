@@ -36,7 +36,7 @@ impl SiphashId_Generator {
   }
 }
 // other possible names: hash_up_a_siphash_id?
-fn collision_resistant_hash<T: Hash>(data: &T) -> SiphashId {
+pub fn collision_resistant_hash<T: Hash>(data: &T) -> SiphashId {
   let mut s = SiphashId_Generator::new();
   data.hash(&mut s);
   s.generate()
@@ -253,8 +253,8 @@ struct Predictor<PredictorFn> {
 //  Rc<for<'b, 'c> Fn(&'b mut PA, SiphashId) -> Prediction<B, Event<M>>>;
 
 
-mod inefficient_flat_time_steward;
-// mod simple_flat_time_steward;
+pub mod inefficient_flat_time_steward;
+// pub mod simple_flat_time_steward;
 
 #[test]
 fn it_works() {}
