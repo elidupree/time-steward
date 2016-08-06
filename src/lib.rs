@@ -143,6 +143,7 @@ fn next_extended_time_of_predicted_event<BaseTime: Ord>(
       if id > from.id {
         (from.iteration, id)
       } else {
+        if from.iteration == IterationType::max_value() {panic! ("Too many iterations at the same base time; probably an infinite loop")}
         (from.iteration + 1, time_id_for_predicted_event (predictor_id, row_id, from.iteration + 1, time_id_of_latest_dependency_change))
       }
     }
