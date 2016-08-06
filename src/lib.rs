@@ -125,26 +125,26 @@ struct GenericExtendedTime<Base: Ord> {
 //  }
 //}
 
-fn time_id_for_predicted_event (predictor_id: u64, row_id: RowId, iteration: IterationType, time_id_of_latest_dependency_change: SiphashId)->SiphashId {
-  make_siphash_id (& (predictor_id, row_id, iteration, time_id_of_latest_dependency_change))
+fn time_id_for_predicted_event (predictor_id: u64, row_id: RowId, iteration: IterationType, dependencies_hash: SiphashId)->SiphashId {
+  make_siphash_id (& (predictor_id, row_id, iteration, dependencies_hash))
 }
 fn next_extended_time_of_predicted_event<BaseTime: Ord>(
                                        predictor_id: u64,
                                        row_id: RowId,
-                                       time_id_of_latest_dependency_change: SiphashId,
+                                       dependencies_hash: SiphashId,
                                        event_base_time: BaseTime,
                                        from: &GenericExtendedTime<BaseTime>)
                                        -> Option<GenericExtendedTime<BaseTime>> {
   let (iteration, id) = match event_base_time.cmp(&from.base) {
     Ordering::Less => return None, // short-circuit
-    Ordering::Greater => (0, time_id_for_predicted_event (predictor_id, row_id, 0, time_id_of_latest_dependency_change)),
+    Ordering::Greater => (0, time_id_for_predicted_event (predictor_id, row_id, 0, dependencies_hash)),
     Ordering::Equal => {
-      let mut id = time_id_for_predicted_event (predictor_id, row_id, from.iteration, time_id_of_latest_dependency_change);
+      let mut id = time_id_for_predicted_event (predictor_id, row_id, from.iteration, dependencies_hash);
       if id > from.id {
         (from.iteration, id)
       } else {
         if from.iteration == IterationType::max_value() {panic! ("Too many iterations at the same base time; probably an infinite loop")}
-        (from.iteration + 1, time_id_for_predicted_event (predictor_id, row_id, from.iteration + 1, time_id_of_latest_dependency_change))
+        (from.iteration + 1, time_id_for_predicted_event (predictor_id, row_id, from.iteration + 1, dependencies_hash))
       }
     }
   };
