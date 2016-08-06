@@ -103,7 +103,7 @@ impl<'a, B: Basics> super::MomentaryAccessor<B> for Mutator<'a, B> {
 impl<'a, B: Basics> super::PredictorAccessor<B> for PredictorAccessor<'a, B> {
   type Event = Event<B>;
   fn predict_immediately(&mut self, event: Event<B>) {
-    self.predict_at_time(&self.steward.state.last_change.as_ref().unwrap().base, event);
+    self.predict_at_time(&self.steward.state.last_change.as_ref().expect("how can we be calling a predictor when there are no fields yet?").base, event);
   }
   fn predict_at_time(&mut self, time: &B::Time, event: Event<B>) {
     if let Some((ref old_time, _)) = self.soonest_prediction {
@@ -157,7 +157,7 @@ impl<B: Basics> StewardImpl<B> {
         row_id: id,
         column_id: C::column_id(),
       })
-      .map(|something| something.downcast_ref::<C::FieldType>().unwrap().borrow())
+      .map(|something| something.downcast_ref::<C::FieldType>().expect("a field had the wrong type for its column").borrow())
   }
   fn set<C: Column>(&mut self, id: RowId, value: C::FieldType) {
     self.state
@@ -214,7 +214,7 @@ impl<B: Basics> StewardImpl<B> {
               predictor.predictor_id,
               field_id.row_id,
               event_base_time,
-              &self.state.last_change.as_ref().unwrap()
+              &self.state.last_change.as_ref().expect ("how can we be calling a predictor when there are no fields yet?")
             ).map(|event_time| (event_time, event)))}));
     let events_iter = first_fiat_event_iter.chain(predicted_events_iter);
     events_iter.min_by_key(|ev| ev.0.clone())
