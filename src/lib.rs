@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 // ( https://doc.rust-lang.org/std/hash/trait.Hasher.html
 // "represents the ability to hash an arbitrary stream of bytes").
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SiphashId {
+pub struct DeterministicRandomId {
   data: [u64; 2],
 }
 pub struct SiphashIdGenerator {
@@ -17,7 +17,7 @@ pub struct SiphashIdGenerator {
 impl Hasher for SiphashIdGenerator {
   fn finish(&self) -> u64 {
     panic!()
-  }//Hack: this is actually for generating SiphashId, not 64-bit
+  }//Hack: this is actually for generating DeterministicRandomId, not 64-bit
   fn write(&mut self, bytes: &[u8]) {
     self.data[0].write(bytes);
     self.data[1].write(bytes);
@@ -25,8 +25,8 @@ impl Hasher for SiphashIdGenerator {
   // TODO: should we implement the others for efficiency?
 }
 impl SiphashIdGenerator {
-  fn generate(&self) -> SiphashId {
-    SiphashId { data: [self.data[0].finish(), self.data[1].finish()] }
+  fn generate(&self) -> DeterministicRandomId {
+DeterministicRandomId { data: [self.data[0].finish(), self.data[1].finish()] }
   }
   fn new() -> SiphashIdGenerator {
     SiphashIdGenerator { data: [
@@ -35,11 +35,12 @@ impl SiphashIdGenerator {
       ] }
   }
 }
-// other possible names: hash_up_a_siphash_id?
-pub fn make_siphash_id <T: Hash>(data: &T) -> SiphashId {
+impl DeterministicRandomId {
+pub fn new <T: Hash>(data: &T) -> DeterministicRandomId {
   let mut s = SiphashIdGenerator::new();
   data.hash(&mut s);
   s.generate()
+}
 }
 
 
@@ -68,7 +69,8 @@ pub fn make_siphash_id <T: Hash>(data: &T) -> SiphashId {
 // existent fields.  For example, a row with only one existent field
 // only takes up the space of one field.
 
-pub type RowId = SiphashId;
+pub type RowId = DeterministicRandomId;
+type TimeId = DeterministicRandomId;
 
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ColumnId(u64);
@@ -114,24 +116,24 @@ type IterationType = u32;
 struct GenericExtendedTime<Base: Ord> {
   base: Base,
   iteration: IterationType,
-  id: SiphashId,
+  id: TimeId,
 }
 
 //fn beginning_of_moment<Base: Ord>(base_time: Base) -> GenericExtendedTime<Base> {
 //  GenericExtendedTime {
 //    base: base_time,
 //    iteration: 0,
-//    id: SiphashId { data: [0, 0] },
+//    id: TimeId { data: [0, 0] },
 //  }
 //}
 
-fn time_id_for_predicted_event (predictor_id: u64, row_id: RowId, iteration: IterationType, dependencies_hash: SiphashId)->SiphashId {
-  make_siphash_id (& (predictor_id, row_id, iteration, dependencies_hash))
+fn time_id_for_predicted_event (predictor_id: u64, row_id: RowId, iteration: IterationType, dependencies_hash: DeterministicRandomId)->TimeId {
+  TimeId::new (& (predictor_id, row_id, iteration, dependencies_hash))
 }
 fn next_extended_time_of_predicted_event<BaseTime: Ord>(
                                        predictor_id: u64,
                                        row_id: RowId,
-                                       dependencies_hash: SiphashId,
+                                       dependencies_hash: DeterministicRandomId,
                                        event_base_time: BaseTime,
                                        from: &GenericExtendedTime<BaseTime>)
                                        -> Option<GenericExtendedTime<BaseTime>> {
@@ -164,10 +166,10 @@ pub trait Basics: Clone {
 }
 type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 
-// Note: in the future, we expect we might use a custom hash table type that knows it can rely on SiphashId to already be random, so we don't need to hash it again. This also applies to FieldId, although there may be some complications in that case.
+// Note: in the future, we expect we might use a custom hash table type that knows it can rely on DeterministicRandomId to already be random, so we don't need to hash it again. This also applies to FieldId, although there may be some complications in that case.
 // (for now, we need to be able to hash full siphash ids to create other siphash ids.)
 // ( Also -- do we ever try to hash GenericExtendedTime with id of 0 from beginning_of_moment.... )
-// impl Hash for SiphashId {
+// impl Hash for DeterministicRandomId {
 //  fn hash<H: Hasher>(&self, state: &mut H) {
 //    self.data[0].hash(state);
 //  }
@@ -192,7 +194,7 @@ pub trait Mutator<B: Basics>: MomentaryAccessor<B> {
   //fn get_mut<C: Column>(&mut self, id: RowId) -> Option<&mut C::FieldType> where C::FieldType: Clone;
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>);
   fn random_bits(&mut self, num_bits: u32) -> u64;
-  fn random_id(&mut self) -> SiphashId;
+  fn random_id(&mut self) -> RowId;
 }
 pub trait PredictorAccessor<B: Basics>: Accessor<B> {
   type Event;

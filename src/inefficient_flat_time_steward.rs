@@ -7,7 +7,7 @@ This implementation is unusably slow on large simulations. Its main use is to cr
 */
 
 
-use super::{SiphashId, SiphashIdGenerator, RowId, FieldId, Column, ExtendedTime, Basics, TimeSteward, FiatEventOperationResult, ValidSince};
+use super::{DeterministicRandomId, SiphashIdGenerator, RowId, TimeId, FieldId, Column, ExtendedTime, Basics, TimeSteward, FiatEventOperationResult, ValidSince};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
@@ -140,7 +140,7 @@ impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
   fn random_bits(&mut self, num_bits: u32) -> u64 {
     panic!("no randomness yet 1");
   }
-  fn random_id(&mut self) -> SiphashId {
+  fn random_id(&mut self) -> RowId {
     panic!("no randomness yet 2");
   }
 }
