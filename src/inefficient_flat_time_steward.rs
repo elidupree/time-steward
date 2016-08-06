@@ -1,5 +1,13 @@
+/*!
 
-use super::{SiphashId, RowId, FieldId, Column, ExtendedTime, Basics, TimeSteward, FiatEventOperationResult};
+The simplest possible implementation of the TimeSteward API.
+
+This implementation is unusably slow on large simulations. Its main use is to cross-check with other TimeSteward implementations to make sure they are implementing the API correctly.
+
+*/
+
+
+use super::{SiphashId, RowId, FieldId, Column, ExtendedTime, Basics, TimeSteward, FiatEventOperationResult, ValidSince};
 use std::collections::{HashMap, BTreeMap};
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::any::Any;
@@ -10,7 +18,7 @@ use std::rc::Rc;
 #[derive (Clone)]
 // struct StewardState<'a, B: Basics + 'a> {
 struct StewardState<B: Basics> {
-  last_change: ExtendedTime<B>, // B::Time,
+  last_change: Option <ExtendedTime<B>>, // B::Time,
   field_states: HashMap<FieldId, Rc<Any>>,
   // fiat_events: BTreeMap<ExtendedTime<B>, Event<'a, B>>,
   fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
@@ -47,7 +55,7 @@ pub type Event<B: Basics> = Rc<for<'d, 'e> Fn(&'d mut Mutator<'e, B>)>;
 // it seems impossible to write the lifetimes this way
 // type Predictor<'a, B: Basics + 'a> = super::Predictor<B, Mutator<'a, B>, PredictorAccessor<'a, B>>;
 
-type Predictor<B: Basics> = super::Predictor<PredictorFn<B>>;
+pub type Predictor<B: Basics> = super::Predictor<PredictorFn<B>>;
 
 type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId)>;
 //type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId)
@@ -95,7 +103,7 @@ impl<'a, B: Basics> super::MomentaryAccessor<B> for Mutator<'a, B> {
 impl<'a, B: Basics> super::PredictorAccessor<B> for PredictorAccessor<'a, B> {
   type Event = Event<B>;
   fn predict_immediately(&mut self, event: Event<B>) {
-    self.predict_at_time(&self.steward.state.last_change.base, event);
+    self.predict_at_time(&self.steward.state.last_change.as_ref().unwrap().base, event);
   }
   fn predict_at_time(&mut self, time: &B::Time, event: Event<B>) {
     if let Some((ref old_time, _)) = self.soonest_prediction {
@@ -109,11 +117,11 @@ impl<'a, B: Basics> super::PredictorAccessor<B> for PredictorAccessor<'a, B> {
 impl<'a, B: Basics> super::Snapshot<B> for Snapshot<'a, B> {}
 
 impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
-  fn get_mut<C: Column>(&mut self, id: RowId) -> Option<&mut C::FieldType>
+  /*fn get_mut<C: Column>(&mut self, id: RowId) -> Option<&mut C::FieldType>
     where C::FieldType: Clone
   {
     panic!("are we really doing this");
-  }
+  }*/
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
     self.steward.set_opt::<C>(id, data);
   }
@@ -206,7 +214,7 @@ impl<B: Basics> StewardImpl<B> {
               predictor.predictor_id,
               field_id.row_id,
               event_base_time,
-              &self.state.last_change
+              &self.state.last_change.as_ref().unwrap()
             ).map(|event_time| (event_time, event)))}));
     let events_iter = first_fiat_event_iter.chain(predicted_events_iter);
     events_iter.min_by_key(|ev| ev.0.clone())
@@ -219,13 +227,13 @@ impl<B: Basics> StewardImpl<B> {
     });
     // if it was a fiat event, clean it up:
     self.state.fiat_events.remove(&event_time);
-    self.state.last_change = event_time;
+    self.state.last_change = Some (event_time);
   }
 
   fn move_to_future_time(&mut self, future_t: ExtendedTime<B>) {
-    if future_t < self.state.last_change {
+    if let Some (ref time) = self.state.last_change {if future_t < *time {
       panic!("not defined for past times");
-    }
+    }}
     while let Some(ev) = self.next_event().filter(|ev| ev.0 < future_t) {
       let (event_time, event) = ev;
       self.execute_event(event_time, event);
@@ -235,11 +243,24 @@ impl<B: Basics> StewardImpl<B> {
 
 
 // impl<'a, B: Basics> Steward<'a, B> {
-impl<B: Basics> Steward<B> {
-  fn new(beginning_of_time: B::Time, constants: B::Constants, predictors: Vec<Predictor<B>>) -> Self {
+impl<B: Basics> Steward<B> {}
+impl<'a, B: Basics + 'a> super::SnapshotHack<'a, B> for Steward<B> {
+  type Snapshot = Snapshot<'a, B>;
+}
+impl<B: Basics> super::TimeSteward<B> for Steward<B> {
+  type Event = Event<B>;
+  type Predictor = Predictor<B>;
+
+  fn valid_since (&self) -> ValidSince <B::Time> {
+    match self.state.last_change {
+      None => ValidSince::TheBeginning,
+      Some (ref time) => ValidSince::After (time.base.clone()),
+    }
+  }
+  fn new_empty (constants: B::Constants, predictors: Vec<Self::Predictor>) -> Self {
     StewardImpl {
       state: StewardState {
-        last_change: super::beginning_of_moment(beginning_of_time),
+        last_change: None,
         field_states: HashMap::new(),
         fiat_events: BTreeMap::new(),
       },
@@ -249,16 +270,7 @@ impl<B: Basics> Steward<B> {
       }),
     }
   }
-}
-impl<'a, B: Basics + 'a> super::SnapshotHack<'a, B> for Steward<B> {
-  type Snapshot = Snapshot<'a, B>;
-}
-impl<B: Basics> super::TimeSteward<B> for Steward<B> {
-  type Event = Event<B>;
 
-  fn valid_from(&self) -> B::Time {
-    self.state.last_change.base.clone() //bug: needs to return After(that) or such
-  }
   fn insert_fiat_event(&mut self,
   time: B::Time,
   distinguisher: u64,

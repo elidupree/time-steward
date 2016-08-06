@@ -116,13 +116,13 @@ struct GenericExtendedTime<Base: Ord> {
   id: SiphashId,
 }
 
-fn beginning_of_moment<Base: Ord>(base_time: Base) -> GenericExtendedTime<Base> {
-  GenericExtendedTime {
-    base: base_time,
-    iteration: 0,
-    id: SiphashId { data: [0, 0] },
-  }
-}
+//fn beginning_of_moment<Base: Ord>(base_time: Base) -> GenericExtendedTime<Base> {
+//  GenericExtendedTime {
+//    base: base_time,
+//    iteration: 0,
+//    id: SiphashId { data: [0, 0] },
+//  }
+//}
 
 fn extended_time_of_predicted_event<BaseTime: Ord>(
                                        predictor_id: u64,
@@ -183,7 +183,7 @@ pub trait MomentaryAccessor<B: Basics>: Accessor<B> {
 
 
 pub trait Mutator<B: Basics>: MomentaryAccessor<B> {
-  fn get_mut<C: Column>(&mut self, id: RowId) -> Option<&mut C::FieldType> where C::FieldType: Clone;
+  //fn get_mut<C: Column>(&mut self, id: RowId) -> Option<&mut C::FieldType> where C::FieldType: Clone;
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>);
   fn random_bits(&mut self, num_bits: u32) -> u64;
   fn random_id(&mut self) -> SiphashId;
@@ -196,22 +196,30 @@ pub trait PredictorAccessor<B: Basics>: Accessor<B> {
 }
 pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {}
 
+
+
 pub enum FiatEventOperationResult {
   Success,
   InvalidInput,
   InvalidTime,
 }
 
+pub enum ValidSince <BaseTime> {
+TheBeginning,
+Before (BaseTime),
+After (BaseTime),
+}
+
 // This exists to support a variety of time stewards
 // along with allowing BaseTime to be dense (e.g. a
 // rational number rather than an integer).
-// It is an acceptable peculiar thing that even for integer times,
+// It is an acceptable peculiarity that even for integer times,
 // After(2) < Before(3).
-#[derive (Copy, Clone, PartialEq, Eq, Hash)]
-pub enum TimeBoundary<BaseTime> {
-  Before(BaseTime),
-  After(BaseTime),
-}
+//#[derive (Copy, Clone, PartialEq, Eq, Hash)]
+//pub enum TimeBoundary<BaseTime> {
+//  Before(BaseTime),
+//  After(BaseTime),
+//}
 // //impl PartialOrd
 
 pub trait SnapshotHack<'a, B: Basics> {
@@ -219,26 +227,32 @@ pub trait SnapshotHack<'a, B: Basics> {
 }
 pub trait TimeSteward<B: Basics> {
   type Event;
+  type Predictor;
 
   /**
   You are allowed to call snapshot_before(), insert_fiat_event(),
-  and erase_fiat_event() for times >= valid_from().
+  and erase_fiat_event() for times >= valid_since().
   
   TimeSteward implementors are permitted, but not required, to discard old data in order to save memory. This may make the TimeSteward unusable at some points in its history.
   
-  Newly created stewards should generally have valid_from() == B::Time::min_time().
-  
-  All implementors must obey certain restrictions on how other TimeSteward methods may change the result of valid_from(). Implementors may have their own methods that can alter this in customized ways, which should be documented with those individual methods.
+  All implementors must obey certain restrictions on how other TimeSteward methods may change the result of valid_since(). Implementors may have their own methods that can alter this in customized ways, which should be documented with those individual methods.
   */
-  fn valid_from(&self) -> B::Time;
+  fn valid_since (&self) -> ValidSince <B::Time>;
+  
+  /**
+  Creates a new, empty TimeSteward.
+  
+  new_empty().valid_since() must equal TheBeginning.
+  */
+  fn new_empty(constants: B::Constants, predictors: Vec<Self::Predictor>)->Self;
 
   /**
   Inserts a fiat event at some point in the history.
   
-  If time < valid_from(), this does nothing and returns InvalidTime. If there is already a fiat event with the same time and distinguisher, this does nothing and returns InvalidInput. Otherwise, it inserts the event and returns Success.
+  If time < valid_since(), this does nothing and returns InvalidTime. If there is already a fiat event with the same time and distinguisher, this does nothing and returns InvalidInput. Otherwise, it inserts the event and returns Success.
   
-  steward.insert_fiat_event(time, _) must not return InvalidTime if time >= steward.valid_from().
-  steward.insert_fiat_event() may not change steward.valid_from().
+  steward.insert_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
+  steward.insert_fiat_event() may not change steward.valid_since().
   */
   fn insert_fiat_event(&mut self,
                        time: B::Time,
@@ -249,10 +263,10 @@ pub trait TimeSteward<B: Basics> {
   /**
   Erases a fiat event that has been inserted previously.
   
-  If time < valid_from(), this does nothing and returns InvalidTime. If there is no fiat event with the specified time and distinguisher, this does nothing and returns InvalidInput. Otherwise, it erases the event and returns Success.
+  If time < valid_since(), this does nothing and returns InvalidTime. If there is no fiat event with the specified time and distinguisher, this does nothing and returns InvalidInput. Otherwise, it erases the event and returns Success.
   
-  steward.erase_fiat_event(time, _) must not return InvalidTime if time >= steward.valid_from().
-  steward.erase_fiat_event() may not change steward.valid_from().
+  steward.erase_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
+  steward.erase_fiat_event() may not change steward.valid_since().
   */
   fn erase_fiat_event(&mut self, time: B::Time, distinguisher: u64) -> FiatEventOperationResult;
 
@@ -263,8 +277,8 @@ pub trait TimeSteward<B: Basics> {
   
   Each TimeSteward implementor determines exactly how to provide these guarantees. Implementors should provide individual guarantees about the processor-time bounds of snapshot operations.
   
-  steward.snapshot_before(time) must return Some if time >= steward.valid_from().
-  steward.snapshot_before(time) may not increase steward.valid_from() beyond time.
+  steward.snapshot_before(time) must return Some if time > steward.valid_since().
+  steward.snapshot_before(time) may not increase steward.valid_since() beyond time.
   */
   // note: we implement "before" and not "after" because we might be banning events that happen during max_time
   fn snapshot_before<'a>(&'a mut self, time: B::Time) ->
