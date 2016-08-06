@@ -236,10 +236,10 @@ impl<B: Basics> StewardImpl<B> {
 
 // impl<'a, B: Basics> Steward<'a, B> {
 impl<B: Basics> Steward<B> {
-  fn new(constants: B::Constants, predictors: Vec<Predictor<B>>) -> Self {
+  fn new(beginning_of_time: B::Time, constants: B::Constants, predictors: Vec<Predictor<B>>) -> Self {
     StewardImpl {
       state: StewardState {
-        last_change: super::beginning_of_moment(super::BaseTime::min_time()),
+        last_change: super::beginning_of_moment(beginning_of_time),
         field_states: HashMap::new(),
         fiat_events: BTreeMap::new(),
       },
@@ -250,17 +250,31 @@ impl<B: Basics> Steward<B> {
     }
   }
 }
-// impl<'a, B: Basics> super::TimeSteward<'a, B> for Steward<'a, B> {
-// type S = Snapshot<'a, B>;
-// type Event = Event<B>;
-//
-// fn valid_from(&self) -> B::Time {}
-// fn insert_fiat_event(&mut self,
-// time: B::Time,
-// distinguisher: u64,
-// event: Self::Event)
-// -> FiatEventOperationResult {
-// }
-// fn erase_fiat_event(&mut self, time: B::Time, distinguisher: u64) -> FiatEventOperationResult {}
-// fn snapshot_before(&mut self, time: B::Time) -> Option<Self::S> {}
-// }
+impl<'a, B: Basics + 'a> super::SnapshotHack<'a, B> for Steward<B> {
+  type Snapshot = Snapshot<'a, B>;
+}
+impl<B: Basics> super::TimeSteward<B> for Steward<B> {
+  type Event = Event<B>;
+
+  fn valid_from(&self) -> B::Time {
+    self.state.last_change.base.clone() //bug: needs to return After(that) or such
+  }
+  fn insert_fiat_event(&mut self,
+  time: B::Time,
+  distinguisher: u64,
+  event: Self::Event)
+  -> FiatEventOperationResult {
+    unimplemented!();
+  }
+  fn erase_fiat_event(&mut self, time: B::Time, distinguisher: u64) -> FiatEventOperationResult {
+    unimplemented!();
+  }
+
+  //fn snapshot_before<'a>(&'a mut self, time: B::Time) -> Option<Snapshot<'a, B>> {}
+
+  fn snapshot_before<'a>(&'a mut self, time: B::Time) ->
+  Option<<Self as super::SnapshotHack<'a, B>>::Snapshot>
+  where Self: super::SnapshotHack<'a, B> {
+    unimplemented!();
+  }
+}

@@ -44,18 +44,18 @@ pub fn collision_resistant_hash<T: Hash>(data: &T) -> SiphashId {
 
 
 // TODO: Shouldn't "ordered type with minimum and maximum values" be a trait common to other situations as well? Find out if there's a standard name for that.
-pub trait BaseTime: Clone + Ord {
-  fn min_time() -> Self;
-  fn max_time() -> Self;
-}
-impl BaseTime for i64 {
-  fn min_time() -> i64 {
-    i64::min_value()
-  }
-  fn max_time() -> i64 {
-    i64::max_value()
-  }
-}
+// pub trait BaseTime: Clone + Ord {
+//   fn min_time() -> Self;
+//   fn max_time() -> Self;
+// }
+// impl BaseTime for i64 {
+//   fn min_time() -> i64 {
+//     i64::min_value()
+//   }
+//   fn max_time() -> i64 {
+//     i64::max_value()
+//   }
+// }
 
 
 // Database analogy: time stewards kind of contain a database table.
@@ -110,13 +110,13 @@ struct FieldId {
 }
 
 #[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct GenericExtendedTime<Base: BaseTime> {
+struct GenericExtendedTime<Base: Ord> {
   base: Base,
   iteration: u64,
   id: SiphashId,
 }
 
-fn beginning_of_moment<Base: BaseTime>(base_time: Base) -> GenericExtendedTime<Base> {
+fn beginning_of_moment<Base: Ord>(base_time: Base) -> GenericExtendedTime<Base> {
   GenericExtendedTime {
     base: base_time,
     iteration: 0,
@@ -124,12 +124,12 @@ fn beginning_of_moment<Base: BaseTime>(base_time: Base) -> GenericExtendedTime<B
   }
 }
 
-fn extended_time_of_predicted_event<Base: BaseTime>(
+fn extended_time_of_predicted_event<BaseTime: Ord>(
                                        predictor_id: u64,
                                        row_id: RowId,
-                                       event_base_time: Base,
-                                       when_event_was_predicted: &GenericExtendedTime<Base>)
-                                       -> Option<GenericExtendedTime<Base>> {
+                                       event_base_time: BaseTime,
+                                       when_event_was_predicted: &GenericExtendedTime<BaseTime>)
+                                       -> Option<GenericExtendedTime<BaseTime>> {
   let id = collision_resistant_hash(&(predictor_id, row_id));
   let iteration = match event_base_time.cmp(&when_event_was_predicted.base) {
     Ordering::Less => return None, // short-circuit
@@ -153,7 +153,7 @@ fn extended_time_of_predicted_event<Base: BaseTime>(
 This is intended to be implemented on an empty struct. Requiring Clone is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 */
 pub trait Basics: Clone {
-  type Time: BaseTime;
+  type Time: Clone + Ord;
   type Constants;
 }
 type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
@@ -202,11 +202,28 @@ pub enum FiatEventOperationResult {
   InvalidTime,
 }
 
-pub trait TimeSteward<'a, B: Basics> {
-  type S: Snapshot<B>;
+// This exists to support a variety of time stewards
+// along with allowing BaseTime to be dense (e.g. a
+// rational number rather than an integer).
+// It is an acceptable peculiar thing that even for integer times,
+// After(2) < Before(3).
+#[derive (Copy, Clone, PartialEq, Eq, Hash)]
+pub enum TimeBoundary<BaseTime> {
+  Before(BaseTime),
+  After(BaseTime),
+}
+// //impl PartialOrd
+
+pub trait SnapshotHack<'a, B: Basics> {
+  type Snapshot;
+}
+pub trait TimeSteward<B: Basics> {
   type Event;
 
   /**
+  You are allowed to call snapshot_before(), insert_fiat_event(),
+  and erase_fiat_event() for times >= valid_from().
+  
   TimeSteward implementors are permitted, but not required, to discard old data in order to save memory. This may make the TimeSteward unusable at some points in its history.
   
   Newly created stewards should generally have valid_from() == B::Time::min_time().
@@ -250,12 +267,11 @@ pub trait TimeSteward<'a, B: Basics> {
   steward.snapshot_before(time) may not increase steward.valid_from() beyond time.
   */
   // note: we implement "before" and not "after" because we might be banning events that happen during max_time
-  fn snapshot_before(&mut self, time: B::Time) -> Option<Self::S>;
+  fn snapshot_before<'a>(&'a mut self, time: B::Time) ->
+  Option<<Self as SnapshotHack<'a, B>>::Snapshot>
+  where Self: SnapshotHack<'a, B>;
 }
 
-pub trait FlatTimeSteward<'a, B: Basics>: TimeSteward<'a, B> {
-  fn valid_strictly_between(&self) -> (B::Time, B::Time);
-}
 
 
 // #[derive (Clone)]
