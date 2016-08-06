@@ -7,19 +7,27 @@ This implementation is unusably slow on large simulations. Its main use is to cr
 */
 
 
-use super::{SiphashId, RowId, FieldId, Column, ExtendedTime, Basics, TimeSteward, FiatEventOperationResult, ValidSince};
+use super::{SiphashId, SiphashIdGenerator, RowId, FieldId, Column, ExtendedTime, Basics, TimeSteward, FiatEventOperationResult, ValidSince};
 use std::collections::{HashMap, BTreeMap};
+use std::hash::Hash;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::any::Any;
 use std::borrow::{Borrow, Cow};
 use std::rc::Rc;
+
+#[derive (Clone)]
+struct Field <B: Basics> {
+  last_change: ExtendedTime<B>,
+  data: Rc<Any>,
+}
+
 
 
 #[derive (Clone)]
 // struct StewardState<'a, B: Basics + 'a> {
 struct StewardState<B: Basics> {
   last_change: Option <ExtendedTime<B>>, // B::Time,
-  field_states: HashMap<FieldId, Rc<Any>>,
+  field_states: HashMap<FieldId, Field <B>>,
   // fiat_events: BTreeMap<ExtendedTime<B>, Event<'a, B>>,
   fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
 }
@@ -42,12 +50,13 @@ pub struct Snapshot<'a, B: Basics + 'a> {
   steward: &'a StewardImpl<B>,
 }
 pub struct Mutator<'a, B: Basics + 'a> {
-  now: B::Time,
+  now: ExtendedTime <B>,
   steward: &'a mut StewardImpl<B>,
 }
 pub struct PredictorAccessor<'a, B: Basics + 'a> {
   steward: &'a StewardImpl<B>,
   soonest_prediction: Option<(B::Time, Event<B>)>,
+  dependencies_hasher: SiphashIdGenerator,
 }
 // pub type Event<'a, B: Basics + 'a> = super::Event<Mutator<'a, B>>;
 pub type Event<B: Basics> = Rc<for<'d, 'e> Fn(&'d mut Mutator<'e, B>)>;
@@ -67,7 +76,7 @@ type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>
 
 impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
   fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.steward.get::<C>(id)
+    self.steward.get::<C>(id).map (| P | P.0)
   }
   fn constants(&self) -> &B::Constants {
     &self.steward.settings.constants
@@ -75,7 +84,7 @@ impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
 }
 impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
   fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.steward.get::<C>(id)
+    self.steward.get::<C>(id).map (| P | P.0)
   }
   fn constants(&self) -> &B::Constants {
     &self.steward.settings.constants
@@ -83,7 +92,10 @@ impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
   fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.steward.get::<C>(id)
+    self.steward.get::<C>(id).map (| P | {
+      P.1.id.hash (& mut self.dependencies_hasher);
+      P.0
+    })
   }
   fn constants(&self) -> &B::Constants {
     &self.steward.settings.constants
@@ -97,7 +109,7 @@ impl<'a, B: Basics> super::MomentaryAccessor<B> for Snapshot<'a, B> {
 }
 impl<'a, B: Basics> super::MomentaryAccessor<B> for Mutator<'a, B> {
   fn now(&self) -> &B::Time {
-    &self.now
+    &self.now.base
   }
 }
 impl<'a, B: Basics> super::PredictorAccessor<B> for PredictorAccessor<'a, B> {
@@ -123,7 +135,7 @@ impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
     panic!("are we really doing this");
   }*/
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
-    self.steward.set_opt::<C>(id, data);
+    self.steward.set_opt::<C>(id, data, &self. now);
   }
   fn random_bits(&mut self, num_bits: u32) -> u64 {
     panic!("no randomness yet 1");
@@ -150,23 +162,23 @@ impl<T> Filter<T> for Option<T> {
 
 
 impl<B: Basics> StewardImpl<B> {
-  fn get<C: Column>(&self, id: RowId) -> Option<&C::FieldType> {
+  fn get<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, & ExtendedTime <B>)> {
     self.state
       .field_states
       .get(&FieldId {
         row_id: id,
         column_id: C::column_id(),
       })
-      .map(|something| something.downcast_ref::<C::FieldType>().expect("a field had the wrong type for its column").borrow())
+      .map(|something| (something.data.downcast_ref::<C::FieldType>().expect("a field had the wrong type for its column").borrow(), & something.last_change))
   }
-  fn set<C: Column>(&mut self, id: RowId, value: C::FieldType) {
+  fn set<C: Column>(&mut self, id: RowId, value: C::FieldType, time: & ExtendedTime <B>) {
     self.state
       .field_states
       .insert(FieldId {
                 row_id: id,
                 column_id: C::column_id(),
               },
-              Rc::new(value));
+              Field {data: Rc::new(value), last_change: time.clone()});
   }
   fn remove<C: Column>(&mut self, id: RowId) {
     self.state
@@ -176,9 +188,9 @@ impl<B: Basics> StewardImpl<B> {
         column_id: C::column_id(),
       });
   }
-  fn set_opt<C: Column>(&mut self, id: RowId, value_opt: Option<C::FieldType>) {
+  fn set_opt<C: Column>(&mut self, id: RowId, value_opt: Option<C::FieldType>, time: & ExtendedTime <B>) {
     if let Some(value) = value_opt {
-      self.set::<C>(id, value);
+      self.set::<C>(id, value, time);
     } else {
       self.remove::<C>(id);
     }
@@ -207,12 +219,15 @@ impl<B: Basics> StewardImpl<B> {
           let mut pa = PredictorAccessor{
               steward: self,
               soonest_prediction: None,
+              dependencies_hasher: SiphashIdGenerator::new(),
             };
           (predictor.function)(&mut pa, field_id.row_id);
+          let dependencies_hash = pa.dependencies_hasher.generate();
           pa.soonest_prediction.and_then(|(event_base_time, event)|
-            super::extended_time_of_predicted_event(
+            super::next_extended_time_of_predicted_event(
               predictor.predictor_id,
               field_id.row_id,
+              dependencies_hash,
               event_base_time,
               &self.state.last_change.as_ref().expect ("how can we be calling a predictor when there are no fields yet?")
             ).map(|event_time| (event_time, event)))}));
@@ -222,7 +237,7 @@ impl<B: Basics> StewardImpl<B> {
 
   fn execute_event(&mut self, event_time: ExtendedTime<B>, event: Event<B>) {
     event(&mut Mutator {
-      now: event_time.base.clone(),
+      now: event_time.clone(),
       steward: &mut *self,
     });
     // if it was a fiat event, clean it up:

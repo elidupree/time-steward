@@ -11,10 +11,10 @@ use std::cmp::Ordering;
 pub struct SiphashId {
   data: [u64; 2],
 }
-pub struct SiphashId_Generator {
+pub struct SiphashIdGenerator {
   data: [SipHasher; 2],
 }
-impl Hasher for SiphashId_Generator {
+impl Hasher for SiphashIdGenerator {
   fn finish(&self) -> u64 {
     panic!()
   }//Hack: this is actually for generating SiphashId, not 64-bit
@@ -24,20 +24,20 @@ impl Hasher for SiphashId_Generator {
   }
   // TODO: should we implement the others for efficiency?
 }
-impl SiphashId_Generator {
+impl SiphashIdGenerator {
   fn generate(&self) -> SiphashId {
     SiphashId { data: [self.data[0].finish(), self.data[1].finish()] }
   }
-  fn new() -> SiphashId_Generator {
-    SiphashId_Generator { data: [
+  fn new() -> SiphashIdGenerator {
+    SiphashIdGenerator { data: [
       SipHasher::new_with_keys(0xb82a9426fd1a574f, 0x9d9d5b703dcb1bcc),
       SipHasher::new_with_keys(0x03e0d6037ff980a4, 0x65b790a0825b83bd),
       ] }
   }
 }
 // other possible names: hash_up_a_siphash_id?
-pub fn collision_resistant_hash<T: Hash>(data: &T) -> SiphashId {
-  let mut s = SiphashId_Generator::new();
+pub fn make_siphash_id <T: Hash>(data: &T) -> SiphashId {
+  let mut s = SiphashIdGenerator::new();
   data.hash(&mut s);
   s.generate()
 }
@@ -109,10 +109,11 @@ struct FieldId {
   column_id: ColumnId,
 }
 
+type IterationType = u32;
 #[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct GenericExtendedTime<Base: Ord> {
   base: Base,
-  iteration: u64,
+  iteration: IterationType,
   id: SiphashId,
 }
 
@@ -124,21 +125,25 @@ struct GenericExtendedTime<Base: Ord> {
 //  }
 //}
 
-fn extended_time_of_predicted_event<BaseTime: Ord>(
+fn time_id_for_predicted_event (predictor_id: u64, row_id: RowId, iteration: IterationType, time_id_of_latest_dependency_change: SiphashId)->SiphashId {
+  make_siphash_id (& (predictor_id, row_id, iteration, time_id_of_latest_dependency_change))
+}
+fn next_extended_time_of_predicted_event<BaseTime: Ord>(
                                        predictor_id: u64,
                                        row_id: RowId,
+                                       time_id_of_latest_dependency_change: SiphashId,
                                        event_base_time: BaseTime,
-                                       when_event_was_predicted: &GenericExtendedTime<BaseTime>)
+                                       from: &GenericExtendedTime<BaseTime>)
                                        -> Option<GenericExtendedTime<BaseTime>> {
-  let id = collision_resistant_hash(&(predictor_id, row_id));
-  let iteration = match event_base_time.cmp(&when_event_was_predicted.base) {
+  let (iteration, id) = match event_base_time.cmp(&from.base) {
     Ordering::Less => return None, // short-circuit
-    Ordering::Greater => 0,
+    Ordering::Greater => (0, time_id_for_predicted_event (predictor_id, row_id, 0, time_id_of_latest_dependency_change)),
     Ordering::Equal => {
-      if id > when_event_was_predicted.id {
-        when_event_was_predicted.iteration
+      let mut id = time_id_for_predicted_event (predictor_id, row_id, from.iteration, time_id_of_latest_dependency_change);
+      if id > from.id {
+        (from.iteration, id)
       } else {
-        when_event_was_predicted.iteration + 1
+        (from.iteration + 1, time_id_for_predicted_event (predictor_id, row_id, from.iteration + 1, time_id_of_latest_dependency_change))
       }
     }
   };
