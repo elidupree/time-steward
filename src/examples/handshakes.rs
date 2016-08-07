@@ -1,5 +1,5 @@
 
-use inefficient_flat_time_steward as s;
+use memoized_flat_time_steward as s;
 use ::{TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, Mutator,
        TimeStewardLifetimedMethods, Accessor, MomentaryAccessor, PredictorAccessor};
 use std::rc::Rc;

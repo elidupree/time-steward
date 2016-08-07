@@ -363,6 +363,7 @@ pub struct Predictor<PredictorFn> {
 
 
 pub mod inefficient_flat_time_steward;
+pub mod memoized_flat_time_steward;
 
 pub mod examples {
   pub mod handshakes;
