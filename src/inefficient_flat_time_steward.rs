@@ -100,19 +100,26 @@ impl<'a, B: Basics> super::MomentaryAccessor<B> for Mutator<'a, B> {
     &self.now.base
   }
 }
+impl<'a, B: Basics> PredictorAccessor<'a, B> {
+  fn internal_now<'b>(&'b self) -> &'a ExtendedTime<B> {
+    self.steward
+        .state
+        .last_change
+        .as_ref()
+        .expect("how can we be calling a predictor when there are no fields \
+                yet?")
+  }
+}
 impl<'a, B: Basics> super::PredictorAccessor<B> for PredictorAccessor<'a, B> {
   type Event = Event<B>;
   fn predict_immediately(&mut self, event: Event<B>) {
-    self.predict_at_time(&self.steward
-                           .state
-                           .last_change
-                           .as_ref()
-                           .expect("how can we be calling a predictor when there are no fields \
-                                    yet?")
-                           .base,
-                         event);
+    let t = &self.internal_now().base;
+    self.predict_at_time(t, event);
   }
   fn predict_at_time(&mut self, time: &B::Time, event: Event<B>) {
+    if time < &self.internal_now().base {
+      return;
+    }
     if let Some((ref old_time, _)) = self.soonest_prediction {
       if old_time <= time {
         return;
