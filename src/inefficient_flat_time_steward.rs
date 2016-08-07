@@ -5,8 +5,8 @@
 //!
 
 
-use super::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, Column,
-            ExtendedTime, EventRng, Basics, TimeSteward, FiatEventOperationResult, ValidSince,
+use super::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, Column, ExtendedTime,
+            EventRng, Basics, TimeSteward, FiatEventOperationResult, ValidSince,
             TimeStewardLifetimedMethods};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
