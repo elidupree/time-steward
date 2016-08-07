@@ -29,21 +29,21 @@ impl Hasher for SiphashIdGenerator {
 }
 impl SiphashIdGenerator {
   fn generate(&self) -> DeterministicRandomId {
-DeterministicRandomId { data: [self.data[0].finish(), self.data[1].finish()] }
+    DeterministicRandomId { data: [self.data[0].finish(), self.data[1].finish()] }
   }
   fn new() -> SiphashIdGenerator {
-    SiphashIdGenerator { data: [
-      SipHasher::new_with_keys(0xb82a9426fd1a574f, 0x9d9d5b703dcb1bcc),
-      SipHasher::new_with_keys(0x03e0d6037ff980a4, 0x65b790a0825b83bd),
-      ] }
+    SiphashIdGenerator {
+      data: [SipHasher::new_with_keys(0xb82a9426fd1a574f, 0x9d9d5b703dcb1bcc),
+             SipHasher::new_with_keys(0x03e0d6037ff980a4, 0x65b790a0825b83bd)],
+    }
   }
 }
 impl DeterministicRandomId {
-pub fn new <T: Hash>(data: &T) -> DeterministicRandomId {
-  let mut s = SiphashIdGenerator::new();
-  data.hash(&mut s);
-  s.generate()
-}
+  pub fn new<T: Hash>(data: &T) -> DeterministicRandomId {
+    let mut s = SiphashIdGenerator::new();
+    data.hash(&mut s);
+    s.generate()
+  }
 }
 
 
@@ -122,42 +122,54 @@ struct GenericExtendedTime<Base: Ord> {
   id: TimeId,
 }
 
-//fn beginning_of_moment<Base: Ord>(base_time: Base) -> GenericExtendedTime<Base> {
+// fn beginning_of_moment<Base: Ord>(base_time: Base) -> GenericExtendedTime<Base> {
 //  GenericExtendedTime {
 //    base: base_time,
 //    iteration: 0,
 //    id: TimeId { data: [0, 0] },
 //  }
-//}
+// }
 
-fn extended_time_of_fiat_event<BaseTime: Ord>(time:BaseTime, id: TimeId)->GenericExtendedTime<BaseTime> {
+fn extended_time_of_fiat_event<BaseTime: Ord>(time: BaseTime,
+                                              id: TimeId)
+                                              -> GenericExtendedTime<BaseTime> {
   GenericExtendedTime {
     base: time,
     iteration: 0,
     id: id,
   }
 }
-                                       
-fn time_id_for_predicted_event (predictor_id: u64, row_id: RowId, iteration: IterationType, dependencies_hash: DeterministicRandomId)->TimeId {
-  TimeId::new (& (predictor_id, row_id, iteration, dependencies_hash))
+
+fn time_id_for_predicted_event(predictor_id: u64,
+                               row_id: RowId,
+                               iteration: IterationType,
+                               dependencies_hash: DeterministicRandomId)
+                               -> TimeId {
+  TimeId::new(&(predictor_id, row_id, iteration, dependencies_hash))
 }
-fn next_extended_time_of_predicted_event<BaseTime: Ord>(
-                                       predictor_id: u64,
-                                       row_id: RowId,
-                                       dependencies_hash: DeterministicRandomId,
-                                       event_base_time: BaseTime,
-                                       from: &GenericExtendedTime<BaseTime>)
-                                       -> Option<GenericExtendedTime<BaseTime>> {
+fn next_extended_time_of_predicted_event<BaseTime: Ord>
+  (predictor_id: u64,
+   row_id: RowId,
+   dependencies_hash: DeterministicRandomId,
+   event_base_time: BaseTime,
+   from: &GenericExtendedTime<BaseTime>)
+   -> Option<GenericExtendedTime<BaseTime>> {
   let (iteration, id) = match event_base_time.cmp(&from.base) {
     Ordering::Less => return None, // short-circuit
-    Ordering::Greater => (0, time_id_for_predicted_event (predictor_id, row_id, 0, dependencies_hash)),
+    Ordering::Greater => {
+      (0, time_id_for_predicted_event(predictor_id, row_id, 0, dependencies_hash))
+    }
     Ordering::Equal => {
-      let mut id = time_id_for_predicted_event (predictor_id, row_id, from.iteration, dependencies_hash);
+      let mut id =
+        time_id_for_predicted_event(predictor_id, row_id, from.iteration, dependencies_hash);
       if id > from.id {
         (from.iteration, id)
       } else {
-        if from.iteration == IterationType::max_value() {panic! ("Too many iterations at the same base time; probably an infinite loop")}
-        (from.iteration + 1, time_id_for_predicted_event (predictor_id, row_id, from.iteration + 1, dependencies_hash))
+        if from.iteration == IterationType::max_value() {
+          panic!("Too many iterations at the same base time; probably an infinite loop")
+        }
+        (from.iteration + 1,
+         time_id_for_predicted_event(predictor_id, row_id, from.iteration + 1, dependencies_hash))
       }
     }
   };
@@ -170,11 +182,11 @@ fn next_extended_time_of_predicted_event<BaseTime: Ord>(
 
 pub type EventRng = ChaChaRng;
 
-fn generator_for_event (id: TimeId)->EventRng {
-  EventRng::from_seed (& [
-    (id.data [0] >> 32) as u32, (id.data [0] & 0xffffffff) as u32,
-    (id.data [1] >> 32) as u32, (id.data [1] & 0xffffffff) as u32,
-  ])
+fn generator_for_event(id: TimeId) -> EventRng {
+  EventRng::from_seed(&[(id.data[0] >> 32) as u32,
+                        (id.data[0] & 0xffffffff) as u32,
+                        (id.data[1] >> 32) as u32,
+                        (id.data[1] & 0xffffffff) as u32])
 }
 
 /**
@@ -211,9 +223,9 @@ pub trait MomentaryAccessor<B: Basics>: Accessor<B> {
 
 
 pub trait Mutator<B: Basics>: MomentaryAccessor<B> {
-  //fn get_mut<C: Column>(&mut self, id: RowId) -> Option<&mut C::FieldType> where C::FieldType: Clone;
+  // fn get_mut<C: Column>(&mut self, id: RowId) -> Option<&mut C::FieldType> where C::FieldType: Clone;
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>);
-  fn rng (&mut self) ->&mut EventRng;
+  fn rng(&mut self) -> &mut EventRng;
   fn random_id(&mut self) -> RowId;
 }
 pub trait PredictorAccessor<B: Basics>: Accessor<B> {
@@ -232,10 +244,10 @@ pub enum FiatEventOperationResult {
   InvalidTime,
 }
 
-pub enum ValidSince <BaseTime> {
-TheBeginning,
-Before (BaseTime),
-After (BaseTime),
+pub enum ValidSince<BaseTime> {
+  TheBeginning,
+  Before(BaseTime),
+  After(BaseTime),
 }
 
 // This exists to support a variety of time stewards
@@ -243,11 +255,11 @@ After (BaseTime),
 // rational number rather than an integer).
 // It is an acceptable peculiarity that even for integer times,
 // After(2) < Before(3).
-//#[derive (Copy, Clone, PartialEq, Eq, Hash)]
-//pub enum TimeBoundary<BaseTime> {
+// #[derive (Copy, Clone, PartialEq, Eq, Hash)]
+// pub enum TimeBoundary<BaseTime> {
 //  Before(BaseTime),
 //  After(BaseTime),
-//}
+// }
 // //impl PartialOrd
 
 pub trait SnapshotHack<'a, B: Basics> {
@@ -265,14 +277,14 @@ pub trait TimeSteward<B: Basics> {
   
   All implementors must obey certain restrictions on how other TimeSteward methods may change the result of valid_since(). Implementors may have their own methods that can alter this in customized ways, which should be documented with those individual methods.
   */
-  fn valid_since (&self) -> ValidSince <B::Time>;
-  
+  fn valid_since(&self) -> ValidSince<B::Time>;
+
   /**
   Creates a new, empty TimeSteward.
   
   new_empty().valid_since() must equal TheBeginning.
   */
-  fn new_empty(constants: B::Constants, predictors: Vec<Self::Predictor>)->Self;
+  fn new_empty(constants: B::Constants, predictors: Vec<Self::Predictor>) -> Self;
 
   /**
   Inserts a fiat event at some point in the history.
@@ -296,7 +308,10 @@ pub trait TimeSteward<B: Basics> {
   steward.erase_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
   steward.erase_fiat_event() may not change steward.valid_since().
   */
-  fn erase_fiat_event(&mut self, time: & B::Time, id: DeterministicRandomId) -> FiatEventOperationResult;
+  fn erase_fiat_event(&mut self,
+                      time: &B::Time,
+                      id: DeterministicRandomId)
+                      -> FiatEventOperationResult;
 
   /**
   Returns a "snapshot" into the TimeSteward.
@@ -309,9 +324,10 @@ pub trait TimeSteward<B: Basics> {
   steward.snapshot_before(time) may not increase steward.valid_since() beyond time.
   */
   // note: we implement "before" and not "after" because we might be banning events that happen during max_time
-  fn snapshot_before<'a>(&'a mut self, time: & B::Time) ->
-  Option<<Self as SnapshotHack<'a, B>>::Snapshot>
-  where Self: SnapshotHack<'a, B>;
+  fn snapshot_before<'a>(&'a mut self,
+                         time: &B::Time)
+                         -> Option<<Self as SnapshotHack<'a, B>>::Snapshot>
+    where Self: SnapshotHack<'a, B>;
 }
 
 
@@ -328,8 +344,8 @@ struct Predictor<PredictorFn> {
   function: PredictorFn,
 }
 
-//type Event<M> = Rc<for<'d> Fn(&'d mut M)>;
-//type PredictorFn<B: Basics, M: Mutator<B>, PA: PredictorAccessor<B>> =
+// type Event<M> = Rc<for<'d> Fn(&'d mut M)>;
+// type PredictorFn<B: Basics, M: Mutator<B>, PA: PredictorAccessor<B>> =
 //  Rc<for<'b, 'c> Fn(&'b mut PA, RowId) -> Prediction<B, Event<M>>>;
 
 
