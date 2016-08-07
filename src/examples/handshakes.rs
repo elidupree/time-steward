@@ -86,7 +86,7 @@ pub fn testfunc() {
     }
   }));
 
-  stew.snapshot_before(&50);
+  stew.snapshot_before(&50000);
 
   // panic!("anyway")
 }
