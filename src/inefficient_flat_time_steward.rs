@@ -79,7 +79,7 @@ type PredictorFn<B: Basics> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>
 
 impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
   fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.state.get::<C>(id).map(|P| P.0)
+    self.state.get::<C>(id).map(|p| p.0)
   }
   fn constants(&self) -> &B::Constants {
     &self.settings.constants
@@ -87,7 +87,7 @@ impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
 }
 impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
   fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.steward.state.get::<C>(id).map(|P| P.0)
+    self.steward.state.get::<C>(id).map(|p| p.0)
   }
   fn constants(&self) -> &B::Constants {
     &self.steward.settings.constants
@@ -95,9 +95,9 @@ impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
   fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.steward.state.get::<C>(id).map(|P| {
-      P.1.id.hash(&mut self.dependencies_hasher);
-      P.0
+    self.steward.state.get::<C>(id).map(|p| {
+      p.1.id.hash(&mut self.dependencies_hasher);
+      p.0
     })
   }
   fn constants(&self) -> &B::Constants {
