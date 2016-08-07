@@ -5,6 +5,14 @@ use ::{TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, Mutator,
 use std::rc::Rc;
 use rand::Rng;
 
+use std::io::Write;
+macro_rules! printlnerr(
+    ($($arg:tt)*) => { {
+        let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
+        r.expect("failed printing to stderr");
+    } }
+);
+
 type Time = i64;
 
 const HOW_MANY_PHILOSOPHERS: i32 = 7;
@@ -43,6 +51,7 @@ pub fn testfunc() {
                                                           predictor_id: 0x0e7f27c7643f8167,
                                                           column_id: Philosopher::column_id(),
                                                           function: Rc::new(|pa, whodunnit| {
+      printlnerr!("Planning {}", whodunnit);
       let me = pa.get::<Philosopher>(whodunnit).unwrap().clone();
       pa.predict_at_time(&me.time_when_next_initiates_handshake,
                          Rc::new(move |m| {
@@ -50,6 +59,7 @@ pub fn testfunc() {
         let friend_id = get_philosopher_id(m.rng().gen_range(0, HOW_MANY_PHILOSOPHERS));
         let awaken_time_1 = now + m.rng().gen_range(-1, 4);
         let awaken_time_2 = now + m.rng().gen_range(-1, 7);
+        printlnerr!("SHAKE!!! {}={}; {}={}", whodunnit, awaken_time_2, friend_id, awaken_time_1);
         // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
         // IN THE SECOND TIME APPARENTLY
         m.set::<Philosopher>(friend_id,
@@ -67,6 +77,7 @@ pub fn testfunc() {
   stew.insert_fiat_event(0,
                          DeterministicRandomId::new(&0x32e1570766e768a7u64),
                          Rc::new(|m| {
+    printlnerr!("FIAT!!!!!");
     for i in 0..HOW_MANY_PHILOSOPHERS {
       m.set::<Philosopher>(get_philosopher_id(i),
                            Some(Philosopher {

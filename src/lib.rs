@@ -11,7 +11,7 @@ use rand::{ChaChaRng, SeedableRng};
 // Answer: they do, so maybe stop using Hash for this sometime
 // ( https://doc.rust-lang.org/std/hash/trait.Hasher.html
 // "represents the ability to hash an arbitrary stream of bytes").
-#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct DeterministicRandomId {
   data: [u64; 2],
 }
@@ -44,6 +44,11 @@ impl DeterministicRandomId {
     let mut s = SiphashIdGenerator::new();
     data.hash(&mut s);
     s.generate()
+  }
+}
+impl fmt::Display for DeterministicRandomId {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "id:{:016x}{:016x}", self.data[0], self.data[1])
   }
 }
 
