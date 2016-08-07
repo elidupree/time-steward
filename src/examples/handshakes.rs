@@ -59,7 +59,7 @@ pub fn testfunc() {
         let friend_id = get_philosopher_id(m.rng().gen_range(0, HOW_MANY_PHILOSOPHERS));
         let awaken_time_1 = now + m.rng().gen_range(-1, 4);
         let awaken_time_2 = now + m.rng().gen_range(-1, 7);
-        printlnerr!("SHAKE!!! {}={}; {}={}", whodunnit, awaken_time_2, friend_id, awaken_time_1);
+        printlnerr!("SHAKE!!! @{}. {}={}; {}={}", now, whodunnit, awaken_time_2, friend_id, awaken_time_1);
         // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
         // IN THE SECOND TIME APPARENTLY
         m.set::<Philosopher>(friend_id,
