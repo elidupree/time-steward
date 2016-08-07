@@ -130,6 +130,14 @@ struct GenericExtendedTime<Base: Ord> {
 //  }
 //}
 
+fn extended_time_of_fiat_event<BaseTime: Ord>(time:BaseTime, id: TimeId)->GenericExtendedTime<BaseTime> {
+  GenericExtendedTime {
+    base: time,
+    iteration: 0,
+    id: id,
+  }
+}
+                                       
 fn time_id_for_predicted_event (predictor_id: u64, row_id: RowId, iteration: IterationType, dependencies_hash: DeterministicRandomId)->TimeId {
   TimeId::new (& (predictor_id, row_id, iteration, dependencies_hash))
 }
@@ -155,8 +163,8 @@ fn next_extended_time_of_predicted_event<BaseTime: Ord>(
   };
   Some(GenericExtendedTime {
     base: event_base_time,
-    id: id,
     iteration: iteration,
+    id: id,
   })
 }
 
@@ -276,7 +284,7 @@ pub trait TimeSteward<B: Basics> {
   */
   fn insert_fiat_event(&mut self,
                        time: B::Time,
-                       distinguisher: u64,
+                       id: DeterministicRandomId,
                        event: Self::Event)
                        -> FiatEventOperationResult;
 
@@ -288,7 +296,7 @@ pub trait TimeSteward<B: Basics> {
   steward.erase_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
   steward.erase_fiat_event() may not change steward.valid_since().
   */
-  fn erase_fiat_event(&mut self, time: B::Time, distinguisher: u64) -> FiatEventOperationResult;
+  fn erase_fiat_event(&mut self, time: B::Time, id: DeterministicRandomId) -> FiatEventOperationResult;
 
   /**
   Returns a "snapshot" into the TimeSteward.
