@@ -81,8 +81,11 @@ impl fmt::Display for DeterministicRandomId {
 pub type RowId = DeterministicRandomId;
 type TimeId = DeterministicRandomId;
 
-#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct ColumnId(u64);
+
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct PredictorId(u64);
 
 
 pub trait Column {
@@ -146,7 +149,7 @@ fn extended_time_of_fiat_event<BaseTime: Ord>(time: BaseTime,
   }
 }
 
-fn time_id_for_predicted_event(predictor_id: u64,
+fn time_id_for_predicted_event(predictor_id: PredictorId,
                                row_id: RowId,
                                iteration: IterationType,
                                dependencies_hash: DeterministicRandomId)
@@ -154,7 +157,7 @@ fn time_id_for_predicted_event(predictor_id: u64,
   TimeId::new(&(predictor_id, row_id, iteration, dependencies_hash))
 }
 fn next_extended_time_of_predicted_event<BaseTime: Ord>
-  (predictor_id: u64,
+  (predictor_id: PredictorId,
    row_id: RowId,
    dependencies_hash: DeterministicRandomId,
    event_base_time: BaseTime,
@@ -351,8 +354,10 @@ pub trait TimeSteward<B: Basics>: for<'a> TimeStewardLifetimedMethods<'a, B> {
 //   Immediately(E),
 //   At(B::Time, E),
 // }
+
+
 pub struct Predictor<PredictorFn> {
-  predictor_id: u64,
+  predictor_id: PredictorId,
   column_id: ColumnId,
   function: PredictorFn,
 }
