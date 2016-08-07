@@ -6,7 +6,8 @@
 
 
 use super::{DeterministicRandomId, SiphashIdGenerator, RowId, TimeId, FieldId, Column,
-            ExtendedTime, EventRng, Basics, TimeSteward, FiatEventOperationResult, ValidSince};
+            ExtendedTime, EventRng, Basics, TimeSteward, FiatEventOperationResult, ValidSince,
+            TimeStewardLifetimedMethods};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
@@ -24,7 +25,7 @@ struct Field<B: Basics> {
 
 
 #[derive (Clone)]
-// struct StewardState<'a, B: Basics + 'a> {
+// struct StewardState<'a, B: Basics> {
 struct StewardState<B: Basics> {
   last_change: Option<ExtendedTime<B>>, // B::Time,
   field_states: HashMap<FieldId, Field<B>>,
@@ -42,29 +43,29 @@ pub struct Steward<B: Basics> {
   settings: Rc<StewardSettings<B>>,
 }
 type StewardImpl<B: Basics> = Steward<B>;
-// pub struct Steward<'a, B: Basics + 'a> {
+// pub struct Steward<'a, B: Basics> {
 // steward: Cow<'a, StewardImpl<B>>,
 // }
-pub struct Snapshot<'a, B: Basics + 'a> {
+pub struct Snapshot<'a, B: Basics> {
   now: B::Time,
   state: StewardState<B>,
   settings: &'a StewardSettings<B>,
 }
-pub struct Mutator<'a, B: Basics + 'a> {
+pub struct Mutator<'a, B: Basics> {
   now: ExtendedTime<B>,
   steward: &'a mut StewardImpl<B>,
   generator: EventRng,
 }
-pub struct PredictorAccessor<'a, B: Basics + 'a> {
+pub struct PredictorAccessor<'a, B: Basics> {
   steward: &'a StewardImpl<B>,
   soonest_prediction: Option<(B::Time, Event<B>)>,
   dependencies_hasher: SiphashIdGenerator,
 }
-// pub type Event<'a, B: Basics + 'a> = super::Event<Mutator<'a, B>>;
+// pub type Event<'a, B: Basics> = super::Event<Mutator<'a, B>>;
 pub type Event<B: Basics> = Rc<for<'d, 'e> Fn(&'d mut Mutator<'e, B>)>;
 // type Prediction<B: Basics> = super::Prediction<B, Event<B>>;
 // it seems impossible to write the lifetimes this way
-// type Predictor<'a, B: Basics + 'a> = super::Predictor<B, Mutator<'a, B>, PredictorAccessor<'a, B>>;
+// type Predictor<'a, B: Basics> = super::Predictor<B, Mutator<'a, B>, PredictorAccessor<'a, B>>;
 
 pub type Predictor<B: Basics> = super::Predictor<PredictorFn<B>>;
 
@@ -276,10 +277,23 @@ impl<B: Basics> StewardImpl<B> {
 
 // impl<'a, B: Basics> Steward<'a, B> {
 impl<B: Basics> Steward<B> {}
-impl<'a, B: Basics + 'a> super::SnapshotHack<'a, B> for Steward<B> {
+impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
   type Snapshot = Snapshot<'a, B>;
+  fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Self::Snapshot> {
+    if let Some(ref change) = self.state.last_change {
+      if change.base >= *time {
+        return None;
+      }
+    }
+    self.update_until_beginning_of(time);
+    Some(Snapshot {
+      now: time.clone(),
+      state: self.state.clone(),
+      settings: self.settings.as_ref(),
+    })
+  }
 }
-impl<B: Basics> super::TimeSteward<B> for Steward<B> {
+impl<B: Basics> TimeSteward<B> for Steward<B> {
   type Event = Event<B>;
   type Predictor = Predictor<B>;
 
@@ -331,25 +345,5 @@ impl<B: Basics> super::TimeSteward<B> for Steward<B> {
       None => FiatEventOperationResult::InvalidInput,
       Some(_) => FiatEventOperationResult::Success,
     }
-  }
-
-  // fn snapshot_before<'a>(&'a mut self, time: & B::Time) -> Option<Snapshot<'a, B>> {}
-
-  fn snapshot_before<'a>(&'a mut self,
-                         time: &B::Time)
-                         -> Option<<Self as super::SnapshotHack<'a, B>>::Snapshot>
-    where Self: super::SnapshotHack<'a, B>
-  {
-    if let Some(ref change) = self.state.last_change {
-      if change.base >= *time {
-        return None;
-      }
-    }
-    self.update_until_beginning_of(time);
-    Some(Snapshot {
-      now: time.clone(),
-      state: self.state.clone(),
-      settings: self.settings.as_ref(),
-    })
   }
 }

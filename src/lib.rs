@@ -192,7 +192,7 @@ fn generator_for_event(id: TimeId) -> EventRng {
 /**
 This is intended to be implemented on an empty struct. Requiring Clone is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 */
-pub trait Basics: Clone {
+pub trait Basics: Clone + 'static {
   type Time: Clone + Ord;
   type Constants;
 }
@@ -262,10 +262,34 @@ pub enum ValidSince<BaseTime> {
 // }
 // //impl PartialOrd
 
-pub trait SnapshotHack<'a, B: Basics> {
+/// TimeStewardLifetimedMethods is a hack to make it possible
+/// for trait TimeSteward to have associated types that are
+/// parameterized by lifetime.
+/// Example impl if you have types Steward<B> and Snapshot<'a, B>:
+///
+/// impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
+///   type Snapshot = Snapshot<'a, B>;
+///   fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Self::Snapshot> {
+///     // your implementation
+///   }
+/// }
+pub trait TimeStewardLifetimedMethods<'a, B: Basics> {
   type Snapshot;
+
+  /** Returns a "snapshot" into the TimeSteward.
+  
+  The snapshot is guaranteed to be valid and unchanging for the full lifetime of the TimeSteward. It is specific to both the time argument, and the current collection of fiat events. Callers may freely call mutable methods of the same TimeSteward after taking a snapshot, without changing the contents of the snapshot.
+  
+  Each TimeSteward implementor determines exactly how to provide these guarantees. Implementors should provide individual guarantees about the processor-time bounds of snapshot operations.
+  
+  steward.snapshot_before(time) must return Some if time > steward.valid_since().
+  steward.snapshot_before(time) may not increase steward.valid_since() beyond time.
+  
+  note: we implement "before" and not "after" because we might be banning events that happen during max_time
+  */
+  fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Self::Snapshot>;
 }
-pub trait TimeSteward<B: Basics> {
+pub trait TimeSteward<B: Basics>: for<'a> TimeStewardLifetimedMethods<'a, B> {
   type Event;
   type Predictor;
 
@@ -312,22 +336,6 @@ pub trait TimeSteward<B: Basics> {
                       time: &B::Time,
                       id: DeterministicRandomId)
                       -> FiatEventOperationResult;
-
-  /**
-  Returns a "snapshot" into the TimeSteward.
-  
-  The snapshot is guaranteed to be valid and unchanging for the full lifetime of the TimeSteward. It is specific to both the time argument, and the current collection of fiat events. Callers may freely call mutable methods of the same TimeSteward after taking a snapshot, without changing the contents of the snapshot.
-  
-  Each TimeSteward implementor determines exactly how to provide these guarantees. Implementors should provide individual guarantees about the processor-time bounds of snapshot operations.
-  
-  steward.snapshot_before(time) must return Some if time > steward.valid_since().
-  steward.snapshot_before(time) may not increase steward.valid_since() beyond time.
-  */
-  // note: we implement "before" and not "after" because we might be banning events that happen during max_time
-  fn snapshot_before<'a>(&'a mut self,
-                         time: &B::Time)
-                         -> Option<<Self as SnapshotHack<'a, B>>::Snapshot>
-    where Self: SnapshotHack<'a, B>;
 }
 
 
