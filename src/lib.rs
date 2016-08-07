@@ -296,7 +296,7 @@ pub trait TimeSteward<B: Basics> {
   steward.erase_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
   steward.erase_fiat_event() may not change steward.valid_since().
   */
-  fn erase_fiat_event(&mut self, time: B::Time, id: DeterministicRandomId) -> FiatEventOperationResult;
+  fn erase_fiat_event(&mut self, time: & B::Time, id: DeterministicRandomId) -> FiatEventOperationResult;
 
   /**
   Returns a "snapshot" into the TimeSteward.
@@ -309,7 +309,7 @@ pub trait TimeSteward<B: Basics> {
   steward.snapshot_before(time) may not increase steward.valid_since() beyond time.
   */
   // note: we implement "before" and not "after" because we might be banning events that happen during max_time
-  fn snapshot_before<'a>(&'a mut self, time: B::Time) ->
+  fn snapshot_before<'a>(&'a mut self, time: & B::Time) ->
   Option<<Self as SnapshotHack<'a, B>>::Snapshot>
   where Self: SnapshotHack<'a, B>;
 }

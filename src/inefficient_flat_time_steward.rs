@@ -250,11 +250,8 @@ impl<B: Basics> StewardImpl<B> {
     self.state.last_change = Some (event_time);
   }
 
-  fn move_to_future_time(&mut self, future_t: ExtendedTime<B>) {
-    if let Some (ref time) = self.state.last_change {if future_t < *time {
-      panic!("not defined for past times");
-    }}
-    while let Some(ev) = self.next_event().filter(|ev| ev.0 < future_t) {
+  fn update_until_beginning_of (&mut self, target_time: & B::Time) {
+    while let Some(ev) = self.next_event().filter(|ev| ev.0.base <*target_time) {
       let (event_time, event) = ev;
       self.execute_event(event_time, event);
     }
@@ -302,19 +299,21 @@ id: DeterministicRandomId,
       Some (_) =>FiatEventOperationResult::InvalidInput,
     }
   }
-  fn erase_fiat_event(&mut self, time: B::Time, id: DeterministicRandomId) -> FiatEventOperationResult {
-    if let Some (ref change) = self.state.last_change {if change.base >= time {return FiatEventOperationResult::InvalidTime;}}
-    match self.state.fiat_events. remove (& super::extended_time_of_fiat_event (time, id)) {
+  fn erase_fiat_event(&mut self, time: & B::Time, id: DeterministicRandomId) -> FiatEventOperationResult {
+    if let Some (ref change) = self.state.last_change {if change.base >= *time {return FiatEventOperationResult::InvalidTime;}}
+    match self.state.fiat_events. remove (& super::extended_time_of_fiat_event (time.clone(), id)) {
       None =>FiatEventOperationResult::InvalidInput,
       Some (_) =>FiatEventOperationResult::Success,
     }
   }
 
-  //fn snapshot_before<'a>(&'a mut self, time: B::Time) -> Option<Snapshot<'a, B>> {}
+  //fn snapshot_before<'a>(&'a mut self, time: & B::Time) -> Option<Snapshot<'a, B>> {}
 
-  fn snapshot_before<'a>(&'a mut self, time: B::Time) ->
+  fn snapshot_before<'a>(&'a mut self, time: & B::Time) ->
   Option<<Self as super::SnapshotHack<'a, B>>::Snapshot>
   where Self: super::SnapshotHack<'a, B> {
-    unimplemented!();
+    if let Some (ref change) = self.state.last_change {if change.base >= *time {return None;}}
+    self.update_until_beginning_of (time);
+    Some (Snapshot {now: time.clone(), state: self.state.clone(), settings: self.settings.as_ref(),})
   }
 }
