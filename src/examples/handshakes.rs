@@ -2,7 +2,7 @@
 use inefficient_flat_time_steward as s;
 use ::{TimeSteward, DeterministicRandomId, Column, ColumnId,
   RowId, Mutator, TimeStewardLifetimedMethods, Accessor,
-  MomentaryAccessor, PredictorAccessor, Snapshot};
+  MomentaryAccessor, PredictorAccessor};
 use std::rc::Rc;
 use rand::Rng;
 
@@ -35,8 +35,7 @@ fn get_philosopher_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x2302c38efb47e0d0u64, index))
 }
 
-#[test]
-fn testfunc() {
+pub fn testfunc() {
 
   let mut stew: Steward = ::TimeSteward::new_empty((), vec![
     s::Predictor {
@@ -47,10 +46,8 @@ fn testfunc() {
         pa.predict_at_time(
           &me.time_when_next_initiates_handshake,
           Rc::new(move|m| {
-            // BAD let mut rng = m.rng().clone();
             let now = *m.now();
             let friend_id = get_philosopher_id(m.rng().gen_range(0, HOW_MANY_PHILOSOPHERS));
-            // TODO allow 0+
             let awaken_time_1 = now + m.rng().gen_range(-1, 4);
             let awaken_time_2 = now + m.rng().gen_range(-1, 7);
             // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
@@ -82,4 +79,9 @@ fn testfunc() {
   stew.snapshot_before(&50);
   
   //panic!("anyway")
+}
+
+#[test]
+fn actuallytest() {
+  testfunc();
 }
