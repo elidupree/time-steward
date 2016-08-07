@@ -7,13 +7,14 @@ This implementation is unusably slow on large simulations. Its main use is to cr
 */
 
 
-use super::{DeterministicRandomId, SiphashIdGenerator, RowId, TimeId, FieldId, Column, ExtendedTime, Basics, TimeSteward, FiatEventOperationResult, ValidSince};
+use super::{DeterministicRandomId, SiphashIdGenerator, RowId, TimeId, FieldId, Column, ExtendedTime, EventRng, Basics, TimeSteward, FiatEventOperationResult, ValidSince};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::any::Any;
 use std::borrow::{Borrow, Cow};
 use std::rc::Rc;
+use rand::Rng;
 
 #[derive (Clone)]
 struct Field <B: Basics> {
@@ -52,6 +53,7 @@ pub struct Snapshot<'a, B: Basics + 'a> {
 pub struct Mutator<'a, B: Basics + 'a> {
   now: ExtendedTime <B>,
   steward: &'a mut StewardImpl<B>,
+  generator: EventRng,
 }
 pub struct PredictorAccessor<'a, B: Basics + 'a> {
   steward: &'a StewardImpl<B>,
@@ -137,11 +139,11 @@ impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
     self.steward.set_opt::<C>(id, data, &self. now);
   }
-  fn random_bits(&mut self, num_bits: u32) -> u64 {
-    panic!("no randomness yet 1");
+  fn rng (&mut self) ->&mut EventRng {
+    &mut self.generator
   }
   fn random_id(&mut self) -> RowId {
-    panic!("no randomness yet 2");
+    RowId {data: [self.generator.gen::<u64>(), self.generator.gen::<u64>()]}
   }
 }
 
@@ -239,6 +241,7 @@ impl<B: Basics> StewardImpl<B> {
     event(&mut Mutator {
       now: event_time.clone(),
       steward: &mut *self,
+      generator: super::generator_for_event (event_time.id),
     });
     // if it was a fiat event, clean it up:
     self.state.fiat_events.remove(&event_time);

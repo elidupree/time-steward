@@ -1,7 +1,10 @@
+extern crate rand;
+
 use std::hash::{Hash, Hasher, SipHasher};
 use std::any::Any;
 use std::rc::Rc;
 use std::cmp::Ordering;
+use rand::{ChaChaRng, SeedableRng};
 
 // TODO check whether hashes in rust vary by CPU endianness?
 // Answer: they do, so maybe stop using Hash for this sometime
@@ -157,6 +160,15 @@ fn next_extended_time_of_predicted_event<BaseTime: Ord>(
   })
 }
 
+pub type EventRng = ChaChaRng;
+
+fn generator_for_event (id: TimeId)->EventRng {
+  EventRng::from_seed (& [
+    (id.data [0] >> 32) as u32, (id.data [0] & 0xffffffff) as u32,
+    (id.data [1] >> 32) as u32, (id.data [1] & 0xffffffff) as u32,
+  ])
+}
+
 /**
 This is intended to be implemented on an empty struct. Requiring Clone is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 */
@@ -193,7 +205,7 @@ pub trait MomentaryAccessor<B: Basics>: Accessor<B> {
 pub trait Mutator<B: Basics>: MomentaryAccessor<B> {
   //fn get_mut<C: Column>(&mut self, id: RowId) -> Option<&mut C::FieldType> where C::FieldType: Clone;
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>);
-  fn random_bits(&mut self, num_bits: u32) -> u64;
+  fn rng (&mut self) ->&mut EventRng;
   fn random_id(&mut self) -> RowId;
 }
 pub trait PredictorAccessor<B: Basics>: Accessor<B> {
