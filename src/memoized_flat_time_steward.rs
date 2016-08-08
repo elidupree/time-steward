@@ -5,7 +5,7 @@
 //!
 
 
-use super::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, Column, ExtendedTime,
+use super::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, Column, ExtendedTime,
             EventRng, Basics, TimeSteward, FiatEventOperationResult, ValidSince,
             TimeStewardLifetimedMethods};
 use std::collections::{HashMap, BTreeMap};
@@ -23,12 +23,22 @@ struct Field<B: Basics> {
 }
 
 
+struct Prediction<B: Basics> {
+  predictor_idx: u32,
+  predictor_id: PredictorId,
+  prediction_is_about_row_id: RowId,
+  predictor_accessed: Vec<FieldId>,
+  what_will_happen: Option<(ExtendedTime<B>, Event<B>)>,
+}
 
 #[derive (Clone)]
 struct StewardState<B: Basics> {
   last_change: Option<ExtendedTime<B>>,
   field_states: HashMap<FieldId, Field<B>>,
   fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
+
+//   predictions: BTreeMap<ExtendedTime<B>, Prediction<B>>,
+//   prediction_dependencies: HashMap<FieldID, HashMap<ExtendedTime<B>>>,
 }
 
 struct StewardSettings<B: Basics> {
