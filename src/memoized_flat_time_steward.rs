@@ -33,7 +33,7 @@ struct Prediction<B: Basics> {
 
 #[derive (Clone)]
 struct StewardState<B: Basics> {
-  last_change: Option<ExtendedTime<B>>,
+  last_event: Option<ExtendedTime<B>>,
   field_states: HashMap<FieldId, Field<B>>,
   fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
 
@@ -114,7 +114,7 @@ impl<'a, B: Basics> PredictorAccessor<'a, B> {
   fn internal_now<'b>(&'b self) -> &'a ExtendedTime<B> {
     self.steward
         .state
-        .last_change
+        .last_event
         .as_ref()
         .expect("how can we be calling a predictor when there are no fields \
                 yet?")
@@ -220,7 +220,7 @@ impl<B: Basics> StewardImpl<B> {
     // and cannot be enabled in stable rustc
     // https://stackoverflow.com/questions/30975088/use-of-unstable-library-feature-how-can-i-fix-those
     // so use something else...
-    //  self.state.fiat_events.range(Excluded(&self.state.last_change), Unbounded).next();
+    //  self.state.fiat_events.range(Excluded(&self.state.last_event), Unbounded).next();
       self.state.fiat_events.iter().map(|ev| (ev.0.clone(), ev.1.clone()));
     let predicted_events_iter = self.settings
       .predictors
@@ -246,7 +246,7 @@ impl<B: Basics> StewardImpl<B> {
               field_id.row_id,
               dependencies_hash,
               event_base_time,
-              &self.state.last_change.as_ref().expect ("how can we be calling a predictor when there are no fields yet?")
+              &self.state.last_event.as_ref().expect ("how can we be calling a predictor when there are no fields yet?")
             ).map(|event_time| (event_time, event)))}));
     let events_iter = first_fiat_event_iter.chain(predicted_events_iter);
     events_iter.min_by_key(|ev| ev.0.clone())
@@ -260,7 +260,7 @@ impl<B: Basics> StewardImpl<B> {
     });
     // if it was a fiat event, clean it up:
     self.state.fiat_events.remove(&event_time);
-    self.state.last_change = Some(event_time);
+    self.state.last_event = Some(event_time);
   }
 
   fn update_until_beginning_of(&mut self, target_time: &B::Time) {
@@ -276,7 +276,7 @@ impl<B: Basics> Steward<B> {}
 impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
   type Snapshot = Snapshot<'a, B>;
   fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Self::Snapshot> {
-    if let Some(ref change) = self.state.last_change {
+    if let Some(ref change) = self.state.last_event {
       if change.base >= *time {
         return None;
       }
@@ -294,7 +294,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
   type Predictor = Predictor<B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
-    match self.state.last_change {
+    match self.state.last_event {
       None => ValidSince::TheBeginning,
       Some(ref time) => ValidSince::After(time.base.clone()),
     }
@@ -302,7 +302,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
   fn new_empty(constants: B::Constants, predictors: Vec<Self::Predictor>) -> Self {
     StewardImpl {
       state: StewardState {
-        last_change: None,
+        last_event: None,
         field_states: HashMap::new(),
         fiat_events: BTreeMap::new(),
       },
@@ -318,7 +318,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
                        id: DeterministicRandomId,
                        event: Self::Event)
                        -> FiatEventOperationResult {
-    if let Some(ref change) = self.state.last_change {
+    if let Some(ref change) = self.state.last_event {
       if change.base >= time {
         return FiatEventOperationResult::InvalidTime;
       }
@@ -332,7 +332,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
                       time: &B::Time,
                       id: DeterministicRandomId)
                       -> FiatEventOperationResult {
-    if let Some(ref change) = self.state.last_change {
+    if let Some(ref change) = self.state.last_event {
       if change.base >= *time {
         return FiatEventOperationResult::InvalidTime;
       }
