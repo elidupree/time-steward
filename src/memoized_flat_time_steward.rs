@@ -15,7 +15,7 @@ use std::hash::Hash;
 use std::any::Any;
 use std::borrow::Borrow;
 use std::rc::Rc;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use rand::Rng;
 use ::insert_only;
 
@@ -26,12 +26,17 @@ struct Field<B: Basics> {
   last_change: ExtendedTime<B>,
   data: Rc<Any>,
 }
+struct SnapshotField<B: Basics> {
+  data: Option <Field<B>>,
+  touched_by_steward: Cell <bool>,
+}
+
 
 type FieldsMap<B: Basics>  =HashMap<FieldId, Field<B>>;
 
 struct Fields<B: Basics>  {
   field_states: FieldsMap <B>,
-  changed_since_snapshots: BTreeMap<SnapshotIdx, insert_only::HashMap<FieldId, Option <Field<B>>>>,
+  changed_since_snapshots: BTreeMap<SnapshotIdx, insert_only::HashMap<FieldId, SnapshotField <B> >>,
 }
 
 
@@ -90,7 +95,9 @@ impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
       };
     let fields = & self.shared.fields.borrow();
     let my_field_states = fields.changed_since_snapshots.get (& self.index).expect ("a map should exist for this snapshot");
-    extract_field_info::<B, C> (my_field_states.get_default (field_id, | |fields.field_states.get (& field_id).cloned()).as_ref()).map(|p| p.0)
+    extract_field_info::<B, C> (my_field_states.get_default (field_id, | |
+      SnapshotField {data: fields.field_states.get (& field_id).cloned(), touched_by_steward: Cell::new (false)}
+    ).data.as_ref()).map(|p| p.0)
   }
   fn constants(&self) -> &B::Constants {
     &self.shared.constants
@@ -98,7 +105,7 @@ impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
 }
 impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
   fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.steward.shared.get::<C>(id).map(|p| p.0)
+    self.fields.get (id).map(|p| p.0)
   }
   fn constants(&self) -> &B::Constants {
     &self.steward.shared.constants
@@ -106,7 +113,12 @@ impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
   fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.steward.shared.get::<C>(id).map(|p| {
+    let field_id =FieldId {
+        row_id: id,
+        column_id: C::column_id(),
+      };
+    self.steward.prediction_dependencies.entry (field_id).or_insert (HashMap::new()).insert (self.predictor_id, something);
+    self.fields.get (id).map(|p| {
       p.1.id.hash(&mut self.dependencies_hasher);
       p.0
     })
@@ -157,7 +169,19 @@ impl<'a, B: Basics> super::Snapshot<B> for Snapshot<'a, B> {}
 
 impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
-    self.steward.shared.set_opt::<C>(id, data, &self.now);
+    let field_id =FieldId {
+        row_id: id,
+        column_id: C::column_id(),
+      };
+    let old_value = self.fields.field_states.get (& field_id).cloned();
+    self.fields.set_opt::<C>(id, data, &self.now);
+    for snapshot_map in self.fields.changed_since_snapshots.iter().rev() {
+      let info = snapshot_map.1.get_default (field_id, | |
+            SnapshotField {data: old_value.clone(), touched_by_steward: Cell::new (false)}
+          );
+      if info.touched_by_steward.get() {break;}
+      info.touched_by_steward.set (true);
+    }
   }
   fn rng(&mut self) -> &mut EventRng {
     &mut self.generator
@@ -201,13 +225,13 @@ fn get<C: Column, Value>(map: & HashMap<FieldId, Value >, id: RowId)->Option <& 
 
 }
 
-impl<B: Basics> StewardShared <B> {
+impl<B: Basics> Fields <B> {
   fn get<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &ExtendedTime<B>)> {
-    let field_states =& self.fields.borrow().field_states;
+    let field_states =& self.field_states;
     extract_field_info::<B, C> (get::<C, Field <B>> (field_states, id))
   }
   fn set<C: Column>(&mut self, id: RowId, value: C::FieldType, time: &ExtendedTime<B>) {
-    self.fields.borrow_mut().field_states
+    self.field_states
       .insert(FieldId {
                 row_id: id,
                 column_id: C::column_id(),
@@ -218,7 +242,7 @@ impl<B: Basics> StewardShared <B> {
               });
   }
   fn remove<C: Column>(&mut self, id: RowId) {
-    self.fields.borrow_mut().field_states
+    self.field_states
       .remove(&FieldId {
         row_id: id,
         column_id: C::column_id(),
@@ -278,9 +302,11 @@ let first_predicted_event_iter =
   }
 
   fn execute_event(&mut self, event_time: ExtendedTime<B>, event: Event<B>) {
+    
     event(&mut Mutator {
       now: event_time.clone(),
       steward: &mut *self,
+      fields: &mut *self.shared.fields.borrow_mut(),
       generator: super::generator_for_event(event_time.id),
     });
     // if it was a fiat event, clean it up:
@@ -332,7 +358,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
     Steward{
         last_event: None,
         fiat_events: BTreeMap::new(),
-next_snapshot: 0,        
+next_snapshot: 0,
         predictions: BTreeMap::new(),
         prediction_dependencies: HashMap::new(),
 shared: Rc::new(StewardShared {
