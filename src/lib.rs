@@ -357,7 +357,7 @@ pub trait TimeSteward<B: Basics>: for<'a> TimeStewardLifetimedMethods<'a, B> {
 //   At(B::Time, E),
 // }
 
-
+#[derive (Clone)]
 pub struct Predictor<PredictorFn> {
   predictor_id: PredictorId,
   column_id: ColumnId,
