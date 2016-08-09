@@ -7,6 +7,8 @@ use std::cmp::Ordering;
 use std::fmt;
 use rand::{ChaChaRng, SeedableRng};
 
+mod insert_only;
+
 // TODO check whether hashes in rust vary by CPU endianness?
 // Answer: they do, so maybe stop using Hash for this sometime
 // ( https://doc.rust-lang.org/std/hash/trait.Hasher.html
@@ -117,7 +119,7 @@ pub trait Column {
   //   }
 }
 
-#[derive (Clone, PartialEq, Eq, Hash)]
+#[derive (Copy, Clone, PartialEq, Eq, Hash)]
 struct FieldId {
   row_id: RowId,
   column_id: ColumnId,

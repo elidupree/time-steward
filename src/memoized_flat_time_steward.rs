@@ -8,13 +8,18 @@
 use super::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, Column, ExtendedTime,
             EventRng, Basics, TimeSteward, FiatEventOperationResult, ValidSince,
             TimeStewardLifetimedMethods};
+
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::any::Any;
 use std::borrow::Borrow;
 use std::rc::Rc;
+use std::cell::RefCell;
 use rand::Rng;
+use ::insert_only;
+
+type SnapshotIdx = u64;
 
 #[derive (Clone)]
 struct Field<B: Basics> {
@@ -22,7 +27,15 @@ struct Field<B: Basics> {
   data: Rc<Any>,
 }
 
+type FieldsMap<B: Basics>  =HashMap<FieldId, Field<B>>;
 
+struct Fields<B: Basics>  {
+  field_states: FieldsMap <B>,
+  changed_since_snapshots: BTreeMap<SnapshotIdx, insert_only::HashMap<FieldId, Option <Field<B>>>>,
+}
+
+
+#[derive (Clone)]
 struct Prediction<B: Basics> {
   predictor_idx: u32,
   predictor_id: PredictorId,
@@ -31,38 +44,35 @@ struct Prediction<B: Basics> {
   what_will_happen: Option<(ExtendedTime<B>, Event<B>)>,
 }
 
-#[derive (Clone)]
-struct StewardState<B: Basics> {
-  last_event: Option<ExtendedTime<B>>,
-  field_states: HashMap<FieldId, Field<B>>,
-  fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
-
-//   predictions: BTreeMap<ExtendedTime<B>, Prediction<B>>,
-//   prediction_dependencies: HashMap<FieldID, HashMap<ExtendedTime<B>>>,
-}
-
-struct StewardSettings<B: Basics> {
+struct StewardShared <B: Basics> {
   predictors: Vec<Predictor<B>>,
   constants: B::Constants,
+  fields: RefCell< Fields <B>>,
 }
 #[derive (Clone)]
 pub struct Steward<B: Basics> {
-  state: StewardState<B>,
-  settings: Rc<StewardSettings<B>>,
+  last_event: Option<ExtendedTime<B>>,
+  fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
+  next_snapshot: SnapshotIdx,
+
+  predictions: BTreeMap<ExtendedTime<B>, Prediction<B>>,
+  prediction_dependencies: HashMap<FieldId, HashMap<PredictorId, Prediction <B>>>,
+  shared: Rc<StewardShared <B>>,
 }
-type StewardImpl<B> = Steward<B>;
 pub struct Snapshot<'a, B: Basics> {
   now: B::Time,
-  state: StewardState<B>,
-  settings: &'a StewardSettings<B>,
+  index: SnapshotIdx,
+shared: &'a StewardShared <B>,
 }
 pub struct Mutator<'a, B: Basics> {
   now: ExtendedTime<B>,
-  steward: &'a mut StewardImpl<B>,
+  steward: &'a mut Steward<B>,
+  fields: & 'a mut Fields <B>,
   generator: EventRng,
 }
 pub struct PredictorAccessor<'a, B: Basics> {
-  steward: &'a StewardImpl<B>,
+  steward: &'a mut Steward<B>,
+  fields: &'a Fields <B>,
   soonest_prediction: Option<(B::Time, Event<B>)>,
   dependencies_hasher: SiphashIdGenerator,
 }
@@ -74,29 +84,38 @@ pub type PredictorFn<B> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, Ro
 
 impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
   fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.state.get::<C>(id).map(|p| p.0)
+    let field_id =FieldId {
+        row_id: id,
+        column_id: C::column_id(),
+      };
+    let fields = & self.shared.fields.borrow();
+    let my_field_states = fields.changed_since_snapshots.get (& self.index).expect ("a map should exist for this snapshot");
+    if my_field_states.get(& field_id).is_none() {
+      my_field_states.insert (field_id, fields.field_states.get (& field_id).clone());
+    }
+    extract_field_info::<B, C> (my_field_states.get(& field_id)).map(|p| p.0)
   }
   fn constants(&self) -> &B::Constants {
-    &self.settings.constants
+    &self.shared.constants
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
   fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.steward.state.get::<C>(id).map(|p| p.0)
+    self.steward.shared.get::<C>(id).map(|p| p.0)
   }
   fn constants(&self) -> &B::Constants {
-    &self.steward.settings.constants
+    &self.steward.shared.constants
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
   fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.steward.state.get::<C>(id).map(|p| {
+    self.steward.shared.get::<C>(id).map(|p| {
       p.1.id.hash(&mut self.dependencies_hasher);
       p.0
     })
   }
   fn constants(&self) -> &B::Constants {
-    &self.steward.settings.constants
+    &self.steward.shared.constants
   }
 }
 
@@ -111,9 +130,8 @@ impl<'a, B: Basics> super::MomentaryAccessor<B> for Mutator<'a, B> {
   }
 }
 impl<'a, B: Basics> PredictorAccessor<'a, B> {
-  fn internal_now<'b>(&'b self) -> &'a ExtendedTime<B> {
+  fn internal_now<'b>(&'b self) -> &'b ExtendedTime<B> {
     self.steward
-        .state
         .last_event
         .as_ref()
         .expect("how can we be calling a predictor when there are no fields \
@@ -142,7 +160,7 @@ impl<'a, B: Basics> super::Snapshot<B> for Snapshot<'a, B> {}
 
 impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
-    self.steward.state.set_opt::<C>(id, data, &self.now);
+    self.steward.shared.set_opt::<C>(id, data, &self.now);
   }
   fn rng(&mut self) -> &mut EventRng {
     &mut self.generator
@@ -167,24 +185,32 @@ impl<T> Filter<T> for Option<T> {
   }
 }
 
-
-impl<B: Basics> StewardState<B> {
-  fn get<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &ExtendedTime<B>)> {
-    self.field_states
-      .get(&FieldId {
-        row_id: id,
-        column_id: C::column_id(),
-      })
-      .map(|something| {
+fn extract_field_info<B: Basics, C: Column>(option: Option <& Field <B>>) -> Option<(&C::FieldType, &ExtendedTime<B>)> {
+option.map(|something| {
         (something.data
           .downcast_ref::<C::FieldType>()
           .expect("a field had the wrong type for its column")
           .borrow(),
          &something.last_change)
       })
+
+}
+
+fn get<C: Column, Value>(map: & HashMap<FieldId, Value >, id: RowId)->Option <& Value> {
+  map.get(&FieldId {
+        row_id: id,
+        column_id: C::column_id(),
+      })
+
+}
+
+impl<B: Basics> StewardShared <B> {
+  fn get<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &ExtendedTime<B>)> {
+    let field_states =& self.fields.borrow().field_states;
+    extract_field_info::<B, C> (get::<C, Field <B>> (field_states, id))
   }
   fn set<C: Column>(&mut self, id: RowId, value: C::FieldType, time: &ExtendedTime<B>) {
-    self.field_states
+    self.fields.borrow_mut().field_states
       .insert(FieldId {
                 row_id: id,
                 column_id: C::column_id(),
@@ -195,7 +221,7 @@ impl<B: Basics> StewardState<B> {
               });
   }
   fn remove<C: Column>(&mut self, id: RowId) {
-    self.field_states
+    self.fields.borrow_mut().field_states
       .remove(&FieldId {
         row_id: id,
         column_id: C::column_id(),
@@ -212,7 +238,7 @@ impl<B: Basics> StewardState<B> {
     }
   }
 }
-impl<B: Basics> StewardImpl<B> {
+impl<B: Basics> Steward<B> {
   fn next_event(&self) -> Option<(ExtendedTime<B>, Event<B>)> {
     let first_fiat_event_iter =
     // range is unstable
@@ -220,9 +246,11 @@ impl<B: Basics> StewardImpl<B> {
     // and cannot be enabled in stable rustc
     // https://stackoverflow.com/questions/30975088/use-of-unstable-library-feature-how-can-i-fix-those
     // so use something else...
-    //  self.state.fiat_events.range(Excluded(&self.state.last_event), Unbounded).next();
-      self.state.fiat_events.iter().map(|ev| (ev.0.clone(), ev.1.clone()));
-    let predicted_events_iter = self.settings
+    //  self.fiat_events.range(Excluded(&self.last_event), Unbounded).next();
+      self.fiat_events.iter().map(|ev| (ev.0.clone(), ev.1.clone())).take (1);
+let first_predicted_event_iter =
+      self.predictions.iter().map (| pair | (pair.0.clone(), pair.1.what_will_happen.as_ref().expect ("a prediction that predicted nothing was stored in predictions").1.clone())).take (1);
+    /*let predicted_events_iter = self.settings
       .predictors
       .iter()
       .flat_map(|predictor|
@@ -247,8 +275,8 @@ impl<B: Basics> StewardImpl<B> {
               dependencies_hash,
               event_base_time,
               &self.state.last_event.as_ref().expect ("how can we be calling a predictor when there are no fields yet?")
-            ).map(|event_time| (event_time, event)))}));
-    let events_iter = first_fiat_event_iter.chain(predicted_events_iter);
+            ).map(|event_time| (event_time, event)))}));*/
+    let events_iter = first_fiat_event_iter.chain(first_predicted_event_iter);
     events_iter.min_by_key(|ev| ev.0.clone())
   }
 
@@ -259,8 +287,8 @@ impl<B: Basics> StewardImpl<B> {
       generator: super::generator_for_event(event_time.id),
     });
     // if it was a fiat event, clean it up:
-    self.state.fiat_events.remove(&event_time);
-    self.state.last_event = Some(event_time);
+    self.fiat_events.remove(&event_time);
+    self.last_event = Some(event_time);
   }
 
   fn update_until_beginning_of(&mut self, target_time: &B::Time) {
@@ -276,17 +304,21 @@ impl<B: Basics> Steward<B> {}
 impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
   type Snapshot = Snapshot<'a, B>;
   fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Self::Snapshot> {
-    if let Some(ref change) = self.state.last_event {
+    if let Some(ref change) = self.last_event {
       if change.base >= *time {
         return None;
       }
     }
     self.update_until_beginning_of(time);
-    Some(Snapshot {
+    
+    let result = Some(Snapshot {
       now: time.clone(),
-      state: self.state.clone(),
-      settings: self.settings.as_ref(),
-    })
+index: self.next_snapshot,
+shared: self.shared.as_ref(),
+    });
+    self.shared.fields.borrow_mut().changed_since_snapshots.insert (self.next_snapshot, HashMap::new());
+    self.next_snapshot += 1;
+    result
   }
 }
 impl<B: Basics> TimeSteward<B> for Steward<B> {
@@ -294,22 +326,25 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
   type Predictor = Predictor<B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
-    match self.state.last_event {
+    match self.last_event {
       None => ValidSince::TheBeginning,
       Some(ref time) => ValidSince::After(time.base.clone()),
     }
   }
   fn new_empty(constants: B::Constants, predictors: Vec<Self::Predictor>) -> Self {
-    StewardImpl {
-      state: StewardState {
+    Steward{
         last_event: None,
-        field_states: HashMap::new(),
         fiat_events: BTreeMap::new(),
-      },
-      settings: Rc::new(StewardSettings {
+next_snapshot: 0,        
+        predictions: BTreeMap::new(),
+        prediction_dependencies: HashMap::new(),
+shared: Rc::new(StewardShared {
         predictors: predictors,
         constants: constants,
-      }),
+        fields:RefCell::new (Fields {
+        field_states: HashMap::new(),
+        changed_since_snapshots: BTreeMap::new(),
+      })}),
     }
   }
 
@@ -318,12 +353,12 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
                        id: DeterministicRandomId,
                        event: Self::Event)
                        -> FiatEventOperationResult {
-    if let Some(ref change) = self.state.last_event {
+    if let Some(ref change) = self.last_event {
       if change.base >= time {
         return FiatEventOperationResult::InvalidTime;
       }
     }
-    match self.state.fiat_events.insert(super::extended_time_of_fiat_event(time, id), event) {
+    match self.fiat_events.insert(super::extended_time_of_fiat_event(time, id), event) {
       None => FiatEventOperationResult::Success,
       Some(_) => FiatEventOperationResult::InvalidInput,
     }
@@ -332,12 +367,12 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
                       time: &B::Time,
                       id: DeterministicRandomId)
                       -> FiatEventOperationResult {
-    if let Some(ref change) = self.state.last_event {
+    if let Some(ref change) = self.last_event {
       if change.base >= *time {
         return FiatEventOperationResult::InvalidTime;
       }
     }
-    match self.state.fiat_events.remove(&super::extended_time_of_fiat_event(time.clone(), id)) {
+    match self.fiat_events.remove(&super::extended_time_of_fiat_event(time.clone(), id)) {
       None => FiatEventOperationResult::InvalidInput,
       Some(_) => FiatEventOperationResult::Success,
     }
