@@ -265,6 +265,8 @@ impl<B: Basics> StewardImpl<B> {
 impl<B: Basics> Steward<B> {}
 impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
   type Snapshot = Snapshot<'a, B>;
+  type Mutator = Mutator <'a, B>;
+  type PredictorAccessor = PredictorAccessor <'a, B>;
   fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Self::Snapshot> {
     if let Some(ref change) = self.state.last_event {
       if change.base >= *time {

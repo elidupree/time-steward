@@ -247,7 +247,7 @@ pub trait PredictorAccessor<B: Basics>: Accessor<B> {
 pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {}
 
 
-
+#[derive (Copy, Clone, PartialEq, Eq)]
 pub enum FiatEventOperationResult {
   Success,
   InvalidInput,
@@ -284,7 +284,9 @@ pub enum ValidSince<BaseTime> {
 ///   }
 /// }
 pub trait TimeStewardLifetimedMethods<'a, B: Basics> {
-  type Snapshot;
+  type Snapshot: Snapshot <B> + 'a;
+  type Mutator: Mutator <B> + 'a;
+  type PredictorAccessor: PredictorAccessor <B> + 'a;
 
   /** Returns a "snapshot" into the TimeSteward.
   
@@ -299,7 +301,7 @@ pub trait TimeStewardLifetimedMethods<'a, B: Basics> {
   */
   fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Self::Snapshot>;
 }
-pub trait TimeSteward<B: Basics>: for<'a> TimeStewardLifetimedMethods<'a, B> {
+pub trait TimeSteward<B: Basics>: 'static + for<'a> TimeStewardLifetimedMethods<'a, B> {
   type Event;
   type Predictor;
 
@@ -371,6 +373,8 @@ pub struct Predictor<PredictorFn> {
 
 pub mod inefficient_flat_time_steward;
 pub mod memoized_flat_time_steward;
+
+//pub mod crossverified_time_stewards;
 
 pub mod examples {
   pub mod handshakes;
