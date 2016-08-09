@@ -90,10 +90,7 @@ impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
       };
     let fields = & self.shared.fields.borrow();
     let my_field_states = fields.changed_since_snapshots.get (& self.index).expect ("a map should exist for this snapshot");
-    if my_field_states.get(& field_id).is_none() {
-      my_field_states.insert (field_id, fields.field_states.get (& field_id).clone());
-    }
-    extract_field_info::<B, C> (my_field_states.get(& field_id)).map(|p| p.0)
+    extract_field_info::<B, C> (my_field_states.get_default (field_id, | |fields.field_states.get (& field_id).cloned()).as_ref()).map(|p| p.0)
   }
   fn constants(&self) -> &B::Constants {
     &self.shared.constants
@@ -316,7 +313,7 @@ impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
 index: self.next_snapshot,
 shared: self.shared.as_ref(),
     });
-    self.shared.fields.borrow_mut().changed_since_snapshots.insert (self.next_snapshot, HashMap::new());
+    self.shared.fields.borrow_mut().changed_since_snapshots.insert (self.next_snapshot, insert_only::HashMap::new());
     self.next_snapshot += 1;
     result
   }

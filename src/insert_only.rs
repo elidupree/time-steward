@@ -2,22 +2,19 @@ use std::boxed::Box;
 use std::collections::HashMap as Interior;
 use std::hash::Hash;
 use std::cmp::Eq;
-use std::marker;
 use std::borrow::Borrow;
+use std::cell::UnsafeCell;
 
-pub struct HashMap <'a, K: Eq + Hash, V: 'a> {
-  data: Interior <K, Box <V>>,
-  _marker: marker::PhantomData <& 'a V>,
+pub struct HashMap <K: Eq + Hash, V> {
+  data: UnsafeCell <Interior <K, Box <V>>>,
 }
 
-impl<'a, K: Eq + Hash, V> HashMap<'a, K, V> {
-  pub fn new()->HashMap <'a, K, V> {
-    HashMap {data: Interior::new(),_marker:marker::PhantomData }
+impl<K: Eq + Hash, V> HashMap<K, V> {
+  pub fn new()->HashMap <K, V> {
+    HashMap {data: UnsafeCell::new (Interior::new()) }
   }
-  pub fn insert (&mut self, key: K, value: V)->Option <V> {
-    self.data.insert (key, Box::new (value)).map (| failure | *failure)
-  }
-  pub fn get <'b, Q: ?Sized> (& 'b self, key: & Q)->Option <& 'a V> where K: Borrow <Q>, Q: Hash + Eq {
-    self.data.get (key).map (| box_ref | unsafe {(&**box_ref as *const V).as_ref().expect("box is supposed to be non-nullable")})
+  pub fn get_default <F> (&self, key: K, default_function: F)->&V where F: FnOnce ()->V {
+    let entry = unsafe {(*self.data.get()).entry (key)};
+    (*entry.or_insert_with(| | Box::new (default_function()))).borrow()
   }
 }
