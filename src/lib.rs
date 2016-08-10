@@ -283,16 +283,16 @@ pub enum ValidSince<BaseTime> {
 ///   }
 /// }
 pub trait TimeStewardTypes1<'a, B: Basics>: 'static {
-  type Snapshot: Snapshot <B> + 'a;
-  type Mutator: Mutator <B> + 'a;
 }
-type EventFn <B: Basics, Steward: for<'a> TimeStewardTypes1 <'a, B>> = for <'a> Fn (&mut <Steward as TimeStewardTypes1 <'a, B>>::Mutator);
+type EventFn <B: Basics, Steward: for<'a> TimeStewardLifetimedMethods <'a, B>> = for <'a> Fn (&mut <Steward as TimeStewardLifetimedMethods <'a, B>>::Mutator);
 pub trait TimeStewardTypes2<'a, B: Basics>: for<'b> TimeStewardTypes1 <'b, B> {
-  type PredictorAccessor: PredictorAccessor <B, EventFn <B, Self>> + 'a;
 }
-type PredictorFn<B: Basics, Steward: for<'a> TimeStewardTypes2 <'a, B>> = for <'a> Fn (&mut <Steward as TimeStewardTypes2 <'a, B>>::PredictorAccessor);
+type PredictorFn<B: Basics, Steward: for<'a> TimeStewardLifetimedMethods <'a, B>> = for <'a> Fn (&mut <Steward as TimeStewardLifetimedMethods <'a, B>>::PredictorAccessor);
 
-pub trait TimeStewardLifetimedMethods <'a, B: Basics>: for<'b> TimeStewardTypes2 <'b, B> {
+pub trait TimeStewardLifetimedMethods <'a, B: Basics> {
+  type Snapshot: Snapshot <B> + 'a;
+    type Mutator: Mutator <B> + 'a;
+  type PredictorAccessor: PredictorAccessor <B, EventFn <B, Self>> + 'a;
 
   /** Returns a "snapshot" into the TimeSteward.
   
@@ -305,9 +305,9 @@ pub trait TimeStewardLifetimedMethods <'a, B: Basics>: for<'b> TimeStewardTypes2
   
   note: we implement "before" and not "after" because we might be banning events that happen during max_time
   */
-  fn snapshot_before(&'a mut self, time: &B::Time) -> Option<<Self as TimeStewardTypes1 <'a, B>>::Snapshot>;
+  fn snapshot_before(&'a mut self, time: &B::Time) -> Option<<Self as TimeStewardLifetimedMethods <'a, B>>::Snapshot>;
 }
-pub trait TimeStewardStaticMethods <B: Basics>: for <'a> TimeStewardTypes2 <'a, B> {
+pub trait TimeStewardStaticMethods <B: Basics>: for <'a> TimeStewardLifetimedMethods <'a, B> {
 
   /**
   You are allowed to call snapshot_before(), insert_fiat_event(),
