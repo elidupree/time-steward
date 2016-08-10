@@ -282,11 +282,7 @@ pub enum ValidSince<BaseTime> {
 ///     // your implementation
 ///   }
 /// }
-pub trait TimeStewardTypes1<'a, B: Basics>: 'static {
-}
 type EventFn <B: Basics, Steward: for<'a> TimeStewardLifetimedMethods <'a, B>> = for <'a> Fn (&mut <Steward as TimeStewardLifetimedMethods <'a, B>>::Mutator);
-pub trait TimeStewardTypes2<'a, B: Basics>: for<'b> TimeStewardTypes1 <'b, B> {
-}
 type PredictorFn<B: Basics, Steward: for<'a> TimeStewardLifetimedMethods <'a, B>> = for <'a> Fn (&mut <Steward as TimeStewardLifetimedMethods <'a, B>>::PredictorAccessor);
 
 pub trait TimeStewardLifetimedMethods <'a, B: Basics> {
@@ -353,7 +349,7 @@ pub trait TimeStewardStaticMethods <B: Basics>: for <'a> TimeStewardLifetimedMet
                       id: DeterministicRandomId)
                       -> FiatEventOperationResult;
 }
-pub trait TimeSteward <B: Basics>: for<'a> TimeStewardLifetimedMethods<'a, B> {}
+pub trait TimeSteward <B: Basics>: TimeStewardStaticMethods <B> + for<'a> TimeStewardLifetimedMethods<'a, B> {}
 
 
 

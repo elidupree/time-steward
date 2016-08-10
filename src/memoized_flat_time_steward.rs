@@ -7,7 +7,7 @@
 
 use super::{DeterministicRandomId, SiphashIdGenerator, RowId, ColumnId, FieldId, PredictorId, Column, ExtendedTime,
             EventRng, Basics, TimeSteward, FiatEventOperationResult, ValidSince,
-            TimeStewardLifetimedMethods, TimeStewardStaticMethods, TimeStewardTypes1, TimeStewardTypes2};
+            TimeStewardLifetimedMethods, TimeStewardStaticMethods,};
 
 use std::collections::{HashMap, BTreeMap, HashSet};
 use std::collections::hash_map::{Entry};
@@ -420,12 +420,7 @@ let prediction =Rc::new (Prediction {
   }
 }
 
-impl<B: Basics> Steward<B> {}
-impl<'a, B: Basics> TimeStewardTypes1 <'a, B> for Steward<B> {
-}
-impl<B: Basics> Steward<B> {}
-impl<'a, B: Basics> TimeStewardTypes2 <'a, B> for Steward<B> {
-}
+
 
 impl<B: Basics> Steward<B> {}
 impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> { 
