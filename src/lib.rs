@@ -2,7 +2,7 @@ extern crate rand;
 
 use std::hash::{Hash, Hasher, SipHasher};
 use std::any::Any;
-// use std::rc::Rc;
+use std::rc::Rc;
 use std::cmp::Ordering;
 use std::fmt;
 use rand::{ChaChaRng, SeedableRng};
@@ -238,11 +238,10 @@ pub trait Mutator<B: Basics>: MomentaryAccessor<B> {
   fn rng(&mut self) -> &mut EventRng;
   fn random_id(&mut self) -> RowId;
 }
-pub trait PredictorAccessor<B: Basics>: Accessor<B> {
-  type Event;
+pub trait PredictorAccessor<B: Basics, EventFn:?Sized>: Accessor<B> {
   // it is unclear whether predict_immediately is sketchy
-  fn predict_immediately(&mut self, event: Self::Event);
-  fn predict_at_time(&mut self, time: &B::Time, event: Self::Event);
+  fn predict_immediately(&mut self, event: Rc<EventFn>);
+  fn predict_at_time(&mut self, time: &B::Time, event: Rc<EventFn>);
 }
 pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {}
 
@@ -283,10 +282,10 @@ pub enum ValidSince<BaseTime> {
 ///     // your implementation
 ///   }
 /// }
-pub trait TimeStewardLifetimedMethods<'a, B: Basics> {
+pub trait TimeStewardLifetimedMethods<'a, B: Basics>: TimeStewardStaticMethods <B> {
   type Snapshot: Snapshot <B> + 'a;
   type Mutator: Mutator <B> + 'a;
-  type PredictorAccessor: PredictorAccessor <B> + 'a;
+  type PredictorAccessor: PredictorAccessor <B, <Self as TimeStewardStaticMethods <B>>::EventFn> + 'a;
 
   /** Returns a "snapshot" into the TimeSteward.
   
@@ -301,9 +300,9 @@ pub trait TimeStewardLifetimedMethods<'a, B: Basics> {
   */
   fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Self::Snapshot>;
 }
-pub trait TimeSteward<B: Basics>: 'static + for<'a> TimeStewardLifetimedMethods<'a, B> {
-  type Event;
-  type Predictor;
+pub trait TimeStewardStaticMethods <B: Basics>: 'static {
+  type EventFn:?Sized;
+  type PredictorFn:?Sized;
 
   /**
   You are allowed to call snapshot_before(), insert_fiat_event(),
@@ -320,7 +319,7 @@ pub trait TimeSteward<B: Basics>: 'static + for<'a> TimeStewardLifetimedMethods<
   
   new_empty().valid_since() must equal TheBeginning.
   */
-  fn new_empty(constants: B::Constants, predictors: Vec<Self::Predictor>) -> Self;
+  fn new_empty(constants: B::Constants, predictors: Vec<Predictor <Self::PredictorFn>>) -> Self;
 
   /**
   Inserts a fiat event at some point in the history.
@@ -333,7 +332,7 @@ pub trait TimeSteward<B: Basics>: 'static + for<'a> TimeStewardLifetimedMethods<
   fn insert_fiat_event(&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
-                       event: Self::Event)
+                       event: Rc<Self::EventFn>)
                        -> FiatEventOperationResult;
 
   /**
@@ -349,6 +348,7 @@ pub trait TimeSteward<B: Basics>: 'static + for<'a> TimeStewardLifetimedMethods<
                       id: DeterministicRandomId)
                       -> FiatEventOperationResult;
 }
+pub trait TimeSteward <B: Basics>: for<'a> TimeStewardLifetimedMethods<'a, B> {}
 
 
 
@@ -359,11 +359,15 @@ pub trait TimeSteward<B: Basics>: 'static + for<'a> TimeStewardLifetimedMethods<
 //   At(B::Time, E),
 // }
 
-#[derive (Clone)]
-pub struct Predictor<PredictorFn> {
+//#[derive (Clone)]
+pub struct Predictor<PredictorFn:?Sized> {
   predictor_id: PredictorId,
   column_id: ColumnId,
-  function: PredictorFn,
+  function: Rc<PredictorFn>,
+}
+//explicitly implement Clone to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
+impl<PredictorFn:?Sized>  Clone for Predictor <PredictorFn> {
+fn clone (&self)->Self {Predictor {predictor_id: self.predictor_id, column_id: self.column_id, function: self.function.clone()}}
 }
 
 // type Event<M> = Rc<for<'d> Fn(&'d mut M)>;

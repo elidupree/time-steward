@@ -100,9 +100,10 @@ pub struct PredictorAccessor<'a, B: Basics> {
   fields: &'a Fields <B>,
   results:PredictorAccessorResults <B>,
 }
-pub type Event<B> = Rc<for<'d, 'e> Fn(&'d mut Mutator<'e, B>)>;
+pub type EventFn <B> = for<'d, 'e> Fn(&'d mut Mutator<'e, B>);
+pub type Event<B> = Rc<EventFn <B>>;
 pub type Predictor<B> = super::Predictor<PredictorFn<B>>;
-pub type PredictorFn<B> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId)>;
+pub type PredictorFn<B> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId);
 
 
 
@@ -162,12 +163,12 @@ impl<'a, B: Basics> super::MomentaryAccessor<B> for Mutator<'a, B> {
     &self.now.base
   }
 }
-impl<'a, B: Basics> super::PredictorAccessor<B, Event <B>> for PredictorAccessor<'a, B> {
-  fn predict_immediately(&mut self, event: Event<B>) {
+impl<'a, B: Basics> super::PredictorAccessor<B, EventFn <B>> for PredictorAccessor<'a, B> {
+  fn predict_immediately(&mut self, event: Event <B>) {
     let t = self.internal_now.base.clone();
     self.predict_at_time(& t, event);
   }
-  fn predict_at_time(&mut self, time: &B::Time, event: Event<B>) {
+  fn predict_at_time(&mut self, time: &B::Time, event: Event <B>) {
     if time < &self.internal_now.base {
       return;
     }
@@ -446,8 +447,8 @@ shared: self.shared.as_ref(),
   }
 }
 impl<B: Basics> TimeStewardStaticMethods <B> for Steward<B> {
-  type Event = Event<B>;
-  type Predictor = Predictor<B>;
+  type EventFn = EventFn <B>;
+  type PredictorFn = PredictorFn <B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     match self.owned.last_event {
@@ -455,7 +456,7 @@ impl<B: Basics> TimeStewardStaticMethods <B> for Steward<B> {
       Some(ref time) => ValidSince::After(time.base.clone()),
     }
   }
-  fn new_empty(constants: B::Constants, predictors: Vec<Self::Predictor>) -> Self {
+  fn new_empty(constants: B::Constants, predictors: Vec<super::Predictor <Self::PredictorFn>>) -> Self {
     let mut predictors_by_id = HashMap::new();
     let mut predictors_by_column = HashMap::new();
     for predictor in predictors {
@@ -485,7 +486,7 @@ shared: Rc::new(StewardShared {
   fn insert_fiat_event(&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
-                       event: Self::Event)
+                       event: Event <B>)
                        -> FiatEventOperationResult {
     if let Some(ref change) = self.owned.last_event {
       if change.base >= time {

@@ -56,9 +56,10 @@ pub struct PredictorAccessor<'a, B: Basics> {
   soonest_prediction: Option<(B::Time, Event<B>)>,
   dependencies_hasher: SiphashIdGenerator,
 }
-pub type Event<B> = Rc<for<'d, 'e> Fn(&'d mut Mutator<'e, B>)>;
+pub type EventFn <B> = for<'d, 'e> Fn(&'d mut Mutator<'e, B>);
+pub type Event<B> = Rc<EventFn <B>>;
 pub type Predictor<B> = super::Predictor<PredictorFn<B>>;
-pub type PredictorFn<B> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId)>;
+pub type PredictorFn<B> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId);
 
 
 
@@ -110,7 +111,7 @@ impl<'a, B: Basics> PredictorAccessor<'a, B> {
                 yet?")
   }
 }
-impl<'a, B: Basics> super::PredictorAccessor<B, Event <B>> for PredictorAccessor<'a, B> {
+impl<'a, B: Basics> super::PredictorAccessor<B, EventFn <B>> for PredictorAccessor<'a, B> {
   fn predict_immediately(&mut self, event: Event<B>) {
     let t = &self.internal_now().base;
     self.predict_at_time(t, event);
@@ -281,8 +282,8 @@ impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
   }
 }
 impl<B: Basics> TimeStewardStaticMethods <B> for Steward<B> {
-  type Event = Event<B>;
-  type Predictor = Predictor<B>;
+  type EventFn = EventFn <B>;
+  type PredictorFn = PredictorFn <B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     match self.state.last_event {
@@ -290,7 +291,7 @@ impl<B: Basics> TimeStewardStaticMethods <B> for Steward<B> {
       Some(ref time) => ValidSince::After(time.base.clone()),
     }
   }
-  fn new_empty(constants: B::Constants, predictors: Vec<Self::Predictor>) -> Self {
+  fn new_empty(constants: B::Constants, predictors: Vec<super::Predictor <Self::PredictorFn >>) -> Self {
     StewardImpl {
       state: StewardState {
         last_event: None,
@@ -307,7 +308,7 @@ impl<B: Basics> TimeStewardStaticMethods <B> for Steward<B> {
   fn insert_fiat_event(&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
-                       event: Self::Event)
+                       event: Event <B>)
                        -> FiatEventOperationResult {
     if let Some(ref change) = self.state.last_event {
       if change.base >= time {
