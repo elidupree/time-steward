@@ -30,9 +30,10 @@ pub enum PredictorAccessor<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: Ti
   Form0 (& 'a mut <Steward0 as TimeStewardLifetimedMethods <'a, B>>::PredictorAccessor),
   Form1 (& 'a mut <Steward1 as TimeStewardLifetimedMethods <'a, B>>::PredictorAccessor),
 }
-pub type Event<B, Steward0, Steward1> = Rc<for<'d, 'e> Fn(&'d mut Mutator<'e, B, Steward0, Steward1>)>;
+pub type EventFn <B, Steward0, Steward1> = for<'d, 'e> Fn(&'d mut Mutator<'e, B, Steward0, Steward1>);
+pub type Event<B, Steward0, Steward1> = Rc<EventFn <B, Steward0, Steward1>>;
 pub type Predictor<B, Steward0, Steward1> = super::Predictor<PredictorFn<B, Steward0, Steward1>>;
-pub type PredictorFn<B, Steward0, Steward1> = Rc<for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B, Steward0, Steward1>, RowId)>;
+pub type PredictorFn<B, Steward0, Steward1> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B, Steward0, Steward1>, RowId);
 
 
 
@@ -95,7 +96,7 @@ impl<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::
     }
   }
 }
-impl<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::PredictorAccessor<B, Event <B, Steward0, Steward1>> for PredictorAccessor<'a, B, Steward0, Steward1> {
+impl<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::PredictorAccessor<B, EventFn <B, Steward0, Steward1>> for PredictorAccessor<'a, B, Steward0, Steward1> {
   fn predict_immediately(&mut self, event: Event<B, Steward0, Steward1>) {
     match self {
       &mut PredictorAccessor::Form0 (other) => other.predict_immediately(convert_event_0 (event)),
@@ -133,18 +134,20 @@ impl<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::
 }
 
 
-fn convert_event_0 <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> (event: Event <B, Steward0, Steward1>)-><Steward0 as TimeStewardStaticMethods <B>>::Event {
+fn convert_event_0 <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> (event: Event <B, Steward0, Steward1>)->Rc<<Steward0 as TimeStewardStaticMethods <B>>::EventFn> {
   Rc::new (| mutator | {event (&mut Mutator::Form0 (mutator))});
 }
-fn convert_event_1 <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> (event: Event <B, Steward0, Steward1>)-><Steward1 as TimeStewardStaticMethods <B>>::Event {
+fn convert_event_1 <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> (event: Event <B, Steward0, Steward1>)->Rc<<Steward1 as TimeStewardStaticMethods <B>>::EventFn> {
   Rc::new (| mutator | {event (&mut Mutator::Form1 (mutator))});
 }
-fn convert_predictor_0 <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> (event: Predictor <B, Steward0, Steward1>)-><Steward0 as TimeStewardStaticMethods <B>>::Predictor {
-  <Steward0 as TimeStewardStaticMethods <B>>::Predictor {
-    Rc::new (| mutator | {event (&mut Mutator::Form0 (mutator))}),
-  }
+fn convert_predictor_0 <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> (predictor: Predictor <B, Steward0, Steward1>)
+  ->super::Predictor <<Steward0 as TimeStewardStaticMethods <B>>::PredictorFn> {
+  let inner_function =predictor.function .clone();
+  let function: Rc<<Steward0 as TimeStewardStaticMethods <B>>::PredictorFn> = 
+    Rc::new (move | access, row | {
+      inner_function (&mut PredictorAccessor::Form0 (access), row)
+    });
 }
-
 
 
 
@@ -165,16 +168,16 @@ impl<'a, B: Basics, Steward0: 'a + TimeSteward<B>, Steward1: 'a + TimeSteward<B>
   }
 }
 impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewardStaticMethods <B> for Steward<B, Steward0, Steward1> where B::Constants: Clone {
-  type Event = Event<B, Steward0, Steward1>;
-  type Predictor = Predictor<B, Steward0, Steward1>;
+  type EventFn = EventFn <B, Steward0, Steward1>;
+  type PredictorFn = PredictorFn <B, Steward0, Steward1>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     unimplemented!()
   }
-  fn new_empty(constants: B::Constants, predictors: Vec<Self::Predictor>) -> Self {
+  fn new_empty(constants: B::Constants, predictors: Vec<super::Predictor <Self::PredictorFn>>) -> Self {
     Steward (
-      TimeStewardStaticMethods::new_empty (constants.clone(), predictors.iter().map(| predictor | Steward0::Predictor {predictor_id: predictor. predictor_id, column_id: predictor.column_id, function: Rc::new (| accessor, row | (predictor.function) (&mut PredictorAccessor::Form0 (accessor), row))}).collect()),
-      TimeStewardStaticMethods::new_empty (constants, predictors.iter().map(| predictor | Steward1::Predictor {predictor_id: predictor. predictor_id, column_id: predictor.column_id, function: Rc::new (| accessor, row | (predictor.function) (&mut PredictorAccessor::Form1 (accessor), row))}).collect()),
+      TimeStewardStaticMethods::new_empty (constants.clone(), predictors.iter().map(| predictor | super::Predictor {predictor_id: predictor. predictor_id, column_id: predictor.column_id, function: Rc::new (| accessor, row | (predictor.function) (&mut PredictorAccessor::Form0 (accessor), row))}).collect()),
+      TimeStewardStaticMethods::new_empty (constants, predictors.iter().map(| predictor | super::Predictor {predictor_id: predictor. predictor_id, column_id: predictor.column_id, function: Rc::new (| accessor, row | (predictor.function) (&mut PredictorAccessor::Form1 (accessor), row))}).collect()),
       PhantomData,
     )
   }
@@ -182,7 +185,7 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
   fn insert_fiat_event(&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
-                       event: Self::Event)
+                       event: Event <B, Steward0, Steward1>)
                        -> FiatEventOperationResult {
     let result_0 = self.0.insert_fiat_event (time.clone(), id.clone(),convert_event_0 (event));
     let result_1 = self.1.insert_fiat_event (time, id, convert_event_1 (event));
