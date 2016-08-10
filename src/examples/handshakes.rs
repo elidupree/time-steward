@@ -1,6 +1,7 @@
 use memoized_flat_time_steward as s;
-use ::{TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
-       TimeStewardLifetimedMethods, TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor};
+use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
+     TimeStewardLifetimedMethods, TimeStewardStaticMethods, Accessor, MomentaryAccessor,
+     PredictorAccessor};
 use std::rc::Rc;
 use rand::Rng;
 
@@ -45,14 +46,17 @@ fn get_philosopher_id(index: i32) -> RowId {
 
 pub fn testfunc() {
 
-  let mut stew: Steward = ::TimeStewardStaticMethods::new_empty((),
-                                                   vec![s::Predictor {
-                                                          predictor_id: PredictorId(0x0e7f27c7643f8167),
-                                                          column_id: Philosopher::column_id(),
-                                                          function: Rc::new(|pa, whodunnit| {
-      printlnerr!("Planning {}", whodunnit);
-      let me = pa.get::<Philosopher>(whodunnit).unwrap().clone();
-      pa.predict_at_time(&me.time_when_next_initiates_handshake,
+  let mut stew: Steward =
+    ::TimeStewardStaticMethods::new_empty((),
+                                          vec![s::Predictor {
+                                                 predictor_id: PredictorId(0x0e7f27c7643f8167),
+                                                 column_id: Philosopher::column_id(),
+                                                 function: Rc::new(|pa, whodunnit| {
+                                                   printlnerr!("Planning {}", whodunnit);
+                                                   let me = pa.get::<Philosopher>(whodunnit)
+                                                              .unwrap()
+                                                              .clone();
+                                                   pa.predict_at_time(&me.time_when_next_initiates_handshake,
                          Rc::new(move |m| {
         let now = *m.now();
         let friend_id = get_philosopher_id(m.rng().gen_range(0, HOW_MANY_PHILOSOPHERS));
@@ -70,20 +74,20 @@ pub fn testfunc() {
                                time_when_next_initiates_handshake: awaken_time_2,
                              }));
       }));
-    }),
-                                                        }]);
+                                                 }),
+                                               }]);
 
   stew.insert_fiat_event(0,
                          DeterministicRandomId::new(&0x32e1570766e768a7u64),
                          Rc::new(|m| {
-    printlnerr!("FIAT!!!!!");
-    for i in 0..HOW_MANY_PHILOSOPHERS {
-      m.set::<Philosopher>(get_philosopher_id(i),
+                           printlnerr!("FIAT!!!!!");
+                           for i in 0..HOW_MANY_PHILOSOPHERS {
+                             m.set::<Philosopher>(get_philosopher_id(i),
                            Some(Philosopher {
                              time_when_next_initiates_handshake: (i + 1) as Time,
                            }));
-    }
-  }));
+                           }
+                         }));
 
   stew.snapshot_before(&50000);
 

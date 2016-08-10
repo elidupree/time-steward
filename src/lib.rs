@@ -104,19 +104,19 @@ pub trait Column {
   */
   fn column_id() -> ColumnId;
 
-  //   /**
-  //   Implementors MAY return true if first and second are indistinguishable.
-  //
-  //   This is labeled "unsafe" because imperfect implementations can easily cause nondeterminism in the TimeSteward. Using the default is fine, and implementing it is only an optimization. Don't implement this unless you know what you're doing.
-  //
-  //   This is similar to requiring FieldType to be PartialEq, but with an important difference. PartialEq only requires the comparison to be an equivalence relation, but does NOT require that (first == second) guarantee that there is no observable difference between the values. Therefore, trusting arbitrary implementations of PartialEq would be unsafe (in the sense that it would allow the TimeSteward to behave non-deterministically).
-  //
-  //   TODO: perhaps we can create default implementations of this for POD types.
-  //   TODO: can we create automated tests for implementations of this function?
-  //   */
-  //   fn guaranteed_equal__unsafe(first: &Self::FieldType, second: &Self::FieldType) -> bool {
-  //     false
-  //   }
+//   /**
+//   Implementors MAY return true if first and second are indistinguishable.
+//
+//   This is labeled "unsafe" because imperfect implementations can easily cause nondeterminism in the TimeSteward. Using the default is fine, and implementing it is only an optimization. Don't implement this unless you know what you're doing.
+//
+//   This is similar to requiring FieldType to be PartialEq, but with an important difference. PartialEq only requires the comparison to be an equivalence relation, but does NOT require that (first == second) guarantee that there is no observable difference between the values. Therefore, trusting arbitrary implementations of PartialEq would be unsafe (in the sense that it would allow the TimeSteward to behave non-deterministically).
+//
+//   TODO: perhaps we can create default implementations of this for POD types.
+//   TODO: can we create automated tests for implementations of this function?
+//   */
+//   fn guaranteed_equal__unsafe(first: &Self::FieldType, second: &Self::FieldType) -> bool {
+//     false
+//   }
 }
 
 #[derive (Copy, Clone, PartialEq, Eq, Hash)]
@@ -168,7 +168,8 @@ fn next_extended_time_of_predicted_event<BaseTime: Ord>
   let (iteration, id) = match event_base_time.cmp(&from.base) {
     Ordering::Less => return None, // short-circuit
     Ordering::Greater => {
-      (0, time_id_for_predicted_event(predictor_id, row_id, 0, dependencies_hash))
+      (0,
+       time_id_for_predicted_event(predictor_id, row_id, 0, dependencies_hash))
     }
     Ordering::Equal => {
       let id = time_id_for_predicted_event(predictor_id, row_id, from.iteration, dependencies_hash);
@@ -320,7 +321,7 @@ pub trait TimeStewardStaticMethods <B: Basics>: for <'a> TimeStewardLifetimedMet
   
   new_empty().valid_since() must equal TheBeginning.
   */
-  fn new_empty(constants: B::Constants, predictors: Vec<Predictor <PredictorFn <B, Self > >>) -> Self;
+  fn new_empty(constants: B::Constants, predictors: Vec<Predictor<PredictorFn<B, Self>>>) -> Self;
 
   /**
   Inserts a fiat event at some point in the history.
@@ -333,7 +334,7 @@ pub trait TimeStewardStaticMethods <B: Basics>: for <'a> TimeStewardLifetimedMet
   fn insert_fiat_event(&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
-                       event: Rc<EventFn <B, Self>>)
+                       event: Rc<EventFn<B, Self>>)
                        -> FiatEventOperationResult;
 
   /**
@@ -360,15 +361,21 @@ pub trait TimeSteward <B: Basics>: TimeStewardStaticMethods <B> + for<'a> TimeSt
 //   At(B::Time, E),
 // }
 
-//#[derive (Clone)]
-pub struct Predictor<PredictorFn:?Sized> {
+// #[derive (Clone)]
+pub struct Predictor<PredictorFn: ?Sized> {
   predictor_id: PredictorId,
   column_id: ColumnId,
   function: Rc<PredictorFn>,
 }
-//explicitly implement Clone to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
-impl<PredictorFn:?Sized>  Clone for Predictor <PredictorFn> {
-fn clone (&self)->Self {Predictor {predictor_id: self.predictor_id, column_id: self.column_id, function: self.function.clone()}}
+// explicitly implement Clone to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
+impl<PredictorFn: ?Sized> Clone for Predictor<PredictorFn> {
+  fn clone(&self) -> Self {
+    Predictor {
+      predictor_id: self.predictor_id,
+      column_id: self.column_id,
+      function: self.function.clone(),
+    }
+  }
 }
 
 // type Event<M> = Rc<for<'d> Fn(&'d mut M)>;
@@ -376,10 +383,10 @@ fn clone (&self)->Self {Predictor {predictor_id: self.predictor_id, column_id: s
 //  Rc<for<'b, 'c> Fn(&'b mut PA, RowId) -> Prediction<B, Event<M>>>;
 
 
-//pub mod inefficient_flat_time_steward;
+// pub mod inefficient_flat_time_steward;
 pub mod memoized_flat_time_steward;
 
-//pub mod crossverified_time_stewards;
+// pub mod crossverified_time_stewards;
 
 pub mod examples {
   pub mod handshakes;
