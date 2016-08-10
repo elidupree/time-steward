@@ -66,26 +66,26 @@ pub type PredictorFn<B> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId
 
 
 impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
-  fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.state.get::<C>(id).map(|p| p.0)
+  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, & B::Time)> {
+    self.state.get::<C>(id).map(|p| (p.0, & p.1.base))
   }
   fn constants(&self) -> &B::Constants {
     &self.settings.constants
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
-  fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.steward.state.get::<C>(id).map(|p| p.0)
+  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, & B::Time)> {
+    self.steward.state.get::<C>(id).map(|p| (p.0, & p.1.base))
   }
   fn constants(&self) -> &B::Constants {
     &self.steward.settings.constants
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
-  fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
+  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, & B::Time)> {
     self.steward.state.get::<C>(id).map(|p| {
       p.1.id.hash(&mut self.dependencies_hasher);
-      p.0
+      (p.0, & p.1.base)
     })
   }
   fn constants(&self) -> &B::Constants {

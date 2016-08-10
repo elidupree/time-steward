@@ -116,29 +116,29 @@ impl<'a, B: Basics> Drop for Snapshot<'a, B> {
 }
 
 impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
-  fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
+  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, & B::Time)> {
     let field_id =FieldId {
         row_id: id,
         column_id: C::column_id(),
       };
     extract_field_info::<B, C> (self.field_states.get_default (field_id, | |
       SnapshotField {data: self.shared.fields.borrow().field_states.get (& field_id).cloned(), touched_by_steward: Cell::new (false)}
-    ).data.as_ref()).map(|p| p.0)
+    ).data.as_ref()).map(|p| (p.0, & p.1.base))
   }
   fn constants(&self) -> &B::Constants {
     &self.shared.constants
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
-  fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    self.fields.get::<C> (id).map(|p| p.0)
+  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, & B::Time)> {
+    self.fields.get::<C> (id).map(|p| (p.0, & p.1.base))
   }
   fn constants(&self) -> &B::Constants {
     &self.shared.constants
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
-  fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
+  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, & B::Time)> {
     let field_id =FieldId {
         row_id: id,
         column_id: C::column_id(),
@@ -147,7 +147,7 @@ impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
     self.results.dependencies.push (field_id);
     self.fields.get::<C> (id).map(|p| {
       p.1.id.hash(&mut self.results.dependencies_hasher);
-      p.0
+      (p.0, & p.1.base)
     })
   }
   fn constants(&self) -> &B::Constants {
