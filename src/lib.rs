@@ -9,80 +9,77 @@ use rand::{ChaChaRng, SeedableRng};
 
 mod experiments {
 
-//I'm trying to do something very polymorphic in Rust, and I'm having trouble getting the language to do it.
-//My basic idea is to do this: (distilled from a much larger code base at https://github.com/elidupree/time-steward )
+  // I'm trying to do something very polymorphic in Rust, and I'm having trouble getting the language to do it.
+  // My basic idea is to do this: (distilled from a much larger code base at https://github.com/elidupree/time-steward )
 
-use std::rc::Rc;
-trait Mutator {
-  fn do_something();
-}
-trait TimeSteward {
-  type M: Mutator;
-  fn insert_event (&mut self, event: Rc<Fn (&mut Self::M)>);
-  fn call_event(&mut self);
-}
-
-//The catch is that M usually needs to contain one or more references back into the TimeSteward implementor. That means that M has to be parameterized by lifetime. So I would want to do this:
-
-trait TimeSteward2 {
-  //type M <'a>: Mutator;
-  //fn insert_event (&mut self, event: Rc<for <'a> Fn (&mut Self::M <'a>)>);
-  fn call_event(&mut self);
-}
-
-//(I COULD have the Rc<Fn<>> take a &mut Mutator instead of &mut M, but it calls into M a LOT of times, so static dispatch is important.)
-//So next, I tried to work around it by doing this:
-
-trait TimeSteward3LifetimeDependentTypes <'a> {
-  type M: Mutator;
-}
-trait TimeSteward3: for <'a> TimeSteward3LifetimeDependentTypes <'a> {
-  fn insert_event (&mut self, event: Rc<for <'a> Fn (&mut <Self as TimeSteward3LifetimeDependentTypes <'a>>::M)>);
-  fn call_event(&mut self);
-}
-
-//So far, so good. These trait definitions compile. But there's a problem when I try to actually IMPLEMENT the traits:
-
-struct Mutator3Impl <'a> {
-  steward: & 'a TimeSteward3Impl,
-}
-struct TimeSteward3Impl {
-  function: Rc<for <'a> Fn (&mut Mutator3Impl <'a>)>,
-}
-
-impl <'a> Mutator for Mutator3Impl <'a> {
-  fn do_something() {}
-}
-impl <'a> TimeSteward3LifetimeDependentTypes <'a> for TimeSteward3Impl {
-  type M = Mutator3Impl <'a>;
-}
-impl TimeSteward3 for TimeSteward3Impl where TimeSteward3Impl: for <'a>  TimeSteward3LifetimeDependentTypes<'a, M = Mutator3Impl<'a> > {
-  fn insert_event (&mut self, event: Rc<for <'a> Fn (&mut <Self as TimeSteward3LifetimeDependentTypes <'a>>::M)>) {
-    self.function = event;
+  use std::rc::Rc;
+  trait Mutator {
+    fn do_something();
   }
-  fn call_event(&mut self) where TimeSteward3Impl: for <'a>  TimeSteward3LifetimeDependentTypes<'a, M = Mutator3Impl<'a> > {
-    /*
-src\lib.rs:62:21: 62:26 error: mismatched types [E0308]
-src\lib.rs:62     self.function = event;
-                                  ^~~~~
-src\lib.rs:62:21: 62:26 help: run `rustc --explain E0308` to see a detailed explanation
-src\lib.rs:62:21: 62:26 note: expected type `std::rc::Rc<for<'r, 'a> std::ops::Fn(&'r mut experiments::Mutator3Impl<'a>) + 'static>`
-src\lib.rs:62:21: 62:26 note:    found type `std::rc::Rc<for<'r, 'a> std::ops::Fn(&'r mut <experiments::TimeSteward3Impl as experiments::TimeSteward3LifetimeDependentTypes<'a>>::M) + 'static>`
-src\lib.rs:62:21: 62:26 note: expected struct `experiments::Mutator3Impl`, found associated type
-src\lib.rs:62     self.function = event;
-                                  ^~~~~
-     */
-    (self.function) (&mut Mutator3Impl {steward:self});
+  trait TimeSteward {
+  type M: Mutator;
+    fn insert_event(&mut self, event: Rc<Fn(&mut Self::M)>);
+    fn call_event(&mut self);
   }
-}
 
-//So it looks to me as if the compiler was unable to figure out that those 2 types were the same type, even though it's guaranteed that they are the same type.
-//I guess I have 3 questions:
-//1) am I understanding this correctly?
-//2) if so, is there a way to convince the compiler to handle this situation?
-//3) is there another technique that I've missed, that would help me to implement this?
+  // The catch is that M usually needs to contain one or more references back into the TimeSteward implementor. That means that M has to be parameterized by lifetime. So I would want to do this:
 
+  trait TimeSteward2 {
+    // type M <'a>: Mutator;
+    // fn insert_event (&mut self, event: Rc<for <'a> Fn (&mut Self::M <'a>)>);
+    fn call_event(&mut self);
+  }
 
+  // (I COULD have the Rc<Fn<>> take a &mut Mutator instead of &mut M, but it calls into M a LOT of times, so static dispatch is important.)
+  // So next, I tried to work around it by doing this:
+
+  trait TimeSteward3LifetimeDependentTypes <'a> {
+    type M: Mutator;
+  }
+  trait TimeSteward3: for <'a> TimeSteward3LifetimeDependentTypes <'a> {
+    fn insert_event (&mut self, event: Rc<for <'a> Fn (&mut <Self as TimeSteward3LifetimeDependentTypes <'a>>::M)>);
+    fn call_event(&mut self);
+  }
+
+  // So far, so good. These trait definitions compile. But there's a problem when I try to actually IMPLEMENT the traits:
+  
+  struct Mutator3Impl<'a> {
+    steward: &'a TimeSteward3Impl,
+  }
+  struct TimeSteward3Impl {
+    function: Rc<for<'a> Fn(&mut Mutator3Impl<'a>)>,
+  }
+
+  impl<'a> Mutator for Mutator3Impl<'a> {
+    fn do_something() {}
+  }
+  impl<'a> TimeSteward3LifetimeDependentTypes<'a> for TimeSteward3Impl {
+    type M = Mutator3Impl <'a>;
+  }
+  impl TimeSteward3 for TimeSteward3Impl where TimeSteward3Impl: for <'a>  TimeSteward3LifetimeDependentTypes<'a, M = Mutator3Impl<'a> > {
+    fn insert_event (&mut self, event: Rc<for <'a> Fn (&mut <Self as TimeSteward3LifetimeDependentTypes <'a>>::M)>) {
+      self.function = event;
+    }
+    fn call_event(&mut self) where TimeSteward3Impl: for <'a>  TimeSteward3LifetimeDependentTypes<'a, M = Mutator3Impl<'a> > {
+      // src\lib.rs:62:21: 62:26 error: mismatched types [E0308]
+      // src\lib.rs:62     self.function = event;
+      //                                   ^~~~~
+      // src\lib.rs:62:21: 62:26 help: run `rustc --explain E0308` to see a detailed explanation
+      // src\lib.rs:62:21: 62:26 note: expected type `std::rc::Rc<for<'r, 'a> std::ops::Fn(&'r mut experiments::Mutator3Impl<'a>) + 'static>`
+      // src\lib.rs:62:21: 62:26 note:    found type `std::rc::Rc<for<'r, 'a> std::ops::Fn(&'r mut <experiments::TimeSteward3Impl as experiments::TimeSteward3LifetimeDependentTypes<'a>>::M) + 'static>`
+      // src\lib.rs:62:21: 62:26 note: expected struct `experiments::Mutator3Impl`, found associated type
+      // src\lib.rs:62     self.function = event;
+      //                                   ^~~~~
+      //
+      (self.function)(&mut Mutator3Impl { steward: self });
+    }
+  }
+
+  // So it looks to me as if the compiler was unable to figure out that those 2 types were the same type, even though it's guaranteed that they are the same type.
+  // I guess I have 3 questions:
+  // 1) am I understanding this correctly?
+  // 2) if so, is there a way to convince the compiler to handle this situation?
+  // 3) is there another technique that I've missed, that would help me to implement this?
 
 }
 
@@ -463,12 +460,12 @@ impl<PredictorFn: ?Sized> Clone for Predictor<PredictorFn> {
 
 
 // pub mod inefficient_flat_time_steward;
-//pub mod memoized_flat_time_steward;
+// pub mod memoized_flat_time_steward;
 
 // pub mod crossverified_time_stewards;
 
 pub mod examples {
-  //pub mod handshakes;
+  // pub mod handshakes;
 }
 
 #[test]
