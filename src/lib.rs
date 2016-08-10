@@ -56,11 +56,11 @@ impl <'a> Mutator for Mutator3Impl <'a> {
 impl <'a> TimeSteward3LifetimeDependentTypes <'a> for TimeSteward3Impl {
   type M = Mutator3Impl <'a>;
 }
-impl TimeSteward3 for TimeSteward3Impl {
+impl TimeSteward3 for TimeSteward3Impl where TimeSteward3Impl: for <'a>  TimeSteward3LifetimeDependentTypes<'a, M = Mutator3Impl<'a> > {
   fn insert_event (&mut self, event: Rc<for <'a> Fn (&mut <Self as TimeSteward3LifetimeDependentTypes <'a>>::M)>) {
     self.function = event;
   }
-  fn call_event(&mut self) {
+  fn call_event(&mut self) where TimeSteward3Impl: for <'a>  TimeSteward3LifetimeDependentTypes<'a, M = Mutator3Impl<'a> > {
     /*
 src\lib.rs:62:21: 62:26 error: mismatched types [E0308]
 src\lib.rs:62     self.function = event;
