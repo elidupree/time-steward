@@ -286,11 +286,11 @@ pub trait TimeStewardTypes1<'a, B: Basics>: 'static {
   type Snapshot: Snapshot <B> + 'a;
   type Mutator: Mutator <B> + 'a;
 }
-type EventFn <B: Basics, Steward: for<'a> TimeStewardTypes1 <'a, B>> = for <'a> Fn (<Steward as TimeStewardTypes1 <'a, B>>::Mutator);
+type EventFn <B: Basics, Steward: for<'a> TimeStewardTypes1 <'a, B>> = for <'a> Fn (&mut <Steward as TimeStewardTypes1 <'a, B>>::Mutator);
 pub trait TimeStewardTypes2<'a, B: Basics>: for<'b> TimeStewardTypes1 <'b, B> {
   type PredictorAccessor: PredictorAccessor <B, EventFn <B, Self>> + 'a;
 }
-type PredictorFn<B: Basics, Steward: for<'a> TimeStewardTypes2 <'a, B>> = for <'a> Fn (<Steward as TimeStewardTypes2 <'a, B>>::PredictorAccessor);
+type PredictorFn<B: Basics, Steward: for<'a> TimeStewardTypes2 <'a, B>> = for <'a> Fn (&mut <Steward as TimeStewardTypes2 <'a, B>>::PredictorAccessor);
 
 pub trait TimeStewardLifetimedMethods <'a, B: Basics>: for<'b> TimeStewardTypes2 <'b, B> {
 
