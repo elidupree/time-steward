@@ -86,13 +86,13 @@ pub fn testfunc() {
   }));
 
   let mut snapshots = Vec:: new();
-  for increment in 0..20 {
+  for increment in 1..21 {
     snapshots.push (stew.snapshot_before(& (increment*100i64)));
   }
   for snapshot in snapshots.iter_mut().map (| option | option.as_mut().expect ("all these snapshots should have been valid")) {
     printlnerr!("snapshot for {}", snapshot.now());
     for index in 0..HOW_MANY_PHILOSOPHERS {
-      printlnerr!("{}", snapshot.get::<Philosopher> (get_philosopher_id (index)).unwrap().time_when_next_initiates_handshake);
+      printlnerr!("{}", snapshot.get::<Philosopher> (get_philosopher_id (index)).expect("missing philosopher").time_when_next_initiates_handshake);
     }
   }
   // panic!("anyway")
