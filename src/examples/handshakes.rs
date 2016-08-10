@@ -1,7 +1,6 @@
-
 use memoized_flat_time_steward as s;
 use ::{TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
-       TimeStewardLifetimedMethods, Accessor, MomentaryAccessor, PredictorAccessor};
+       TimeStewardLifetimedMethods, TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor};
 use std::rc::Rc;
 use rand::Rng;
 
@@ -46,7 +45,7 @@ fn get_philosopher_id(index: i32) -> RowId {
 
 pub fn testfunc() {
 
-  let mut stew: Steward = ::TimeSteward::new_empty((),
+  let mut stew: Steward = ::TimeStewardStaticMethods::new_empty((),
                                                    vec![s::Predictor {
                                                           predictor_id: PredictorId(0x0e7f27c7643f8167),
                                                           column_id: Philosopher::column_id(),

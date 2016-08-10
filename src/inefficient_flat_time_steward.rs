@@ -7,7 +7,7 @@
 
 use super::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, Column, ExtendedTime,
             EventRng, Basics, TimeSteward, FiatEventOperationResult, ValidSince,
-            TimeStewardLifetimedMethods};
+            TimeStewardLifetimedMethods, TimeStewardStaticMethods};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
@@ -110,8 +110,7 @@ impl<'a, B: Basics> PredictorAccessor<'a, B> {
                 yet?")
   }
 }
-impl<'a, B: Basics> super::PredictorAccessor<B> for PredictorAccessor<'a, B> {
-  type Event = Event<B>;
+impl<'a, B: Basics> super::PredictorAccessor<B, Event <B>> for PredictorAccessor<'a, B> {
   fn predict_immediately(&mut self, event: Event<B>) {
     let t = &self.internal_now().base;
     self.predict_at_time(t, event);
@@ -281,7 +280,7 @@ impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
     })
   }
 }
-impl<B: Basics> TimeSteward<B> for Steward<B> {
+impl<B: Basics> TimeStewardStaticMethods <B> for Steward<B> {
   type Event = Event<B>;
   type Predictor = Predictor<B>;
 
@@ -335,3 +334,4 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
     }
   }
 }
+impl<B: Basics> TimeSteward<B> for Steward<B> {}
