@@ -100,7 +100,7 @@ pub struct PredictorAccessor<'a, B: Basics> {
   fields: &'a Fields<B>,
   results: PredictorAccessorResults<B>,
 }
-pub type EventFn<B> = super::EventFn<B, Steward<B>>;
+pub type EventFn<B> =  for <'a> Fn (&mut Mutator<'a, B>);
 pub type Event<B> = Rc<EventFn<B>>;
 pub type Predictor<B> = super::Predictor<PredictorFn<B>>;
 pub type PredictorFn<B> = super::PredictorFn<B, Steward<B>>;
