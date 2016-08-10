@@ -282,10 +282,17 @@ pub enum ValidSince<BaseTime> {
 ///     // your implementation
 ///   }
 /// }
-pub trait TimeStewardLifetimedMethods<'a, B: Basics>: TimeStewardStaticMethods <B> {
+pub trait TimeStewardTypes1<'a, B: Basics>: 'static {
   type Snapshot: Snapshot <B> + 'a;
   type Mutator: Mutator <B> + 'a;
-  type PredictorAccessor: PredictorAccessor <B, <Self as TimeStewardStaticMethods <B>>::EventFn> + 'a;
+}
+type EventFn <B: Basics, Steward: for<'a> TimeStewardTypes1 <'a, B>> = for <'a> Fn (<Steward as TimeStewardTypes1 <'a, B>>::Mutator);
+pub trait TimeStewardTypes2<'a, B: Basics>: for<'b> TimeStewardTypes1 <'b, B> {
+  type PredictorAccessor: PredictorAccessor <B, EventFn <B, Self>> + 'a;
+}
+type PredictorFn<B: Basics, Steward: for<'a> TimeStewardTypes2 <'a, B>> = for <'a> Fn (<Steward as TimeStewardTypes2 <'a, B>>::PredictorAccessor);
+
+pub trait TimeStewardLifetimedMethods <'a, B: Basics>: for<'b> TimeStewardTypes2 <'b, B> {
 
   /** Returns a "snapshot" into the TimeSteward.
   
@@ -298,11 +305,9 @@ pub trait TimeStewardLifetimedMethods<'a, B: Basics>: TimeStewardStaticMethods <
   
   note: we implement "before" and not "after" because we might be banning events that happen during max_time
   */
-  fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Self::Snapshot>;
+  fn snapshot_before(&'a mut self, time: &B::Time) -> Option<<Self as TimeStewardTypes1 <'a, B>>::Snapshot>;
 }
-pub trait TimeStewardStaticMethods <B: Basics>: 'static {
-  type EventFn:?Sized;
-  type PredictorFn:?Sized;
+pub trait TimeStewardStaticMethods <B: Basics>: for <'a> TimeStewardTypes2 <'a, B> {
 
   /**
   You are allowed to call snapshot_before(), insert_fiat_event(),
@@ -319,7 +324,7 @@ pub trait TimeStewardStaticMethods <B: Basics>: 'static {
   
   new_empty().valid_since() must equal TheBeginning.
   */
-  fn new_empty(constants: B::Constants, predictors: Vec<Predictor <Self::PredictorFn>>) -> Self;
+  fn new_empty(constants: B::Constants, predictors: Vec<Predictor <PredictorFn <B, Self > >>) -> Self;
 
   /**
   Inserts a fiat event at some point in the history.
@@ -332,7 +337,7 @@ pub trait TimeStewardStaticMethods <B: Basics>: 'static {
   fn insert_fiat_event(&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
-                       event: Rc<Self::EventFn>)
+                       event: Rc<EventFn <B, Self>>)
                        -> FiatEventOperationResult;
 
   /**
@@ -375,7 +380,7 @@ fn clone (&self)->Self {Predictor {predictor_id: self.predictor_id, column_id: s
 //  Rc<for<'b, 'c> Fn(&'b mut PA, RowId) -> Prediction<B, Event<M>>>;
 
 
-pub mod inefficient_flat_time_steward;
+//pub mod inefficient_flat_time_steward;
 pub mod memoized_flat_time_steward;
 
 //pub mod crossverified_time_stewards;

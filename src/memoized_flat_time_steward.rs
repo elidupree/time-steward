@@ -7,7 +7,7 @@
 
 use super::{DeterministicRandomId, SiphashIdGenerator, RowId, ColumnId, FieldId, PredictorId, Column, ExtendedTime,
             EventRng, Basics, TimeSteward, FiatEventOperationResult, ValidSince,
-            TimeStewardLifetimedMethods, TimeStewardStaticMethods};
+            TimeStewardLifetimedMethods, TimeStewardStaticMethods, TimeStewardTypes1, TimeStewardTypes2};
 
 use std::collections::{HashMap, BTreeMap, HashSet};
 use std::collections::hash_map::{Entry};
@@ -100,10 +100,10 @@ pub struct PredictorAccessor<'a, B: Basics> {
   fields: &'a Fields <B>,
   results:PredictorAccessorResults <B>,
 }
-pub type EventFn <B> = for<'d, 'e> Fn(&'d mut Mutator<'e, B>);
+pub type EventFn <B> = super::EventFn <B, Steward <B>>;
 pub type Event<B> = Rc<EventFn <B>>;
 pub type Predictor<B> = super::Predictor<PredictorFn<B>>;
-pub type PredictorFn<B> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId);
+pub type PredictorFn<B> = super::PredictorFn <B, Steward <B>>;
 
 
 
@@ -420,14 +420,19 @@ let prediction =Rc::new (Prediction {
   }
 }
 
-
 impl<B: Basics> Steward<B> {}
-impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
+impl<'a, B: Basics> TimeStewardTypes1 <'a, B> for Steward<B> {
   type Snapshot = Snapshot<'a, B>;
   type Mutator = Mutator <'a, B>;
+}
+impl<B: Basics> Steward<B> {}
+impl<'a, B: Basics> TimeStewardTypes2 <'a, B> for Steward<B> {
   type PredictorAccessor = PredictorAccessor <'a, B>;
-    
-  fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Self::Snapshot> {
+}
+
+impl<B: Basics> Steward<B> {}
+impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {      
+  fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Snapshot <'a, B>> {
     if let Some(ref change) = self.owned.last_event {
       if change.base >= *time {
         return None;
@@ -447,16 +452,13 @@ shared: self.shared.as_ref(),
   }
 }
 impl<B: Basics> TimeStewardStaticMethods <B> for Steward<B> {
-  type EventFn = EventFn <B>;
-  type PredictorFn = PredictorFn <B>;
-
   fn valid_since(&self) -> ValidSince<B::Time> {
     match self.owned.last_event {
       None => ValidSince::TheBeginning,
       Some(ref time) => ValidSince::After(time.base.clone()),
     }
   }
-  fn new_empty(constants: B::Constants, predictors: Vec<super::Predictor <Self::PredictorFn>>) -> Self {
+  fn new_empty(constants: B::Constants, predictors: Vec<super::Predictor <PredictorFn <B> >>) -> Self {
     let mut predictors_by_id = HashMap::new();
     let mut predictors_by_column = HashMap::new();
     for predictor in predictors {
