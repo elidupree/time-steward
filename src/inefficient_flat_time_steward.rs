@@ -14,6 +14,7 @@ use std::hash::Hash;
 use std::any::Any;
 use std::borrow::Borrow;
 use std::rc::Rc;
+use std::marker::PhantomData;
 use rand::Rng;
 
 #[derive (Clone)]
@@ -44,7 +45,8 @@ type StewardImpl<B> = Steward<B>;
 pub struct Snapshot<'a, B: Basics> {
   now: B::Time,
   state: StewardState<B>,
-  settings: &'a StewardSettings<B>,
+  settings: Rc<StewardSettings<B>>,
+  _marker: PhantomData <& 'a StewardSettings<B>>,
 }
 pub struct Mutator<'a, B: Basics> {
   now: ExtendedTime<B>,
@@ -267,7 +269,7 @@ impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
   type Snapshot = Snapshot<'a, B>;
   type Mutator = Mutator <'a, B>;
   type PredictorAccessor = PredictorAccessor <'a, B>;
-  fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Self::Snapshot> {
+  fn snapshot_before <'b> (& 'b mut self, time: & 'b B::Time) -> Option<Self::Snapshot> {
     if let Some(ref change) = self.state.last_event {
       if change.base >= *time {
         return None;
@@ -277,7 +279,8 @@ impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
     Some(Snapshot {
       now: time.clone(),
       state: self.state.clone(),
-      settings: self.settings.as_ref(),
+      settings: self.settings.clone(),
+      _marker: PhantomData,
     })
   }
 }

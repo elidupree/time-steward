@@ -18,6 +18,7 @@ use std::borrow::Borrow;
 use std::rc::Rc;
 use std::cell::{Cell, RefCell};
 use std::ops::Drop;
+use std::marker::PhantomData;
 use rand::Rng;
 use ::insert_only;
 
@@ -75,7 +76,8 @@ pub struct Snapshot<'a, B: Basics> {
   now: B::Time,
   index: SnapshotIdx,
 field_states:Rc<insert_only::HashMap<FieldId, SnapshotField <B> >>,
-shared: &'a StewardShared <B>,
+shared: Rc<StewardShared <B>>,
+  _marker: PhantomData <& 'a StewardShared <B>>,
 }
 pub struct Mutator<'a, B: Basics> {
   now: ExtendedTime<B>,
@@ -427,7 +429,7 @@ impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
   type Mutator = Mutator <'a, B>;
   type PredictorAccessor = PredictorAccessor <'a, B>;
     
-  fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Self::Snapshot> {
+  fn snapshot_before <'b> (& 'b mut self, time: & 'b B::Time) -> Option<Self::Snapshot> {
     if let Some(ref change) = self.owned.last_event {
       if change.base >= *time {
         return None;
@@ -439,7 +441,8 @@ impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
       now: time.clone(),
 index: self.owned.next_snapshot,
 field_states:self.shared.fields.borrow_mut().changed_since_snapshots.entry (self.owned.next_snapshot).or_insert (Rc::new (insert_only::HashMap::new())).clone(),
-shared: self.shared.as_ref(),
+shared: self.shared.clone(),
+_marker: PhantomData,
     });
     
     self.owned.next_snapshot += 1;

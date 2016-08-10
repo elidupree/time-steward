@@ -85,8 +85,10 @@ pub fn testfunc() {
     }
   }));
 
-  stew.snapshot_before(&50000);
-
+  let mut snapshots = Vec:: new();
+  for increment in 0..20 {
+    snapshots.push (stew.snapshot_before(& (increment*100i64)));
+  }
   // panic!("anyway")
 }
 

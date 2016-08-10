@@ -298,7 +298,7 @@ pub trait TimeStewardLifetimedMethods<'a, B: Basics>: TimeStewardStaticMethods <
   
   note: we implement "before" and not "after" because we might be banning events that happen during max_time
   */
-  fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Self::Snapshot>;
+  fn snapshot_before <'b> (& 'b mut self, time: & 'b B::Time) -> Option<Self::Snapshot>;
 }
 pub trait TimeStewardStaticMethods <B: Basics>: 'static {
   type EventFn:?Sized;
