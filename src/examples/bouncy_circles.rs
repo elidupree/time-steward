@@ -1,14 +1,15 @@
 extern crate nalgebra;
 
 use memoized_flat_time_steward as s;
+use memoized_flat_time_steward::EventFn;
 use ::{TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
        TimeStewardLifetimedMethods, TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor};
 use ::collision_detection::inefficient as collisions;
 
-use ::time_functions::Trajectory;
+use ::time_functions::QuadraticTrajectory;
 use std::rc::Rc;
 use rand::Rng;
-use nalgebra::{Vector3};
+use nalgebra::{Vector2};
 
 use std::io::Write;
 macro_rules! printlnerr(
@@ -20,12 +21,12 @@ macro_rules! printlnerr(
 
 type Time = i64;
 type SpaceCoordinate = i64;
-type Trajectory = Trajectory3 <Vector2 < SpaceCoordinate>>;
 
 
 const HOW_MANY_CIRCLES: i32 = 20;
-const ARENA_SIZE: SpaceCoordinate = 10000000;
-const SECOND: Time = 10000;
+const ARENA_SIZE: SpaceCoordinate = (1 << 20);
+const TIME_SHIFT: i32 = 20;
+const SECOND: Time = (1 << TIME_SHIFT);
 
 #[derive(Clone)]
 struct Basics;
@@ -42,11 +43,12 @@ impl ::collision_detection::Basics for CollisionBasics {
   }
 
 }
-use ::collision_detection::Nearness <CollisionBasics> as Nearness ;
+
+type Nearness = ::collision_detection::Nearness<CollisionBasics> ;
 
 #[derive(Clone)]
 struct Circle {
-position: Trajectory,
+position: QuadraticTrajectory,
 radius: SpaceCoordinate,
 }
 impl Column for Circle {
@@ -55,23 +57,50 @@ impl Column for Circle {
     ColumnId(0x6422505ce8c8ce8e)
   }
 }
+struct Intersection {
+induced_acceleration: Vector2 <SpaceCoordinate>,
+}
+impl Column for Intersection {
+  type FieldType = Self;
+  fn column_id() -> ColumnId {
+    ColumnId(0x9357f021339198a1)  }
+}
 
-type Steward = s::Steward<Basics>;
+ type Steward = s::Steward<Basics>;
 
 fn get_circle_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x86ccbeb2c140cc51, index))
 }
 
-fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as TimeStewardLifetimedMethods>::EventFn >> (accessor: PA, id: RowId) {
+fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as TimeStewardLifetimedMethods>::EventFn >> (accessor: &mut PA, id: RowId) {
   printlnerr!("Planning {}", id);
-let ids = nearness::get_ids (accessor, id).0;
+let ids = Nearness::get_ids (accessor, id).0;
+let time;
   {
   
-let us = [accessor.get::<Circle>(ids [0]).unwrap(), accessor.get::<Circle>(ids [0]).unwrap()];
+let us = (accessor.data_and_last_change::<Circle>(ids [0]).unwrap(), accessor.data_and_last_change::<Circle>(ids [0]).unwrap());
+
+let relationship = accessor.get::<Intersection> (id);
+time =QuadraticTrajectory::approximately_when_distance_passes((us.0) .0.radius + (us.1) .0.radius, if relationship.is_none() {-1} else {1},
+((us.0) .1.clone(), & (us.0) .0.position), ((us.1) .1.clone(), & (us.1) .0.position)) ;
   }
-  accessor.predict_at_time (Rc::new (move | mutator | {
+  if let Some (yes) = time { accessor.predict_at_time (& yes, Rc::new (move | mutator | {
+    let relationship = mutator.get::<Intersection> (id).clone();
+    let mut us = (accessor.data_and_last_change::<Circle>(ids [0]).unwrap().clone(), accessor.data_and_last_change::<Circle>(ids [0]).unwrap().clone());
+    (us.0).0.position.update_by (mutator.now() - (us.0).1);
+    (us. 1) .0.position.update_by (mutator.now() - (us. 1) .1);
+    if let Some (intersection) = relationship {
+(us.0).0.position.add_acceleration (- intersection.induced_acceleration);
+(us. 1) .0.position.add_acceleration (intersection.induced_acceleration);
+    }
+    else {
+    let acceleration = Vector2::new (ARENA_SIZE,ARENA_SIZE);
+    (us.0) .0.position.add_acceleration (acceleration);
+    (us. 1) .0.position.add_acceleration (- acceleration);
+        mutator.set::<Intersection> (id, Some (Intersection {induced_acceleration: acceleration}));
     
-  }));
+    }
+  }));}
 }
 
 pub fn testfunc() {
@@ -79,7 +108,7 @@ pub fn testfunc() {
   let mut stew: Steward = ::TimeStewardStaticMethods::new_empty((),
                                                    vec![s::Predictor {
                                                           predictor_id: PredictorId(0x5375592f4da8682c),
-                                                          column_id: collisions::Nearness::column_id(),
+                                                          column_id: Nearness::column_id(),
                                                           function: Rc::new(| accessor, id | collision_predictor (accessor, id)),}]); /*{
       printlnerr!("Planning {}", id);
       let me = pa.get::<Circle>(id).unwrap().clone();
@@ -108,14 +137,21 @@ pub fn testfunc() {
                          DeterministicRandomId::new(& 0),
                          Rc::new(| mutator | {
     for i in 0..HOW_MANY_CIRCLES {
-let position = Vector::new (mutator.rng().gen_range(0, ARENA_SIZE), mutator.rng().gen_range(0, ARENA_SIZE));
-let thingy =ARENA_SIZE/SECOND/20;
-let velocity = Vector::new (mutator.rng().gen_range(- thingy, thingy), mutator.rng().gen_range(- thingy, thingy));
+let thingy =ARENA_SIZE/20;
 let radius = mutator.rng().gen_range(ARENA_SIZE/30, ARENA_SIZE/15);
-      mutator.set::<Circle>(get_circle_id(i),
+let id =get_circle_id(i);
+
+let position = QuadraticTrajectory::new (
+TIME_SHIFT,
+[mutator.rng().gen_range(0, ARENA_SIZE), mutator.rng().gen_range(0, ARENA_SIZE),
+mutator.rng().gen_range(- thingy, thingy), mutator.rng().gen_range(- thingy, thingy),
+0, 0]
+);
+      mutator.set::<Circle>(id,
                            Some(Circle {
-position: position, velocity: velocity, radius: radius
+position: position, radius: radius
                            }));
+collisions::insert::<CollisionBasics,_> (mutator, id,());
     }
   }));
 
@@ -126,7 +162,7 @@ position: position, velocity: velocity, radius: radius
   for snapshot in snapshots.iter_mut().map (| option | option.as_mut().expect ("all these snapshots should have been valid")) {
     printlnerr!("snapshot for {}", snapshot.now());
     for index in 0..HOW_MANY_CIRCLES {
-      printlnerr!("{}", snapshot.get::<Circle> (get_circle_id (index)).expect("missing circle").position);
+      //printlnerr!("{}", snapshot.get::<Circle> (get_circle_id (index)).expect("missing circle").position);
     }
   }
   // panic!("anyway")
