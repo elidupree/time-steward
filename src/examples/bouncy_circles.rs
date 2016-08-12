@@ -82,6 +82,7 @@ let us = (accessor.data_and_last_change::<Circle>(ids [0]).expect("a nearness ex
 let relationship = accessor.get::<Intersection> (id);
 time =QuadraticTrajectory::approximately_when_distance_passes((us.0) .0.radius + (us.1) .0.radius, if relationship.is_none() {-1} else {1},
 ((us.0) .1.clone(), & (us.0) .0.position), ((us.1) .1.clone(), & (us.1) .0.position)) ;
+  printlnerr!("At {}, {}", (us.0) .1, (us.1).1);
   }
   if let Some (yes) = time { accessor.predict_at_time (& yes, Rc::new (move | mutator | {
 let new_relationship;let mut new ;
