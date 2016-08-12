@@ -1,25 +1,24 @@
-/*
-Future TimeSteward API goals:
-
-– groups 
-  I made up API functions for this before, but I'm not sure they were perfect.
-  We can use RowId's for group ids, but what kinds of things can be stored IN a group? Previously I said only RowId's could, which doesn't seem ideal. I think it would work to allow anything hashable. That would basically make a group behave like a HashSet. But then, why not make it behave like a HashMap instead? But accessor itself already behaves like a HashMap over RowId's – the essential thing groups do is to allow iterating particular subsets of that HashMap.
-
-– conveniences for serializing snapshots (not sure what)
-
-– be able to construct a new TimeSteward from any snapshot
-  Issues: should snapshots expose the predictors? Also, the predictors can't be serialized. So you'd probably actually have to construct a TimeSteward from snapshot + predictors. This requires a way to iterate all fields (and group data if we add groups) in a snapshot, which is similar to the previous 2 items (iterating the whole set, which is a special case of iterating a subset; and serializing requires you to iterate everything as well)
-
-– parallelism support for predictors and events
-  When an event or predictor gets invalidated while it is still running, it would be nice for it to save time by exiting early.
-  Moreover, it would probably be more efficient to discard invalidated fields than to preserve them for predictors/events that are in process. The natural way for the accessors to handle this is to have get() return None, which would mean that you can never safely unwrap() the result. We could provide a "unwrap or return" macro.
-  
-– Optimization features
-  one possibility: user can provide a function FieldId->[(PredictorId, RowId)] that lists predictors you KNOW will be invalidated by a change to that field, then have that predictor run its get() calls with an input called "promise_inferred" or something so that we don't spend time and memory recording the dependency
-  another: a predictor might have a costly computation to find the exact time of a future event, which it won't need to do if it gets invalidated long before that time comes. For that, we can provide a defer_until(time) method
-  
-
-*/
+/* Future TimeSteward API goals:
+ *
+ * – groups
+ * I made up API functions for this before, but I'm not sure they were perfect.
+ * We can use RowId's for group ids, but what kinds of things can be stored IN a group? Previously I said only RowId's could, which doesn't seem ideal. I think it would work to allow anything hashable. That would basically make a group behave like a HashSet. But then, why not make it behave like a HashMap instead? But accessor itself already behaves like a HashMap over RowId's – the essential thing groups do is to allow iterating particular subsets of that HashMap.
+ *
+ * – conveniences for serializing snapshots (not sure what)
+ *
+ * – be able to construct a new TimeSteward from any snapshot
+ * Issues: should snapshots expose the predictors? Also, the predictors can't be serialized. So you'd probably actually have to construct a TimeSteward from snapshot + predictors. This requires a way to iterate all fields (and group data if we add groups) in a snapshot, which is similar to the previous 2 items (iterating the whole set, which is a special case of iterating a subset; and serializing requires you to iterate everything as well)
+ *
+ * – parallelism support for predictors and events
+ * When an event or predictor gets invalidated while it is still running, it would be nice for it to save time by exiting early.
+ * Moreover, it would probably be more efficient to discard invalidated fields than to preserve them for predictors/events that are in process. The natural way for the accessors to handle this is to have get() return None, which would mean that you can never safely unwrap() the result. We could provide a "unwrap or return" macro.
+ *
+ * – Optimization features
+ * one possibility: user can provide a function FieldId->[(PredictorId, RowId)] that lists predictors you KNOW will be invalidated by a change to that field, then have that predictor run its get() calls with an input called "promise_inferred" or something so that we don't spend time and memory recording the dependency
+ * another: a predictor might have a costly computation to find the exact time of a future event, which it won't need to do if it gets invalidated long before that time comes. For that, we can provide a defer_until(time) method
+ *
+ *
+ * */
 
 extern crate rand;
 
@@ -127,19 +126,19 @@ pub trait Column {
   */
   fn column_id() -> ColumnId;
 
-  //   /**
-  //   Implementors MAY return true if first and second are indistinguishable.
-  //
-  //   This is labeled "unsafe" because imperfect implementations can easily cause nondeterminism in the TimeSteward. Using the default is fine, and implementing it is only an optimization. Don't implement this unless you know what you're doing.
-  //
-  //   This is similar to requiring FieldType to be PartialEq, but with an important difference. PartialEq only requires the comparison to be an equivalence relation, but does NOT require that (first == second) guarantee that there is no observable difference between the values. Therefore, trusting arbitrary implementations of PartialEq would be unsafe (in the sense that it would allow the TimeSteward to behave non-deterministically).
-  //
-  //   TODO: perhaps we can create default implementations of this for POD types.
-  //   TODO: can we create automated tests for implementations of this function?
-  //   */
-  //   fn guaranteed_equal__unsafe(first: &Self::FieldType, second: &Self::FieldType) -> bool {
-  //     false
-  //   }
+//   /**
+//   Implementors MAY return true if first and second are indistinguishable.
+//
+//   This is labeled "unsafe" because imperfect implementations can easily cause nondeterminism in the TimeSteward. Using the default is fine, and implementing it is only an optimization. Don't implement this unless you know what you're doing.
+//
+//   This is similar to requiring FieldType to be PartialEq, but with an important difference. PartialEq only requires the comparison to be an equivalence relation, but does NOT require that (first == second) guarantee that there is no observable difference between the values. Therefore, trusting arbitrary implementations of PartialEq would be unsafe (in the sense that it would allow the TimeSteward to behave non-deterministically).
+//
+//   TODO: perhaps we can create default implementations of this for POD types.
+//   TODO: can we create automated tests for implementations of this function?
+//   */
+//   fn guaranteed_equal__unsafe(first: &Self::FieldType, second: &Self::FieldType) -> bool {
+//     false
+//   }
 }
 
 #[derive (Copy, Clone, PartialEq, Eq, Hash)]
@@ -191,7 +190,8 @@ fn next_extended_time_of_predicted_event<BaseTime: Ord>
   let (iteration, id) = match event_base_time.cmp(&from.base) {
     Ordering::Less => return None, // short-circuit
     Ordering::Greater => {
-      (0, time_id_for_predicted_event(predictor_id, row_id, 0, dependencies_hash))
+      (0,
+       time_id_for_predicted_event(predictor_id, row_id, 0, dependencies_hash))
     }
     Ordering::Equal => {
       let id = time_id_for_predicted_event(predictor_id, row_id, from.iteration, dependencies_hash);
@@ -246,9 +246,13 @@ type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 // }
 
 pub trait Accessor<B: Basics> {
-  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, & B::Time)>;
-  fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {self.data_and_last_change::<C> (id).map (|p| p.0)}
-  fn last_change <C: Column>(&mut self, id: RowId) -> Option<& B::Time> {self.data_and_last_change::<C> (id).map (|p| p.1)}
+  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, &B::Time)>;
+  fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
+    self.data_and_last_change::<C>(id).map(|p| p.0)
+  }
+  fn last_change<C: Column>(&mut self, id: RowId) -> Option<&B::Time> {
+    self.data_and_last_change::<C>(id).map(|p| p.1)
+  }
   fn constants(&self) -> &B::Constants;
 }
 
@@ -331,7 +335,7 @@ pub trait TimeStewardStaticMethods <B: Basics>: 'static {
   
   new_empty().valid_since() must equal TheBeginning.
   */
-  fn new_empty(constants: B::Constants, predictors: Vec<Predictor <Self::PredictorFn>>) -> Self;
+  fn new_empty(constants: B::Constants, predictors: Vec<Predictor<Self::PredictorFn>>) -> Self;
 
   /**
   Inserts a fiat event at some point in the history.
@@ -371,7 +375,7 @@ pub trait TimeStewardStaticMethods <B: Basics>: 'static {
   
   note: we implement "before" and not "after" because we might be banning events that happen during max_time
   */
-  fn snapshot_before <'b> (& 'b mut self, time: & 'b B::Time) -> Option<Self::Snapshot>;
+  fn snapshot_before<'b>(&'b mut self, time: &'b B::Time) -> Option<Self::Snapshot>;
 }
 pub trait TimeSteward <B: Basics>: for<'a> TimeStewardLifetimedMethods<'a, B> {}
 
@@ -384,15 +388,21 @@ pub trait TimeSteward <B: Basics>: for<'a> TimeStewardLifetimedMethods<'a, B> {}
 //   At(B::Time, E),
 // }
 
-//#[derive (Clone)]
-pub struct Predictor<PredictorFn:?Sized> {
+// #[derive (Clone)]
+pub struct Predictor<PredictorFn: ?Sized> {
   predictor_id: PredictorId,
   column_id: ColumnId,
   function: Rc<PredictorFn>,
 }
-//explicitly implement Clone to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
-impl<PredictorFn:?Sized>  Clone for Predictor <PredictorFn> {
-fn clone (&self)->Self {Predictor {predictor_id: self.predictor_id, column_id: self.column_id, function: self.function.clone()}}
+// explicitly implement Clone to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
+impl<PredictorFn: ?Sized> Clone for Predictor<PredictorFn> {
+  fn clone(&self) -> Self {
+    Predictor {
+      predictor_id: self.predictor_id,
+      column_id: self.column_id,
+      function: self.function.clone(),
+    }
+  }
 }
 
 // type Event<M> = Rc<for<'d> Fn(&'d mut M)>;
@@ -403,13 +413,13 @@ fn clone (&self)->Self {Predictor {predictor_id: self.predictor_id, column_id: s
 pub mod inefficient_flat_time_steward;
 pub mod memoized_flat_time_steward;
 
-//pub mod crossverified_time_stewards;
+// pub mod crossverified_time_stewards;
 
 pub mod collision_detection;
 
 pub mod examples {
   pub mod handshakes;
-  //pub mod bouncy_circles;
+  // pub mod bouncy_circles;
 }
 
 #[test]
