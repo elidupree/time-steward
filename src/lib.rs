@@ -21,6 +21,9 @@
  * */
 
 extern crate rand;
+extern crate polynomial;
+extern crate nalgebra;
+extern crate roots;
 
 use std::hash::{Hash, Hasher, SipHasher};
 use std::any::Any;
@@ -415,6 +418,7 @@ pub mod memoized_flat_time_steward;
 
 // pub mod crossverified_time_stewards;
 
+pub mod time_functions;
 pub mod collision_detection;
 
 pub mod examples {
