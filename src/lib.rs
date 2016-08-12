@@ -423,7 +423,7 @@ pub mod collision_detection;
 
 pub mod examples {
   pub mod handshakes;
-  // pub mod bouncy_circles;
+  pub mod bouncy_circles;
 }
 
 #[test]

@@ -1,15 +1,13 @@
 use polynomial::Polynomial;
-use nalgebra::{BaseNum, Vector2};
-use std::ops::Shr;
-use std::cmp::{max , Ordering};
-use roots::Roots;
+use nalgebra::{Vector2};
+use std::cmp::{max};
 use roots::find_roots_quartic;
 
 //TODO: polymorphic in number of dimensions, and numeric type
 //TODO: optimize away the unnecessary heap-allocation and other inefficiencies of Polynomial, and other pointless inefficiencies I introduced
 //TODO replace f64 with a deterministic type (probably mpfr)
 //note: the third time is not acceleration, but the coefficient of X squared, which is 2 times acceleration
-type Coordinate = i64;
+pub type Coordinate = i64;
 #[derive (Clone,)]
 pub struct QuadraticTrajectory {
   data: Vector2 <Polynomial <Coordinate>>,

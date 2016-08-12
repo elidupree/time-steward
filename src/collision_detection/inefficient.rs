@@ -34,7 +34,7 @@ pub fn erase<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
   let mut members = mutator.get::<Detector<B>>(my_row).unwrap().clone();
   members.remove(&who);
   for member in members.iter() {
-    let (id, contents) = Nearness::<B>::new(who, member.clone(), me);
+    let (id,_) = Nearness::<B>::new(who, member.clone(), me);
     mutator.set::<Nearness<B>>(id, None);
   }
   mutator.set::<Detector<B>>(my_row, Some(members));

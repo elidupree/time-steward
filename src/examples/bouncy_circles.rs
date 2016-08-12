@@ -1,9 +1,8 @@
 extern crate nalgebra;
 
 use memoized_flat_time_steward as s;
-use memoized_flat_time_steward::EventFn;
 use ::{TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
-       TimeStewardLifetimedMethods, TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor};
+TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor};
 use ::collision_detection::inefficient as collisions;
 
 use ::time_functions::QuadraticTrajectory;
@@ -69,10 +68,10 @@ impl Column for Intersection {
  type Steward = s::Steward<Basics>;
 
 fn get_circle_id(index: i32) -> RowId {
-  DeterministicRandomId::new(&(0x86ccbeb2c140cc51, index))
+  DeterministicRandomId::new(&(0x86ccbeb2c140cc51u64, index))
 }
 
-fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as TimeStewardLifetimedMethods>::EventFn >> (accessor: &mut PA, id: RowId) {
+fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as TimeStewardStaticMethods < Basics>>::EventFn >> (accessor: &mut PA, id: RowId) {
   printlnerr!("Planning {}", id);
 let ids = Nearness::get_ids (accessor, id).0;
 let time;
@@ -85,21 +84,27 @@ time =QuadraticTrajectory::approximately_when_distance_passes((us.0) .0.radius +
 ((us.0) .1.clone(), & (us.0) .0.position), ((us.1) .1.clone(), & (us.1) .0.position)) ;
   }
   if let Some (yes) = time { accessor.predict_at_time (& yes, Rc::new (move | mutator | {
-    let relationship = mutator.get::<Intersection> (id).clone();
-    let mut us = (accessor.data_and_last_change::<Circle>(ids [0]).unwrap().clone(), accessor.data_and_last_change::<Circle>(ids [0]).unwrap().clone());
-    (us.0).0.position.update_by (mutator.now() - (us.0).1);
-    (us. 1) .0.position.update_by (mutator.now() - (us. 1) .1);
+let new_relationship;let mut new ;
+    {let relationship = mutator.get::<Intersection> (id).clone();
+    let us = (mutator.data_and_last_change::<Circle>(ids [0]).unwrap(), mutator.data_and_last_change::<Circle>(ids [0]).unwrap());
+    new = ((us.0).0.clone(), (us.1).0.clone());
+    new.0.position.update_by (mutator.now() - (us.0).1);
+    new.1.position.update_by (mutator.now() - (us. 1) .1);
     if let Some (intersection) = relationship {
-(us.0).0.position.add_acceleration (- intersection.induced_acceleration);
-(us. 1) .0.position.add_acceleration (intersection.induced_acceleration);
+new.0.position.add_acceleration (- intersection.induced_acceleration);
+new.1 .position.add_acceleration (intersection.induced_acceleration);
+new_relationship = None;
     }
     else {
     let acceleration = Vector2::new (ARENA_SIZE,ARENA_SIZE);
-    (us.0) .0.position.add_acceleration (acceleration);
-    (us. 1) .0.position.add_acceleration (- acceleration);
-        mutator.set::<Intersection> (id, Some (Intersection {induced_acceleration: acceleration}));
+    new.0.position.add_acceleration (acceleration);
+    new.1.position.add_acceleration (- acceleration);
+        new_relationship = Some (Intersection {induced_acceleration: acceleration});
     
-    }
+    }}
+    mutator.set::<Intersection> (id, new_relationship);
+    mutator.set::<Circle> (ids [0], Some (new.0));
+    mutator.set::<Circle> (ids [1], Some (new. 1));
   }));}
 }
 
