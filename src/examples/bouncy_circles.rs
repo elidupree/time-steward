@@ -77,7 +77,7 @@ let ids = Nearness::get_ids (accessor, id).0;
 let time;
   {
   
-let us = (accessor.data_and_last_change::<Circle>(ids [0]).unwrap(), accessor.data_and_last_change::<Circle>(ids [0]).unwrap());
+let us = (accessor.data_and_last_change::<Circle>(ids [0]).expect("a nearness exists for a circle that doesn't"), accessor.data_and_last_change::<Circle>(ids [0]).expect("a nearness exists for a circle that doesn't"));
 
 let relationship = accessor.get::<Intersection> (id);
 time =QuadraticTrajectory::approximately_when_distance_passes((us.0) .0.radius + (us.1) .0.radius, if relationship.is_none() {-1} else {1},
@@ -86,7 +86,7 @@ time =QuadraticTrajectory::approximately_when_distance_passes((us.0) .0.radius +
   if let Some (yes) = time { accessor.predict_at_time (& yes, Rc::new (move | mutator | {
 let new_relationship;let mut new ;
     {let relationship = mutator.get::<Intersection> (id).clone();
-    let us = (mutator.data_and_last_change::<Circle>(ids [0]).unwrap(), mutator.data_and_last_change::<Circle>(ids [0]).unwrap());
+    let us = (mutator.data_and_last_change::<Circle>(ids [0]).expect("a nearness exists for a circle that doesn't (event)"),mutator.data_and_last_change::<Circle>(ids [0]).expect("a nearness exists for a circle that doesn't (event)"));
     new = ((us.0).0.clone(), (us.1).0.clone());
     new.0.position.update_by (mutator.now() - (us.0).1);
     new.1.position.update_by (mutator.now() - (us. 1) .1);
