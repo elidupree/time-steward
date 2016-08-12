@@ -405,6 +405,8 @@ pub mod memoized_flat_time_steward;
 
 //pub mod crossverified_time_stewards;
 
+pub mod collision_detection;
+
 pub mod examples {
   pub mod handshakes;
 //pub mod bouncy_circles;
