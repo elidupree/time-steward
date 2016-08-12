@@ -162,7 +162,7 @@ collisions::insert::<CollisionBasics,_> (mutator, id,());
 
   let mut snapshots = Vec:: new();
   for increment in 1..21 {
-    snapshots.push (stew.snapshot_before(& (increment*100i64)));
+    snapshots.push (stew.snapshot_before(& (increment*SECOND*2)));
   }
   for snapshot in snapshots.iter_mut().map (| option | option.as_mut().expect ("all these snapshots should have been valid")) {
     printlnerr!("snapshot for {}", snapshot.now());
