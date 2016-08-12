@@ -95,10 +95,10 @@ pub struct PredictorAccessor<'a, B: Basics> {
   predictor_id: PredictorId,
   about_row_id: RowId,
   internal_now: ExtendedTime<B>,
-  steward: &'a mut StewardOwned<B>,
+  steward: RefCell<&'a mut StewardOwned<B>>,
   shared: &'a StewardShared<B>,
   fields: &'a Fields<B>,
-  results: PredictorAccessorResults<B>,
+  results: RefCell<PredictorAccessorResults<B>>,
 }
 pub type EventFn<B> = for<'d, 'e> Fn(&'d mut Mutator<'e, B>);
 pub type Event<B> = Rc<EventFn<B>>;
@@ -114,7 +114,7 @@ impl<B: Basics> Drop for Snapshot<B> {
 }
 
 impl<B: Basics> super::Accessor<B> for Snapshot<B> {
-  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
+  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
     let field_id = FieldId {
       row_id: id,
       column_id: C::column_id(),
@@ -140,7 +140,7 @@ impl<B: Basics> super::Accessor<B> for Snapshot<B> {
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
-  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
+  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
     self.fields.get::<C>(id).map(|p| (p.0, &p.1.base))
   }
   fn constants(&self) -> &B::Constants {
@@ -148,19 +148,20 @@ impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
-  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
+  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
     let field_id = FieldId {
       row_id: id,
       column_id: C::column_id(),
     };
-    self.steward
+let mut results = self.results.borrow_mut();
+    self.steward.borrow_mut()
         .prediction_dependencies
         .entry(field_id)
         .or_insert(HashSet::new())
         .insert((self.about_row_id, self.predictor_id));
-    self.results.dependencies.push(field_id);
+    results.dependencies.push(field_id);
     self.fields.get::<C>(id).map(|p| {
-      p.1.id.hash(&mut self.results.dependencies_hasher);
+      p.1.id.hash(&mut results.dependencies_hasher);
       (p.0, &p.1.base)
     })
   }
@@ -188,12 +189,13 @@ impl<'a, B: Basics> super::PredictorAccessor<B, EventFn<B>> for PredictorAccesso
     if time < &self.internal_now.base {
       return;
     }
-    if let Some((ref old_time, _)) = self.results.soonest_prediction {
+    let mut results = self.results.borrow_mut();
+    if let Some((ref old_time, _)) = results.soonest_prediction {
       if old_time <= time {
         return;
       }
     }
-    self.results.soonest_prediction = Some((time.clone(), event));
+    results.soonest_prediction = Some((time.clone(), event));
   }
 }
 impl<B: Basics> super::Snapshot<B> for Snapshot<B> {}
@@ -436,17 +438,17 @@ impl<B: Basics> Steward<B> {
           predictor_id: predictor_id,
           about_row_id: row_id,
           internal_now: now,
-          steward: &mut self.owned,
+          steward: RefCell::new (&mut self.owned),
           shared: &self.shared,
           fields: field_ref,
-          results: PredictorAccessorResults {
+          results: RefCell::new (PredictorAccessorResults {
             soonest_prediction: None,
             dependencies: Vec::new(),
             dependencies_hasher: SiphashIdGenerator::new(),
-          },
+          }),
         };
         (function)(&mut pa, row_id);
-        results = pa.results;
+        results = pa.results.into_inner();
       }
       let dependencies_hash = results.dependencies_hasher.generate();
       let prediction = Rc::new(Prediction {

@@ -249,11 +249,11 @@ type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 // }
 
 pub trait Accessor<B: Basics> {
-  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, &B::Time)>;
-  fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
+  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)>;
+  fn get<C: Column>(&self, id: RowId) -> Option<&C::FieldType> {
     self.data_and_last_change::<C>(id).map(|p| p.0)
   }
-  fn last_change<C: Column>(&mut self, id: RowId) -> Option<&B::Time> {
+  fn last_change<C: Column>(&self, id: RowId) -> Option<&B::Time> {
     self.data_and_last_change::<C>(id).map(|p| p.1)
   }
   fn constants(&self) -> &B::Constants;

@@ -14,6 +14,7 @@ use std::hash::Hash;
 use std::any::Any;
 use std::borrow::Borrow;
 use std::rc::Rc;
+use std::cell::RefCell;
 use rand::Rng;
 
 #[derive (Clone)]
@@ -54,7 +55,7 @@ pub struct Mutator<'a, B: Basics> {
 pub struct PredictorAccessor<'a, B: Basics> {
   steward: &'a StewardImpl<B>,
   soonest_prediction: Option<(B::Time, Event<B>)>,
-  dependencies_hasher: SiphashIdGenerator,
+  dependencies_hasher: RefCell<SiphashIdGenerator>,
 }
 pub type EventFn<B> = for<'d, 'e> Fn(&'d mut Mutator<'e, B>);
 pub type Event<B> = Rc<EventFn<B>>;
@@ -64,7 +65,7 @@ pub type PredictorFn<B> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId
 
 
 impl<B: Basics> super::Accessor<B> for Snapshot<B> {
-  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
+  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
     self.state.get::<C>(id).map(|p| (p.0, &p.1.base))
   }
   fn constants(&self) -> &B::Constants {
@@ -72,7 +73,7 @@ impl<B: Basics> super::Accessor<B> for Snapshot<B> {
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
-  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
+  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
     self.steward.state.get::<C>(id).map(|p| (p.0, &p.1.base))
   }
   fn constants(&self) -> &B::Constants {
@@ -80,9 +81,9 @@ impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
-  fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
+  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
     self.steward.state.get::<C>(id).map(|p| {
-      p.1.id.hash(&mut self.dependencies_hasher);
+      p.1.id.hash(&mut*self.dependencies_hasher.borrow_mut());
       (p.0, &p.1.base)
     })
   }
@@ -220,10 +221,10 @@ impl<B: Basics> StewardImpl<B> {
                 let mut pa = PredictorAccessor {
                   steward: self,
                   soonest_prediction: None,
-                  dependencies_hasher: SiphashIdGenerator::new(),
+                  dependencies_hasher: RefCell::new (SiphashIdGenerator::new()),
                 };
                 (predictor.function)(&mut pa, field_id.row_id);
-                let dependencies_hash = pa.dependencies_hasher.generate();
+                let dependencies_hash = pa.dependencies_hasher.borrow().generate();
                 pa.soonest_prediction.and_then(|(event_base_time, event)| {
                   super::next_extended_time_of_predicted_event(predictor.predictor_id,
                                                                field_id.row_id,
