@@ -5,3 +5,4 @@ authors = ["Eli Dupree <vcs@elidupree.com>"]
 
 [dependencies]
 rand = "0.3"
+nalgebra = "0.8.2"
