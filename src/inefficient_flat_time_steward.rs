@@ -14,7 +14,6 @@ use std::hash::Hash;
 use std::any::Any;
 use std::borrow::Borrow;
 use std::rc::Rc;
-use std::marker::PhantomData;
 use rand::Rng;
 
 #[derive (Clone)]
@@ -42,11 +41,10 @@ pub struct Steward<B: Basics> {
   settings: Rc<StewardSettings<B>>,
 }
 type StewardImpl<B> = Steward<B>;
-pub struct Snapshot<'a, B: Basics> {
+pub struct Snapshot<B: Basics> {
   now: B::Time,
   state: StewardState<B>,
   settings: Rc<StewardSettings<B>>,
-  _marker: PhantomData <& 'a StewardSettings<B>>,
 }
 pub struct Mutator<'a, B: Basics> {
   now: ExtendedTime<B>,
@@ -65,7 +63,7 @@ pub type PredictorFn<B> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId
 
 
 
-impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
+impl<B: Basics> super::Accessor<B> for Snapshot<B> {
   fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, & B::Time)> {
     self.state.get::<C>(id).map(|p| (p.0, & p.1.base))
   }
@@ -93,7 +91,7 @@ impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
   }
 }
 
-impl<'a, B: Basics> super::MomentaryAccessor<B> for Snapshot<'a, B> {
+impl<B: Basics> super::MomentaryAccessor<B> for Snapshot<B> {
   fn now(&self) -> &B::Time {
     &self.now
   }
@@ -130,7 +128,7 @@ impl<'a, B: Basics> super::PredictorAccessor<B, EventFn <B>> for PredictorAccess
     self.soonest_prediction = Some((time.clone(), event));
   }
 }
-impl<'a, B: Basics> super::Snapshot<B> for Snapshot<'a, B> {}
+impl<B: Basics> super::Snapshot<B> for Snapshot<B> {}
 
 impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
@@ -266,27 +264,13 @@ impl<B: Basics> StewardImpl<B> {
 
 impl<B: Basics> Steward<B> {}
 impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
-  type Snapshot = Snapshot<'a, B>;
   type Mutator = Mutator <'a, B>;
   type PredictorAccessor = PredictorAccessor <'a, B>;
-  fn snapshot_before <'b> (& 'b mut self, time: & 'b B::Time) -> Option<Self::Snapshot> {
-    if let Some(ref change) = self.state.last_event {
-      if change.base >= *time {
-        return None;
-      }
-    }
-    self.update_until_beginning_of(time);
-    Some(Snapshot {
-      now: time.clone(),
-      state: self.state.clone(),
-      settings: self.settings.clone(),
-      _marker: PhantomData,
-    })
-  }
 }
 impl<B: Basics> TimeStewardStaticMethods <B> for Steward<B> {
   type EventFn = EventFn <B>;
   type PredictorFn = PredictorFn <B>;
+  type Snapshot = Snapshot<B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     match self.state.last_event {
@@ -294,6 +278,7 @@ impl<B: Basics> TimeStewardStaticMethods <B> for Steward<B> {
       Some(ref time) => ValidSince::After(time.base.clone()),
     }
   }
+  
   fn new_empty(constants: B::Constants, predictors: Vec<super::Predictor <Self::PredictorFn >>) -> Self {
     StewardImpl {
       state: StewardState {
@@ -323,6 +308,7 @@ impl<B: Basics> TimeStewardStaticMethods <B> for Steward<B> {
       Some(_) => FiatEventOperationResult::InvalidInput,
     }
   }
+  
   fn erase_fiat_event(&mut self,
                       time: &B::Time,
                       id: DeterministicRandomId)
@@ -336,6 +322,20 @@ impl<B: Basics> TimeStewardStaticMethods <B> for Steward<B> {
       None => FiatEventOperationResult::InvalidInput,
       Some(_) => FiatEventOperationResult::Success,
     }
+  }
+  
+  fn snapshot_before <'b> (& 'b mut self, time: & 'b B::Time) -> Option<Self::Snapshot> {
+    if let Some(ref change) = self.state.last_event {
+      if change.base >= *time {
+        return None;
+      }
+    }
+    self.update_until_beginning_of(time);
+    Some(Snapshot {
+      now: time.clone(),
+      state: self.state.clone(),
+      settings: self.settings.clone(),
+    })
   }
 }
 impl<B: Basics> TimeSteward<B> for Steward<B> {}

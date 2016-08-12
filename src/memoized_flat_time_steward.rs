@@ -18,7 +18,6 @@ use std::borrow::Borrow;
 use std::rc::Rc;
 use std::cell::{Cell, RefCell};
 use std::ops::Drop;
-use std::marker::PhantomData;
 use rand::Rng;
 use ::insert_only;
 
@@ -72,12 +71,11 @@ pub struct Steward<B: Basics> {
   owned: StewardOwned <B>,
   shared: Rc<StewardShared <B>>,
 }
-pub struct Snapshot<'a, B: Basics> {
+pub struct Snapshot<B: Basics> {
   now: B::Time,
   index: SnapshotIdx,
 field_states:Rc<insert_only::HashMap<FieldId, SnapshotField <B> >>,
 shared: Rc<StewardShared <B>>,
-  _marker: PhantomData <& 'a StewardShared <B>>,
 }
 pub struct Mutator<'a, B: Basics> {
   now: ExtendedTime<B>,
@@ -109,13 +107,13 @@ pub type PredictorFn<B> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId
 
 
 
-impl<'a, B: Basics> Drop for Snapshot<'a, B> {
+impl<B: Basics> Drop for Snapshot<B> {
   fn drop (&mut self) {
     self.shared.fields.borrow_mut().changed_since_snapshots.remove(& self.index);
   }
 }
 
-impl<'a, B: Basics> super::Accessor<B> for Snapshot<'a, B> {
+impl<B: Basics> super::Accessor<B> for Snapshot<B> {
   fn data_and_last_change<C: Column>(&mut self, id: RowId) -> Option<(&C::FieldType, & B::Time)> {
     let field_id =FieldId {
         row_id: id,
@@ -155,7 +153,7 @@ impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
   }
 }
 
-impl<'a, B: Basics> super::MomentaryAccessor<B> for Snapshot<'a, B> {
+impl<B: Basics> super::MomentaryAccessor<B> for Snapshot<B> {
   fn now(&self) -> &B::Time {
     &self.now
   }
@@ -182,7 +180,7 @@ impl<'a, B: Basics> super::PredictorAccessor<B, EventFn <B>> for PredictorAccess
     self.results.soonest_prediction = Some((time.clone(), event));
   }
 }
-impl<'a, B: Basics> super::Snapshot<B> for Snapshot<'a, B> {}
+impl<B: Basics> super::Snapshot<B> for Snapshot<B> {}
 
 impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
@@ -423,35 +421,14 @@ let prediction =Rc::new (Prediction {
 }
 
 
-impl<B: Basics> Steward<B> {}
 impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
-  type Snapshot = Snapshot<'a, B>;
   type Mutator = Mutator <'a, B>;
   type PredictorAccessor = PredictorAccessor <'a, B>;
-    
-  fn snapshot_before <'b> (& 'b mut self, time: & 'b B::Time) -> Option<Self::Snapshot> {
-    if let Some(ref change) = self.owned.last_event {
-      if change.base >= *time {
-        return None;
-      }
-    }
-    self.update_until_beginning_of(time);
-    
-    let result = Some(Snapshot {
-      now: time.clone(),
-index: self.owned.next_snapshot,
-field_states:self.shared.fields.borrow_mut().changed_since_snapshots.entry (self.owned.next_snapshot).or_insert (Rc::new (insert_only::HashMap::new())).clone(),
-shared: self.shared.clone(),
-_marker: PhantomData,
-    });
-    
-    self.owned.next_snapshot += 1;
-    result
-  }
 }
 impl<B: Basics> TimeStewardStaticMethods <B> for Steward<B> {
   type EventFn = EventFn <B>;
   type PredictorFn = PredictorFn <B>;
+  type Snapshot = Snapshot<B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     match self.owned.last_event {
@@ -459,6 +436,7 @@ impl<B: Basics> TimeStewardStaticMethods <B> for Steward<B> {
       Some(ref time) => ValidSince::After(time.base.clone()),
     }
   }
+  
   fn new_empty(constants: B::Constants, predictors: Vec<super::Predictor <Self::PredictorFn>>) -> Self {
     let mut predictors_by_id = HashMap::new();
     let mut predictors_by_column = HashMap::new();
@@ -501,6 +479,7 @@ shared: Rc::new(StewardShared {
       Some(_) => FiatEventOperationResult::InvalidInput,
     }
   }
+  
   fn erase_fiat_event(&mut self,
                       time: &B::Time,
                       id: DeterministicRandomId)
@@ -514,6 +493,25 @@ shared: Rc::new(StewardShared {
       None => FiatEventOperationResult::InvalidInput,
       Some(_) => FiatEventOperationResult::Success,
     }
+  }
+    
+  fn snapshot_before <'b> (& 'b mut self, time: & 'b B::Time) -> Option<Self::Snapshot> {
+    if let Some(ref change) = self.owned.last_event {
+      if change.base >= *time {
+        return None;
+      }
+    }
+    self.update_until_beginning_of(time);
+    
+    let result = Some(Snapshot {
+      now: time.clone(),
+index: self.owned.next_snapshot,
+field_states:self.shared.fields.borrow_mut().changed_since_snapshots.entry (self.owned.next_snapshot).or_insert (Rc::new (insert_only::HashMap::new())).clone(),
+shared: self.shared.clone(),
+    });
+    
+    self.owned.next_snapshot += 1;
+    result
   }
 }
 impl<B: Basics> TimeSteward<B> for Steward<B> {}
