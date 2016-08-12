@@ -1,4 +1,4 @@
-use ::{RowId, ColumnId, Column, Mutator};
+use ::{RowId, ColumnId, Column, Accessor};
 use std::any::Any;
 use std::hash::Hash;
 
@@ -21,7 +21,7 @@ impl<B: Basics> Nearness <B> {
 let ids = if first <second {[first, second]} else {[second, first]};
 (RowId::new (& (ids, detector_id)), Nearness {ids: ids, detector_id: detector_id})
 }
-  pub fn get_ids <M: Mutator <B::StewardBasics>>  (mutator: &mut M, my_id: RowId)->([RowId; 2], B::DetectorId) {
+  pub fn get_ids <M: Accessor <B::StewardBasics>>  (mutator: &mut M, my_id: RowId)->([RowId; 2], B::DetectorId) {
     let me = mutator.get:: <Nearness <B>> (my_id).unwrap();
     (me.ids, me.detector_id)
   }

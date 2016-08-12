@@ -4,6 +4,7 @@ use memoized_flat_time_steward as s;
 use ::{TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
        TimeStewardLifetimedMethods, TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor};
 use ::collision_detection::inefficient as collisions;
+
 use ::time_functions::Trajectory;
 use std::rc::Rc;
 use rand::Rng;
@@ -32,6 +33,16 @@ impl ::Basics for Basics {
   type Time = Time;
   type Constants = ();
 }
+struct CollisionBasics {}
+impl ::collision_detection::Basics for CollisionBasics {
+  type StewardBasics = Basics;
+  type DetectorId =();
+  fn nearness_column_id() -> ColumnId {
+    ColumnId(0x89ebc3ba9a24c286)
+  }
+
+}
+use ::collision_detection::Nearness <CollisionBasics> as Nearness ;
 
 #[derive(Clone)]
 struct Circle {
@@ -51,12 +62,12 @@ fn get_circle_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x86ccbeb2c140cc51, index))
 }
 
-fn collision_predictor <PA: PredictorAccessor> (accessor: PA, id: RowId) {
+fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as TimeStewardLifetimedMethods>::EventFn >> (accessor: PA, id: RowId) {
   printlnerr!("Planning {}", id);
-let ids = pa.get::<collisions::Nearness>(id).unwrap().ids.clone();
+let ids = nearness::get_ids (accessor, id).0;
   {
   
-let us = [pa.get::<collisions::Nearness>(ids [0]).unwrap(),pa.get::<collisions::Nearness>(ids [0]).unwrap()];
+let us = [accessor.get::<Circle>(ids [0]).unwrap(), accessor.get::<Circle>(ids [0]).unwrap()];
   }
   accessor.predict_at_time (Rc::new (move | mutator | {
     
@@ -97,11 +108,11 @@ pub fn testfunc() {
                          DeterministicRandomId::new(& 0),
                          Rc::new(| mutator | {
     for i in 0..HOW_MANY_CIRCLES {
-let position = Vector::new (m.rng().gen_range(0, ARENA_SIZE),m.rng().gen_range(0, ARENA_SIZE));
+let position = Vector::new (mutator.rng().gen_range(0, ARENA_SIZE), mutator.rng().gen_range(0, ARENA_SIZE));
 let thingy =ARENA_SIZE/SECOND/20;
-let velocity = Vector::new (m.rng().gen_range(- thingy, thingy),m.rng().gen_range(- thingy, thingy));
-mass radius =m.rng().gen_range(ARENA_SIZE/30, ARENA_SIZE/15);
-      m.set::<Circle>(get_circle_id(i),
+let velocity = Vector::new (mutator.rng().gen_range(- thingy, thingy), mutator.rng().gen_range(- thingy, thingy));
+let radius = mutator.rng().gen_range(ARENA_SIZE/30, ARENA_SIZE/15);
+      mutator.set::<Circle>(get_circle_id(i),
                            Some(Circle {
 position: position, velocity: velocity, radius: radius
                            }));
