@@ -265,7 +265,7 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
     target.clear_color(0.0, 0.0, 0.0, 1.0);
     let mut vertices = Vec::<Vertex>::new();
 
-    let snapshot = stew.snapshot_before(&(start.elapsed().subsec_nanos() as i64 * SECOND /
+    let snapshot = stew.snapshot_before(&(((start.elapsed().as_secs() as i64*1000000000i64)+start.elapsed().subsec_nanos() as i64) * SECOND /
                                           1000000000i64))
                        .unwrap();
     for index in 0..HOW_MANY_CIRCLES {
@@ -273,9 +273,9 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
                                    .expect("missing circle")
                                    .clone();
       let position = circle.position.updated_by(snapshot.now() - time).evaluate();
-      let center = [position[0] as f32 / ARENA_SIZE as f32, position[1] as f32 / ARENA_SIZE as f32];
+      let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5, position[1] as f32 / ARENA_SIZE as f32 - 0.5];
       let radius = circle.radius as f32 / ARENA_SIZE as f32;
-    printlnerr!("drawing circ at {}, {}", center[0],center[1]);
+    //printlnerr!("drawing circ at {}, {}", center[0],center[1]);
       vertices.extend(&[Vertex {
                           center: center,
                           radius: radius,
