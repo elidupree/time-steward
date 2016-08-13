@@ -125,7 +125,7 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
                                       .add_acceleration(intersection.induced_acceleration);
                                    new_relationship = None;
                                  } else {
-                                   let acceleration = Vector2::new(ARENA_SIZE, ARENA_SIZE);
+                                   let acceleration = (new.0.position.evaluate() - new.1.position.evaluate())*(ARENA_SIZE*4/(new.0.radius + new.1.radius));
                                    new.0.position.add_acceleration(acceleration);
                                    new.1.position.add_acceleration(-acceleration);
                                    new_relationship = Some(Intersection {
@@ -241,7 +241,7 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
 
   let mut snapshots = Vec::new();
 
-if false {
+if true {
   let display = glium::glutin::WindowBuilder::new()
                   .with_dimensions(600, 600)
                   .build_glium()

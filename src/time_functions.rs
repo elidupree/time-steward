@@ -12,6 +12,17 @@ macro_rules! printlnerr(
     } }
 );
 
+fn multiply_and_shift_avoiding_overflow_by_rounding (stuff: & [Coordinate], shift: i32)->Coordinate {
+let mut product = 1;
+let mut shift = shift;
+for thing in stuff {
+let mut factor = thing.clone();
+while product >= (1 as Coordinate) << 32 && shift >0 {product >>= 1; shift -= 1;}
+while factor >= (1 as Coordinate) << 32 && shift >0 {factor >>= 1; shift -= 1;}
+product = product*factor;
+}
+product >> shift
+}
 
 // TODO: polymorphic in number of dimensions, and numeric type
 // TODO: optimize away the unnecessary heap-allocation and other inefficiencies of Polynomial, and other pointless inefficiencies I introduced
@@ -28,10 +39,9 @@ fn updated_by(poly: &Polynomial<Coordinate>,
               time_scale_shift: i32)
               -> Polynomial<Coordinate> {
   &*poly +
-  Polynomial::new(vec![((poly.data().get(1).cloned().unwrap_or(0) * time) >> time_scale_shift) +
-                       ((poly.data().get(2).cloned().unwrap_or(0) * time * time) >>
-                        (time_scale_shift * 2)),
-                       ((poly.data().get(2).cloned().unwrap_or(0) * time * 2) >> time_scale_shift),
+  Polynomial::new(vec![multiply_and_shift_avoiding_overflow_by_rounding (& [poly.data().get(1).cloned().unwrap_or(0), time], time_scale_shift) +
+                       multiply_and_shift_avoiding_overflow_by_rounding (& [poly.data().get(2).cloned().unwrap_or(0), time, time], time_scale_shift * 2),
+                       multiply_and_shift_avoiding_overflow_by_rounding (& [poly.data().get(2).cloned().unwrap_or(0), time * 2], time_scale_shift),
                        0i64])
 }
 impl QuadraticTrajectory {
@@ -85,7 +95,7 @@ impl QuadraticTrajectory {
     let displacement_function: Vector2<Polynomial<Coordinate>> = third.data.clone() - more.data.clone();
     let distance_function = &displacement_function[0] * &displacement_function[0] +
                             &displacement_function[1] * &displacement_function[1];
-                            printlnerr!(" distance function {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}", first.1.data, second.1.data, error, ratio, third.data, more.data, displacement_function, distance_function);
+                            //printlnerr!(" distance function {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}", first.1.data, second.1.data, error, ratio, third.data, more.data, displacement_function, distance_function);
     let roots = find_roots_quartic(distance_function.data().get(4).cloned().unwrap_or(0) as f64 /
                                    ratio.powi(4),
                                    distance_function.data().get(3).cloned().unwrap_or(0) as f64 /
@@ -99,7 +109,7 @@ impl QuadraticTrajectory {
                                      error * direction)) as f64);
 
     for root in roots.as_ref() {
-    printlnerr!(" found group {}", root);
+    //printlnerr!(" found group {}", root);
       let result = root.ceil() as Coordinate;
       if result > 0 {
         let checker = Vector2::new(updated_by(&displacement_function[0],
@@ -115,7 +125,7 @@ impl QuadraticTrajectory {
                                     checker[1].data().get(0).cloned().unwrap_or(0);
 
         if (real_distance_squared - distance * distance) * direction > 0 {
-        printlnerr!(" check past");
+        //printlnerr!(" check past");
           return Some(base + result);
         }
       }
