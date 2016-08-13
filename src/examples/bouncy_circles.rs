@@ -218,7 +218,7 @@ out vec2 direction_transfer;
 
 void main() {
 direction_transfer = direction*1.5;
-gl_Position = vec4 ( center + direction*1.5*radius, 0.0, 0.0);
+gl_Position = vec4 ( center + direction*1.5*radius, 0.0, 1.0);
 }
 
 "#;
@@ -242,7 +242,7 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
 
   return;
   let display = glium::glutin::WindowBuilder::new()
-                  .with_dimensions(600, 6)
+                  .with_dimensions(600, 600)
                   .build_glium()
                   .expect("failed to create window");
   let program = glium::Program::from_source(&display,
@@ -274,34 +274,36 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
                                    .clone();
       let position = circle.position.updated_by(snapshot.now() - time).evaluate();
       let center = [position[0] as f32 / ARENA_SIZE as f32, position[1] as f32 / ARENA_SIZE as f32];
+      let radius = circle.radius as f32 / ARENA_SIZE as f32;
+    printlnerr!("drawing circ at {}, {}", center[0],center[1]);
       vertices.extend(&[Vertex {
                           center: center,
-                          radius: circle.radius as f32,
+                          radius: radius,
                           direction: [1.0, 0.0],
                         },
                         Vertex {
                           center: center,
-                          radius: circle.radius as f32,
+                          radius: radius,
                           direction: [-1.0, 0.0],
                         },
                         Vertex {
                           center: center,
-                          radius: circle.radius as f32,
+                          radius: radius,
                           direction: [0.0, 1.0],
                         },
                         Vertex {
                           center: center,
-                          radius: circle.radius as f32,
+                          radius: radius,
                           direction: [1.0, 0.0],
                         },
                         Vertex {
                           center: center,
-                          radius: circle.radius as f32,
+                          radius: radius,
                           direction: [-1.0, 0.0],
                         },
                         Vertex {
                           center: center,
-                          radius: circle.radius as f32,
+                          radius: radius,
                           direction: [0.0, -1.0],
                         }]);
 
