@@ -9,6 +9,10 @@ use ::time_functions::QuadraticTrajectory;
 use std::rc::Rc;
 use rand::Rng;
 use nalgebra::{Vector2};
+use std::thread::sleep;
+use std::time::{Instant, Duration};
+use ::glium;
+use glium::{DisplayBuild, Surface};
 
 use std::io::Write;
 macro_rules! printlnerr(
@@ -109,6 +113,16 @@ new_relationship = None;
   }));}
 }
 
+
+#[derive(Copy, Clone)]
+
+struct Vertex {
+direction: [f32; 2],
+center: [f32; 2],
+radius: f32,
+}
+implement_vertex!(Vertex, direction, center, radius);
+
 pub fn testfunc() {
 
   let mut stew: Steward = ::TimeStewardStaticMethods::new_empty((),
@@ -139,7 +153,7 @@ pub fn testfunc() {
     }),
                                                         }]);*/
 
-  stew.insert_fiat_event(0,
+  stew.insert_fiat_event(-1,
                          DeterministicRandomId::new(& 0),
                          Rc::new(| mutator | {
     for i in 0..HOW_MANY_CIRCLES {
@@ -160,8 +174,79 @@ position: position, radius: radius
 collisions::insert::<CollisionBasics,_> (mutator, id,());
     }
   }));
+let vertex_shader_source =r#"
+#version 140
+in vec2 direction;
+in vec2 center;
+in float radius;
+out vec2 direction_transfer;
 
+void main() {
+direction_transfer = direction*1.5;
+gl_Position = vec4 ( center + direction*1.5*radius, 0.0, 0.0);
+}
+
+"#;
+
+let fragment_shader_source =r#"
+#version 140
+in vec2 direction_transfer;
+out vec4 color;
+
+void main() {
+if (dot (direction_transfer,direction_transfer) <1.0) {
+color = vec4 (1.0, 0.0, 0.0, 1.0);
+} else {
+color = vec4 (0.0, 0.0, 0.0, 0.0);
+
+}
+}
+
+"#;
+
+
+  return;
+  let display = glium::glutin::WindowBuilder::new().with_dimensions (600, 6).build_glium().expect("failed to create window");
+let program = glium::Program::from_source (& display, vertex_shader_source, fragment_shader_source, None).unwrap();
+let indices = glium::index::NoIndices (glium::index::PrimitiveType::TrianglesList);
   let mut snapshots = Vec:: new();
+let start = Instant::now();
+  loop {
+    for ev in display.poll_events() {
+        match ev {
+            glium::glutin::Event::Closed => return,
+             _ => ()
+        }
+    }
+    
+let mut target = display.draw();
+    target.clear_color (0.0, 0.0, 0.0, 1.0);
+    let mut vertices = Vec::<Vertex>:: new();
+    
+let snapshot = stew.snapshot_before(& (start.elapsed().subsec_nanos () as i64*SECOND/1000000000i64)).unwrap();
+for index in 0..HOW_MANY_CIRCLES {
+let (circle, time) = snapshot.data_and_last_change::<Circle> (get_circle_id (index)).expect("missing circle").clone();
+let position = circle.position.updated_by (snapshot.now() - time).evaluate();
+let center = [position [0] as f32/ARENA_SIZE as f32,position [1] as f32/ARENA_SIZE as f32];
+vertices.extend (& [
+Vertex {center: center, radius: circle.radius as f32, direction: [1.0,0.0]},
+Vertex {center: center, radius: circle.radius as f32, direction: [-1.0,0.0]},
+Vertex {center: center, radius: circle.radius as f32, direction: [0.0,1.0]},
+Vertex {center: center, radius: circle.radius as f32, direction: [1.0,0.0]},
+Vertex {center: center, radius: circle.radius as f32, direction: [-1.0,0.0]},
+Vertex {center: center, radius: circle.radius as f32, direction: [0.0,-1.0]},
+]);
+
+}
+target.draw (& glium::VertexBuffer::new (& display, & vertices).unwrap(), & indices, & program, & glium::uniforms::EmptyUniforms, & Default::default()).unwrap();
+    
+    target.finish().expect("failed to finish drawing");
+    
+    
+    sleep (Duration::from_millis (10));
+}
+
+  
   for increment in 1..21 {
     snapshots.push (stew.snapshot_before(& (increment*SECOND*2)));
   }

@@ -24,6 +24,8 @@ extern crate rand;
 extern crate polynomial;
 extern crate nalgebra;
 extern crate roots;
+#[macro_use]
+extern crate glium;
 
 use std::hash::{Hash, Hasher, SipHasher};
 use std::any::Any;
