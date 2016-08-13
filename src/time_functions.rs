@@ -13,15 +13,19 @@ macro_rules! printlnerr(
 );
 
 fn multiply_and_shift_avoiding_overflow_by_rounding (stuff: & [Coordinate], shift: i32)->Coordinate {
-let mut product = 1;
+let mut sign: Coordinate = 1;
+let mut product = 1u64;
 let mut shift = shift;
 for thing in stuff {
 let mut factor = thing.clone();
-while product >= (1 as Coordinate) << 32 && shift >0 {product >>= 1; shift -= 1;}
-while factor >= (1 as Coordinate) << 32 && shift >0 {factor >>= 1; shift -= 1;}
+if factor <0 {factor*= -1; sign *= -1;}
+let mut factor = factor as u64;
+while product >= (1u64) << 32 && shift >0 {product >>= 1; shift -= 1;}
+while factor >= (1u64) << 32 && shift >0 {factor >>= 1; shift -= 1;} 
+//printlnerr!(" {}, {}, {}", product, factor, shift);
 product = product*factor;
 }
-product >> shift
+((product as Coordinate)*sign) >> shift
 }
 
 // TODO: polymorphic in number of dimensions, and numeric type
