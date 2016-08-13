@@ -110,7 +110,7 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
                                  let us = (mutator.data_and_last_change::<Circle>(ids[0])
                                                   .expect("a nearness exists for a circle that \
                                                            doesn't (event)"),
-                                           mutator.data_and_last_change::<Circle>(ids[0])
+                                           mutator.data_and_last_change::<Circle>(ids[1])
                                                   .expect("a nearness exists for a circle that \
                                                            doesn't (event)"));
                                  new = ((us.0).0.clone(), (us.1).0.clone());

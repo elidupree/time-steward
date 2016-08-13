@@ -56,9 +56,9 @@ impl QuadraticTrajectory {
   }
 
   pub fn add_acceleration(&mut self, acceleration: Vector2<Coordinate>) {
-    let changed = &self.data[0] + Polynomial::new(vec![0, 0, acceleration[0]]);
+    let changed = &self.data[0] + Polynomial::new(vec![0, 0, acceleration[0]*2]);
     self.data[0].clone_from(&changed);
-    let changed = &self.data[1] + Polynomial::new(vec![0, 0, acceleration[1]]);
+    let changed = &self.data[1] + Polynomial::new(vec![0, 0, acceleration[1]*2]);
     self.data[1].clone_from(&changed);
   }
   pub fn evaluate(&self) -> Vector2<Coordinate> {
