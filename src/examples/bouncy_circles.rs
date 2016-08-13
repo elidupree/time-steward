@@ -76,7 +76,6 @@ fn get_circle_id(index: i32) -> RowId {
 }
 
 fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as TimeStewardStaticMethods < Basics>>::EventFn >> (accessor: &mut PA, id: RowId) {
-  printlnerr!("Planning {}", id);
   let ids = Nearness::get_ids(accessor, id).0;
   let time;
   {
@@ -98,9 +97,10 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
                                                                     &(us.0).0.position),
                                                                    ((us.1).1.clone(),
                                                                     &(us.1).0.position));
-    printlnerr!("At {}, {}", (us.0).1, (us.1).1);
+    printlnerr!("Planning for {} At {}, {}", id, (us.0).1, (us.1).1);
   }
   if let Some(yes) = time {
+  printlnerr!(" planned for {}", & yes);
     accessor.predict_at_time(&yes,
                              Rc::new(move |mutator| {
                                let new_relationship;
@@ -239,8 +239,9 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
 
 "#;
 
+  let mut snapshots = Vec::new();
 
-  return;
+if false {
   let display = glium::glutin::WindowBuilder::new()
                   .with_dimensions(600, 600)
                   .build_glium()
@@ -251,7 +252,6 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
                                             None)
                   .unwrap();
   let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
-  let mut snapshots = Vec::new();
   let start = Instant::now();
   loop {
     for ev in display.poll_events() {
@@ -317,7 +317,7 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
 
     target.finish().expect("failed to finish drawing");
 
-
+}
     sleep(Duration::from_millis(10));
   }
 
