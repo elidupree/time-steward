@@ -1,6 +1,6 @@
 use memoized_flat_time_steward as s;
-use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator, TimeStewardStaticMethods, Accessor, MomentaryAccessor,
-     PredictorAccessor};
+use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
+     TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor};
 use std::rc::Rc;
 use rand::Rng;
 

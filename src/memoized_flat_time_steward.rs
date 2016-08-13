@@ -153,8 +153,9 @@ impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
       row_id: id,
       column_id: C::column_id(),
     };
-let mut results = self.results.borrow_mut();
-    self.steward.borrow_mut()
+    let mut results = self.results.borrow_mut();
+    self.steward
+        .borrow_mut()
         .prediction_dependencies
         .entry(field_id)
         .or_insert(HashSet::new())
@@ -438,10 +439,10 @@ impl<B: Basics> Steward<B> {
           predictor_id: predictor_id,
           about_row_id: row_id,
           internal_now: now,
-          steward: RefCell::new (&mut self.owned),
+          steward: RefCell::new(&mut self.owned),
           shared: &self.shared,
           fields: field_ref,
-          results: RefCell::new (PredictorAccessorResults {
+          results: RefCell::new(PredictorAccessorResults {
             soonest_prediction: None,
             dependencies: Vec::new(),
             dependencies_hasher: SiphashIdGenerator::new(),

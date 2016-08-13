@@ -83,7 +83,7 @@ impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
   fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
     self.steward.state.get::<C>(id).map(|p| {
-      p.1.id.hash(&mut*self.dependencies_hasher.borrow_mut());
+      p.1.id.hash(&mut *self.dependencies_hasher.borrow_mut());
       (p.0, &p.1.base)
     })
   }

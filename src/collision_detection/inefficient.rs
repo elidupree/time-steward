@@ -18,7 +18,7 @@ pub fn insert<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
                                                        who: RowId,
                                                        me: B::DetectorId) {
   let my_row = RowId::new(&me);
-  let mut members = mutator.get::<Detector<B>>(my_row).cloned().unwrap_or (HashSet::new());
+  let mut members = mutator.get::<Detector<B>>(my_row).cloned().unwrap_or(HashSet::new());
   for member in members.iter() {
     let (id, contents) = Nearness::new(who, member.clone(), me);
     mutator.set::<Nearness<B>>(id, Some(contents));
@@ -31,11 +31,18 @@ pub fn erase<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
                                                       who: RowId,
                                                       me: B::DetectorId) {
   let my_row = RowId::new(&me);
-  let mut members = mutator.get::<Detector<B>>(my_row).expect("erasing an element when there are no elements").clone();
+  let mut members = mutator.get::<Detector<B>>(my_row)
+                           .expect("erasing an element when there are no elements")
+                           .clone();
   members.remove(&who);
   for member in members.iter() {
-    let (id,_) = Nearness::<B>::new(who, member.clone(), me);
+    let (id, _) = Nearness::<B>::new(who, member.clone(), me);
     mutator.set::<Nearness<B>>(id, None);
   }
-  mutator.set::<Detector<B>>(my_row, if members.is_empty() {None} else { Some(members)});
+  mutator.set::<Detector<B>>(my_row,
+                             if members.is_empty() {
+                               None
+                             } else {
+                               Some(members)
+                             });
 }
