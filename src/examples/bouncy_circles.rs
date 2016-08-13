@@ -82,7 +82,7 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
 
     let us = (accessor.data_and_last_change::<Circle>(ids[0])
                       .expect("a nearness exists for a circle that doesn't"),
-              accessor.data_and_last_change::<Circle>(ids[0])
+              accessor.data_and_last_change::<Circle>(ids[1])
                       .expect("a nearness exists for a circle that doesn't"));
 
     let relationship = accessor.get::<Intersection>(id);

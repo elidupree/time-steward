@@ -3,6 +3,16 @@ use nalgebra::Vector2;
 use std::cmp::max;
 use roots::find_roots_quartic;
 
+
+use std::io::Write;
+macro_rules! printlnerr(
+    ($($arg:tt)*) => { {
+        let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
+        r.expect("failed printing to stderr");
+    } }
+);
+
+
 // TODO: polymorphic in number of dimensions, and numeric type
 // TODO: optimize away the unnecessary heap-allocation and other inefficiencies of Polynomial, and other pointless inefficiencies I introduced
 // TODO replace f64 with a deterministic type (probably mpfr)
@@ -72,9 +82,10 @@ impl QuadraticTrajectory {
     let base = max(first.0, second.0);
     let third = first.1.updated_by(base - first.0);
     let more = second.1.updated_by(base - second.0);
-    let displacement_function: Vector2<Polynomial<Coordinate>> = third.data - more.data;
+    let displacement_function: Vector2<Polynomial<Coordinate>> = third.data.clone() - more.data.clone();
     let distance_function = &displacement_function[0] * &displacement_function[0] +
                             &displacement_function[1] * &displacement_function[1];
+                            printlnerr!(" distance function {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}", first.1.data, second.1.data, error, ratio, third.data, more.data, displacement_function, distance_function);
     let roots = find_roots_quartic(distance_function.data().get(4).cloned().unwrap_or(0) as f64 /
                                    ratio.powi(4),
                                    distance_function.data().get(3).cloned().unwrap_or(0) as f64 /
@@ -88,6 +99,7 @@ impl QuadraticTrajectory {
                                      error * direction)) as f64);
 
     for root in roots.as_ref() {
+    printlnerr!(" found group {}", root);
       let result = root.ceil() as Coordinate;
       if result > 0 {
         let checker = Vector2::new(updated_by(&displacement_function[0],
@@ -103,6 +115,7 @@ impl QuadraticTrajectory {
                                     checker[1].data().get(0).cloned().unwrap_or(0);
 
         if (real_distance_squared - distance * distance) * direction > 0 {
+        printlnerr!(" check past");
           return Some(base + result);
         }
       }
