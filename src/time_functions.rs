@@ -81,6 +81,25 @@ impl QuadraticTrajectory {
 
   }
 
+  pub fn approximate_starting_distance_squared (first: (Coordinate, &QuadraticTrajectory),
+                                            second: (Coordinate, &QuadraticTrajectory))
+                                            ->Coordinate {
+    assert!(first.1.time_scale_shift == second.1.time_scale_shift,
+            "we don't actually support interactions between trajectories with different scales");
+
+    let base = max(first.0, second.0);
+    let third = first.1.updated_by(base - first.0);
+    let more = second.1.updated_by(base - second.0);
+        let checker = third.data.clone() - more.data.clone();
+
+        let real_distance_squared = checker[0].data().get(0).cloned().unwrap_or(0) *
+                                    checker[0].data().get(0).cloned().unwrap_or(0) +
+                                    checker[1].data().get(0).cloned().unwrap_or(0) *
+                                    checker[1].data().get(0).cloned().unwrap_or(0);
+real_distance_squared
+  }
+  
+
   // direction == -1->"when the distance between the trajectories drops below the distance argument"
   // direction == 1->"when the distance between the trajectories exceeds the distance argument"
   pub fn approximately_when_distance_passes(distance: Coordinate,

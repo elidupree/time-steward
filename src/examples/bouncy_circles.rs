@@ -142,6 +142,64 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
 }
 
 
+fn boundary_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as TimeStewardStaticMethods < Basics>>::EventFn >> (accessor: &mut PA, id: RowId) {
+  let ids = Nearness::get_ids(accessor, id).0;
+  let time;
+  {
+let arena_center = QuadraticTrajectory::new(TIME_SHIFT,
+                                                        [ ARENA_SIZE/2,
+                                                          ARENA_SIZE/2,
+0, 0, 0,
+                                                         0]);
+    let me = accessor.data_and_last_change::<Circle>(id)
+                      .expect("a prediction was recorded for a circle that doesn't exist");
+
+    let relationship = accessor.get::<Intersection>(id);
+    time = QuadraticTrajectory::approximately_when_distance_passes(ARENA_SIZE - me.0.radius,
+                                                                   if relationship.is_some() {
+                                                                     -1
+                                                                   } else {
+                                                                     1
+                                                                   },
+(me.1.clone(),
+                                                                    &(me.0.position)),
+(0,
+                                                                    &(arena_center )));
+  }
+  if let Some(yes) = time {
+  printlnerr!(" planned for {}", & yes);
+    accessor.predict_at_time(&yes,
+                             Rc::new(move |mutator| {
+                               let new_relationship;
+                               let mut new;
+                               {
+                                 let relationship = mutator.get::<Intersection>(id).clone();
+                                 let me = mutator.data_and_last_change::<Circle>(id)
+                                                  .expect("a an event was recorded for a circle that doesn't exist)"); 
+                                                  new = me.0.clone();
+                                 new.position.update_by(mutator.now() - me.1);
+                                 if let Some(intersection) = relationship {
+                                   new
+                                      .position
+                                      .add_acceleration(-intersection.induced_acceleration);
+                                   new_relationship = None;
+                                 } else {
+                                   let acceleration = - (new.position.evaluate() - Vector2::new (ARENA_SIZE/2,
+                                                                                             ARENA_SIZE/2))*(ARENA_SIZE*4/(ARENA_SIZE - me.0.radius));
+                                   new.position.add_acceleration(acceleration);
+                                   new_relationship = Some(Intersection {
+                                     induced_acceleration: acceleration,
+                                   });
+
+                                 }
+                               }
+                               mutator.set::<Intersection>(id, new_relationship);
+                               mutator.set::<Circle>(id, Some(new));
+                             }));
+  }
+}
+
+
 #[derive(Copy, Clone)]
 
 struct Vertex {
@@ -161,29 +219,15 @@ pub fn testfunc() {
                                                  function: Rc::new(|accessor, id| {
                                                    collision_predictor(accessor, id)
                                                  }),
-                                               }]); /*{
-      printlnerr!("Planning {}", id);
-      let me = pa.get::<Circle>(id).unwrap().clone();
-      pa.predict_at_time(&me.time_when_next_initiates_handshake,
-                         Rc::new(move |m| {
-        let now = *m.now();
-        let friend_id = get_philosopher_id(m.rng().gen_range(0, HOW_MANY_PHILOSOPHERS));
-        let awaken_time_1 = now + m.rng().gen_range(-1, 4);
-        let awaken_time_2 = now + m.rng().gen_range(-1, 7);
-        printlnerr!("SHAKE!!! @{}. {}={}; {}={}", now, whodunnit, awaken_time_2, friend_id, awaken_time_1);
-        // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
-        // IN THE SECOND TIME APPARENTLY
-        m.set::<Philosopher>(friend_id,
-                             Some(Philosopher {
-                               time_when_next_initiates_handshake: awaken_time_1,
-                             }));
-        m.set::<Philosopher>(whodunnit,
-                             Some(Philosopher {
-                               time_when_next_initiates_handshake: awaken_time_2,
-                             }));
-      }));
-    }),
-                                                        }]);*/
+                                               },
+                                               s::Predictor {
+                                                 predictor_id: PredictorId(0x87d8a4a095350d30),
+                                                 column_id: Circle::column_id(),
+                                                 function: Rc::new(|accessor, id| {
+boundary_predictor(accessor, id)
+                                                 }),
+                                               }
+                                               ]);
 
   stew.insert_fiat_event(-1,
                          DeterministicRandomId::new(&0),
@@ -250,7 +294,7 @@ if true {
                                             vertex_shader_source,
                                             fragment_shader_source,
                                             None)
-                  .unwrap();
+                  .expect("glium program generation failed");
   let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
   let start = Instant::now();
   loop {
@@ -267,7 +311,7 @@ if true {
 
     let snapshot = stew.snapshot_before(&(((start.elapsed().as_secs() as i64*1000000000i64)+start.elapsed().subsec_nanos() as i64) * SECOND /
                                           1000000000i64))
-                       .unwrap();
+                       .expect("steward failed to provide snapshot");
     for index in 0..HOW_MANY_CIRCLES {
       let (circle, time) = snapshot.data_and_last_change::<Circle>(get_circle_id(index))
                                    .expect("missing circle")
@@ -308,12 +352,12 @@ if true {
                         }]);
 
     }
-    target.draw(&glium::VertexBuffer::new(&display, &vertices).unwrap(),
+    target.draw(&glium::VertexBuffer::new(&display, &vertices).expect("failed to generate glium Vertex buffer"),
                 &indices,
                 &program,
                 &glium::uniforms::EmptyUniforms,
                 &Default::default())
-          .unwrap();
+          .expect("failed target.draw");
 
     target.finish().expect("failed to finish drawing");
 
