@@ -294,6 +294,7 @@ if true {
                                             fragment_shader_source,
                                             None)
                   .expect("glium program generation failed");
+let parameters = glium::DrawParameters {blend: glium::draw_parameters::Blend::alpha_blending(),..Default::default()};
   let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
   let start = Instant::now();
   loop {
@@ -355,7 +356,7 @@ if true {
                 &indices,
                 &program,
                 &glium::uniforms::EmptyUniforms,
-                &Default::default())
+                & parameters)
           .expect("failed target.draw");
 
     target.finish().expect("failed to finish drawing");
