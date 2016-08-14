@@ -143,7 +143,6 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
 
 
 fn boundary_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as TimeStewardStaticMethods < Basics>>::EventFn >> (accessor: &mut PA, id: RowId) {
-  let ids = Nearness::get_ids(accessor, id).0;
   let time;
   {
 let arena_center = QuadraticTrajectory::new(TIME_SHIFT,
