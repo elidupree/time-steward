@@ -31,7 +31,9 @@ max: i64,
 exponent: u32,
 }
 
-fn right_shift_round_up (value: i64, shift: u32)->i64 {(value - 1 + (1 << shift)) >> shift}
+fn right_shift_round_up (value: i64, shift: u32)->i64 {
+(value >> shift) + if value & ((1i64 << shift) - 1) != 0 {1} else {0}
+}
 
 
 
@@ -352,11 +354,11 @@ pub fn roots (terms: & [Range])->Vec<Range> {
 }
 
 pub fn evaluate(terms: & [Range], input: i64)->Range {
-let mut factor = 1;
+let mut factor = Range::exactly (1);
 let mut result = Range::exactly (0);
 for term in terms.iter() {
 result = result + (term*factor);
-factor*= input;
+factor = factor*input;
 }
 result
 }
