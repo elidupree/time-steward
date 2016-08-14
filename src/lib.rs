@@ -420,6 +420,7 @@ pub mod memoized_flat_time_steward;
 
 // pub mod crossverified_time_stewards;
 
+pub mod rounding_error_tolerant_math;
 pub mod time_functions;
 pub mod collision_detection;
 
