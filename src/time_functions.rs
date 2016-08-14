@@ -116,6 +116,16 @@ real_distance_squared
     let third = first.1.updated_by(base - first.0);
     let more = second.1.updated_by(base - second.0);
     let displacement_function: Vector2<Polynomial<Coordinate>> = third.data.clone() - more.data.clone();
+
+        let starting_distance_squared = displacement_function[0].data().get(0).cloned().unwrap_or(0) *
+                                    displacement_function[0].data().get(0).cloned().unwrap_or(0) +
+                                    displacement_function[1].data().get(0).cloned().unwrap_or(0) *
+                                    displacement_function[1].data().get(0).cloned().unwrap_or(0);
+
+        if (starting_distance_squared - distance * distance) * direction > 0 {
+          return Some(base);
+        }
+        
     let distance_function = &displacement_function[0] * &displacement_function[0] +
                             &displacement_function[1] * &displacement_function[1];
                             //printlnerr!(" distance function {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}", first.1.data, second.1.data, error, ratio, third.data, more.data, displacement_function, distance_function);
