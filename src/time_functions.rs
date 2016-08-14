@@ -90,7 +90,7 @@ impl QuadraticTrajectory {
                                             -> Option<Coordinate> {
     assert!(first.1.time_scale_shift == second.1.time_scale_shift,
             "we don't actually support interactions between trajectories with different scales");
-    let error = distance * 6 + 3;
+    let error = distance * 12 + 6;
     let ratio = (1i64 << first.1.time_scale_shift) as f64;
 
     let base = max(first.0, second.0);
@@ -116,12 +116,15 @@ impl QuadraticTrajectory {
     //printlnerr!(" found group {}", root);
       let result = root.ceil() as Coordinate;
       if result > 0 {
-        let checker = Vector2::new(updated_by(&displacement_function[0],
-                                              result,
-                                              first.1.time_scale_shift),
-                                   updated_by(&displacement_function[1],
-                                              result,
-                                              first.1.time_scale_shift));
+    let third = first.1.updated_by(base + result - first.0);
+    let more = second.1.updated_by(base + result - second.0);
+        let checker = third.data.clone() - more.data.clone();
+        //Vector2::new(updated_by(&displacement_function[0],
+                                              //result,
+                                              //first.1.time_scale_shift),
+                                   //updated_by(&displacement_function[1],
+                                              //result,
+                                              //first.1.time_scale_shift));
 
         let real_distance_squared = checker[0].data().get(0).cloned().unwrap_or(0) *
                                     checker[0].data().get(0).cloned().unwrap_or(0) +
