@@ -73,9 +73,9 @@ let mut result = self.clone(); result.update_by (time); result
             
 let intervals = quadratic_trajectories_possible_distance_crossing_intervals (distance, (first.0, & [first.1.data [0], first.1.data [1]]), (second.0, & [second.1.data [0], second.1.data [1]]), first.1.time_scale_shift);
     for interval in intervals.iter() {
-      if interval.max()> 0 {
+      if interval.max()+1> base {
 
-        if (distance_squared_would_be (first, second, interval.max()) - distance*distance)*direction >0 {return Some(interval.max());}
+        if (distance_squared_would_be (first, second, interval.max()+1) - distance*distance)*direction >0 {return Some(interval.max()+1);}
               }
     }
     None
