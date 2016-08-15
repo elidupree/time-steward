@@ -263,7 +263,7 @@ impl<'a> Div for &'a Range {
   fn div(self, other: Self) -> Range {
     let mut result = self.clone();
     let mut other = other.clone();
-    if other.min <= 0 && other.max >= 0 {
+    if other.includes_0() {
       return Range::everywhere();
     }
     if other.max < 0 {
@@ -275,6 +275,13 @@ impl<'a> Div for &'a Range {
       result.increase_exponent_to(other.exponent);
     }
     result.exponent -= other.exponent;
+    
+    if result.min.checked_sub (other.min).is_none() ||
+       result.max.checked_add(other.min).is_none() {
+      result.increase_exponent_by(1);
+      other.increase_exponent_by(1);
+    }
+
 
     if result.min < 0 {
       result.min = (result.min + 1 - other.min) / other.min;
@@ -594,16 +601,14 @@ pub fn quadratic_future_proxy_minimizing_error(terms: &[i64],
                                                origin: i64,
                                                input_scale_shift: u32)
                                                -> [Range; 3] {
-  // TODO: which is better: sometimes overflowing the acceleration, or sometimes rounding off the velocity?
-  // If we allowed exponent to go less than 0, then the latter would probably be better
   [(Range::new(terms[0] - 1, terms[0] + 1) << (input_scale_shift * 2)) +
    ((Range::exactly(terms[1]) * origin) << input_scale_shift) +
    (Range::exactly(terms[2]) * origin * origin),
 
-   (Range::exactly(terms[1]) << (input_scale_shift * 2)) +
-   ((Range::exactly(terms[2]) * origin * 2) << input_scale_shift),
+   (Range::exactly(terms[1]) << input_scale_shift) +
+   (Range::exactly(terms[2]) * origin * 2),
 
-   (Range::exactly(terms[2]) << (input_scale_shift * 2))]
+   Range::exactly(terms[2])]
 }
 
 
@@ -635,7 +640,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
   }
   proxy[0] = proxy[0] - (Range::exactly(distance).squared() << (input_scale_shift * 4));
   let mut result = roots(proxy.as_ref());
-  printlnerr!("{:?}", proxy);
+  printlnerr!(" Proxy: {:?}\n Roots: {:?}", proxy, result);
   for root in result.iter_mut() {
     if &*root != &Range::everywhere() {
       *root = &*root + Range::exactly(base);
