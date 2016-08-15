@@ -291,7 +291,7 @@ let mut upper_bound = 3037000500i64;
 let mut move_size = 1i64 << 31;
 while move_size >0 {
 if lower_bound + move_size <= upper_bound && (lower_bound + move_size)*(lower_bound + move_size) <= result.min {lower_bound += move_size;}
-if (upper_bound - move_size)*(upper_bound - move_size) >= result.max {upper_bound -= move_size;}
+if upper_bound - move_size >= lower_bound && (upper_bound - move_size)*(upper_bound - move_size) >= result.max {upper_bound -= move_size;}
 move_size >>= 1;
 }
 result.min = lower_bound;
@@ -362,7 +362,7 @@ let mut upper_bound = max;
 let mut move_size = - 1i64 << 63;
 while min.checked_sub (max).is_some() && move_size <min - max {move_size /= 2;}
 while move_size <0 {
-      printlnerr!(" Next values {:?}:{:?}, {:?}:{:?}", lower_bound, evaluate (terms, lower_bound ), upper_bound, evaluate (terms, upper_bound ));
+      //printlnerr!(" Next values {:?}:{:?}, {:?}:{:?}", lower_bound, evaluate (terms, lower_bound ), upper_bound, evaluate (terms, upper_bound ));
 
 if lower_bound - move_size <= max && (evaluate (terms, lower_bound - move_size)*direction).max < 0 {lower_bound -= move_size;}
 if upper_bound + move_size >= min && (evaluate (terms, upper_bound + move_size)*direction).min > 0 {upper_bound += move_size;}
