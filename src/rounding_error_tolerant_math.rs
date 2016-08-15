@@ -113,7 +113,12 @@ impl Range {
   pub fn includes_0(&self) -> bool {
     self.min <= 0 && self.max >= 0
   }
+fn includes(&self, other: & Range) -> bool {
+    assert!(self.exponent == 0);
+    assert!(other.exponent == 0);
+      self.min <= other.min && self.max >= other.max}
   pub fn rounded_towards_0(&self) -> i64 {
+    assert!(self.exponent == 0);
     if self.includes_0() {
       0
     } else if self.max < 0 {
@@ -482,11 +487,11 @@ fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
     // printlnerr!(" Next values {:?}:{:?}, {:?}:{:?}", lower_bound, evaluate (terms, lower_bound ), upper_bound, evaluate (terms, upper_bound ));
 
     if lower_bound - move_size <= max &&
-       (evaluate(terms, lower_bound - move_size) * direction).max < 0 {
+       (evaluate(terms, lower_bound - move_size) * direction).max <= 0 {
       lower_bound -= move_size;
     }
     if upper_bound + move_size >= min &&
-       (evaluate(terms, upper_bound + move_size) * direction).min > 0 {
+       (evaluate(terms, upper_bound + move_size) * direction).min >= 0 {
       upper_bound += move_size;
     }
     move_size /= 2;
@@ -520,8 +525,9 @@ pub fn roots(terms: &[Range]) -> Vec<Range> {
                                      .enumerate()
                                      .map(|(which, term)| term * (which as i64 + 1))
                                      .collect();
-      // printlnerr!(" Derivative {:?}", derivative);
+      printlnerr!(" Derivative {:?}", derivative);
       let extrema = roots(derivative.as_slice());
+      printlnerr!("extrema {:?}", extrema);
       if extrema.iter().any(|range| range.exponent > 0) {
         return vec![Range::everywhere()];
       }
@@ -588,20 +594,26 @@ pub fn multiply_polynomials(terms_0: &[Range], terms_1: &[Range]) -> Vec<Range> 
     .collect()
 }
 
+//when coercing the update to land on an integer value, we have a possible rounding error of up to 2 units (one from dividing the velocity, one from dividing the acceleration)
 pub fn quadratic_move_origin_rounding_change_towards_0(terms: &mut [i64],
                                                        origin: i64,
                                                        input_scale_shift: u32) {
+                                                       use ::rand::Rng; use rand;
+let between_time = rand::thread_rng().gen_range (0, origin + 1)                      ;                                
+                                                       let confirm =quadratic_future_proxy_minimizing_error (terms, between_time, input_scale_shift);
   terms[0] += (((Range::exactly(terms[1]) * origin) >> input_scale_shift) +
                ((Range::exactly(terms[2]) * origin * origin) >> (input_scale_shift * 2)))
                 .rounded_towards_0();
   terms[1] += ((Range::exactly(terms[2]) * origin * 2) >> input_scale_shift).rounded_towards_0();
+  assert! ((evaluate (& confirm, origin - between_time) >> (input_scale_shift*2)).includes (& Range::exactly(terms [0])));
 }
 
 pub fn quadratic_future_proxy_minimizing_error(terms: &[i64],
                                                origin: i64,
                                                input_scale_shift: u32)
                                                -> [Range; 3] {
-  [(Range::new(terms[0] - 1, terms[0] + 1) << (input_scale_shift * 2)) +
+  //in the constant term, preserve the error of 2 units noted above
+  [(Range::new(terms[0] - 2, terms[0] + 2) << (input_scale_shift * 2)) +
    ((Range::exactly(terms[1]) * origin) << input_scale_shift) +
    (Range::exactly(terms[2]) * origin * origin),
 
@@ -642,6 +654,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
   let mut result = roots(proxy.as_ref());
   printlnerr!(" Proxy: {:?}\n Roots: {:?}", proxy, result);
   for root in result.iter_mut() {
+printlnerr!("root check: {}: {} and then {} and then {}", root, evaluate (& proxy, root.max - 1),  evaluate (& proxy, root.max), evaluate (& proxy, root.max + 1));
     if &*root != &Range::everywhere() {
       *root = &*root + Range::exactly(base);
     }

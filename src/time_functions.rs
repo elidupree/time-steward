@@ -95,8 +95,8 @@ impl QuadraticTrajectory {
         if (distance_squared_would_be(first, second, interval.max() + 1) -
             distance * distance) * direction > 0 {
           return Some(interval.max() + 1);
-        }
-      }
+        } else {printlnerr!("rejected interval for not ending in the correct position")}
+      } else {printlnerr!("rejected interval for being in the past")}
     }
     None
   }
