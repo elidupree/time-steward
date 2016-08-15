@@ -375,6 +375,7 @@ impl Range {
       result.max = extrema[1];
       result.min = extrema[0];
     }
+    result.exponent <<= 1;
     result.minimize_exponent();
     result
   }
