@@ -33,7 +33,7 @@ product = product*factor;
 // TODO replace f64 with a deterministic type (probably mpfr)
 // note: the third time is not acceleration, but the coefficient of X squared, which is 2 times acceleration
 pub type Coordinate = i64;
-#[derive (Clone,)]
+#[derive (Clone, Debug)]
 pub struct QuadraticTrajectory {
   data: Vector2<Polynomial<Coordinate>>,
   time_scale_shift: i32,

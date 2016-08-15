@@ -48,7 +48,7 @@ impl ::collision_detection::Basics for CollisionBasics {
 
 type Nearness = ::collision_detection::Nearness<CollisionBasics>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Circle {
   position: QuadraticTrajectory,
   radius: SpaceCoordinate,
@@ -59,6 +59,7 @@ impl Column for Circle {
     ColumnId(0x6422505ce8c8ce8e)
   }
 }
+#[derive(Clone, Debug)]
 struct Intersection {
   induced_acceleration: Vector2<SpaceCoordinate>,
 }
@@ -98,6 +99,10 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
                                                                    ((us.1).1.clone(),
                                                                     &(us.1).0.position));
     printlnerr!("Planning for {} At {}, {}", id, (us.0).1, (us.1).1);
+  if time.is_none() && relationship.is_some() {
+	printlnerr!(" fail {:?} {:?} {:?} {:?}", id, ids, us, relationship);
+	panic!()
+  }
   }
   if let Some(yes) = time {
   printlnerr!(" planned for {}", & yes);
