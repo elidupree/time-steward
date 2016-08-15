@@ -76,6 +76,8 @@ self.exponent -= 1;
 }
 pub fn includes_0 (&self)->bool {self.min <= 0 && self.max >= 0}
 pub fn rounded_towards_0 (&self)->i64 {if self.includes_0() {0} else if self.max <0 {self.max} else {self.min}}
+pub fn min (& self)->i64 {assert! (self.exponent == 0); self.min}
+pub fn max (& self)->i64 {assert! (self.exponent == 0); self.max}
 }
 
 macro_rules! binary_operation_fill {
@@ -420,6 +422,49 @@ pub fn multiply_polynomials(terms_0: & [Range], terms_1: & [Range])->Vec<Range> 
   (0..terms_0.len() + terms_1.len() - 1).map (| new_index |
     (max (terms_1.len(), new_index + 1) - terms_1.len()..min (terms_0.len(), new_index + 1)).map (| view | terms_0 [view]*terms_1 [new_index - view]).sum()
   ).collect()
+}
+
+pub fn quadratic_move_origin_rounding_change_towards_0 (terms: &mut [i64], origin: i64, input_scale_shift: u32) {
+  terms [0] += (((Range::exactly (terms [1])*origin) >> input_scale_shift) +
+  ((Range::exactly (terms [2])*origin*origin) >> (input_scale_shift*2))).rounded_towards_0();
+  terms [1] += ((Range::exactly (terms [2])*origin*2) >> input_scale_shift).rounded_towards_0();
+}
+
+pub fn quadratic_future_proxy_minimizing_error (terms: &[i64], origin: i64, input_scale_shift: u32)->[Range; 3] {
+  //TODO: which is better: sometimes overflowing the acceleration, or sometimes rounding off the velocity?
+  //If we allowed exponent to go less than 0, then the latter would probably be better
+  [
+    (Range::new (terms [0] -1,terms [0] + 1) << (input_scale_shift*2)) +
+    ((Range::exactly (terms [1])*origin) << input_scale_shift) +
+    (Range::exactly (terms [2])*origin*origin),
+    
+    (Range::exactly (terms [1]) << (input_scale_shift*2)) +
+    ((Range::exactly (terms [2])*origin*2) << input_scale_shift),
+    
+    (Range::exactly (terms [2]) << (input_scale_shift*2)) 
+  ]
+}
+
+
+
+pub fn quadratic_trajectories_possible_distance_crossing_intervals (distance: i64, 
+                                            first: (i64, & [[i64; 3]]),
+                                            second: (i64, & [[i64; 3]]), input_scale_shift: u32)
+                                            ->Vec<Range> {
+assert! (first.1.len() == second.1.len());
+assert! (first.1.len() >0);
+    let base = max(first.0, second.0);
+let mut proxy = [Range::exactly (0),Range::exactly (0),Range::exactly (0),Range::exactly (0),Range::exactly (0)];
+for (third, more) in first.1.iter().zip (second.1.iter()) {
+let mut rubble =quadratic_future_proxy_minimizing_error (third.as_ref(), base, input_scale_shift);
+let bravo =quadratic_future_proxy_minimizing_error (more.as_ref(), base, input_scale_shift);
+for index in 0..3 {rubble [index] = rubble [index] - bravo [index];}
+for (which, value) in multiply_polynomials (& rubble, & rubble).into_iter().enumerate() {proxy [which] = proxy [which] + value}
+}
+proxy [0] = proxy [0] - Range::exactly (distance).squared();
+let mut result = roots (proxy.as_ref());
+for root in result.iter_mut() {*root = &*root + Range::exactly (base);}
+result
 }
 
 

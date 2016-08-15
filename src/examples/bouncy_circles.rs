@@ -28,7 +28,7 @@ type SpaceCoordinate = i64;
 
 const HOW_MANY_CIRCLES: i32 = 20;
 const ARENA_SIZE: SpaceCoordinate = (1 << 20);
-const TIME_SHIFT: i32 = 20;
+const TIME_SHIFT: u32 = 20;
 const SECOND: Time = (1 << TIME_SHIFT);
 
 #[derive(Clone)]
