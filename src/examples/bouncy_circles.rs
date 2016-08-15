@@ -304,7 +304,11 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
       ..Default::default()
     };
     let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
+    
+    //take care of the quadratic initial predictions before starting the timer
+    stew.snapshot_before(&0);
     let start = Instant::now();
+                         
     loop {
       for ev in display.poll_events() {
         match ev {
