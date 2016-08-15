@@ -1,6 +1,8 @@
 use std::ops::{Add, Sub, Mul, Div, Neg, Shr, Shl};
 use std::cmp::{max, min};
+use std::iter::Sum;
 
+use std::fmt;
 
 use std::io::Write;
 macro_rules! printlnerr(
@@ -24,12 +26,26 @@ Range is also a partially floating-point type: it handles overflow by increasing
 */
 
 
-#[derive (Copy, Clone, Debug)]
+#[derive (Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Range {
 min: i64,
 max: i64,
 exponent: u32,
 }
+
+impl fmt::Display for Range {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    if self.exponent >0 {write!(f, "Range:({},{})<<{}", self.min, self.max, self.exponent)} else {write!(f, "Range:({},{})", self.min, self.max)} 
+  }
+}
+
+impl fmt::Debug for Range {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    if self.exponent >0 {write!(f, "Range:({},{})<<{}", self.min, self.max, self.exponent)} else {write!(f, "Range:({},{})", self.min, self.max)} 
+  }
+}
+
+
 
 fn right_shift_round_up (value: i64, shift: u32)->i64 {
 (value >> shift) + if value & ((1i64 << shift) - 1) != 0 {1} else {0}
@@ -59,6 +75,7 @@ self.exponent -= 1;
 }
 }
 pub fn includes_0 (&self)->bool {self.min <= 0 && self.max >= 0}
+pub fn rounded_towards_0 (&self)->i64 {if self.includes_0() {0} else if self.max <0 {self.max} else {self.min}}
 }
 
 macro_rules! binary_operation_fill {
@@ -110,11 +127,15 @@ Range {min: - self.max, max: - self.min, exponent: self.exponent}
 impl<'a> Add for & 'a Range {
 type Output = Range;
 fn add (self, other: Self)->Range {
-let possibly_needed = max (self.exponent, other.exponent) + 1;
+let possibly_needed = max (self.exponent, other.exponent);
 let mut result = self.clone();
 let mut other = other.clone();
 result.increase_exponent_to (possibly_needed);
 other.increase_exponent_to (possibly_needed);
+if result.min.checked_add (other.min).is_none() || result.max.checked_add (other.max).is_none() {
+result.increase_exponent_by (1);
+other.increase_exponent_by (1);
+}
 result.min += other.min;
 result.max += other.max;
 result.minimize_exponent();
@@ -179,7 +200,7 @@ result.exponent -= other.exponent;
 if result.min <0 {result.min = (result.min + 1 - other.min)/other.min;}
  else {result.min = (result.min)/other.max;}
  if result.max <0 {result.max = (result.max)/other.max;}
-  else {result.min = (result.max - 1 + other.min)/other.min;}
+  else {result.max = (result.max - 1 + other.min)/other.min;}
 result.minimize_exponent();
 result
 }
@@ -216,6 +237,16 @@ result
 } 
 }
 binary_operation_fill! (Range, u32, Shl, shl);
+
+
+
+
+impl Sum for Range {
+fn sum<I>(iter: I) -> Self where I: Iterator<Item= Range> {
+let mut result = Range::exactly (0);
+for value in iter {result = result + value;}
+result
+} }
 
 
 
@@ -362,10 +393,40 @@ factor = factor*input;
 }
 result
 }
-  
+
+pub fn multiply_polynomials(terms_0: & [Range], terms_1: & [Range])->Vec<Range> {
+  (0..terms_0.len() + terms_1.len() - 1).map (| new_index |
+    (max (terms_1.len(), new_index + 1) - terms_1.len()..min (terms_0.len(), new_index + 1)).map (| view | terms_0 [view]*terms_1 [new_index - view]).sum()
+  ).collect()
+}
+
+
+fn test_roots (given_roots: Vec<Range>) {
+let mut polynomial = vec![Range::exactly (1)];
+for root in given_roots.iter() {polynomial = multiply_polynomials (polynomial.as_slice(), & [- root, Range::exactly (1)])}
+let computed = roots (polynomial.as_slice());
+printlnerr!("\nFor roots {:?}\n  Computed polynomial {:?}\n  And roots {:?}", given_roots, polynomial, computed);
+}
+
 
 #[test]
 fn tests() {
+assert! (Range::exactly (99)/Range::exactly (2) == Range::new (49, 50));
+assert! (Range::exactly (3)/Range::exactly (2) == Range::new (1, 2));
+assert! (Range::exactly (100)/Range::exactly (2) == Range::exactly (50));
+assert! (Range::exactly (4)/Range::exactly (2) == Range::exactly (2));
+assert! (Range::exactly (0)/Range::exactly (5) == Range::exactly (0));
+test_roots (vec![Range::exactly (0)]);
+test_roots (vec![Range::exactly (55)]);
+test_roots (vec![Range::exactly (0), Range::exactly (55)]);
+test_roots (vec![Range::exactly (-8), Range::exactly (55)]);
+test_roots (vec![Range::exactly (-8), Range::exactly (55), Range::exactly (999)]);
+test_roots (vec![Range::exactly (-8), Range::exactly (55), Range::exactly (999), Range::exactly (- 84)]);
+test_roots (vec![Range::exactly (-8), Range::exactly (55), Range::exactly (999), Range::exactly (- 84), Range::exactly (- 1967)]);
+
+
+
+
 printlnerr!(" {:?}", roots(& [Range::new (- 900, - 800), Range::new (500, 501), Range::exactly (50)]));
 printlnerr!(" {:?}", roots(& [Range::new (- 900, - 800), Range::new (500, 501), Range::exactly (50), Range::exactly (1)]));
 }

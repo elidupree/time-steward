@@ -20,6 +20,8 @@
  *
  * */
 
+#![feature (iter_arith_traits)]
+
 extern crate rand;
 extern crate polynomial;
 extern crate nalgebra;
