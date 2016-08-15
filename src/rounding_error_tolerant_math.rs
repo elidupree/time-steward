@@ -93,29 +93,36 @@ impl Range {
     self.increase_exponent_by(increase);
   }
   fn increase_exponent_by(&mut self, increase: u32) {
+    let confirm = self.clone();
     if increase >= 63 {
       self.min = self.min.signum();
       self.max = self.max.signum();
     } else {
       self.min >>= increase;
-      self.max = right_shift_round_up(self.max, increase);
+      self.max = right_shift_round_up(self.max, increase); 
+let mut confirm_2 = self.clone();
+confirm_2.min <<= increase; confirm_2.max <<= increase; 
+//printlnerr!("{}, {}", confirm, confirm_2);
+assert! (confirm_2.includes (& confirm) || confirm_2.max <0);
     }
     self.exponent += increase;
   }
   fn minimize_exponent(&mut self) {
-    while self.exponent > 0 && self.min.abs() < (i64::max_value() >> 1) &&
-          self.max.abs() < (i64::max_value() >> 1) {
+  let confirm = self.clone();
+    while self.exponent > 0 && self.min.abs() <= (i64::max_value() >> 1) &&
+          self.max.abs() <= (i64::max_value() >> 1) {
       self.min <<= 1;
       self.max <<= 1;
       self.exponent -= 1;
     }
+    let mut confirm_2 = self.clone(); confirm_2.increase_exponent_to (confirm.exponent);
+    assert! (confirm == confirm_2);
   }
   pub fn includes_0(&self) -> bool {
     self.min <= 0 && self.max >= 0
   }
 fn includes(&self, other: & Range) -> bool {
-    assert!(self.exponent == 0);
-    assert!(other.exponent == 0);
+    assert!(self.exponent == other.exponent);
       self.min <= other.min && self.max >= other.max}
   pub fn rounded_towards_0(&self) -> i64 {
     assert!(self.exponent == 0);
