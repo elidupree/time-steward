@@ -633,7 +633,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
       proxy[which] = proxy[which] + value
     }
   }
-  proxy[0] = proxy[0] - Range::exactly(distance).squared();
+  proxy[0] = proxy[0] - (Range::exactly(distance).squared() << (input_scale_shift * 4));
   let mut result = roots(proxy.as_ref());
   printlnerr!("{:?}", proxy);
   for root in result.iter_mut() {
