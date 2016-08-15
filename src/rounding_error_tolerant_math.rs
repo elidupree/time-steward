@@ -640,9 +640,9 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
                    Range::exactly(0)];
   for (third, more) in first.1.iter().zip(second.1.iter()) {
     let mut rubble = quadratic_future_proxy_minimizing_error(third.as_ref(),
-                                                             base,
+                                                             base - first.0,
                                                              input_scale_shift);
-    let bravo = quadratic_future_proxy_minimizing_error(more.as_ref(), base, input_scale_shift);
+    let bravo = quadratic_future_proxy_minimizing_error(more.as_ref(), base - second.0, input_scale_shift);
     for index in 0..3 {
       rubble[index] = rubble[index] - bravo[index];
     }
