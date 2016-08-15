@@ -235,7 +235,7 @@ impl<'a> Mul for &'a Range {
   fn mul(self, other: Self) -> Range {
     let mut result = self.clone();
     let mut other = other.clone();
-    while result.min.abs() >= (1i64 << 31) || result.max.abs() >= (1i64 << 31) {
+    while result.min.abs() >= (3037000500i64) || result.max.abs() >= (1i64 << 31) {
       result.increase_exponent_by(1)
     }
     while other.min.abs() >= (1i64 << 31) || other.max.abs() >= (1i64 << 31) {
@@ -361,12 +361,12 @@ impl Sum for Range {
 
 impl Range {
   ///Squaring is a slightly narrower operation than self*self, because it never invokes (for instance) self.min*self.max.
-  fn squared(&self) -> Range {
+  pub fn squared(&self) -> Range {
     let mut result = self.clone();
-    while result.min.abs() >= (1i64 << 31) || result.max.abs() >= (1i64 << 31) {
+    while result.min.abs() >= (3037000500i64) || result.max.abs() >= (3037000500i64) {
       result.increase_exponent_by(1)
     }
-    if result.min <= 0 && result.max >= 0 {
+    if result.includes_0 () {
       result.max = max(result.min * result.min, result.max * result.max);
       result.min = 0;
     } else {
@@ -375,12 +375,11 @@ impl Range {
       result.max = extrema[1];
       result.min = extrema[0];
     }
-    result.exponent <<= 1;
     result.minimize_exponent();
     result
   }
 
-  fn sqrt(&self) -> Option<Range> {
+  pub fn sqrt(&self) -> Option<Range> {
     let mut result = self.clone();
     if result.exponent % 2 == 1 {
       result.increase_exponent_by(1)
@@ -613,7 +612,9 @@ let between_time = rand::thread_rng().gen_range (0, origin + 1)                 
                ((Range::exactly(terms[2]) * origin * origin) >> (input_scale_shift * 2)))
                 .rounded_towards_0();
   terms[1] += ((Range::exactly(terms[2]) * origin * 2) >> input_scale_shift).rounded_towards_0();
-  assert! ((evaluate (& confirm, origin - between_time) >> (input_scale_shift*2)).includes (& Range::exactly(terms [0])));
+  let experimented =(evaluate (& confirm, origin - between_time) >> (input_scale_shift*2));
+  printlnerr!("experimented {}, actually {}", experimented, terms [0]);
+  assert! (experimented.includes (& Range::exactly(terms [0])));
 }
 
 pub fn quadratic_future_proxy_minimizing_error(terms: &[i64],
