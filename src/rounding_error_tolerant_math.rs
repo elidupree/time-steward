@@ -55,7 +55,8 @@ fn right_shift_round_up (value: i64, shift: u32)->i64 {
 
 impl Range {
 pub fn new (min: i64, max: i64)->Range {assert! (max >= min, "invalid Range"); let mut result = Range {min: min, max: max, exponent: 0};
-result.increase_exponent_by (1);
+if min == i64::min_value() {
+result.increase_exponent_by (1);}
 result
 }
 pub fn exactly (value: i64)->Range {Range::new (value, value)}
@@ -66,7 +67,7 @@ let increase =new - self.exponent;
 self.increase_exponent_by (increase);
 }
 fn increase_exponent_by (&mut self, increase: u32) {
-if increase >= 64 {
+if increase >= 63 {
 self.min = self.min.signum();
 self.max = self.max.signum();
 } else {
@@ -264,7 +265,7 @@ impl Range {
 ///Squaring is a slightly narrower operation than self*self, because it never invokes (for instance) self.min*self.max.
 fn squared (&self)->Range {
 let mut result = self.clone();
-while result.min.abs() >= (1i64 << 32) || result.max.abs() >= (1i64 << 32) {result.increase_exponent_by (1)}
+while result.min.abs() >= (1i64 << 31) || result.max.abs() >= (1i64 << 31) {result.increase_exponent_by (1)}
 if result.min <= 0 && result.max >= 0 {
   result.max = max (result.min*result.min, result.max*result.max);
   result.min = 0;
@@ -286,10 +287,10 @@ result.exponent >>= 1;
 if result.max <0 {return None;}
 if result.min <0 {result.min = 0;}
 let mut lower_bound = 0;
-let mut upper_bound = 1i64 << 32;
+let mut upper_bound = 3037000500i64;
 let mut move_size = 1i64 << 31;
 while move_size >0 {
-if (lower_bound + move_size)*(lower_bound + move_size) <= result.min {lower_bound += move_size;}
+if lower_bound + move_size <= upper_bound && (lower_bound + move_size)*(lower_bound + move_size) <= result.min {lower_bound += move_size;}
 if (upper_bound - move_size)*(upper_bound - move_size) >= result.max {upper_bound -= move_size;}
 move_size >>= 1;
 }
@@ -361,7 +362,7 @@ let mut upper_bound = max;
 let mut move_size = - 1i64 << 63;
 while min.checked_sub (max).is_some() && move_size <min - max {move_size /= 2;}
 while move_size <0 {
-      //printlnerr!(" Next values {:?}:{:?}, {:?}:{:?}", lower_bound, evaluate (terms, lower_bound ), upper_bound, evaluate (terms, upper_bound ));
+      printlnerr!(" Next values {:?}:{:?}, {:?}:{:?}", lower_bound, evaluate (terms, lower_bound ), upper_bound, evaluate (terms, upper_bound ));
 
 if lower_bound - move_size <= max && (evaluate (terms, lower_bound - move_size)*direction).max < 0 {lower_bound -= move_size;}
 if upper_bound + move_size >= min && (evaluate (terms, upper_bound + move_size)*direction).min > 0 {upper_bound += move_size;}
@@ -373,6 +374,8 @@ Some (Range::new (lower_bound, upper_bound))
 fn collect_root (terms: & [Range], min: i64, max: i64, bucket: &mut Vec<Option <Range>>) {bucket.push (find_root (terms, min, max));}
 
 pub fn roots (terms: & [Range])->Vec<Range> {
+  let mut terms = terms;
+  while terms.last().map_or (false, | term | term == & Range::exactly (0)) {terms = & terms [..terms.len() - 1]}
   match terms.len() {
     0 => vec![Range::everywhere()],
     1 => if terms [0].min <= 0 && terms [0].max >= 0 {vec![Range::everywhere()]} else {Vec:: new()},
@@ -470,8 +473,9 @@ for index in 0..3 {rubble [index] = rubble [index] - bravo [index];}
 for (which, value) in multiply_polynomials (& rubble, & rubble).into_iter().enumerate() {proxy [which] = proxy [which] + value}
 }
 proxy [0] = proxy [0] - Range::exactly (distance).squared();
-let mut result = roots (proxy.as_ref());
-for root in result.iter_mut() {*root = &*root + Range::exactly (base);}
+let mut result = roots (proxy.as_ref()); 
+printlnerr!("{:?}", proxy);
+for root in result.iter_mut() {if &*root != & Range::everywhere() {*root = &*root + Range::exactly (base);}}
 result
 }
 
@@ -486,6 +490,7 @@ printlnerr!("\nFor roots {:?}\n  Computed polynomial {:?}\n  And roots {:?}\n  E
 
 #[test]
 fn tests() {
+printlnerr!(" {:?}", Range::exactly (-47).squared() );
 assert! (Range::exactly (-47).squared() == Range::exactly ( 2209));
 assert! (Range::exactly (- 440)*Range::exactly (1) == Range::exactly (- 440));
 assert! (Range::exactly (- 440)*Range::exactly (1)*4 == Range::exactly (-1760));
