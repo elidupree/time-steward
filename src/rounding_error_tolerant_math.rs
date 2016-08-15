@@ -80,6 +80,10 @@ impl Range {
   pub fn exactly(value: i64) -> Range {
     Range::new(value, value)
   }
+  fn error_sized (value: i64) -> Range {
+    if value <0 {Range::new(value, - value)} else { Range::new(- value, value)}
+  }
+
   pub fn everywhere() -> Range {
     Range {
       min: -i64::max_value(),
@@ -235,10 +239,10 @@ impl<'a> Mul for &'a Range {
   fn mul(self, other: Self) -> Range {
     let mut result = self.clone();
     let mut other = other.clone();
-    while result.min.abs() >= (3037000500i64) || result.max.abs() >= (1i64 << 31) {
+    while result.min.abs() >= (3037000500i64) || result.max.abs() >= (3037000500i64) {
       result.increase_exponent_by(1)
     }
-    while other.min.abs() >= (1i64 << 31) || other.max.abs() >= (1i64 << 31) {
+    while other.min.abs() >= (3037000500i64) || other.max.abs() >= (3037000500i64) {
       other.increase_exponent_by(1)
     }
     let mut extremes = [result.min * other.min,
@@ -375,7 +379,6 @@ impl Range {
       result.max = extrema[1];
       result.min = extrema[0];
     }
-    result.exponent <<= 1;
     result.minimize_exponent();
     result
   }
@@ -602,7 +605,8 @@ pub fn multiply_polynomials(terms_0: &[Range], terms_1: &[Range]) -> Vec<Range> 
     .collect()
 }
 
-//when coercing the update to land on an integer value, we have a possible rounding error of up to 2 units (one from dividing the velocity, one from dividing the acceleration)
+//when coercing the update to land on an integer value, we have a possible rounding error of up to 2 units (one from dividing the velocity, one from dividing the acceleration). But that's not all – the multiplications also have rounding error if they have to prevent overflows, which can be up to a factor of about 1+2^{-29} (Off by 2^{-31} since we are only guaranteed to keep the top 31 bits of each factor, double because there are 2 factors, and double again because we do 2 multiplications in a row in one place – and there's even a little more because they combine multiplicatively). That's usually pretty small, but if the result is large, it's large too.
+//TODO: find way to compute the error automatically, so I don't have to rely on having not made any mistakes
 pub fn quadratic_move_origin_rounding_change_towards_0(terms: &mut [i64],
                                                        origin: i64,
                                                        input_scale_shift: u32) {
@@ -612,25 +616,41 @@ let between_time = rand::thread_rng().gen_range (0, origin + 1)                 
   terms[0] += (((Range::exactly(terms[1]) * origin) >> input_scale_shift) +
                ((Range::exactly(terms[2]) * origin * origin) >> (input_scale_shift * 2)))
                 .rounded_towards_0();
-  terms[1] += ((Range::exactly(terms[2]) * origin * 2) >> input_scale_shift).rounded_towards_0();
-  let experimented =(evaluate (& confirm, origin - between_time) >> (input_scale_shift*2));
+  terms[1] += ((Range::exactly(terms[2]) * origin) >> (input_scale_shift - 1)).rounded_towards_0();
+  let experimented =(evaluate (& confirm, origin - between_time) >> (input_scale_shift*2 + MAX_ERROR_SHIFT));
   printlnerr!("experimented {}, actually {}", experimented, terms [0]);
   assert! (experimented.includes (& Range::exactly(terms [0])));
 }
+
+const MAX_ERROR_SHIFT: u32 = 30;
 
 pub fn quadratic_future_proxy_minimizing_error(terms: &[i64],
                                                origin: i64,
                                                input_scale_shift: u32)
                                                -> [Range; 3] {
-  //in the constant term, preserve the error of 2 units noted above
-  [(Range::new(terms[0] - 2, terms[0] + 2) << (input_scale_shift * 2)) +
-   ((Range::exactly(terms[1]) * origin) << input_scale_shift) +
-   (Range::exactly(terms[2]) * origin * origin),
+  //in the constant term, preserve the error of 2 units noted above.
+  //Multiplication error term is about (term 1*time since original origin) >> 30+shift + (term 2*time since original origin squared) >> 29+shift*2
+  //but time since original origin is actually "origin" + the input of the quadratic we're creating,
+  //this error is actually quadratic.
+  [(Range::new(terms[0] - 2, terms[0] + 2) << (input_scale_shift * 2 +MAX_ERROR_SHIFT)) +
+   ((Range::exactly(terms[1]) * origin) << (input_scale_shift +MAX_ERROR_SHIFT)) +
+   ((Range::exactly(terms[2]) * origin * origin) <<MAX_ERROR_SHIFT) +
+   
+   //error term
+   ((Range::error_sized(terms[1]) * origin) << (input_scale_shift +MAX_ERROR_SHIFT - 30)) +
+   ((Range::error_sized(terms[2]) * origin * origin) << (MAX_ERROR_SHIFT - 28)),
 
-   (Range::exactly(terms[1]) << input_scale_shift) +
-   (Range::exactly(terms[2]) * origin * 2),
+   (Range::exactly(terms[1]) << (input_scale_shift +MAX_ERROR_SHIFT)) +
+   ((Range::exactly(terms[2]) * origin) << (MAX_ERROR_SHIFT + 1)) +
+   
+   //error term
+   (Range::error_sized(terms[1]) << (input_scale_shift + MAX_ERROR_SHIFT - 30)) + 
+   ((Range::error_sized(terms[2])*origin) << (MAX_ERROR_SHIFT + 1 - 28)),
 
-   Range::exactly(terms[2])]
+   (Range::exactly(terms[2]) <<MAX_ERROR_SHIFT) +
+   
+   //error term
+   (Range::error_sized (terms[2]) << (MAX_ERROR_SHIFT - 28))]
 }
 
 
@@ -660,7 +680,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
       proxy[which] = proxy[which] + value
     }
   }
-  proxy[0] = proxy[0] - (Range::exactly(distance).squared() << (input_scale_shift * 4));
+  proxy[0] = proxy[0] - (Range::exactly(distance).squared() << (input_scale_shift * 4 +MAX_ERROR_SHIFT*2));
   let mut result = roots(proxy.as_ref());
   printlnerr!(" Proxy: {:?}\n Roots: {:?}", proxy, result);
   for root in result.iter_mut() {
