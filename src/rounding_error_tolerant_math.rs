@@ -618,7 +618,7 @@ let between_time = rand::thread_rng().gen_range (0, origin + 1)                 
                 .rounded_towards_0();
   terms[1] += ((Range::exactly(terms[2]) * origin) >> (input_scale_shift - 1)).rounded_towards_0();
   let experimented =(evaluate (& confirm, origin - between_time) >> (input_scale_shift*2 + MAX_ERROR_SHIFT));
-  printlnerr!("experimented {}, actually {}", experimented, terms [0]);
+  //printlnerr!("experimented {}, actually {}", experimented, terms [0]);
   assert! (experimented.includes (& Range::exactly(terms [0])));
 }
 
@@ -681,10 +681,11 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
     }
   }
   proxy[0] = proxy[0] - (Range::exactly(distance).squared() << (input_scale_shift * 4 +MAX_ERROR_SHIFT*2));
+  printlnerr!(" Proxy: {:?}", proxy);
   let mut result = roots(proxy.as_ref());
   printlnerr!(" Proxy: {:?}\n Roots: {:?}", proxy, result);
   for root in result.iter_mut() {
-printlnerr!("root check: {}: {} and then {} and then {}", root, evaluate (& proxy, root.max - 1),  evaluate (& proxy, root.max), evaluate (& proxy, root.max + 1));
+//printlnerr!("root check: {}: {} and then {} and then {}", root, evaluate (& proxy, root.max - 1),  evaluate (& proxy, root.max), evaluate (& proxy, root.max + 1));
     if &*root != &Range::everywhere() {
       *root = &*root + Range::exactly(base);
     }

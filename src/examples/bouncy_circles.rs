@@ -98,14 +98,14 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
                                                                     &(us.0).0.position),
                                                                    ((us.1).1.clone(),
                                                                     &(us.1).0.position));
-    printlnerr!("Planning for {} At {}, {}", id, (us.0).1, (us.1).1);
+    //printlnerr!("Planning for {} At {}, {}", id, (us.0).1, (us.1).1);
     if time.is_none() && relationship.is_some() {
       printlnerr!(" fail {:?} {:?} {:?} {:?}", id, ids, us, relationship);
       panic!()
     }
   }
   if let Some(yes) = time {
-    printlnerr!(" planned for {}", &yes);
+    //printlnerr!(" planned for {}", &yes);
     accessor.predict_at_time(&yes,
                              Rc::new(move |mutator| {
                                let new_relationship;
@@ -129,6 +129,7 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
                                       .position
                                       .add_acceleration(intersection.induced_acceleration);
                                    new_relationship = None;
+    printlnerr!("Parted {} At {}", id, mutator.now());
                                  } else {
                                    let acceleration = (new.0.position.evaluate() -
                                                        new.1.position.evaluate()) *
@@ -140,6 +141,7 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
                                      induced_acceleration: acceleration,
                                    });
 
+    printlnerr!("Joined {} At {}", id, mutator.now());
                                  }
                                }
                                mutator.set::<Intersection>(id, new_relationship);
@@ -170,7 +172,7 @@ fn boundary_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as Ti
                                                                    (0, &(arena_center)));
   }
   if let Some(yes) = time {
-    printlnerr!(" planned for {}", &yes);
+    //printlnerr!(" planned for {}", &yes);
     accessor.predict_at_time(&yes,
                              Rc::new(move |mutator| {
                                let new_relationship;
