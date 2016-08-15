@@ -160,8 +160,8 @@ type Output = Range;
 fn mul(self, other: Self)->Range {
 let mut result = self.clone();
 let mut other = other.clone();
-while result.min.abs() >= (1i64 << 32) || result.max.abs() >= (1i64 << 32) {result.increase_exponent_by (1)}
-while other.min.abs() >= (1i64 << 32) || other.max.abs() >= (1i64 << 32) {other.increase_exponent_by (1)}
+while result.min.abs() >= (1i64 << 31) || result.max.abs() >= (1i64 << 31) {result.increase_exponent_by (1)}
+while other.min.abs() >= (1i64 << 31) || other.max.abs() >= (1i64 << 31) {other.increase_exponent_by (1)}
 let mut extremes = [result.min*other.min, result.max*other.max, result.min*other.max, result.max*other.min];
 extremes.sort();
 result = Range {min: extremes [0], max: extremes [3], exponent: result.exponent + other.exponent};
@@ -311,7 +311,7 @@ pub fn roots_quadratic (terms: [Range; 3])->Vec<Range> {
 let a = terms [2];
 let b = terms [1];
 let c = terms [0];
-let discriminant = b.squared() + a*c*Range::exactly (4);
+let discriminant = b.squared() - a*c*Range::exactly (4);
 //printlnerr!(" discriminant {:?}", discriminant);
 if discriminant.max <0 {return Vec:: new();}
 let sqrt = discriminant.sqrt().expect ("I thought we just ruled out the case where the square root would be nonexistent");
@@ -333,6 +333,8 @@ vec![result_0, result_1]
 fn find_root (terms: & [Range], min: i64, max: i64)->Option <Range> {
 let min_value = evaluate (terms, min);
 let max_value = evaluate (terms, max);
+      //printlnerr!(" Values {:?}:{:?}, {:?}:{:?}", min, min_value, max, max_value);
+
 let direction;
 if min_value.includes_0() {
 if max_value.includes_0() {return Some (Range::new (min, max));}
@@ -345,17 +347,20 @@ direction = max_value.min.signum();
 
 let mut lower_bound = min;
 let mut upper_bound = max;
-let mut move_size = 1i64 << 63;
-while move_size >max - min {move_size >>= 1}
-while move_size >0 {
-if (evaluate (terms, lower_bound + move_size)*direction).max < 0 {lower_bound += move_size;}
-if (evaluate (terms, upper_bound - move_size)*direction).min > 0 {upper_bound -= move_size;}
-move_size >>= 1;
+//hack: use a negative number for move_size so that it can store a slightly larger value
+let mut move_size = - 1i64 << 63;
+while min.checked_sub (max).is_some() && move_size <min - max {move_size /= 2;}
+while move_size <0 {
+      //printlnerr!(" Next values {:?}:{:?}, {:?}:{:?}", lower_bound, evaluate (terms, lower_bound ), upper_bound, evaluate (terms, upper_bound ));
+
+if lower_bound - move_size <= max && (evaluate (terms, lower_bound - move_size)*direction).max < 0 {lower_bound -= move_size;}
+if upper_bound + move_size >= min && (evaluate (terms, upper_bound + move_size)*direction).min > 0 {upper_bound += move_size;}
+move_size /= 2;
 }
 Some (Range::new (lower_bound, upper_bound))
 
 }
-fn collect_root (terms: & [Range], min: i64, max: i64, bucket: &mut Vec<Range>) {find_root (terms, min, max).map (| root | bucket.push (root));}
+fn collect_root (terms: & [Range], min: i64, max: i64, bucket: &mut Vec<Option <Range>>) {bucket.push (find_root (terms, min, max));}
 
 pub fn roots (terms: & [Range])->Vec<Range> {
   match terms.len() {
@@ -365,20 +370,37 @@ pub fn roots (terms: & [Range])->Vec<Range> {
     3 => roots_quadratic ([terms [0], terms [1], terms [2]]),
     size => {
       let derivative: Vec<Range> = terms [1..]. iter().enumerate().map (| (which, term) | term*(which as i64 + 1)).collect();
+      //printlnerr!(" Derivative {:?}", derivative);
       let extrema = roots (derivative.as_slice());
       if extrema.iter().any (| range | range.exponent >0) {return vec![Range::everywhere()];}
+      let mut bucket = Vec:: new();
       let mut results = Vec:: new();
-      if extrema.is_empty() {collect_root (terms, - i64::max_value(),i64::max_value(), &mut results);}
+      if extrema.is_empty() {collect_root (terms, - i64::max_value(),i64::max_value(), &mut bucket);}
       else {
-        collect_root (terms, - i64::max_value(), extrema [0].min, &mut results);
+        collect_root (terms, - i64::max_value(), extrema [0].min, &mut bucket);
         for which in 0..(extrema.len() - 1) {
-          results.push (extrema [which]);
           if extrema [which].max <extrema [which +1].min {
-            collect_root (terms, extrema [which].max, extrema [which +1].min , &mut results);
+            collect_root (terms, extrema [which].max, extrema [which +1].min , &mut bucket);
           }
+          else {bucket.push (None);}
         }
-        collect_root (terms, extrema.last().unwrap().max, i64::max_value(), &mut results);
+        collect_root (terms, extrema.last().unwrap().max, i64::max_value(), &mut bucket);
       }
+      // if we found a root on both sides of a derivative-root, we know that the derivative-root is bounded away from 0
+      for which in 0..extrema.len() {
+          let me = extrema [which];
+          if let Some (lower) = bucket [which] {
+            results.push (lower);
+            if let Some (higher) = bucket [which + 1] {
+              if me.min >lower.max && me.max <higher.min {
+                continue;
+              }
+            }
+          }
+          results.push (me);
+      }
+      if let Some (lower) = bucket [extrema.len() ] {results.push (lower);}
+
       results
     }
   }
@@ -405,12 +427,17 @@ fn test_roots (given_roots: Vec<Range>) {
 let mut polynomial = vec![Range::exactly (1)];
 for root in given_roots.iter() {polynomial = multiply_polynomials (polynomial.as_slice(), & [- root, Range::exactly (1)])}
 let computed = roots (polynomial.as_slice());
-printlnerr!("\nFor roots {:?}\n  Computed polynomial {:?}\n  And roots {:?}", given_roots, polynomial, computed);
+printlnerr!("\nFor roots {:?}\n  Computed polynomial {:?}\n  And roots {:?}\n  Evaluated root minima: {:?}", given_roots, polynomial, computed, given_roots.iter().map(| root | evaluate (polynomial.as_slice(), root.min)).collect:: <Vec<Range>>());
 }
 
 
 #[test]
 fn tests() {
+assert! (Range::exactly (-47).squared() == Range::exactly ( 2209));
+assert! (Range::exactly (- 440)*Range::exactly (1) == Range::exactly (- 440));
+assert! (Range::exactly (- 440)*Range::exactly (1)*4 == Range::exactly (-1760));
+
+
 assert! (Range::exactly (99)/Range::exactly (2) == Range::new (49, 50));
 assert! (Range::exactly (3)/Range::exactly (2) == Range::new (1, 2));
 assert! (Range::exactly (100)/Range::exactly (2) == Range::exactly (50));
@@ -423,6 +450,13 @@ test_roots (vec![Range::exactly (-8), Range::exactly (55)]);
 test_roots (vec![Range::exactly (-8), Range::exactly (55), Range::exactly (999)]);
 test_roots (vec![Range::exactly (-8), Range::exactly (55), Range::exactly (999), Range::exactly (- 84)]);
 test_roots (vec![Range::exactly (-8), Range::exactly (55), Range::exactly (999), Range::exactly (- 84), Range::exactly (- 1967)]);
+
+test_roots (vec![Range::new (-1, 1), Range::new (54, 56)]);
+test_roots (vec![Range::new (-9, -7), Range::new (50, 60)]);
+test_roots (vec![Range::new (-9, -7), Range::new (54, 56), Range::exactly (999)]);
+test_roots (vec![Range::new (-9, -7), Range::new (54, 56), Range::new (950, 1050), Range::new (-90, -80)]);
+test_roots (vec![Range::new (-9, -7), Range::new (54, 56), Range::new (950, 1050), Range::new (-90, -80), Range::new (- 1967, -1940)]);
+
 
 
 
