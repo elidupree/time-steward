@@ -54,8 +54,11 @@ fn right_shift_round_up (value: i64, shift: u32)->i64 {
 
 
 impl Range {
-pub fn new (min: i64, max: i64)->Range {assert! (max >= min, "invalid Range"); Range {min: min, max: max, exponent: 0}}
-pub fn exactly (value: i64)->Range {Range {min: value, max: value, exponent: 0}}
+pub fn new (min: i64, max: i64)->Range {assert! (max >= min, "invalid Range"); let mut result = Range {min: min, max: max, exponent: 0};
+result.increase_exponent_by (1);
+result
+}
+pub fn exactly (value: i64)->Range {Range::new (value, value)}
 pub fn everywhere ()->Range {Range {min: - i64::max_value(), max: i64::max_value(), exponent: u32::max_value()}}
 fn increase_exponent_to (&mut self, new: u32) {
 assert! (new >= self.exponent);
@@ -63,8 +66,13 @@ let increase =new - self.exponent;
 self.increase_exponent_by (increase);
 }
 fn increase_exponent_by (&mut self, increase: u32) {
+if increase >= 64 {
+self.min = self.min.signum();
+self.max = self.max.signum();
+} else {
 self.min >>= increase;
 self.max =right_shift_round_up (self.max, increase);
+}
 self.exponent += increase;
 }
 fn minimize_exponent(&mut self) {
@@ -134,7 +142,7 @@ let mut result = self.clone();
 let mut other = other.clone();
 result.increase_exponent_to (possibly_needed);
 other.increase_exponent_to (possibly_needed);
-if result.min.checked_add (other.min).is_none() || result.max.checked_add (other.max).is_none() {
+if result.min.checked_add (other.min).map_or(true, | result | result == i64::min_value()) || result.max.checked_add (other.max).is_none() {
 result.increase_exponent_by (1);
 other.increase_exponent_by (1);
 }
