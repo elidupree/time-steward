@@ -617,14 +617,14 @@ pub fn multiply_polynomials(terms_0: &[Range], terms_1: &[Range]) -> Vec<Range> 
     })
     .collect()
 }
-
+use ::rand::Rng; use rand;
 //when coercing the update to land on an integer value, we have a possible rounding error of up to 2 units (one from dividing the velocity, one from dividing the acceleration). But that's not all – the multiplications also have rounding error if they have to prevent overflows, which can be up to a factor of about 1+2^{-29} (Off by 2^{-31} since we are only guaranteed to keep the top 31 bits of each factor, double because there are 2 factors, and double again because we do 2 multiplications in a row in one place – and there's even a little more because they combine multiplicatively). That's usually pretty small, but if the result is large, it's large too.
 //TODO: find way to compute the error automatically, so I don't have to rely on having not made any mistakes
 //because having a quadratic error term caused too much trouble, we force it to become a constant error term by limiting the total time you can skip with one update
 pub fn quadratic_move_origin_rounding_change_towards_0(terms: &mut [i64],
                                                        origin: i64,
                                                        input_scale_shift: u32) {
-use ::rand::Rng; use rand;
+
   assert! (((Range::exactly(terms[2].abs())  * origin * origin) >> (input_scale_shift*2 + 28)).max <=2, "overflow-ish in quadratic_move_origin_rounding_change_towards_0; trying to use rounding to prevent this overflow would increase the error size beyond our arbitrary limit");
                                                        let between_time = rand::thread_rng().gen_range (0, origin + 1)                      ;                                
                                                        let confirm =quadratic_future_proxy_minimizing_error (terms, between_time, input_scale_shift);
@@ -716,21 +716,39 @@ result
 
 };
 let test = | input | {
-if input <0 {return;}
 let evaluated =evaluate (& proxy, input) >> (input_scale_shift*4 + MAX_ERROR_SHIFT*2);
+if input <0 {return evaluated;}
 let real =real_distance_squared (input + base) - distance*distance;
 printlnerr!("input: {}, base: {}, evaluated: {}, real: {}", input, base, evaluated, real);
 assert! ((evaluated).includes (& Range::exactly (real)));
+evaluated
 };
+let test_empty_interval = | start, stop | {
+if start >= stop {return;}
+let sample_points: Vec<i64> = vec![start, stop, rand::thread_rng().gen_range (start, stop), rand::thread_rng().gen_range (start, stop), rand::thread_rng().gen_range (start, stop)];
+let sample_values: Vec<Range> = sample_points.iter().map (| input | test (input.clone())).collect();
+let signum = sample_values [0].min.signum();
+for value in sample_values.iter() {
+assert!(!value.includes_0());
+assert!(value.min.signum() == signum);
+}
+
+};
+
   printlnerr!(" Proxy: {:?}", proxy);
   let mut result = roots(proxy.as_ref());
   printlnerr!(" Proxy: {:?}\n Roots: {:?}", proxy, result);
   test (0);
   test (1000);
   test (base);
-  for root in result.iter_mut() {
-  test (root.max);
+  for (which, root) in result.iter().enumerate() {
+  test ((root.max - root.min)/2);
+  if which == 0 {test_empty_interval (- i64::max_value(), root.min - 1);}
+  if which <result.len() - 1 {test_empty_interval (root.max + 1, result [which + 1].min - 1);}
+  else {test_empty_interval (root.max + 1, i64::max_value());}
 //printlnerr!("root check: {}: {} and then {} and then {}", root, evaluate (& proxy, root.max - 1),  evaluate (& proxy, root.max), evaluate (& proxy, root.max + 1));
+}
+  for (which, root) in result.iter_mut().enumerate() {
     root.min = root.min.saturating_add (base);
     root.max = root.max.saturating_add (base);
   }
