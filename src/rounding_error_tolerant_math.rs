@@ -637,9 +637,9 @@ use ::rand::Rng; use rand;
 //because having a quadratic error term caused too much trouble, we force it to become a constant error term by limiting the total time you can skip with one update
 pub fn quadratic_move_origin_rounding_change_towards_0(terms: &mut [i64],
                                                        origin: i64,
-                                                       input_scale_shift: u32) {
+                                                       input_scale_shift: u32)->bool {
 
-  assert! (((Range::exactly(terms[2].abs())  * origin * origin) >> (input_scale_shift*2 + 28)).max <=2, "overflow-ish in quadratic_move_origin_rounding_change_towards_0; trying to use rounding to prevent this overflow would increase the error size beyond our arbitrary limit");
+if ((Range::exactly(terms[2].abs())  * origin * origin) >> (input_scale_shift*2 + 28)).max >2 { printlnerr!("overflow-ish in quadratic_move_origin_rounding_change_towards_0; trying to use rounding to prevent this overflow would increase the error size beyond our arbitrary limit"); return false;}
                                                        let between_time = rand::thread_rng().gen_range (0, origin + 1)                      ;                                
                                                        let confirm =quadratic_future_proxy_minimizing_error (terms, between_time, input_scale_shift);
   terms[0] += (((Range::exactly(terms[1]) * origin) >> input_scale_shift) +
@@ -649,6 +649,7 @@ pub fn quadratic_move_origin_rounding_change_towards_0(terms: &mut [i64],
   let experimented =(evaluate (& confirm, origin - between_time) >> (input_scale_shift*2 + MAX_ERROR_SHIFT));
   //printlnerr!("experimented {}, actually {}", experimented, terms [0]);
   assert! (experimented.includes (& Range::exactly(terms [0])));
+  true
 }
 
 const MAX_ERROR_SHIFT: u32 = 30;
@@ -717,25 +718,27 @@ let real_distance_squared = | input | {
   let mut result = 0;
   for (third, more) in first.1.iter().zip(second.1.iter()) {
     let mut rubble = third.clone();
-    quadratic_move_origin_rounding_change_towards_0(&mut rubble,
+    if!quadratic_move_origin_rounding_change_towards_0(&mut rubble,
 input - first.0,
-                                                             input_scale_shift);
-    let mut bravo = more.clone(); quadratic_move_origin_rounding_change_towards_0(&mut bravo, input - second.0, input_scale_shift);
+                                                             input_scale_shift) {return None;}
+    let mut bravo = more.clone(); if!quadratic_move_origin_rounding_change_towards_0(&mut bravo, input - second.0, input_scale_shift) {return None;}
     for index in 0..3 {
       rubble[index] = rubble[index] - bravo[index];
     }
     result += rubble [0]*rubble [0];
   }
-result
+Some (result)
 
 };
 let test = | input | {
 let evaluated =evaluate (& proxy, input) >> (input_scale_shift*4 + MAX_ERROR_SHIFT*2);
 printlnerr!("input: {}, base: {}, evaluated: {}", input, base, evaluated);
-if input <0 || input >1 << 31 {return evaluated;}
-let real =real_distance_squared (input + base) - distance*distance;
+if input <0 || input >1i64 << 32 {return evaluated;}
+if let Some (distance_squared) =real_distance_squared (input + base) {
+let real = distance_squared - distance*distance;
 printlnerr!("real: {}", real);
 assert! ((evaluated).includes (& Range::exactly (real)));
+}
 evaluated
 };
 let test_empty_interval = | start, stop | {

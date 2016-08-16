@@ -49,9 +49,9 @@ impl QuadraticTrajectory {
 
   pub fn update_by(&mut self, time: Coordinate) {
     for quadratic in self.data.iter_mut() {
-      quadratic_move_origin_rounding_change_towards_0(quadratic.as_mut(),
+      assert!(quadratic_move_origin_rounding_change_towards_0(quadratic.as_mut(),
                                                       time,
-                                                      self.time_scale_shift);
+                                                      self.time_scale_shift));
     }
   }
 
