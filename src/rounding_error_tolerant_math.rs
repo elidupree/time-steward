@@ -698,10 +698,37 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
     }
   }
   proxy[0] = proxy[0] - (Range::exactly(distance).squared() << (input_scale_shift * 4 +MAX_ERROR_SHIFT*2));
+let real_distance_squared = | input | {
+  let mut result = 0;
+  for (third, more) in first.1.iter().zip(second.1.iter()) {
+    let mut rubble = third.clone();
+    quadratic_move_origin_rounding_change_towards_0(&mut rubble,
+input - first.0,
+                                                             input_scale_shift);
+    let mut bravo = more.clone(); quadratic_move_origin_rounding_change_towards_0(&mut bravo, input - second.0, input_scale_shift);
+    for index in 0..3 {
+      rubble[index] = rubble[index] - bravo[index];
+    }
+    result += rubble [0]*rubble [0];
+  }
+result
+
+};
+let test = | input | {
+if input <0 {return;}
+let evaluated =evaluate (& proxy, input) >> (input_scale_shift*4 + MAX_ERROR_SHIFT*2);
+let real =real_distance_squared (input + base) - distance*distance;
+printlnerr!("input: {}, base: {}, evaluated: {}, real: {}", input, base, evaluated, real);
+assert! ((evaluated).includes (& Range::exactly (real)));
+};
   printlnerr!(" Proxy: {:?}", proxy);
   let mut result = roots(proxy.as_ref());
   printlnerr!(" Proxy: {:?}\n Roots: {:?}", proxy, result);
+  test (0);
+  test (1000);
+  test (base);
   for root in result.iter_mut() {
+  test (root.max);
 //printlnerr!("root check: {}: {} and then {} and then {}", root, evaluate (& proxy, root.max - 1),  evaluate (& proxy, root.max), evaluate (& proxy, root.max + 1));
     root.min = root.min.saturating_add (base);
     root.max = root.max.saturating_add (base);
@@ -727,7 +754,7 @@ fn test_roots(given_roots: Vec<Range>) {
 }
 
 
-#[test]
+//#[test]
 fn tests() {
   printlnerr!(" {:?}", Range::exactly(-47).squared());
   assert!(Range::exactly(-47).squared() == Range::exactly(2209));
