@@ -423,6 +423,7 @@ impl Range {
     }
     result.min = lower_bound;
     result.max = upper_bound;
+    result.minimize_exponent();
     Some(result)
   }
 }
