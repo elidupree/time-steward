@@ -302,6 +302,10 @@ impl<'a> Div for &'a Range {
       return Range::everywhere();
     }
     
+    //intuitively, to minimize rounding error, denominator should have about half as many bits as numerator does when we do the actual division operation.
+    //TODO: what if denominator is a VERY wide range (like -1, i64::max_value())? Then we will have big rounding problems either way
+    while result.exponent >other.exponent && ( other.min.abs() >= (3037000500i64) || other.max.abs() >= (3037000500i64)) {other.increase_exponent_by (1);}
+    
     if other.exponent > result.exponent {
       result.increase_exponent_to(other.exponent);
     }
@@ -454,6 +458,8 @@ pub fn roots_quadratic(terms: [Range; 3]) -> Vec<Range> {
   let c = terms[0];
   let discriminant = b.squared() - a * c * Range::exactly(4);
   // printlnerr!(" discriminant {:?}", discriminant);
+  printlnerr!("confirm results: {:?}", roots_derivative_based (& terms));
+  
   if discriminant.max < 0 {
     return Vec::new();
   }
@@ -468,8 +474,10 @@ pub fn roots_quadratic(terms: [Range; 3]) -> Vec<Range> {
 let mut results = Vec:: new();  
 if let Some (result) = result_0.clamp_to_0_exponent () {results.push (result)}
 if let Some (result) = result_1.clamp_to_0_exponent () {results.push (result)}
+
+printlnerr!("My results: {:?}", results);
 return results;
- if result_0.max >= result_1.min {
+ /*if result_0.max >= result_1.min {
     vec![Range {
            min: result_0.min,
            max: result_1.max,
@@ -477,7 +485,7 @@ return results;
          }]
   } else {
     vec![result_0, result_1]
-  }
+  }*/
 }
 
 fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
@@ -526,24 +534,8 @@ fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
 fn collect_root(terms: &[Range], min: i64, max: i64, bucket: &mut Vec<Option<Range>>) {
   bucket.push(find_root(terms, min, max));
 }
-
-pub fn roots(terms: &[Range]) -> Vec<Range> {
-  let mut terms = terms;
-  while terms.last().map_or(false, |term| term == &Range::exactly(0)) {
-    terms = &terms[..terms.len() - 1]
-  }
-  match terms.len() {
-    0 => vec![Range::everywhere()],
-    1 => {
-      if terms[0].min <= 0 && terms[0].max >= 0 {
-        vec![Range::everywhere()]
-      } else {
-        Vec::new()
-      }
-    }
-    2 => roots_linear([terms[0], terms[1]]),
-    3 => roots_quadratic([terms[0], terms[1], terms[2]]),
-    size => {
+fn roots_derivative_based (terms: &[Range]) -> Vec<Range> {
+  
       let derivative: Vec<Range> = terms[1..]
                                      .iter()
                                      .enumerate()
@@ -594,7 +586,25 @@ pub fn roots(terms: &[Range]) -> Vec<Range> {
       }
 
       results
+
+  }
+pub fn roots(terms: &[Range]) -> Vec<Range> {
+  let mut terms = terms;
+  while terms.last().map_or(false, |term| term == &Range::exactly(0)) {
+    terms = &terms[..terms.len() - 1]
+  }
+  match terms.len() {
+    0 => vec![Range::everywhere()],
+    1 => {
+      if terms[0].min <= 0 && terms[0].max >= 0 {
+        vec![Range::everywhere()]
+      } else {
+        Vec::new()
+      }
     }
+    2 => roots_linear([terms[0], terms[1]]),
+    3 => roots_quadratic([terms[0], terms[1], terms[2]]),
+_=> { roots_derivative_based (terms)   }
   }
 }
 
@@ -717,9 +727,10 @@ result
 };
 let test = | input | {
 let evaluated =evaluate (& proxy, input) >> (input_scale_shift*4 + MAX_ERROR_SHIFT*2);
-if input <0 || input > 1<<31 {return evaluated;}
+printlnerr!("input: {}, base: {}, evaluated: {}", input, base, evaluated);
+if input <0 || input >1 << 31 {return evaluated;}
 let real =real_distance_squared (input + base) - distance*distance;
-printlnerr!("input: {}, base: {}, evaluated: {}, real: {}", input, base, evaluated, real);
+printlnerr!("real: {}", real);
 assert! ((evaluated).includes (& Range::exactly (real)));
 evaluated
 };
