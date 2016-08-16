@@ -146,6 +146,17 @@ fn includes(&self, other: & Range) -> bool {
     assert!(self.exponent == 0);
     self.max
   }
+  pub fn clamp_to_0_exponent (&self)->Option <Range> {
+    let mut result = self.clone();
+    if self.exponent >= 63 {
+      result.min = self.min.signum()*i64::max_value();
+      result.max = self.max.signum()*i64::max_value();
+    } else {
+      result.min = self.min.saturating_mul(1i64 << self.exponent);
+      result.max = self.max.saturating_mul(1i64 << self.exponent);
+    }
+    if result.min == i64::max_value() || result.max <= - i64::max_value() {None} else {Some (result )}
+  }
 }
 
 macro_rules! binary_operation_fill {
@@ -279,14 +290,17 @@ impl<'a> Div for &'a Range {
   fn div(self, other: Self) -> Range {
     let mut result = self.clone();
     let mut other = other.clone();
-    if other.includes_0() {
-      return Range::everywhere();
-    }
-    if other.max < 0 {
+    
+    if other.min < 0 {
       other = -other;
       result = -result;
     }
 
+    if other.includes_0() {
+      //TODO: what if if other.min == 0
+      return Range::everywhere();
+    }
+    
     if other.exponent > result.exponent {
       result.increase_exponent_to(other.exponent);
     }
@@ -433,8 +447,7 @@ pub fn roots_linear(coefficients: [Range; 2]) -> Vec<Range> {
      (coefficients[0].min > 0 || coefficients[0].max < 0) {
     return Vec::new();
   }
-  // TODO: there's also the case where exactly one of the linear term's extrema is 0, which makes the result be a half open interval... But we are, after all, allowed to return strict supersets of the actual result
-  vec![(-coefficients[0]) / coefficients[1]]
+  if let Some (result) = ((-coefficients[0]) / coefficients[1]).clamp_to_0_exponent () {vec![result]} else {Vec:: new()}
 }
 pub fn roots_quadratic(terms: [Range; 3]) -> Vec<Range> {
   let a = terms[2];
@@ -453,11 +466,11 @@ pub fn roots_quadratic(terms: [Range; 3]) -> Vec<Range> {
   let result_1 = (-b + sqrt) / (a * 2);
   // printlnerr!(" result 0 {:?}", result_0);
   // printlnerr!(" result 1 {:?}", result_1);
-  // if one of the results is this huge, something bad probably happened
-  if result_0.exponent > 0 || result_1.exponent > 0 {
-    return vec![Range::everywhere()];
-  }
-  if result_0.max >= result_1.min {
+let mut results = Vec:: new();  
+if let Some (result) = result_0.clamp_to_0_exponent () {results.push (result)}
+if let Some (result) = result_1.clamp_to_0_exponent () {results.push (result)}
+return results;
+ if result_0.max >= result_1.min {
     vec![Range {
            min: result_0.min,
            max: result_1.max,
@@ -469,6 +482,7 @@ pub fn roots_quadratic(terms: [Range; 3]) -> Vec<Range> {
 }
 
 fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
+  if min == max {return None;}
   let min_value = evaluate(terms, min);
   let max_value = evaluate(terms, max);
   // printlnerr!(" Values {:?}:{:?}, {:?}:{:?}", min, min_value, max, max_value);
@@ -540,7 +554,7 @@ pub fn roots(terms: &[Range]) -> Vec<Range> {
       let extrema = roots(derivative.as_slice());
       printlnerr!("extrema {:?}", extrema);
       if extrema.iter().any(|range| range.exponent > 0) {
-        return vec![Range::everywhere()];
+        panic!();
       }
       let mut bucket = Vec::new();
       let mut results = Vec::new();
