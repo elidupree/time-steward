@@ -717,7 +717,7 @@ result
 };
 let test = | input | {
 let evaluated =evaluate (& proxy, input) >> (input_scale_shift*4 + MAX_ERROR_SHIFT*2);
-if input <0 {return evaluated;}
+if input <0 || input > 1<<31 {return evaluated;}
 let real =real_distance_squared (input + base) - distance*distance;
 printlnerr!("input: {}, base: {}, evaluated: {}, real: {}", input, base, evaluated, real);
 assert! ((evaluated).includes (& Range::exactly (real)));
