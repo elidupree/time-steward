@@ -155,6 +155,7 @@ fn includes(&self, other: & Range) -> bool {
       result.min = self.min.saturating_mul(1i64 << self.exponent);
       result.max = self.max.saturating_mul(1i64 << self.exponent);
     }
+    result.exponent = 0;
     if result.min == i64::max_value() || result.max <= - i64::max_value() {None} else {Some (result )}
   }
 }
