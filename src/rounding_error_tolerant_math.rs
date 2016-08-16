@@ -386,6 +386,7 @@ impl Range {
     while result.min.abs() >= (3037000500i64) || result.max.abs() >= (3037000500i64) {
       result.increase_exponent_by(1)
     }
+    result.exponent <<= 1;
     if result.includes_0 () {
       result.max = max(result.min * result.min, result.max * result.max);
       result.min = 0;
@@ -428,6 +429,9 @@ impl Range {
     result.min = lower_bound;
     result.max = upper_bound;
     result.minimize_exponent();
+    let confirm = result.squared();
+    let mut confirmation = self.clone(); if confirmation.min <0 {confirmation.min = 0;} confirmation.minimize_exponent();
+    assert!(confirm.exponent >confirmation.exponent || confirm.includes (& confirmation));
     Some(result)
   }
 }
