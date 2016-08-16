@@ -91,7 +91,7 @@ impl QuadraticTrajectory {
                                                                      second.1.data[1]]),
                                                                   first.1.time_scale_shift);
     for interval in intervals.iter() {
-      if interval.max() + 1 > base {
+      if interval.max() != i64::max_value() && interval.max() + 1 > base {
 
         if (distance_squared_would_be(first, second, interval.max() + 1) -
             distance * distance) * direction > 0 {
