@@ -701,9 +701,8 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
   printlnerr!(" Proxy: {:?}\n Roots: {:?}", proxy, result);
   for root in result.iter_mut() {
 //printlnerr!("root check: {}: {} and then {} and then {}", root, evaluate (& proxy, root.max - 1),  evaluate (& proxy, root.max), evaluate (& proxy, root.max + 1));
-    if &*root != &Range::everywhere() {
-      *root = &*root + Range::exactly(base);
-    }
+    root.min = root.min.saturating_add (base);
+    root.max = root.max.saturating_add (base);
   }
   result
 }
