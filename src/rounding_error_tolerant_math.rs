@@ -462,7 +462,7 @@ pub fn roots_quadratic(terms: [Range; 3]) -> Vec<Range> {
   let c = terms[0];
   let discriminant = b.squared() - a * c * Range::exactly(4);
   // printlnerr!(" discriminant {:?}", discriminant);
-  printlnerr!("confirm results: {:?}", roots_derivative_based (& terms));
+  //printlnerr!("confirm results: {:?}", roots_derivative_based (& terms));
   
   if discriminant.max < 0 {
     return Vec::new();
@@ -479,7 +479,7 @@ let mut results = Vec:: new();
 if let Some (result) = result_0.clamp_to_0_exponent () {results.push (result)}
 if let Some (result) = result_1.clamp_to_0_exponent () {results.push (result)}
 
-printlnerr!("My results: {:?}", results);
+//printlnerr!("My results: {:?}", results);
 return results;
  /*if result_0.max >= result_1.min {
     vec![Range {
@@ -545,9 +545,9 @@ fn roots_derivative_based (terms: &[Range]) -> Vec<Range> {
                                      .enumerate()
                                      .map(|(which, term)| term * (which as i64 + 1))
                                      .collect();
-      printlnerr!(" Derivative {:?}", derivative);
+      //printlnerr!(" Derivative {:?}", derivative);
       let extrema = roots(derivative.as_slice());
-      printlnerr!("extrema {:?}", extrema);
+      //printlnerr!("extrema {:?}", extrema);
       if extrema.iter().any(|range| range.exponent > 0) {
         panic!();
       }
@@ -732,11 +732,11 @@ Some (result)
 };
 let test = | input | {
 let evaluated =evaluate (& proxy, input) >> (input_scale_shift*4 + MAX_ERROR_SHIFT*2);
-printlnerr!("input: {}, base: {}, evaluated: {}", input, base, evaluated);
+//printlnerr!("input: {}, base: {}, evaluated: {}", input, base, evaluated);
 if input <0 || input >1i64 << 32 {return evaluated;}
 if let Some (distance_squared) =real_distance_squared (input + base) {
 let real = distance_squared - distance*distance;
-printlnerr!("real: {}", real);
+//printlnerr!("real: {}", real);
 assert! ((evaluated).includes (& Range::exactly (real)));
 }
 evaluated
@@ -753,9 +753,9 @@ assert!(value.min.signum() == signum);
 
 };
 
-  printlnerr!(" Proxy: {:?}", proxy);
+  //printlnerr!(" Proxy: {:?}", proxy);
   let mut result = roots(proxy.as_ref());
-  printlnerr!(" Proxy: {:?}\n Roots: {:?}", proxy, result);
+  //printlnerr!(" Proxy: {:?}\n Roots: {:?}", proxy, result);
   test (0);
   test (1000);
   test (base);
