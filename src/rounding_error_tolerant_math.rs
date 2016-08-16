@@ -340,11 +340,8 @@ impl<'a> Shr<&'a u32> for &'a Range {
       result.exponent -= other.clone();
       return result;
     }
-    let mut shift = other.clone();
-    shift -= result.exponent;
+    result.increase_exponent_to (other.clone());
     result.exponent = 0;
-    result.min >>= shift;
-    result.max = right_shift_round_up(self.max, shift);
     result
   }
 }
@@ -622,11 +619,13 @@ pub fn multiply_polynomials(terms_0: &[Range], terms_1: &[Range]) -> Vec<Range> 
 
 //when coercing the update to land on an integer value, we have a possible rounding error of up to 2 units (one from dividing the velocity, one from dividing the acceleration). But that's not all – the multiplications also have rounding error if they have to prevent overflows, which can be up to a factor of about 1+2^{-29} (Off by 2^{-31} since we are only guaranteed to keep the top 31 bits of each factor, double because there are 2 factors, and double again because we do 2 multiplications in a row in one place – and there's even a little more because they combine multiplicatively). That's usually pretty small, but if the result is large, it's large too.
 //TODO: find way to compute the error automatically, so I don't have to rely on having not made any mistakes
+//because having a quadratic error term caused too much trouble, we force it to become a constant error term by limiting the total time you can skip with one update
 pub fn quadratic_move_origin_rounding_change_towards_0(terms: &mut [i64],
                                                        origin: i64,
                                                        input_scale_shift: u32) {
-                                                       use ::rand::Rng; use rand;
-let between_time = rand::thread_rng().gen_range (0, origin + 1)                      ;                                
+use ::rand::Rng; use rand;
+  assert! (((Range::exactly(terms[2].abs())  * origin * origin) >> (input_scale_shift*2 + 28)).max <=2, "overflow-ish in quadratic_move_origin_rounding_change_towards_0; trying to use rounding to prevent this overflow would increase the error size beyond our arbitrary limit");
+                                                       let between_time = rand::thread_rng().gen_range (0, origin + 1)                      ;                                
                                                        let confirm =quadratic_future_proxy_minimizing_error (terms, between_time, input_scale_shift);
   terms[0] += (((Range::exactly(terms[1]) * origin) >> input_scale_shift) +
                ((Range::exactly(terms[2]) * origin * origin) >> (input_scale_shift * 2)))
@@ -647,25 +646,28 @@ pub fn quadratic_future_proxy_minimizing_error(terms: &[i64],
   //Multiplication error term is about (term 1*time since original origin) >> 30+shift + (term 2*time since original origin squared) >> 29+shift*2
   //but time since original origin is actually "origin" + the input of the quadratic we're creating,
   //this error is actually quadratic.
-  [(Range::new(terms[0] - 2, terms[0] + 2) << (input_scale_shift * 2 +MAX_ERROR_SHIFT)) +
+  [(Range::new(terms[0] - 2 - 2, terms[0] + 2 + 2) << (input_scale_shift * 2 +MAX_ERROR_SHIFT)) +
    ((Range::exactly(terms[1]) * origin) << (input_scale_shift +MAX_ERROR_SHIFT)) +
    ((Range::exactly(terms[2]) * origin * origin) <<MAX_ERROR_SHIFT) +
    
    //error term
-   ((Range::error_sized(terms[1]) * origin) << (input_scale_shift +MAX_ERROR_SHIFT - 30)) +
-   ((Range::error_sized(terms[2]) * origin * origin) << (MAX_ERROR_SHIFT - 28)),
+   //((Range::error_sized(terms[1]) * origin) << (input_scale_shift +MAX_ERROR_SHIFT - 30)) +
+   //((Range::error_sized(terms[2]) * origin * origin) << (MAX_ERROR_SHIFT - 28)) +
+   Range::exactly(0),
 
    (Range::exactly(terms[1]) << (input_scale_shift +MAX_ERROR_SHIFT)) +
    ((Range::exactly(terms[2]) * origin) << (MAX_ERROR_SHIFT + 1)) +
    
    //error term
-   (Range::error_sized(terms[1]) << (input_scale_shift + MAX_ERROR_SHIFT - 30)) + 
-   ((Range::error_sized(terms[2])*origin) << (MAX_ERROR_SHIFT + 1 - 28)),
+   //(Range::error_sized(terms[1]) << (input_scale_shift + MAX_ERROR_SHIFT - 30)) + 
+   //((Range::error_sized(terms[2])*origin) << (MAX_ERROR_SHIFT + 1 - 28)) +
+   Range::exactly(0),
 
    (Range::exactly(terms[2]) <<MAX_ERROR_SHIFT) +
    
    //error term
-   (Range::error_sized (terms[2]) << (MAX_ERROR_SHIFT - 28))]
+   //(Range::error_sized (terms[2]) << (MAX_ERROR_SHIFT - 28)) +
+   Range::exactly(0)]
 }
 
 
