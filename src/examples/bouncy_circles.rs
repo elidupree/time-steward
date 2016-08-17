@@ -333,7 +333,7 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
         let (circle, time) = snapshot.data_and_last_change::<Circle>(get_circle_id(index))
                                      .expect("missing circle")
                                      .clone();
-        let position = circle.position.updated_by(snapshot.now() - time).evaluate();
+        let position = circle.position.updated_by(snapshot.now() - time).unwrap().evaluate();
         let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,
                       position[1] as f32 / ARENA_SIZE as f32 - 0.5];
         let radius = circle.radius as f32 / ARENA_SIZE as f32;

@@ -27,10 +27,14 @@ pub struct QuadraticTrajectory {
 fn distance_squared_would_be(first: (Coordinate, &QuadraticTrajectory),
                              second: (Coordinate, &QuadraticTrajectory),
                              when: Coordinate)
-                             -> Coordinate {
-  let displacement = first.1.updated_by(when - first.0).evaluate() -
-                     second.1.updated_by(when - second.0).evaluate();
-  displacement.dot(&displacement)
+                             -> Option <Coordinate> {
+  if let Some (third) = first.1.updated_by(when - first.0) {
+    if let Some (more) = second.1.updated_by(when - second.0) {
+      let displacement = third.evaluate() - more.evaluate();
+      return Some (displacement.dot(&displacement));
+    }
+  }
+None
 }
 
 impl QuadraticTrajectory {
@@ -43,10 +47,14 @@ impl QuadraticTrajectory {
     }
   }
 
-  pub fn updated_by(&self, time: Coordinate) -> QuadraticTrajectory {
+  pub fn updated_by(&self, time: Coordinate) -> Option <QuadraticTrajectory> {
     let mut result = self.clone();
-    result.update_by(time);
-    result
+    for quadratic in result.data.iter_mut() {
+      if !quadratic_move_origin_rounding_change_towards_0(quadratic.as_mut(),
+                                                              time,
+                                                              self.time_scale_shift,max_error_for_distance_traveled (self.max_distance_traveled_at_once)) {return None;}
+    }
+    Some (result)
   }
 
   pub fn update_by(&mut self, time: Coordinate) {
@@ -80,7 +88,7 @@ impl QuadraticTrajectory {
 
 
     let base = max(first.0, second.0);
-    if (distance_squared_would_be(first, second, base) - distance * distance) * direction > 0 {
+    if (distance_squared_would_be(first, second, base).expect("we shouldn't have already maxed out our distance traveled at the BEGINNING of the test!") - distance * distance) * direction > 0 {
       printlnerr!("rejefoo");
       return Some(base);
     }
@@ -96,11 +104,11 @@ impl QuadraticTrajectory {
                                                                   first.1.time_scale_shift,max_error_for_distance_traveled (first.1.max_distance_traveled_at_once));
     for interval in intervals.iter() {
       if interval.max() != i64::max_value() && interval.max() + 1 > base {
-
-        if (distance_squared_would_be(first, second, interval.max() + 1) -
-            distance * distance) * direction > 0 {
-          return Some(interval.max() + 1);
-        } //else {printlnerr!("rejected interval for not ending in the correct position")}
+        if let Some (future_distance_squared) = distance_squared_would_be(first, second, interval.max() + 1) {
+          if (future_distance_squared - distance * distance) * direction > 0 {
+            return Some(interval.max() + 1);
+          } //else {printlnerr!("rejected interval for not ending in the correct position")}
+        }
       } //else {printlnerr!("rejected interval for being in the past")}
     }
     None
