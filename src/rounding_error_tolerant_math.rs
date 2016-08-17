@@ -776,7 +776,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
   proxy[0] = proxy[0] -
              (Range::exactly(distance).squared() << (input_scale_shift * 4 + MAX_ERROR_SHIFT * 2));
   let real_distance_squared = |input| {
-    let mut result = 0;
+    let mut result = 0i64;
     for (third, more) in first.1.iter().zip(second.1.iter()) {
       let mut rubble = third.clone();
       if !quadratic_move_origin_rounding_change_towards_0(&mut rubble,
@@ -793,7 +793,11 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
       for index in 0..3 {
         rubble[index] = rubble[index] - bravo[index];
       }
-      result += rubble[0] * rubble[0];
+      if let Some(term) = rubble[0].checked_mul(rubble[0]) {
+        if let Some(res) = result.checked_add(term) {
+          result = res;
+        } else { return None; }
+      } else { return None; }
     }
     Some(result)
 
