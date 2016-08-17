@@ -50,8 +50,8 @@ impl QuadraticTrajectory {
   pub fn update_by(&mut self, time: Coordinate) {
     for quadratic in self.data.iter_mut() {
       assert!(quadratic_move_origin_rounding_change_towards_0(quadratic.as_mut(),
-                                                      time,
-                                                      self.time_scale_shift));
+                                                              time,
+                                                              self.time_scale_shift));
     }
   }
 
@@ -77,7 +77,7 @@ impl QuadraticTrajectory {
 
     let base = max(first.0, second.0);
     if (distance_squared_would_be(first, second, base) - distance * distance) * direction > 0 {
-		printlnerr!("rejefoo");
+      printlnerr!("rejefoo");
       return Some(base);
     }
 
