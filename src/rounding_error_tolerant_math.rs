@@ -559,7 +559,9 @@ pub fn roots_quadratic(terms: [Range; 3], min_input: i64, max_input: i64) -> Vec
     if result.max >= min_input && result.min <= max_input  {results.push(result);}
   }
   if let Some(result) = result_1.clamp_to_0_exponent() {
-    if result.max >= min_input && result.min <= max_input  {results.push(result);}
+    if result.max >= min_input && result.min <= max_input  {
+      if results.last().map_or (false, | whatever | result.min <whatever.min) {results.insert (0, result);} else { results.push(result);}
+    }
   }
 
   // printlnerr!("My results: {:?}", results);
@@ -793,6 +795,8 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
                    Range::exactly(0),
                    Range::exactly(0),
                    Range::exactly(0)];
+  let mut min_input = 0;
+let mut max_input = i64::max_value() - max (0, base);
   for (third, more) in first.1.iter().zip(second.1.iter()) {
     let mut rubble = quadratic_future_proxy_minimizing_error(third.as_ref(),
                                                              base - first.0,
@@ -802,6 +806,18 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
                                                         input_scale_shift, max_error);
     for index in 0..3 {
       rubble[index] = rubble[index] - bravo[index];
+    }
+    let this_dimension_tester = [rubble [0] + (Range::error_sized (distance) << (input_scale_shift*2)), rubble [1], rubble [2]];  
+    let possible_overlap_times = roots (& this_dimension_tester , min_input, max_input);
+   //printlnerr!("one-dimensional proxy: {:?} {:?} {:?} {:?}", min_input, max_input, this_dimension_tester, possible_overlap_times );
+
+    if possible_overlap_times.is_empty() {
+      
+      return Vec:: new();
+    } else {
+      min_input = max (min_input, possible_overlap_times [0].min);
+      max_input = min (max_input, possible_overlap_times.last().unwrap().max);
+      if min_input >max_input {return Vec::new();}
     }
     for (which, value) in multiply_polynomials(&rubble, &rubble).into_iter().enumerate() {
       proxy[which] = proxy[which] + value
@@ -879,8 +895,8 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
   };
 
   // printlnerr!(" Proxy: {:?}", proxy);
-let max_input =i64::max_value() - max (0, base);
-  let mut result = roots(proxy.as_ref(), 0, max_input);
+
+  let mut result = roots(proxy.as_ref(), min_input, max_input);
   // printlnerr!(" Proxy: {:?}\n Roots: {:?}", proxy, result);
   test(0);
   test(1000);
@@ -888,7 +904,7 @@ let max_input =i64::max_value() - max (0, base);
   for (which, root) in result.iter().enumerate() {
     test((root.max - root.min) / 2);
     if which == 0 {
-      test_empty_interval(0, root.min - 1);
+      test_empty_interval(min_input, root.min - 1);
     }
     if which < result.len() - 1 {
       test_empty_interval(root.max + 1, result[which + 1].min - 1);
