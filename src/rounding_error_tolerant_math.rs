@@ -277,17 +277,14 @@ impl<'a> Mul for &'a Range {
       let bigger;
       let smaller;
       let difference;
-      let shared;
       if result_high_bit > other_high_bit {
         bigger = &mut result;
         smaller = &mut other;
         difference = result_high_bit - other_high_bit;
-        shared = other_high_bit;
       } else {
         bigger = &mut other;
         smaller = &mut result;
         difference = other_high_bit - result_high_bit;
-        shared = result_high_bit;
       }
       if overflow <= difference {
         bigger.increase_exponent_by(overflow as u32);
@@ -313,7 +310,31 @@ impl<'a> Mul for &'a Range {
 impl<'a> Mul<&'a i64> for &'a Range {
   type Output = Range;
   fn mul(self, other: &'a i64) -> Range {
-    self * Range::exactly(other.clone())
+    let mut result = self.clone();
+    let mut other = other.clone();
+    let result_high_bit = 63 -
+                          min(result.min.abs().leading_zeros(),
+                              result.max.abs().leading_zeros()) as i32;
+    let other_high_bit = 63 -
+other.abs().leading_zeros() as i32;
+    // for each value, it could be anything strictly less than (1 << high_bit+1). So when you multiply them together, it can be just below (1 << high_bit + high_bit + 2). Because increase_exponent_by can round towards a higher magnitude, we have to increase the leeway by one, eliminating "just below". The result must not exceed the 62nd bit.
+    let overflow = result_high_bit + other_high_bit + 2 - 62;
+    if overflow > 0 {
+      if result_high_bit - overflow < 31 {return self*Range::exactly (other.clone());}
+      result.increase_exponent_by(overflow as u32);
+    }
+    if other >= 0 {
+      result.min *= other;
+      result.max *= other;
+    } else {
+      result = Range {
+        min: result.max*other,
+        max: result.min*other,
+        exponent: result.exponent,
+      };
+    }
+    result.minimize_exponent();
+    result
   }
 }
 
@@ -503,18 +524,18 @@ TODO: instead of Vec<Range>, these should return a stack-allocated type.
 
 */
 
-pub fn roots_linear(coefficients: [Range; 2]) -> Vec<Range> {
+pub fn roots_linear(coefficients: [Range; 2], min_input: i64, max_input: i64) -> Vec<Range> {
   if coefficients[1].min == 0 && coefficients[1].max == 0 &&
      (coefficients[0].min > 0 || coefficients[0].max < 0) {
     return Vec::new();
   }
   if let Some(result) = ((-coefficients[0]) / coefficients[1]).clamp_to_0_exponent() {
-    vec![result]
-  } else {
+    if result.max >= min_input && result.min <= max_input {return vec![result];}
+  } 
     Vec::new()
-  }
+  
 }
-pub fn roots_quadratic(terms: [Range; 3]) -> Vec<Range> {
+pub fn roots_quadratic(terms: [Range; 3], min_input: i64, max_input: i64) -> Vec<Range> {
   let a = terms[2];
   let b = terms[1];
   let c = terms[0];
@@ -535,10 +556,10 @@ pub fn roots_quadratic(terms: [Range; 3]) -> Vec<Range> {
   // printlnerr!(" result 1 {:?}", result_1);
   let mut results = Vec::new();
   if let Some(result) = result_0.clamp_to_0_exponent() {
-    results.push(result)
+    if result.max >= min_input && result.min <= max_input  {results.push(result);}
   }
   if let Some(result) = result_1.clamp_to_0_exponent() {
-    results.push(result)
+    if result.max >= min_input && result.min <= max_input  {results.push(result);}
   }
 
   // printlnerr!("My results: {:?}", results);
@@ -555,7 +576,7 @@ pub fn roots_quadratic(terms: [Range; 3]) -> Vec<Range> {
 }
 
 fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
-  if min == max {
+  if min >= max {
     return None;
   }
   let min_value = evaluate(terms, min);
@@ -602,7 +623,7 @@ fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
 fn collect_root(terms: &[Range], min: i64, max: i64, bucket: &mut Vec<Option<Range>>) {
   bucket.push(find_root(terms, min, max));
 }
-fn roots_derivative_based(terms: &[Range]) -> Vec<Range> {
+fn roots_derivative_based(terms: &[Range], min_input: i64, max_input: i64) -> Vec<Range> {
 
   let derivative: Vec<Range> = terms[1..]
                                  .iter()
@@ -610,7 +631,7 @@ fn roots_derivative_based(terms: &[Range]) -> Vec<Range> {
                                  .map(|(which, term)| term * (which as i64 + 1))
                                  .collect();
   // printlnerr!(" Derivative {:?}", derivative);
-  let extrema = roots(derivative.as_slice());
+  let extrema = roots(derivative.as_slice(), min_input, max_input);
   // printlnerr!("extrema {:?}", extrema);
   if extrema.iter().any(|range| range.exponent > 0) {
     panic!();
@@ -618,22 +639,18 @@ fn roots_derivative_based(terms: &[Range]) -> Vec<Range> {
   let mut bucket = Vec::new();
   let mut results = Vec::new();
   if extrema.is_empty() {
-    collect_root(terms, -i64::max_value(), i64::max_value(), &mut bucket);
+    collect_root(terms, min_input, max_input, &mut bucket);
   } else {
-    collect_root(terms, -i64::max_value(), extrema[0].min, &mut bucket);
+    collect_root(terms, min_input, extrema[0].min, &mut bucket);
     for which in 0..(extrema.len() - 1) {
-      if extrema[which].max < extrema[which + 1].min {
         collect_root(terms,
-                     extrema[which].max,
-                     extrema[which + 1].min,
+max (extrema[which].max, min_input),
+                     min (extrema[which + 1].min, max_input),
                      &mut bucket);
-      } else {
-        bucket.push(None);
-      }
     }
     collect_root(terms,
                  extrema.last().unwrap().max,
-                 i64::max_value(),
+                 max_input,
                  &mut bucket);
   }
   // if we found a root on both sides of a derivative-root, we know that the derivative-root is bounded away from 0
@@ -656,7 +673,7 @@ fn roots_derivative_based(terms: &[Range]) -> Vec<Range> {
   results
 
 }
-pub fn roots(terms: &[Range]) -> Vec<Range> {
+pub fn roots(terms: &[Range], min: i64, max: i64) -> Vec<Range> {
   let mut terms = terms;
   while terms.last().map_or(false, |term| term == &Range::exactly(0)) {
     terms = &terms[..terms.len() - 1]
@@ -670,9 +687,9 @@ pub fn roots(terms: &[Range]) -> Vec<Range> {
         Vec::new()
       }
     }
-    2 => roots_linear([terms[0], terms[1]]),
-    3 => roots_quadratic([terms[0], terms[1], terms[2]]),
-    _ => roots_derivative_based(terms),
+    2 => roots_linear([terms[0], terms[1]], min, max),
+    3 => roots_quadratic([terms[0], terms[1], terms[2]], min, max),
+    _ => roots_derivative_based(terms, min, max),
   }
 }
 
@@ -862,7 +879,8 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
   };
 
   // printlnerr!(" Proxy: {:?}", proxy);
-  let mut result = roots(proxy.as_ref());
+let max_input =i64::max_value() - max (0, base);
+  let mut result = roots(proxy.as_ref(), 0, max_input);
   // printlnerr!(" Proxy: {:?}\n Roots: {:?}", proxy, result);
   test(0);
   test(1000);
@@ -870,12 +888,12 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
   for (which, root) in result.iter().enumerate() {
     test((root.max - root.min) / 2);
     if which == 0 {
-      test_empty_interval(-i64::max_value(), root.min - 1);
+      test_empty_interval(0, root.min - 1);
     }
     if which < result.len() - 1 {
       test_empty_interval(root.max + 1, result[which + 1].min - 1);
     } else {
-      test_empty_interval(root.max + 1, i64::max_value());
+      test_empty_interval(root.max + 1, max_input);
     }
     // printlnerr!("root check: {}: {} and then {} and then {}", root, evaluate (& proxy, root.max - 1),  evaluate (& proxy, root.max), evaluate (& proxy, root.max + 1));
   }
@@ -892,7 +910,7 @@ fn test_roots(given_roots: Vec<Range>) {
   for root in given_roots.iter() {
     polynomial = multiply_polynomials(polynomial.as_slice(), &[-root, Range::exactly(1)])
   }
-  let computed = roots(polynomial.as_slice());
+  let computed = roots(polynomial.as_slice(), - i64::max_value(), i64::max_value());
   printlnerr!("\nFor roots {:?}\n  Computed polynomial {:?}\n  And roots {:?}\n  Evaluated root \
                minima: {:?}",
               given_roots,
@@ -950,10 +968,10 @@ fn tests() {
 
 
   printlnerr!(" {:?}",
-              roots(&[Range::new(-900, -800), Range::new(500, 501), Range::exactly(50)]));
+              roots(&[Range::new(-900, -800), Range::new(500, 501), Range::exactly(50)], - i64::max_value(), i64::max_value()));
   printlnerr!(" {:?}",
               roots(&[Range::new(-900, -800),
                       Range::new(500, 501),
                       Range::exactly(50),
-                      Range::exactly(1)]));
+                      Range::exactly(1)], - i64::max_value(), i64::max_value()));
 }
