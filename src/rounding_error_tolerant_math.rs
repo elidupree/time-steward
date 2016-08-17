@@ -113,12 +113,11 @@ assert! (confirm_2.includes (& confirm) || confirm_2.max <0);
   }
   fn minimize_exponent(&mut self) {
   let confirm = self.clone();
-    while self.exponent > 0 && self.min.abs() <= (i64::max_value() >> 1) &&
-          self.max.abs() <= (i64::max_value() >> 1) {
-      self.min <<= 1;
-      self.max <<= 1;
-      self.exponent -= 1;
-    }
+    let leeway = min (self.min.abs().leading_zeros(), self.max.abs().leading_zeros()) - 1;
+    let change = min (leeway, self.exponent);
+      self.min <<= change;
+      self.max <<= change;
+      self.exponent -= change;
     let mut confirm_2 = self.clone(); confirm_2.increase_exponent_to (confirm.exponent);
     assert! (confirm == confirm_2);
   }
@@ -251,12 +250,17 @@ impl<'a> Mul for &'a Range {
   fn mul(self, other: Self) -> Range {
     let mut result = self.clone();
     let mut other = other.clone();
-    while result.min.abs() >= (3037000500i64) || result.max.abs() >= (3037000500i64) {
-      result.increase_exponent_by(1)
-    }
-    while other.min.abs() >= (3037000500i64) || other.max.abs() >= (3037000500i64) {
-      other.increase_exponent_by(1)
-    }
+let result_high_bit = 63 - min (result.min.abs().leading_zeros(), result.max.abs().leading_zeros()) as i32;
+let other_high_bit = 63 - min (other.min.abs().leading_zeros(), other.max.abs().leading_zeros()) as i32;
+//for each value, it could be anything strictly less than (1 << high_bit+1). So when you multiply them together, it can be just below (1 << high_bit + high_bit + 2). Because increase_exponent_by can round towards a higher magnitude, we have to increase the leeway by one, eliminating "just below". The result must not exceed the 62nd bit.
+ let overflow = result_high_bit + other_high_bit + 2  - 62;
+if overflow >0 {
+let bigger; let smaller; let difference; let shared;
+ if result_high_bit >other_high_bit {
+ bigger = &mut result; smaller = &mut other; difference = result_high_bit - other_high_bit; shared = other_high_bit;
+ } else {bigger = &mut other; smaller = &mut result; difference = other_high_bit - result_high_bit; shared = result_high_bit;}
+if overflow <=difference {bigger.increase_exponent_by (overflow as u32);} else {bigger.increase_exponent_by ((difference + (overflow - difference)/2) as u32); smaller.increase_exponent_by (((overflow + 1 - difference)/2) as u32);}
+}
     let mut extremes = [result.min * other.min,
                         result.max * other.max,
                         result.min * other.max,
@@ -304,7 +308,11 @@ impl<'a> Div for &'a Range {
     
     //intuitively, to minimize rounding error, denominator should have about half as many bits as numerator does when we do the actual division operation.
     //TODO: what if denominator is a VERY wide range (like -1, i64::max_value())? Then we will have big rounding problems either way
-    while result.exponent >other.exponent && ( other.min.abs() >= (3037000500i64) || other.max.abs() >= (3037000500i64)) {other.increase_exponent_by (1);}
+    if result.exponent >other.exponent {
+    let leeway = min (other.min.abs().leading_zeros(), other.max.abs().leading_zeros()) ;
+    if leeway <32 {
+let shift =min (32 - leeway, result.exponent - other.exponent);
+    other.increase_exponent_by (shift);}}
     
     if other.exponent > result.exponent {
       result.increase_exponent_to(other.exponent);
@@ -383,8 +391,9 @@ impl Range {
   ///Squaring is a slightly narrower operation than self*self, because it never invokes (for instance) self.min*self.max.
   pub fn squared(&self) -> Range {
     let mut result = self.clone();
-    while result.min.abs() >= (3037000500i64) || result.max.abs() >= (3037000500i64) {
-      result.increase_exponent_by(1)
+    let leeway = min (self.min.abs().leading_zeros(), self.max.abs().leading_zeros()) ;
+    if leeway <33 {
+      result.increase_exponent_by(33 - leeway);
     }
     result.exponent <<= 1;
     if result.includes_0 () {
