@@ -61,6 +61,9 @@ fn right_shift_round_up(value: i64, shift: u32) -> i64 {
     0
   }
 }
+fn average_round_down (input_1: i64, input_2: i64)->i64 {
+(input_1 >> 1) + (input_2 >> 1) + (input_1 & input_2 & 1)
+}
 
 
 
@@ -76,6 +79,9 @@ impl Range {
       result.increase_exponent_by(1);
     }
     result
+  }
+  pub fn new_either_order (min: i64, max: i64) -> Range {
+    if min >max {Range::new (max, min)} else {Range::new (min, max)}
   }
   pub fn exactly(value: i64) -> Range {
     Range::new(value, value)
@@ -171,6 +177,10 @@ impl Range {
     } else {
       Some(result)
     }
+  }
+  fn rounded_to_middle (&self)-> Range {
+    let middle = average_round_down (self.min, self.max);
+    Range {min: middle, max: middle, exponent: self.exponent}
   }
 }
 
@@ -577,6 +587,79 @@ pub fn roots_quadratic(terms: [Range; 3], min_input: i64, max_input: i64) -> Vec
    * } */
 }
 
+
+fn find_root_search(terms: &[Range], min_only: bool, max_only: bool, input_1: i64, input_2: i64, value_1: Range, adjusted_value_1: Range, value_2: Range )->(i64, i64) {
+    assert! (!(value_1.includes_0() && value_2.includes_0()));
+    if !min_only {
+      assert! ((value_1.max <0) != (value_2.max <0));
+    }
+    if !max_only {
+      assert! ((value_1.min >0) != (value_2.min >0));
+    }
+
+    let mut input_1: i64 = input_1;
+    let mut input_2: i64 = input_2;
+    let mut value_1: Range = value_1;
+    let mut adjusted_value_1: Range = adjusted_value_1;
+    let mut value_2: Range = value_2;
+    let mut result_for_other: i64 = 0;
+    let mut min_only = min_only;
+    loop {
+      let mut input;
+      let denominator = (value_2 - adjusted_value_1).rounded_to_middle();
+      if denominator.min == 0 {
+        input = average_round_down (input_1, input_2);
+      } else {
+        input = (Range::exactly (input_2) - 
+        value_2*(Range::exactly (input_2) - Range::exactly (input_1))
+        /denominator).clamp_to_0_exponent().unwrap().min;
+        if input.cmp( &input_2) != input.cmp( & input_1).reverse() {
+          input = average_round_down (input_1, input_2);
+        }
+      }
+      if input == input_1 || input == input_2 {break;}
+
+      let value = evaluate (terms, input);
+      
+      let closer_to_1;
+      if min_only {
+        closer_to_1 = (value.min >0) != (value_2.min >0);
+      } else if max_only {
+        closer_to_1 = (value.max <0) != (value_2.max <0);
+      } else {
+        closer_to_1 = (value.min >0) != (value_2.min >0);
+        let other_closer_to_1 = (value.max <0) != (value_2.max <0);
+
+        if closer_to_1 != other_closer_to_1 {
+          min_only = true;
+          if other_closer_to_1 {
+            result_for_other = find_root_search (terms, false, true, input_2, input, value_2, value_2, value).0;
+          } else {
+            //possible optimization: use a better factor, referring to "A Family of Regula Falsi Methods", Galdino 
+            result_for_other = find_root_search (terms, false, true, input_1, input, value_1, adjusted_value_1 >> 1, value).0;
+          }
+        }
+      }
+      if closer_to_1 {
+        input_1 = input_2; value_1 = value_2; adjusted_value_1 = value_2;
+      } else {
+        //possible optimization: use a better factor, referring to "A Family of Regula Falsi Methods", Galdino 
+        adjusted_value_1 = adjusted_value_1 >> 1;
+      }
+      input_2 = input; value_2 = value;
+    }
+    if (max_only) {
+    assert! ((value_1.max <0) != (value_2.max <0));
+    (if value_1.max <0 {input_1} else {input_2}, result_for_other)
+    }
+    else{
+    assert! ((value_1.min >0) != (value_2.min >0));
+    (if value_1.min >0 {input_1} else {input_2}, result_for_other)
+    }
+    
+}
+
+
 fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
   if min >= max {
     return None;
@@ -585,20 +668,24 @@ fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
   let max_value = evaluate(terms, max);
   // printlnerr!(" Values {:?}:{:?}, {:?}:{:?}", min, min_value, max, max_value);
 
-  let direction;
   if min_value.includes_0() {
     if max_value.includes_0() {
-      return Some(Range::new(min, max));
+      Some(Range::new(min, max))
+    } else {
+      let search_by_min= max_value.min >0;
+      Some(Range::new(min, find_root_search (terms, search_by_min,!search_by_min, min, max, min_value, min_value, max_value).0))
     }
-    direction = max_value.min.signum();
   } else if max_value.includes_0() {
-    direction = -min_value.min.signum();
+    let search_by_min= min_value.min >0;
+    Some(Range::new(find_root_search (terms, search_by_min,!search_by_min, min, max, min_value, min_value, max_value).0, max))
   } else if max_value.min.signum() == min_value.min.signum() {
-    return None;
+    None
   } else {
-    direction = max_value.min.signum();
+    let (result_for_min, result_for_max) =find_root_search (terms, false, false, min, max, min_value, min_value, max_value);
+    Some(Range::new_either_order (result_for_min,result_for_max))
   }
-
+ /*
+  return find_root_search (terms, false, min, max,
   let mut lower_bound = min;
   let mut upper_bound = max;
   // hack: use a negative number for move_size so that it can store a slightly larger value
@@ -619,12 +706,14 @@ fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
     }
     move_size /= 2;
   }
-  Some(Range::new(lower_bound, upper_bound))
+  Some(Range::new(lower_bound, upper_bound))*/
 
 }
 fn collect_root(terms: &[Range], min: i64, max: i64, bucket: &mut Vec<Option<Range>>) {
   bucket.push(find_root(terms, min, max));
 }
+
+
 fn roots_derivative_based(terms: &[Range], min_input: i64, max_input: i64) -> Vec<Range> {
 
   let derivative: Vec<Range> = terms[1..]
