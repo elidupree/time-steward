@@ -265,10 +265,9 @@ if overflow <=difference {bigger.increase_exponent_by (overflow as u32);} else {
                         result.max * other.max,
                         result.min * other.max,
                         result.max * other.min];
-    extremes.sort();
     result = Range {
-      min: extremes[0],
-      max: extremes[3],
+      min: extremes.iter().min ().unwrap().clone(),
+      max: max (extremes [1], extremes [0]),
       exponent: result.exponent + other.exponent,
     };
     result.minimize_exponent();
@@ -401,9 +400,9 @@ impl Range {
       result.min = 0;
     } else {
       let mut extrema = [result.min * result.min, result.max * result.max];
-      extrema.sort();
+      if extrema [0] <extrema [1] {
       result.max = extrema[1];
-      result.min = extrema[0];
+      result.min = extrema[0];} else {result.max = extrema [0]; result.min = extrema [1];}
     }
     result.minimize_exponent();
     result
