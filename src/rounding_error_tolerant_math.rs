@@ -697,51 +697,67 @@ pub fn multiply_polynomials(terms_0: &[Range], terms_1: &[Range]) -> Vec<Range> 
 }
 use rand::Rng;
 use rand;
-// when coercing the update to land on an integer value, we have a possible rounding error of up to 2 units (one from dividing the velocity, one from dividing the acceleration). But that's not all – the multiplications also have rounding error if they have to prevent overflows, which can be up to a factor of about 1+2^{-29} (Off by 2^{-31} since we are only guaranteed to keep the top 31 bits of each factor, double because there are 2 factors, and double again because we do 2 multiplications in a row in one place – and there's even a little more because they combine multiplicatively). That's usually pretty small, but if the result is large, it's large too.
-// TODO: find way to compute the error automatically, so I don't have to rely on having not made any mistakes
-// because having a quadratic error term caused too much trouble, we force it to become a constant error term by limiting the total time you can skip with one update
+// when coercing an update to land on an integer value, we obviously have a possible rounding error of up to 2 units (one from dividing the velocity, one from dividing the acceleration). 
+//But that's not all. The multiplications also have rounding error if they have to prevent overflows.
+//we are only guaranteed to keep the top 31 bits of each factor, so that's a possible error factor of just below 1+2^{-30} for each of them.
+//Square that error because there are 2 inputs in each multiplication,
+//and square it again because we do 2 multiplications in a row for the acceleration.
+//(1+2^{-30})^4 is a little bit above 1+2^{-28}. 
+// That error factor is multiplied specifically with the *distance traveled*
+//or rather, it's multiplied with the absolute values of the quadratic term of the distance traveled,
+//and then added to the error of the linear term, which is a little bit above 1+2^{-29}.
+//The relationship between this error and the ACTUAL distance traveled is a little more complicated,
+//since the 2 terms can point in opposite directions. In the worst case, the error can get up to
+//more than 8 times the 1+2^{-28} figure for the same actual distance. Less than 16, though.
+//So chopping off another 4 bits will be enough: 1+2^{-24}.
+//So any constant error term is associated with a maximum distance traveled that will have no more than that much error.
+pub fn max_error_for_distance_traveled (distance: i64)->i64 {
+  right_shift_round_up (distance, 24)
+}
+
+//We require the user to pass in a max error value – specifically, the one that they use with 
+//quadratic_trajectories_possible_distance_crossing_intervals –
+//so that we can check to make sure they didn't go beyond the bounds of what they tested for.
 pub fn quadratic_move_origin_rounding_change_towards_0(terms: &mut [i64],
                                                        origin: i64,
-                                                       input_scale_shift: u32)
+                                                       input_scale_shift: u32,
+                                                       max_error: i64)
                                                        -> bool {
-
-  if ((Range::exactly(terms[2].abs()) * origin * origin) >> (input_scale_shift * 2 + 28)).max > 2 {
-    printlnerr!("overflow-ish in quadratic_move_origin_rounding_change_towards_0; trying to use \
-                 rounding to prevent this overflow would increase the error size beyond our \
-                 arbitrary limit");
+  let distance_traveled =(((Range::exactly(terms[1]) * origin) >> input_scale_shift) +
+                 ((Range::exactly(terms[2]) * origin * origin) >> (input_scale_shift * 2)));
+                  
+  if distance_traveled.max - distance_traveled.min > max_error*2 {
+    printlnerr!("overflow-ish in quadratic_move_origin_rounding_change_towards_0; error size exceeded the given max error");
     return false;
   }
   let between_time = rand::thread_rng().gen_range(0, origin + 1);
-  let confirm = quadratic_future_proxy_minimizing_error(terms, between_time, input_scale_shift);
-  terms[0] += (((Range::exactly(terms[1]) * origin) >> input_scale_shift) +
-               ((Range::exactly(terms[2]) * origin * origin) >> (input_scale_shift * 2)))
-                .rounded_towards_0();
+  let confirm = quadratic_future_proxy_minimizing_error(terms, between_time, input_scale_shift, max_error);
+  terms[0] += distance_traveled.rounded_towards_0();
   terms[1] += ((Range::exactly(terms[2]) * origin) >> (input_scale_shift - 1)).rounded_towards_0();
   let experimented = (evaluate(&confirm, origin - between_time) >>
-                      (input_scale_shift * 2 + MAX_ERROR_SHIFT));
+                      (input_scale_shift * 2));
   // printlnerr!("experimented {}, actually {}", experimented, terms [0]);
   assert!(experimented.includes(&Range::exactly(terms[0])));
   true
 }
 
-const MAX_ERROR_SHIFT: u32 = 30;
-
 pub fn quadratic_future_proxy_minimizing_error(terms: &[i64],
                                                origin: i64,
-                                               input_scale_shift: u32)
+                                               input_scale_shift: u32,
+                                                                                                      max_error: i64)
                                                -> [Range; 3] {
   // in the constant term, preserve the error of 2 units noted above.
   // Multiplication error term is about (term 1*time since original origin) >> 30+shift + (term 2*time since original origin squared) >> 29+shift*2
   // but time since original origin is actually "origin" + the input of the quadratic we're creating,
   // this error is actually quadratic.
-  [(Range::new(terms[0] - 2 - 2, terms[0] + 2 + 2) << (input_scale_shift * 2 + MAX_ERROR_SHIFT)) +
-   ((Range::exactly(terms[1]) * origin) << (input_scale_shift + MAX_ERROR_SHIFT)) +
-   ((Range::exactly(terms[2]) * origin * origin) << MAX_ERROR_SHIFT) + Range::exactly(0),
+  [(Range::new(terms[0] - 2 - max_error, terms[0] + 2 + max_error) << (input_scale_shift * 2)) +
+   ((Range::exactly(terms[1]) * origin) << input_scale_shift) +
+   (Range::exactly(terms[2]) * origin * origin),
 
-   (Range::exactly(terms[1]) << (input_scale_shift + MAX_ERROR_SHIFT)) +
-   ((Range::exactly(terms[2]) * origin) << (MAX_ERROR_SHIFT + 1)) + Range::exactly(0),
+   (Range::exactly(terms[1]) << input_scale_shift) +
+   ((Range::exactly(terms[2]) * origin) << 1),
 
-   (Range::exactly(terms[2]) << MAX_ERROR_SHIFT) + Range::exactly(0)]
+   Range::exactly(terms[2])]
 }
 
 
@@ -749,7 +765,8 @@ pub fn quadratic_future_proxy_minimizing_error(terms: &[i64],
 pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64,
                                                                    first: (i64, &[[i64; 3]]),
                                                                    second: (i64, &[[i64; 3]]),
-                                                                   input_scale_shift: u32)
+                                                                   input_scale_shift: u32,
+                                                                                                                          max_error: i64)
                                                                    -> Vec<Range> {
   assert!(first.1.len() == second.1.len());
   assert!(first.1.len() > 0);
@@ -762,10 +779,10 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
   for (third, more) in first.1.iter().zip(second.1.iter()) {
     let mut rubble = quadratic_future_proxy_minimizing_error(third.as_ref(),
                                                              base - first.0,
-                                                             input_scale_shift);
+                                                             input_scale_shift, max_error);
     let bravo = quadratic_future_proxy_minimizing_error(more.as_ref(),
                                                         base - second.0,
-                                                        input_scale_shift);
+                                                        input_scale_shift, max_error);
     for index in 0..3 {
       rubble[index] = rubble[index] - bravo[index];
     }
@@ -774,20 +791,20 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
     }
   }
   proxy[0] = proxy[0] -
-             (Range::exactly(distance).squared() << (input_scale_shift * 4 + MAX_ERROR_SHIFT * 2));
+             (Range::exactly(distance).squared() << (input_scale_shift * 4));
   let real_distance_squared = |input| {
     let mut result = 0i64;
     for (third, more) in first.1.iter().zip(second.1.iter()) {
       let mut rubble = third.clone();
       if !quadratic_move_origin_rounding_change_towards_0(&mut rubble,
                                                           input - first.0,
-                                                          input_scale_shift) {
+                                                          input_scale_shift, max_error) {
         return None;
       }
       let mut bravo = more.clone();
       if !quadratic_move_origin_rounding_change_towards_0(&mut bravo,
                                                           input - second.0,
-                                                          input_scale_shift) {
+                                                          input_scale_shift, max_error) {
         return None;
       }
       for index in 0..3 {
@@ -811,7 +828,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
     if let Some(distance_squared) = real_distance_squared(input + base) {
       let real = distance_squared - distance * distance;
       // printlnerr!("real: {}", real);
-      assert!((evaluated >> (input_scale_shift * 4 + MAX_ERROR_SHIFT * 2)).includes(&Range::exactly(real)));
+      assert!((evaluated >> (input_scale_shift * 4)).includes(&Range::exactly(real)));
     }
     evaluated
   };

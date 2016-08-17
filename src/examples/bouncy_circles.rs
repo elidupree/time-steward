@@ -28,6 +28,7 @@ type SpaceCoordinate = i64;
 
 const HOW_MANY_CIRCLES: i32 = 20;
 const ARENA_SIZE: SpaceCoordinate = (1 << 20);
+const MAX_DISTANCE_TRAVELED_AT_ONCE: SpaceCoordinate = ARENA_SIZE << 4;
 const TIME_SHIFT: u32 = 20;
 const SECOND: Time = (1 << TIME_SHIFT);
 
@@ -155,7 +156,7 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
 fn boundary_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as TimeStewardStaticMethods < Basics>>::EventFn >> (accessor: &mut PA, id: RowId) {
   let time;
   {
-    let arena_center = QuadraticTrajectory::new(TIME_SHIFT,
+    let arena_center = QuadraticTrajectory::new(TIME_SHIFT,MAX_DISTANCE_TRAVELED_AT_ONCE,
                                                 [ARENA_SIZE / 2, ARENA_SIZE / 2, 0, 0, 0, 0]);
     let me = accessor.data_and_last_change::<Circle>(id)
                      .expect("a prediction was recorded for a circle that doesn't exist");
@@ -244,7 +245,7 @@ boundary_predictor(accessor, id)
                              let id = get_circle_id(i);
 
                              let position =
-                               QuadraticTrajectory::new(TIME_SHIFT,
+                               QuadraticTrajectory::new(TIME_SHIFT,MAX_DISTANCE_TRAVELED_AT_ONCE,
                                                         [mutator.rng().gen_range(0, ARENA_SIZE),
                                                          mutator.rng().gen_range(0, ARENA_SIZE),
                                                          mutator.rng().gen_range(-thingy, thingy),

@@ -21,6 +21,7 @@ pub type Coordinate = i64;
 pub struct QuadraticTrajectory {
   data: [[Coordinate; 3]; 2],
   time_scale_shift: u32,
+  max_distance_traveled_at_once: i64,
 }
 
 fn distance_squared_would_be(first: (Coordinate, &QuadraticTrajectory),
@@ -33,9 +34,10 @@ fn distance_squared_would_be(first: (Coordinate, &QuadraticTrajectory),
 }
 
 impl QuadraticTrajectory {
-  pub fn new(time_scale_shift: u32, coordinates: [Coordinate; 6]) -> QuadraticTrajectory {
+  pub fn new(time_scale_shift: u32, max_distance_traveled_at_once: i64, coordinates: [Coordinate; 6]) -> QuadraticTrajectory {
     QuadraticTrajectory {
       time_scale_shift: time_scale_shift,
+      max_distance_traveled_at_once:max_distance_traveled_at_once,
       data: [[coordinates[0], coordinates[2], coordinates[4]],
              [coordinates[1], coordinates[3], coordinates[5]]],
     }
@@ -51,7 +53,7 @@ impl QuadraticTrajectory {
     for quadratic in self.data.iter_mut() {
       assert!(quadratic_move_origin_rounding_change_towards_0(quadratic.as_mut(),
                                                               time,
-                                                              self.time_scale_shift));
+                                                              self.time_scale_shift,max_error_for_distance_traveled (self.max_distance_traveled_at_once)));
     }
   }
 
@@ -73,6 +75,8 @@ impl QuadraticTrajectory {
                                             -> Option<Coordinate> {
     assert!(first.1.time_scale_shift == second.1.time_scale_shift,
             "we don't actually support interactions between trajectories with different scales");
+    assert!(first.1.max_distance_traveled_at_once == second.1.max_distance_traveled_at_once,
+            "we don't actually support interactions between trajectories with different error limits");
 
 
     let base = max(first.0, second.0);
@@ -89,7 +93,7 @@ impl QuadraticTrajectory {
                                                                   (second.0,
                                                                    &[second.1.data[0],
                                                                      second.1.data[1]]),
-                                                                  first.1.time_scale_shift);
+                                                                  first.1.time_scale_shift,max_error_for_distance_traveled (first.1.max_distance_traveled_at_once));
     for interval in intervals.iter() {
       if interval.max() != i64::max_value() && interval.max() + 1 > base {
 
