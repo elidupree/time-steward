@@ -131,6 +131,9 @@ impl Range {
   pub fn includes_0(&self) -> bool {
     self.min <= 0 && self.max >= 0
   }
+  pub fn includes_0_strictly(&self) -> bool {
+    self.min < 0 && self.max > 0
+  }
   fn includes(&self, other: &Range) -> bool {
     assert!(self.exponent == other.exponent);
     self.min <= other.min && self.max >= other.max
@@ -796,7 +799,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
 
   };
   let test = |input| {
-    let evaluated = evaluate(&proxy, input) >> (input_scale_shift * 4 + MAX_ERROR_SHIFT * 2);
+    let evaluated = evaluate(&proxy, input);
     // printlnerr!("input: {}, base: {}, evaluated: {}", input, base, evaluated);
     if input < 0 || input > 1i64 << 32 {
       return evaluated;
@@ -804,11 +807,19 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
     if let Some(distance_squared) = real_distance_squared(input + base) {
       let real = distance_squared - distance * distance;
       // printlnerr!("real: {}", real);
-      assert!((evaluated).includes(&Range::exactly(real)));
+      assert!((evaluated >> (input_scale_shift * 4 + MAX_ERROR_SHIFT * 2)).includes(&Range::exactly(real)));
     }
     evaluated
   };
   let test_empty_interval = |start, stop| {
+    //Currently, evaluate() is more permissive than it theoretically needs to be.
+    //It could include 0 even if the polynomial couldn't actually emit 0 from that input.
+    //roots_derivative_based() uses evaluate() directly, so it's fine to assume that evaluate() is correct.
+    //However, roots_quadratic() might return a slightly tighter result.
+    //So we can't test quadratics in quite the same way.
+    if proxy [3] == Range::exactly (0) && proxy [4] == Range::exactly (0) {
+      return;
+    }
     if start >= stop {
       return;
     }
@@ -820,8 +831,11 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
     let sample_values: Vec<Range> = sample_points.iter().map(|input| test(input.clone())).collect();
     let signum = sample_values[0].min.signum();
     for value in sample_values.iter() {
-      assert!(!value.includes_0());
-      assert!(value.min.signum() == signum);
+      if value.includes_0_strictly() || value.min.signum() == -signum {
+        printlnerr!(" Proxy: {:?}", proxy);
+        printlnerr!("fail points: {:?}\n values: {:?}", sample_points, sample_values);
+        panic!()
+      }
     }
 
   };
