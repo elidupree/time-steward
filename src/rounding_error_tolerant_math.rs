@@ -901,6 +901,8 @@ pub fn max_error_for_distance_traveled(distance: i64) -> i64 {
   right_shift_round_up(distance, 24)
 }
 
+const DO_TESTS: bool = true;
+
 // We require the user to pass in a max error value – specifically, the one that they use with
 // quadratic_trajectories_possible_distance_crossing_intervals –
 // so that we can check to make sure they didn't go beyond the bounds of what they tested for.
@@ -1130,20 +1132,22 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
 
   let mut result = roots(proxy.as_ref(), min_input, max_input);
   // printlnerr!(" Proxy: {:?}\n Roots: {:?}", proxy, result);
-  test(0);
-  test(1000);
-  test(base);
-  for (which, root) in result.iter().enumerate() {
-    test((root.max - root.min) / 2);
-    if which == 0 {
-      test_empty_interval(min_input, root.min - 1);
+  if DO_TESTS {
+    test(0);
+    test(1000);
+    test(base);
+    for (which, root) in result.iter().enumerate() {
+      test((root.max - root.min) / 2);
+      if which == 0 {
+        test_empty_interval(min_input, root.min - 1);
+      }
+      if which < result.len() - 1 {
+        test_empty_interval(root.max + 1, result[which + 1].min - 1);
+      } else {
+        test_empty_interval(root.max + 1, max_input);
+      }
+      // printlnerr!("root check: {}: {} and then {} and then {}", root, evaluate (& proxy, root.max - 1),  evaluate (& proxy, root.max), evaluate (& proxy, root.max + 1));
     }
-    if which < result.len() - 1 {
-      test_empty_interval(root.max + 1, result[which + 1].min - 1);
-    } else {
-      test_empty_interval(root.max + 1, max_input);
-    }
-    // printlnerr!("root check: {}: {} and then {} and then {}", root, evaluate (& proxy, root.max - 1),  evaluate (& proxy, root.max), evaluate (& proxy, root.max + 1));
   }
   for (which, root) in result.iter_mut().enumerate() {
     root.min = root.min.saturating_add(base);
