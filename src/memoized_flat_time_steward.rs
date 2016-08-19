@@ -385,7 +385,7 @@ impl<B: Basics> Steward<B> {
   }
 
   fn clear_prediction(&mut self, row_id: RowId, predictor_id: PredictorId) {
-    if let Some(prediction) = self.owned.predictions_by_id.get(&(row_id, predictor_id)) {
+    if let Some(prediction) = self.owned.predictions_by_id.remove(&(row_id, predictor_id)) {
       for field_id in prediction.predictor_accessed.iter() {
         if let Entry::Occupied(mut entry) = self.owned
                                                 .prediction_dependencies
@@ -424,6 +424,8 @@ impl<B: Basics> Steward<B> {
 
     for (row_id, predictor_id) in predictions_needed {
       self.clear_prediction(row_id, predictor_id);
+      if self.shared.fields.borrow().field_states.get(&FieldId::new(row_id, self.get_predictor(predictor_id).column_id)).is_none() { continue; }
+      
       let now = self.owned
                     .last_event
                     .clone()

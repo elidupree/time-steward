@@ -960,18 +960,20 @@ pub fn time_until_which_quadratic_trajectory_may_remain_in_bounds(start_time: i6
   assert!(trajectory.len() > 0);
   let mut min_input = start_time;
   let mut max_input = i64::max_value() - max(0, start_time);
+  //printlnerr!("begin {:?} {:?} {:?}", start_time, trajectory, bounds);
   for (third, more) in trajectory.iter().zip(bounds.iter()) {
     let mut rubble = quadratic_future_proxy_minimizing_error(third,
                                                              0,
                                                              input_scale_shift,
                                                              max_error);
-    rubble[0] = rubble[0] - Range::new(more[0], more[1]) << (input_scale_shift * 2);
+    rubble[0] = rubble[0] - (Range::new(more[0], more[1]) << (input_scale_shift * 2));
     let possible_overlap_times = roots(&rubble, min_input, max_input);
+    //printlnerr!("roots {:?} {:?}", rubble, possible_overlap_times);
     if let Some((this_min, this_max)) = if possible_overlap_times.is_empty() {
       None
     } else if possible_overlap_times.len() == 2 &&
                                            possible_overlap_times[0].max >=
-                                           possible_overlap_times[1].min + 1 {
+                                           possible_overlap_times[1].min - 1 {
       if possible_overlap_times[0].min <= start_time &&
          possible_overlap_times[1].max >= start_time {
         Some((possible_overlap_times[0].min, possible_overlap_times[1].max))
@@ -992,6 +994,7 @@ pub fn time_until_which_quadratic_trajectory_may_remain_in_bounds(start_time: i6
     }
 
   }
+  //printlnerr!("end {} {}", min_input, max_input);
   Some(max_input)
 }
 
