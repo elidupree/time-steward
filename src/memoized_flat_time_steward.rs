@@ -138,6 +138,9 @@ impl<B: Basics> super::Accessor<B> for Snapshot<B> {
   fn constants(&self) -> &B::Constants {
     &self.shared.constants
   }
+  fn unsafe_now(&self) -> &B::Time {
+    &self.now
+  }
 }
 impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
   fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
@@ -145,6 +148,9 @@ impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
   }
   fn constants(&self) -> &B::Constants {
     &self.shared.constants
+  }
+  fn unsafe_now(&self) -> &B::Time {
+    &self.now.base
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
@@ -169,34 +175,25 @@ impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
   fn constants(&self) -> &B::Constants {
     &self.shared.constants
   }
+  fn unsafe_now(&self) -> &B::Time {
+    &self.internal_now.base
+  }
 }
 
-impl<B: Basics> super::MomentaryAccessor<B> for Snapshot<B> {
-  fn now(&self) -> &B::Time {
-    &self.now
-  }
-}
-impl<'a, B: Basics> super::MomentaryAccessor<B> for Mutator<'a, B> {
-  fn now(&self) -> &B::Time {
-    &self.now.base
-  }
-}
+impl<B: Basics> super::MomentaryAccessor<B> for Snapshot<B> {}
+impl<'a, B: Basics> super::MomentaryAccessor<B> for Mutator<'a, B> {}
 impl<'a, B: Basics> super::PredictorAccessor<B, EventFn<B>> for PredictorAccessor<'a, B> {
-  fn predict_immediately(&mut self, event: Event<B>) {
-    let t = self.internal_now.base.clone();
-    self.predict_at_time(&t, event);
-  }
-  fn predict_at_time(&mut self, time: &B::Time, event: Event<B>) {
-    if time < &self.internal_now.base {
+  fn predict_at_time(&mut self, time: B::Time, event: Event<B>) {
+    if time < self.internal_now.base {
       return;
     }
     let mut results = self.results.borrow_mut();
     if let Some((ref old_time, _)) = results.soonest_prediction {
-      if old_time <= time {
+      if old_time <= &time {
         return;
       }
     }
-    results.soonest_prediction = Some((time.clone(), event));
+    results.soonest_prediction = Some((time, event));
   }
 }
 impl<B: Basics> super::Snapshot<B> for Snapshot<B> {}

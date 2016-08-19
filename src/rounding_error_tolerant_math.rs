@@ -53,7 +53,7 @@ impl fmt::Debug for Range {
 
 
 
-fn right_shift_round_up(value: i64, shift: u32) -> i64 {
+pub fn right_shift_round_up(value: i64, shift: u32) -> i64 {
   (value >> shift) +
   if value & ((1i64 << shift) - 1) != 0 {
     1
@@ -61,7 +61,7 @@ fn right_shift_round_up(value: i64, shift: u32) -> i64 {
     0
   }
 }
-fn average_round_down (input_1: i64, input_2: i64)->i64 {
+pub fn average_round_down (input_1: i64, input_2: i64)->i64 {
 (input_1 >> 1) + (input_2 >> 1) + (input_1 & input_2 & 1)
 }
 
@@ -868,6 +868,32 @@ pub fn quadratic_future_proxy_minimizing_error(terms: &[i64],
    Range::exactly(terms[2])]
 }
 
+
+pub fn time_until_which_quadratic_trajectory_may_remain_in_bounds (start_time: i64, trajectory: & [[i64; 3]], bounds: & [[i64; 2]],
+                                                                   input_scale_shift: u32,
+                                                                                                                          max_error: i64)->Option <i64> {
+  assert!(trajectory.len() == bounds.len());
+  assert!(trajectory.len() > 0);
+  let mut min_input = start_time;
+let mut max_input = i64::max_value() - max (0, start_time);
+  for (third, more) in trajectory.iter().zip(bounds.iter()) {
+    let mut rubble = quadratic_future_proxy_minimizing_error (third, 0, input_scale_shift, max_error);
+    rubble[0] = rubble[0] - Range::new (more [0], more [1]) << (input_scale_shift*2);
+    let possible_overlap_times = roots (& rubble, min_input, max_input);
+    if let Some ((this_min, this_max)) =
+    if possible_overlap_times.is_empty() {
+      None
+    } else if possible_overlap_times.len() == 2 && possible_overlap_times [0].max >= possible_overlap_times [1].min + 1 {
+      if possible_overlap_times [0].min <= start_time && possible_overlap_times [1].max >= start_time {Some ((possible_overlap_times [0].min,possible_overlap_times [1].max))} else {None}
+    } else {possible_overlap_times.iter().find (| root | root.min <= start_time && root.max >= start_time).map (| root | (root.min, root.max))} {
+      min_input = max (min_input, this_min);
+      max_input = min (max_input, this_max);
+      assert!(min_input <= max_input, "an interval containing start_time should never exclude it");
+    } else {return None;}
+    
+  }
+  Some (max_input)
+}
 
 
 pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64,

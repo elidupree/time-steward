@@ -3,7 +3,7 @@ extern crate nalgebra;
 use memoized_flat_time_steward as s;
 use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
      TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor};
-use collision_detection::inefficient as collisions;
+use collision_detection::simple_grid as collisions;
 
 use time_functions::QuadraticTrajectory;
 use std::rc::Rc;
@@ -13,6 +13,7 @@ use std::thread::sleep;
 use std::time::{Instant, Duration};
 use glium;
 use glium::{DisplayBuild, Surface};
+use rounding_error_tolerant_math::{right_shift_round_up};
 
 use std::io::Write;
 macro_rules! printlnerr(
@@ -27,10 +28,13 @@ type SpaceCoordinate = i64;
 
 
 const HOW_MANY_CIRCLES: i32 = 20;
-const ARENA_SIZE: SpaceCoordinate = (1 << 20);
+const ARENA_SIZE_SHIFT: u32 = 20;
+const ARENA_SIZE: SpaceCoordinate = 1 << 20;
+const GRID_SIZE_SHIFT: u32 = ARENA_SIZE_SHIFT - 3;
+const GRID_SIZE: SpaceCoordinate = 1 << GRID_SIZE_SHIFT;
 const MAX_DISTANCE_TRAVELED_AT_ONCE: SpaceCoordinate = ARENA_SIZE << 4;
 const TIME_SHIFT: u32 = 20;
-const SECOND: Time = (1 << TIME_SHIFT);
+const SECOND: Time = 1 << TIME_SHIFT;
 
 #[derive(Clone)]
 struct Basics;
@@ -38,12 +42,27 @@ impl ::Basics for Basics {
   type Time = Time;
   type Constants = ();
 }
+#[derive(Clone)]
 struct CollisionBasics {}
 impl ::collision_detection::Basics for CollisionBasics {
   type StewardBasics = Basics;
   type DetectorId =();
   fn nearness_column_id() -> ColumnId {
     ColumnId(0x89ebc3ba9a24c286)
+  }
+}
+impl collisions::Basics for CollisionBasics {
+  fn get_bounds <A: MomentaryAccessor <Basics>>(accessor: & A, who: RowId)->collisions::Bounds {
+    let (circle, time) = accessor.data_and_last_change::<Circle> (who).expect ("no circle despite is being collision detected as a circle");
+    let center = circle.position.updated_by (accessor.now() - time).unwrap().evaluate();
+    collisions::Bounds {
+      min: [(center [0] - circle.radius) >>GRID_SIZE_SHIFT, (center [1] - circle.radius) >>GRID_SIZE_SHIFT],
+      max: [right_shift_round_up (center [0] + circle.radius,GRID_SIZE_SHIFT), right_shift_round_up (center [1] + circle.radius,GRID_SIZE_SHIFT)],
+    }
+  }
+  fn when_escapes <A: Accessor <Basics>>(accessor: & A, who: RowId, bounds: collisions::Bounds)->Option <Time> {
+    let (circle, time) = accessor.data_and_last_change::<Circle> (who).expect ("no circle despite is being collision detected as a circle");
+    circle.position.approximately_when_escapes (time.clone(), accessor.unsafe_now().clone(), [[(bounds.min [0] <<GRID_SIZE_SHIFT) + circle.radius, (bounds.max [0]<<GRID_SIZE_SHIFT) - circle.radius], [(bounds.min [1]<<GRID_SIZE_SHIFT) + circle.radius, (bounds.max [1]<<GRID_SIZE_SHIFT) - circle.radius]])
   }
 }
 
@@ -107,7 +126,7 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
   }
   if let Some(yes) = time {
     //printlnerr!(" planned for {}", &yes);
-    accessor.predict_at_time(&yes,
+    accessor.predict_at_time(yes,
                              Rc::new(move |mutator| {
                                let new_relationship;
                                let mut new;
@@ -174,7 +193,7 @@ fn boundary_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as Ti
   }
   if let Some(yes) = time {
     //printlnerr!(" planned for {}", &yes);
-    accessor.predict_at_time(&yes,
+    accessor.predict_at_time(yes,
                              Rc::new(move |mutator| {
                                let new_relationship;
                                let mut new;
@@ -233,8 +252,9 @@ pub fn testfunc() {
                                                  function: Rc::new(|accessor, id| {
 boundary_predictor(accessor, id)
                                                  }),
-                                               }
-                                               ]);
+                                               },
+                                               simple_grid_predictor! (s, CollisionBasics),
+                                             ]);
 
   stew.insert_fiat_event(-1,
                          DeterministicRandomId::new(&0),

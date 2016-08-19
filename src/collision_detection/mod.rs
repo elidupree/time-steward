@@ -3,8 +3,10 @@ use std::any::Any;
 use std::hash::Hash;
 
 pub mod inefficient;
+#[macro_use]
+pub mod simple_grid;
 
-pub trait Basics: 'static {
+pub trait Basics: Clone + Any {
   type StewardBasics: ::Basics;
   type DetectorId: Copy + Any + Hash;//=()
   fn nearness_column_id() -> ColumnId;

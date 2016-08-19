@@ -55,7 +55,7 @@ pub fn testfunc() {
                                                    let me = pa.get::<Philosopher>(whodunnit)
                                                               .unwrap()
                                                               .clone();
-                                                   pa.predict_at_time(&me.time_when_next_initiates_handshake,
+                                                   pa.predict_at_time(me.time_when_next_initiates_handshake,
                          Rc::new(move |m| {
         let now = *m.now();
         let friend_id = get_philosopher_id(m.rng().gen_range(0, HOW_MANY_PHILOSOPHERS));

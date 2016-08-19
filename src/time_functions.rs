@@ -73,7 +73,12 @@ impl QuadraticTrajectory {
     Vector2::new(self.data[0][0], self.data[1][0])
 
   }
-
+  
+  //Bounds are min and max for the first dimension, then min and max for the second dimension
+  pub fn approximately_when_escapes(&self, base: Coordinate, now: Coordinate, bounds: [[Coordinate; 2]; 2])->Option <Coordinate> {
+    time_until_which_quadratic_trajectory_may_remain_in_bounds (now - base, & self.data, & bounds, self.time_scale_shift, max_error_for_distance_traveled (self.max_distance_traveled_at_once)).map (| time | time + base)
+  }
+  
   // direction == -1->"when the distance between the trajectories drops below the distance argument"
   // direction == 1->"when the distance between the trajectories exceeds the distance argument"
   pub fn approximately_when_distance_passes(distance: Coordinate,

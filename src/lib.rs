@@ -153,6 +153,9 @@ struct FieldId {
   row_id: RowId,
   column_id: ColumnId,
 }
+impl FieldId {
+  fn new (row_id: RowId, column_id: ColumnId)->FieldId {FieldId {row_id: row_id, column_id: column_id}}
+}
 
 type IterationType = u32;
 #[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -261,10 +264,26 @@ pub trait Accessor<B: Basics> {
     self.data_and_last_change::<C>(id).map(|p| p.1)
   }
   fn constants(&self) -> &B::Constants;
+  
+  /**
+  In general, predictions may NOT depend on the time the predictor is called.
+  However, in some cases, you may want to have a predictor that does something like
+  "predict an event to happen at the beginning of any minute", which isn't technically
+  time-dependent – but if you did it in a time-independent way, you'd have to predict
+  infinitely many events. unsafe_now() is provided to enable you to only compute one of them.
+  
+  When you call unsafe_now() in a predictor, you promise that you will
+  make the SAME predictions for ANY given return value of unsafe_now(), UNLESS:
+  1. The return value is BEFORE the last change time of any of the fields you access, or
+  2. You predict an event, and the return value is AFTER that event.
+  
+  This function is provided by Accessor rather than PredictorAccessor so that functions can be generic in whether they are used in a predictor or not.
+  */
+  fn unsafe_now(&self)->& B::Time;
 }
 
 pub trait MomentaryAccessor<B: Basics>: Accessor<B> {
-  fn now(&self) -> &B::Time;
+  fn now(&self) -> &B::Time {self.unsafe_now()}
 }
 
 
@@ -275,9 +294,13 @@ pub trait Mutator<B: Basics>: MomentaryAccessor<B> {
   fn random_id(&mut self) -> RowId;
 }
 pub trait PredictorAccessor<B: Basics, EventFn:?Sized>: Accessor<B> {
-  // it is unclear whether predict_immediately is sketchy
-  fn predict_immediately(&mut self, event: Rc<EventFn>);
-  fn predict_at_time(&mut self, time: &B::Time, event: Rc<EventFn>);
+  fn predict_at_time(&mut self, time: B::Time, event: Rc<EventFn>);
+    
+  ///A specific use of unsafe_now() that is guaranteed to be safe
+  fn predict_immediately(&mut self, event: Rc<EventFn>) {
+    let time = self.unsafe_now().clone();
+    self.predict_at_time (time, event)
+  }
 }
 pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {}
 
@@ -419,11 +442,13 @@ impl<PredictorFn: ?Sized> Clone for Predictor<PredictorFn> {
 
 pub mod inefficient_flat_time_steward;
 pub mod memoized_flat_time_steward;
+//pub mod amortized_time_steward;
 
 // pub mod crossverified_time_stewards;
 
 pub mod rounding_error_tolerant_math;
 pub mod time_functions;
+#[macro_use]
 pub mod collision_detection;
 
 pub mod examples {
