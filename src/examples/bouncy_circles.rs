@@ -13,7 +13,7 @@ use std::thread::sleep;
 use std::time::{Instant, Duration};
 use glium;
 use glium::{DisplayBuild, Surface};
-use rounding_error_tolerant_math::{right_shift_round_up};
+use rounding_error_tolerant_math::right_shift_round_up;
 
 use std::io::Write;
 macro_rules! printlnerr(
@@ -52,17 +52,35 @@ impl ::collision_detection::Basics for CollisionBasics {
   }
 }
 impl collisions::Basics for CollisionBasics {
-  fn get_bounds <A: MomentaryAccessor <Basics>>(accessor: & A, who: RowId)->collisions::Bounds {
-    let (circle, time) = accessor.data_and_last_change::<Circle> (who).expect ("no circle despite is being collision detected as a circle");
-    let center = circle.position.updated_by (accessor.now() - time).unwrap().evaluate();
+  fn get_bounds<A: MomentaryAccessor<Basics>>(accessor: &A, who: RowId) -> collisions::Bounds {
+    let (circle, time) = accessor.data_and_last_change::<Circle>(who)
+                                 .expect("no circle despite is being collision detected as a \
+                                          circle");
+    let center = circle.position.updated_by(accessor.now() - time).unwrap().evaluate();
     collisions::Bounds {
-      min: [(center [0] - circle.radius) >>GRID_SIZE_SHIFT, (center [1] - circle.radius) >>GRID_SIZE_SHIFT],
-      max: [right_shift_round_up (center [0] + circle.radius,GRID_SIZE_SHIFT), right_shift_round_up (center [1] + circle.radius,GRID_SIZE_SHIFT)],
+      min: [(center[0] - circle.radius) >> GRID_SIZE_SHIFT,
+            (center[1] - circle.radius) >> GRID_SIZE_SHIFT],
+      max: [right_shift_round_up(center[0] + circle.radius, GRID_SIZE_SHIFT),
+            right_shift_round_up(center[1] + circle.radius, GRID_SIZE_SHIFT)],
     }
   }
-  fn when_escapes <A: Accessor <Basics>>(accessor: & A, who: RowId, bounds: collisions::Bounds)->Option <Time> {
-    let (circle, time) = accessor.data_and_last_change::<Circle> (who).expect ("no circle despite is being collision detected as a circle");
-    circle.position.approximately_when_escapes (time.clone(), accessor.unsafe_now().clone(), [[(bounds.min [0] <<GRID_SIZE_SHIFT) + circle.radius, (bounds.max [0]<<GRID_SIZE_SHIFT) - circle.radius], [(bounds.min [1]<<GRID_SIZE_SHIFT) + circle.radius, (bounds.max [1]<<GRID_SIZE_SHIFT) - circle.radius]])
+  fn when_escapes<A: Accessor<Basics>>(accessor: &A,
+                                       who: RowId,
+                                       bounds: collisions::Bounds)
+                                       -> Option<Time> {
+    let (circle, time) = accessor.data_and_last_change::<Circle>(who)
+                                 .expect("no circle despite is being collision detected as a \
+                                          circle");
+    circle.position.approximately_when_escapes(time.clone(),
+                                               accessor.unsafe_now().clone(),
+                                               [[(bounds.min[0] << GRID_SIZE_SHIFT) +
+                                                 circle.radius,
+                                                 (bounds.max[0] << GRID_SIZE_SHIFT) -
+                                                 circle.radius],
+                                                [(bounds.min[1] << GRID_SIZE_SHIFT) +
+                                                 circle.radius,
+                                                 (bounds.max[1] << GRID_SIZE_SHIFT) -
+                                                 circle.radius]])
   }
 }
 
@@ -118,14 +136,14 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
                                                                     &(us.0).0.position),
                                                                    ((us.1).1.clone(),
                                                                     &(us.1).0.position));
-    //printlnerr!("Planning for {} At {}, {}", id, (us.0).1, (us.1).1);
+    // printlnerr!("Planning for {} At {}, {}", id, (us.0).1, (us.1).1);
     if time.is_none() && relationship.is_some() {
       printlnerr!(" fail {:?} {:?} {:?} {:?}", id, ids, us, relationship);
       panic!()
     }
   }
   if let Some(yes) = time {
-    //printlnerr!(" planned for {}", &yes);
+    // printlnerr!(" planned for {}", &yes);
     accessor.predict_at_time(yes,
                              Rc::new(move |mutator| {
                                let new_relationship;
@@ -149,7 +167,7 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
                                       .position
                                       .add_acceleration(intersection.induced_acceleration);
                                    new_relationship = None;
-    printlnerr!("Parted {} At {}", id, mutator.now());
+                                   printlnerr!("Parted {} At {}", id, mutator.now());
                                  } else {
                                    let acceleration = (new.0.position.evaluate() -
                                                        new.1.position.evaluate()) *
@@ -161,7 +179,7 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
                                      induced_acceleration: acceleration,
                                    });
 
-    printlnerr!("Joined {} At {}", id, mutator.now());
+                                   printlnerr!("Joined {} At {}", id, mutator.now());
                                  }
                                }
                                mutator.set::<Intersection>(id, new_relationship);
@@ -175,7 +193,8 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
 fn boundary_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as TimeStewardStaticMethods < Basics>>::EventFn >> (accessor: &mut PA, id: RowId) {
   let time;
   {
-    let arena_center = QuadraticTrajectory::new(TIME_SHIFT,MAX_DISTANCE_TRAVELED_AT_ONCE,
+    let arena_center = QuadraticTrajectory::new(TIME_SHIFT,
+                                                MAX_DISTANCE_TRAVELED_AT_ONCE,
                                                 [ARENA_SIZE / 2, ARENA_SIZE / 2, 0, 0, 0, 0]);
     let me = accessor.data_and_last_change::<Circle>(id)
                      .expect("a prediction was recorded for a circle that doesn't exist");
@@ -192,7 +211,7 @@ fn boundary_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as Ti
                                                                    (0, &(arena_center)));
   }
   if let Some(yes) = time {
-    //printlnerr!(" planned for {}", &yes);
+    // printlnerr!(" planned for {}", &yes);
     accessor.predict_at_time(yes,
                              Rc::new(move |mutator| {
                                let new_relationship;
@@ -265,7 +284,8 @@ boundary_predictor(accessor, id)
                              let id = get_circle_id(i);
 
                              let position =
-                               QuadraticTrajectory::new(TIME_SHIFT,MAX_DISTANCE_TRAVELED_AT_ONCE,
+                               QuadraticTrajectory::new(TIME_SHIFT,
+                                                        MAX_DISTANCE_TRAVELED_AT_ONCE,
                                                         [mutator.rng().gen_range(0, ARENA_SIZE),
                                                          mutator.rng().gen_range(0, ARENA_SIZE),
                                                          mutator.rng().gen_range(-thingy, thingy),
@@ -327,11 +347,11 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
       ..Default::default()
     };
     let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
-    
-    //take care of the quadratic initial predictions before starting the timer
+
+    // take care of the quadratic initial predictions before starting the timer
     stew.snapshot_before(&0);
     let start = Instant::now();
-                         
+
     loop {
       for ev in display.poll_events() {
         match ev {
