@@ -133,19 +133,19 @@ pub trait Column {
   */
   fn column_id() -> ColumnId;
 
-//   /**
-//   Implementors MAY return true if first and second are indistinguishable.
-//
-//   This is labeled "unsafe" because imperfect implementations can easily cause nondeterminism in the TimeSteward. Using the default is fine, and implementing it is only an optimization. Don't implement this unless you know what you're doing.
-//
-//   This is similar to requiring FieldType to be PartialEq, but with an important difference. PartialEq only requires the comparison to be an equivalence relation, but does NOT require that (first == second) guarantee that there is no observable difference between the values. Therefore, trusting arbitrary implementations of PartialEq would be unsafe (in the sense that it would allow the TimeSteward to behave non-deterministically).
-//
-//   TODO: perhaps we can create default implementations of this for POD types.
-//   TODO: can we create automated tests for implementations of this function?
-//   */
-//   fn guaranteed_equal__unsafe(first: &Self::FieldType, second: &Self::FieldType) -> bool {
-//     false
-//   }
+  /**
+  Implementors MAY return true if first and second are indistinguishable.
+  
+  This is labeled "unsafe" because imperfect implementations can easily cause nondeterminism in the TimeSteward. Using the default is fine, and implementing it is only an optimization. Don't implement this unless you know what you're doing.
+
+  This is similar to requiring FieldType to be PartialEq, but with an important difference. PartialEq only requires the comparison to be an equivalence relation, but does NOT require that (first == second) guarantee that there is no observable difference between the values. Therefore, trusting arbitrary implementations of PartialEq would be unsafe (in the sense that it would allow the TimeSteward to behave non-deterministically).
+
+  TODO: perhaps we can create default implementations of this for POD types.
+  TODO: can we create automated tests for implementations of this function?
+  */
+  fn guaranteed_equal__unsafe(first: &Self::FieldType, second: &Self::FieldType) -> bool {
+    false
+  }
 }
 
 #[derive (Copy, Clone, PartialEq, Eq, Hash)]

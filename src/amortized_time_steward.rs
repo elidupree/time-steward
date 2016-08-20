@@ -5,12 +5,13 @@ A full TimeSteward implementation that has decent (amortized) asymptotic perform
 This is intended to be the simplest possible implementation that meets those conditions. As such, it's not especially optimized. Here are some of its specific weaknesses:
  
 *no support for multithreading
-*when you insert a new change far in the past, this TimeSteward immediately erases everything that was disturbed by that change. This can take time proportional to the amount of stuff that has happened since the change. (It doesn't affect the amortized time because the recording of each thing amortizes its eventual deletion, but it does cause a hiccup.)
+*when a field changes in the past, this TimeSteward immediately erases all more-recent versions of that field. This can take time proportional to the amount of times that field has changed since the past change. (It doesn't affect the amortized time because the recording of each thing amortizes its eventual deletion, but it can cause a hiccup.)
+*This erasing happens even if the field was overwritten at some point without being examined. In that case, we could theoretically optimize by leaving the future of the field untouched.
 *There can also be hiccups at arbitrary times when the hash table resizes.
-*It erases the whole future of any field that gets modified in the past, even if the field was overwritten at some point without being examined. In that case, we could theoretically optimize by leaving the future of the field untouched.
+*We haven't optimized for the "most changes happen in the present" case, which means we pay a bunch of log n factors when we could be paying O(1).
 *If you keep around old snapshots of times when no fields are actually being modified anymore, they will eventually have all their data copied into them unnecessarily. This could be avoided if we had a good two-dimensional tree type so that the snapshots could be queried by (SnapshotIdx X BaseTime) rectangles.
 *We also do not optimize the for the case where a field is changed in the past but then the field is changed BACK before it affects anything (either by another change in the fiat events or by a regular prediction). The same applies to the case where an event is invalidated, then rerun, but makes the same changes as it made the first time. This allows dependency chains to propagate much faster than they should.
-*There might be more small dependency optimizations we could do, like distinguishing between accessing just a field's data data and accessing just its last change time, or even the difference between those and just checking whether the field exists or not, or other conditions (although we would need an API change to track some of those things). However, I suspect that the additional runtime cost of recording these different dependencies wouldn't be worth it. (This might currently slow down dependency chain propagation, which could be a significant boon, but it would be redundant with – and less effective than – fixing the previous item.)
+*There might be more small dependency optimizations we could do, like distinguishing between accessing just a field's data data and accessing just its last change time, or even the difference between those and just checking whether the field exists or not, or other conditions (although we would need an API change to track some of those things). However, I suspect that the additional runtime cost of recording these different dependencies wouldn't be worth it. (This would only have a small effect at best, because it wouldn't slow down dependency chain propagation unless there are fields that haven't implemented guaranteed_equal__unsafe().)
 
 */
 
@@ -32,6 +33,287 @@ use insert_only;
 
 type SnapshotIdx = u64;
 
+This is an error
+/*
+
+An ExtendedTime may be in one of several states
+– empty and unused
+– a fiat event scheduled but nothing executed
+– a fiat event scheduled and executed consistently to that, and still valid
+– a fiat event scheduled and executed consistently to that, but its accessed fields have changed
+– a fiat event executed, but not scheduled (we could disallow this by doing it immediately)
+– a fiat event executed but then rescheduled differently (ditto)
+– a predicted event scheduled but nothing executed
+– a predicted event scheduled and executed consistently to that, and still valid
+– a predicted event scheduled and executed consistently to that, but its accessed fields have changed
+– a predicted event executed, but not scheduled (we could disallow this in STABLE states but it is guaranteed to occur at least temporarily during a function)
+– a predicted event executed but then rescheduled differently (ditto)
+
+There are enough parallels between fiat and predicted that we should probably combine them:
+
+0. Unused
+1. Scheduled only
+2. Executed consistently, still valid
+3. Executed consistently, fields changed
+4. Executed but not scheduled
+5. Executed but scheduled differently
+
+possible movements:
+(1, 4)->0
+0->1
+(1, 3, 5)->2
+2->3
+(2, 3, 5)->4
+4->5
+
+The ExtendedTime needs attention in (1, 3, 4, 5) but not (2, 0).
+Thus, the changes that affect "needs attention" are:
+(1, 4)->0
+0->1
+(1, 3, 5)->2
+2->3
+2->4
+
+Which can be split up into the ones CAUSED by giving the time attention:
+4->0
+(1, 3, 5)->2
+And the ones caused from a distance:
+0->1 (scheduling)
+1->0 and 2->4 (un-scheduling)
+2->3 (invalidating)
+
+that's assuming that you're not allowed to reschedule without un-scheduling first (which, in my current model, is true for both fiat events and predicted events)
+
+The only things distinguishing 3 and 5 are how they are created. Let's combine them:
+
+0. Unused
+1. Scheduled only
+2. Executed consistently, still valid
+3. Executed consistently, fields OR schedule different than when it was executed
+4. Executed but not scheduled
+
+possible movements:
+(1, 4)->0
+0->1
+(1, 3)->2
+(2, 4)->3
+(2, 3)->4
+
+The ExtendedTime needs attention in (1, 3, 4) but not (2, 0).
+Thus, the changes that affect "needs attention" are:
+(1, 4)->0
+0->1
+(1, 3)->2
+2->3
+2->4
+
+Which can be split up into the ones CAUSED by giving the time attention:
+4->0
+(1, 3)->2
+And the ones caused from a distance:
+0->1 (scheduling)
+1->0 and 2->4 (un-scheduling)
+2->3 (invalidating)
+
+notice that the (3, 4) trap can only be escaped by giving the time attention.
+The only way to REMOVE "needs attention" from a distance is 1->0.
+Thus,
+
+
+*/
+
+enum EventValidity {
+  Invalid,
+  ValidWithDependencies (HashSet <FieldId>),
+}
+struct EventExecutionState {
+  fields_changed: HashSet <FieldId>,
+  validity: EventValidity,
+}
+
+struct EventState <B: Basics> {
+  schedule: Option <Event <B>>,
+  execution_state: Option <EventExecutionState>,
+}
+
+impl <B: Basics> StewardOwned <B> {
+  fn schedule_event (&mut self, time: ExtendedTime <B>, event: Event <B>) {
+    match self.event_states.entry (time.clone()) {
+      Entry::Vacant (entry) => {
+        entry.insert (EventState {schedule: Some (event), execution_state: None});
+        self.events_needing_attention.insert (time);
+      }
+      Entry::Occupied (mut entry) => {
+        let state = entry.get_mut();
+        assert!(state.scheduled.is_none(), "scheduling an event where there is already one scheduled");
+        state.schedule = Some (event);
+        if state.execution_state.is_none() {
+          self.events_needing_attention.insert (time);
+        }
+      }
+    }
+  }
+  
+  fn unschedule_event (&mut self, time: ExtendedTime <B>) {
+    match self.owned.event_states.entry (time.clone()) {
+      Entry::Vacant (_) => {
+        panic!("You can't unschedule an event that wasn't scheduled")
+      }
+      Entry::Occupied (mut entry) => {
+        let state = entry.get_mut();
+        assert!(state.scheduled.is_some(), "You can't unschedule an event that wasn't scheduled");
+        state.schedule = None;
+        if let Some (ref mut execution_state) = state.execution_state {
+          Self::invalidate_execution (time, execution_state, self.events_needing_attention, self.dependencies);
+        } else {
+          self.events_needing_attention.remove (time);
+          entry.remove();
+        }
+      }
+    }
+  }
+  
+  fn invalidate_execution (time: & ExtendedTime <B>, execution: &mut EventExecutionState, events_needing_attention: &mut BTreeSet<ExtendedTime<B>>, steward_dependencies: &mut DependenciesMap) {
+    if let ValidWithDependencies (dependencies) = execution.validity {
+      execution_state.validity = Invalid;
+      events_needing_attention.insert (time);
+      for dependency in dependencies {
+        match steward_dependencies.entry (dependency) {
+          Entry::Vacant (_) => panic!("dependency records are inconsistent"),
+          Entry::Occupied (mut entry) => {
+            entry.get_mut().remove (time);
+            if entry.get().is_empty() {entry.remove();}
+          }
+        }
+      }
+    }
+  }
+  
+  fn invalidate_dependencies (&mut self, id: FieldId, time: ExtendedTime <B>) {
+    if let Some (my_dependencies) = self.dependencies.get (id) {
+      for (access_time, access_info) in my_dependencies.range (Excluded (time), Unbounded) {
+        match access_info {
+          EventAccess => Self::invalidate_execution (access_time, self.event_states.get(discarded.last_change).expect ("event that accessed this field was missing").execution_state.expect ("event that accessed this field not marked executed"), self.events_needing_attention, self.dependencies),
+          PredictionAccess (row_id, predictor_id) =>
+        }
+      }
+    }
+  }
+  
+  fn discard_changes (&mut self, id: FieldId, history: &mut FieldHistory <B>, index: usize, during_processing_of_event_responsible_for_first_discarded: bool, snapshots: &SnapshotsData <B>) {
+    history.update_snapshots (snapshots);
+    self.invalidate_dependencies (id, history.changes [index].last_change);
+    let mut discard_iter = history.changes.split_off (index).into_iter();
+    if during_processing_of_event_responsible_for_first_discarded {discard_iter.next();}
+    for discarded in discard_iter {
+      Self::invalidate_execution (discarded.last_change, self.event_states.get(discarded.last_change).expect ("event that created this change was missing").execution_state.expect ("event that created this change not marked executed"), self.events_needing_attention, self.dependencies);
+    }
+  }
+  
+  fn add_change (&mut self, id: FieldId, history: &mut FieldHistory <B>, change: Field <B>, snapshots: &mut SnapshotsData <B>)  {
+    history.changes.last().map (| last_change | assert!(last_change.last_change <change.last_change));
+    history.update_snapshots (snapshots);
+    self.invalidate_dependencies (id, change.last_change);
+    history.changes.push (change);
+  }
+
+}
+
+impl <B: Basics> Steward <B> {
+
+  fn create_execution (&mut self, time: & ExtendedTime <B>, new_results: MutatorResults <B>) {
+    let fields = self.shared.fields.borrow_mut();
+    let new_fields_changed = HashSet::new();
+    let new_dependencies = HashSet::with_capacity(new_results.fields);
+    for (id, field) in new_results.fields {
+      new_dependencies.insert (id);
+      if field.last_change == time {
+        new_fields_changed.insert (id);
+        let mut history = field_states.entry(id).or_insert (FieldHistory {changes: Vec:: new(), first_snapshot_not_updated = self.owned.next_snapshot});
+        match history.changes.binary_search_by_key (time, | change | change.last_change) {
+          Ok (index) => panic!("there shouldn't be a change at this time is no event has been executed then"),
+          Err (index) => {
+            self.owned.discard_changes (id, entry.get_mut(), index, false, &fields.changed_since_snapshots);
+            self.owned.add_change (id, entry.get_mut(), field, &fields.changed_since_snapshots);
+          }
+        }
+      }
+    }
+  }
+  fn remove_execution (&mut self, time: & ExtendedTime <B>, execution: EventExecutionState) {
+    let fields = self.shared.fields.borrow_mut();
+    for id in execution.fields_changed {
+      if let Entry::Occupied (mut entry) = field_states.entry(id) {
+        //some of these could have ALREADY been deleted –
+        //in fact, perhaps that's how the event was invalidated in the first place
+        if let Ok (index) = entry.get().changes.binary_search_by_key (time, | change | change.last_change) {
+          self.owned.discard_changes (id, entity.get_mut(), index, true, &fields.changed_since_snapshots);
+          if entry.get().changes.is_empty() {entry.remove();}
+        }
+      }
+    }
+  }
+  fn replace_execution (&mut self, time: & ExtendedTime <B>, execution: &mut EventExecutionState, new_results: MutatorResults <B>) {
+    let fields = self.shared.fields.borrow_mut();
+    let new_fields_changed = HashSet::new();
+    let new_dependencies = HashSet::with_capacity(new_results.fields);
+    for (id, field) in new_results.fields {
+      new_dependencies.insert (id);
+      if field.last_change == time {
+        new_fields_changed.insert (id);
+        let mut history = field_states.entry(id).or_insert (FieldHistory {changes: Vec:: new(), first_snapshot_not_updated = self.owned.next_snapshot});
+        match history.changes.binary_search_by_key (time, | change | change.last_change) {
+          Ok (index) => {
+            self.owned.discard_changes (id, entry.get_mut(), index, true, &fields.changed_since_snapshots);
+            self.owned.add_change (id, entry.get_mut(), field, &fields.changed_since_snapshots);
+          }
+          Err (index) => {
+            self.owned.discard_changes (id, entry.get_mut(), index, false, &fields.changed_since_snapshots);
+            self.owned.add_change (id, entry.get_mut(), field, &fields.changed_since_snapshots);
+          }
+        }
+      }
+    }
+    for id in execution.fields_changed {
+      if new_fields_changed.get(id).is_none() {
+        if let Entry::Occupied (mut entry) = field_states.entry(id) {
+          //some of these could have ALREADY been deleted –
+          //in fact, perhaps that's how the event was invalidated in the first place
+          if let Ok (index) = entry.get().changes.binary_search_by_key (time, | change | change.last_change) {
+            self.owned.discard_changes (id, entity.get_mut(), index, true, &fields.changed_since_snapshots);
+            if entry.get().changes.is_empty() {entry.remove();}
+          }
+        }
+      }
+    }
+  }
+  
+  fn do_event (&mut self, time: ExtendedTime <B>) {
+  
+  }
+  
+  fn do_next (&mut self) {
+    match (self.owned.events_needing_attention.iter().next(), self.owned.predictions_missing_by_time.iter().next()) {
+      (None, None) =>(),
+      (Some (ref event_time), None) => self.do_event (event_time.clone()),
+      (None, Some ((ref prediction_time, (row_id, prediction_id)))) => self.make_prediction (prediction_time.clone(), row_id, prediction_id),
+      (Some (ref event_time), Some ((ref prediction_time, (row_id, prediction_id)))) => if event_time <= prediction_time {self.do_event (event_time.clone())} else {self.make_prediction (prediction_time.clone(), row_id, prediction_id)},
+    }
+  }
+}
+
+impl <B: Basics> FieldHistory <B> {
+  fn update_snapshots (&mut self, snapshots: &SnapshotsData <B>) {
+    for (index, snapshot_map) in snapshots.range(Included (self.first_snapshot_not_updated), Unbounded) {
+      snapshot_map.1.get_default(field_id, || SnapshotField {
+        data: self.changes.get (match self.changes.binary_search_by_key (time, | change | change.last_change) { Ok (index) => index - 1, Err (index) => index - 1,})
+      })
+      self.first_snapshot_not_updated = index + 1;
+    }
+  }
+}
+
+
 #[derive (Clone)]
 struct Field<B: Basics> {
   last_change: ExtendedTime<B>,
@@ -49,12 +331,15 @@ struct FieldHistory <B: Basics> {
   first_snapshot_not_updated: SnapshotIdx,
 }
 
+type SnapshotsData <B> = BTreeMap<SnapshotIdx,
+                                    Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>>;
+
 struct Fields<B: Basics> {
   field_states: HashMap<FieldId, FieldHistory <B>>,
-  changed_since_snapshots: BTreeMap<SnapshotIdx,
-                                    Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>>,
+  changed_since_snapshots: SnapshotsData <B>,
 }
 
+type DependenciesMap <B> =HashMap<FieldId, BTreeMap<ExtendedTime <B>, AccessInfo>>;
 
 #[derive (Clone)]
 struct Prediction<B: Basics> {
@@ -72,14 +357,13 @@ struct StewardShared<B: Basics> {
 }
 #[derive (Clone)]
 struct StewardOwned<B: Basics> {
-  last_event: Option<ExtendedTime<B>>,
-  fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
-  next_snapshot: SnapshotIdx,
+  event_states: HashMap <ExtendedTime<B>, EventState <B>>,
+  events_needing_attention: BTreeSet<ExtendedTime<B>>,
 
-  predictions_by_time: BTreeMap<ExtendedTime<B>, Rc<Prediction<B>>>,
+  next_snapshot: SnapshotIdx,
   predictions_by_id: HashMap<(RowId, PredictorId), Rc<Prediction<B>>>,
   predictions_missing_by_time: BTreeMap<ExtendedTime <B>, (RowId, PredictorId)>,
-  dependencies: HashMap<FieldId, BTreeMap<ExtendedTime <B>, AccessInfo>>,
+  dependencies: DependenciesMap <B>,
 }
 #[derive (Clone)]
 pub struct Steward<B: Basics> {
