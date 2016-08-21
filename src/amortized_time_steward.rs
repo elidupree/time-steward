@@ -155,13 +155,13 @@ impl <B: Basics> StewardOwned <B> {
   }
   
   fn unschedule_event (&mut self, time: ExtendedTime <B>) {
-    match self.owned.event_states.entry (time.clone()) {
+    match self.event_states.entry (time.clone()) {
       Entry::Vacant (_) => {
         panic!("You can't unschedule an event that wasn't scheduled")
       }
       Entry::Occupied (mut entry) => {
         let state = entry.get_mut();
-        assert!(state.scheduled.is_some(), "You can't unschedule an event that wasn't scheduled");
+        assert!(state.schedule.is_some(), "You can't unschedule an event that wasn't scheduled");
         state.schedule = None;
         if let Some (ref mut execution_state) = state.execution_state {
           Self::invalidate_execution (time, execution_state, self.events_needing_attention, self.dependencies);
@@ -221,7 +221,7 @@ impl <B: Basics> StewardOwned <B> {
 
 impl <B: Basics> Steward <B> {
 
-  fn create_execution (&mut self, time: & ExtendedTime <B>, new_results: MutatorResults <B>) {
+  fn create_execution (&mut self, time: & ExtendedTime <B>, new_results: MutatorResults <B>)->EventExecutionState {
     let fields = self.shared.fields.borrow_mut();
     let new_fields_changed = HashSet::new();
     let new_dependencies = HashSet::with_capacity(new_results.fields);
@@ -286,18 +286,48 @@ impl <B: Basics> Steward <B> {
         }
       }
     }
+    execution.fields_changed = new_fields_changed;
+    execution.validity = ValidWithDependencies (new_dependencies);
   }
   
   fn do_event (&mut self, time: ExtendedTime <B>) {
-  
+    self.owned.events_needing_attention.remove(& time);
+    let state = self.owned.event_states.remove (& time).expect ("You can't do an event that wasn't scheduled");
+    if let Some (event) = entry.get().schedule {
+      let results;
+      {
+        let field_ref = &*self.shared.fields.borrow();
+        let mut mutator = Mutator {
+          now: time,
+          steward: &mut self.owned,
+          shared: &self.shared,
+          fields: field_ref,
+          generator: super::generator_for_event(event_time.id),
+          results: RefCell::new (MutatorResults {fields: HashMap::new()},
+        };
+        event(&mut mutator);
+        results = mutator. results;
+      }
+      if let Some (ref mut execution) = state.execution_state {
+        self.replace_execution (& time, &mut execution, results);
+      }
+      else {
+        state.execution_state = Some (self.create_execution (& time, results));
+      }
+      self.owned.event_states.insert (time, state);
+    } else {
+      self.remove_execution (& time, state.execution_state.expect("a null event state was left lying around");
+    }
   }
-  
+  fn make_prediction (&mut self, time: ExtendedTime <B>, row_id: RowId, predictor_id: PredictorId) {
+    
+  }
   fn do_next (&mut self) {
     match (self.owned.events_needing_attention.iter().next(), self.owned.predictions_missing_by_time.iter().next()) {
       (None, None) =>(),
       (Some (ref event_time), None) => self.do_event (event_time.clone()),
-      (None, Some ((ref prediction_time, (row_id, prediction_id)))) => self.make_prediction (prediction_time.clone(), row_id, prediction_id),
-      (Some (ref event_time), Some ((ref prediction_time, (row_id, prediction_id)))) => if event_time <= prediction_time {self.do_event (event_time.clone())} else {self.make_prediction (prediction_time.clone(), row_id, prediction_id)},
+      (None, Some ((ref prediction_time, (row_id, predictor_id)))) => self.make_prediction (prediction_time.clone(), row_id, predictor_id),
+      (Some (ref event_time), Some ((ref prediction_time, (row_id, predictor_id)))) => if event_time <= prediction_time {self.do_event (event_time.clone())} else {self.make_prediction (prediction_time.clone(), row_id, predictor_id)},
     }
   }
 }
@@ -361,7 +391,7 @@ struct StewardOwned<B: Basics> {
   events_needing_attention: BTreeSet<ExtendedTime<B>>,
 
   next_snapshot: SnapshotIdx,
-  predictions_by_id: HashMap<(RowId, PredictorId), Rc<Prediction<B>>>,
+  predictions_by_id: HashMap<(RowId, PredictorId), Vec<Prediction<B>>>,
   predictions_missing_by_time: BTreeMap<ExtendedTime <B>, (RowId, PredictorId)>,
   dependencies: DependenciesMap <B>,
 }
@@ -378,7 +408,6 @@ pub struct Snapshot<B: Basics> {
 }
 struct MutatorResults <B: Basics> {
   fields: HashMap<FieldId, Field <B>>,
-  dependencies: Vec<FieldId>,
 }
 
 pub struct Mutator<'a, B: Basics> {
