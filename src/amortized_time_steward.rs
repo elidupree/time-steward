@@ -215,7 +215,7 @@ impl <B: Basics> StewardOwned <B> {
         match access_info {
           EventAccess => Self::invalidate_execution (access_time, self.event_states.get(discarded.last_change).expect ("event that accessed this field was missing").execution_state.expect ("event that accessed this field not marked executed"), self.events_needing_attention, self.dependencies),
           PredictionAccess (row_id, predictor_id) => {
-            let history = self.predictions_by_id.get ((row_id, predictor_id)).expect ("access records are inconsistent");
+            let history = self.predictions_by_id.get_mut ((row_id, predictor_id)).expect ("access records are inconsistent");
             while let prediction = history.predictions.last_mut() {
               if prediction.valid_until <= time {break;}
               if let Some ((event_time,_)) = prediction.what_will_happen {
@@ -227,13 +227,7 @@ impl <B: Basics> StewardOwned <B> {
                 history.predictions.pop();
               }
               if prediction.made_at <= time {
-                if let Some (previous) = prediction_history.next_needed {
-                  let entry = match self.owned.predictions_missing_by_time.entry (previous) {Entry::Vacant (_) => panic!("prediction needed records are inconsistent"), Entry::Occupied (entry) => entry};
-                  entry.get_mut().remove((row_id, predictor_id));
-                  if entry.get().is_empty() {entry.remove();}
-                }
-                self.owned.predictions_missing_by_time.entry (time.clone()).or_insert (Default::default()).insert ((row_id, predictor_id));
-                history.next_needed = Some (time.clone());
+                change_needed_prediction_time (time.clone(), &mut history, &mut self.predictions_missing_by_time);
                 break;
               }
             }
@@ -242,6 +236,17 @@ impl <B: Basics> StewardOwned <B> {
       }
     }
   }
+}
+
+fn change_needed_prediction_time (time: ExtendedTime <B>, history: &mut PredictionHistory, predictions_missing_by_time: &mut BTreeMap<ExtendedTime <B>, HashSet <(RowId, PredictorId)>>) {
+                if let Some (previous) = history.next_needed {
+                  let entry = match self.owned.predictions_missing_by_time.entry (previous) {Entry::Vacant (_) => panic!("prediction needed records are inconsistent"), Entry::Occupied (entry) => entry};
+                  entry.get_mut().remove((row_id, predictor_id));
+                  if entry.get().is_empty() {entry.remove();}
+                }
+                predictions_missing_by_time.entry (time.clone()).or_insert (Default::default()).insert ((row_id, predictor_id));
+                history.next_needed = Some (time);
+
 }
 
 impl <B: Basics> Steward <B> {
@@ -403,6 +408,9 @@ impl <B: Basics> Steward <B> {
     }
     let dependencies_hash = results.dependencies_hasher.generate();
     do stuff with next prediction time, including capping valid_until based on field existence
+    change_needed_prediction_time (, &mut history, &mut self.owned.predictions_missing_by_time);
+    
+    
     let prediction = Rc::new(Prediction {
       predictor_accessed: results.dependencies,
       what_will_happen: results.soonest_prediction.and_then(|(event_base_time, event)| {
