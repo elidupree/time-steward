@@ -29,12 +29,13 @@ extern crate roots;
 #[macro_use]
 extern crate glium;
 
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher, SipHasher};
 use std::any::Any;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::cmp::Ordering;
 use std::fmt;
-use rand::{ChaChaRng, SeedableRng};
+use rand::{Rng, ChaChaRng, SeedableRng};
 
 mod insert_only;
 
@@ -51,8 +52,8 @@ pub struct SiphashIdGenerator {
 }
 impl Hasher for SiphashIdGenerator {
   fn finish(&self) -> u64 {
-    panic!()
-  }//Hack: this is actually for generating DeterministicRandomId, not 64-bit
+    panic!("Hack: this is actually for generating DeterministicRandomId, not 64-bit")
+  }
   fn write(&mut self, bytes: &[u8]) {
     self.data[0].write(bytes);
     self.data[1].write(bytes);
@@ -82,21 +83,6 @@ impl fmt::Display for DeterministicRandomId {
     write!(f, "id:{:016x}{:016x}", self.data[0], self.data[1])
   }
 }
-
-
-// TODO: Shouldn't "ordered type with minimum and maximum values" be a trait common to other situations as well? Find out if there's a standard name for that.
-// pub trait BaseTime: Clone + Ord {
-//   fn min_time() -> Self;
-//   fn max_time() -> Self;
-// }
-// impl BaseTime for i64 {
-//   fn min_time() -> i64 {
-//     i64::min_value()
-//   }
-//   fn max_time() -> i64 {
-//     i64::max_value()
-//   }
-// }
 
 
 // Database analogy: time stewards kind of contain a database table.
@@ -148,19 +134,37 @@ pub trait Column {
   }
 }
 
+macro_rules! use_default_equality__unsafe {
+  () => {
+    fn guaranteed_equal__unsafe(first: &Self::FieldType, second: &Self::FieldType) -> bool {
+      first == second
+    }
+  };
+}
+
+
 #[derive (Copy, Clone, PartialEq, Eq, Hash)]
-struct FieldId {
+pub struct FieldId {
   row_id: RowId,
   column_id: ColumnId,
 }
 impl FieldId {
-  fn new(row_id: RowId, column_id: ColumnId) -> FieldId {
+  pub fn new(row_id: RowId, column_id: ColumnId) -> FieldId {
     FieldId {
       row_id: row_id,
       column_id: column_id,
     }
   }
 }
+
+/**
+This is intended to be implemented on an empty struct. Requiring Clone is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
+*/
+pub trait Basics: Clone + 'static {
+  type Time: Clone + Ord;
+  type Constants;
+}
+pub type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 
 type IterationType = u32;
 #[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -170,13 +174,346 @@ struct GenericExtendedTime<Base: Ord> {
   id: TimeId,
 }
 
-// fn beginning_of_moment<Base: Ord>(base_time: Base) -> GenericExtendedTime<Base> {
-//  GenericExtendedTime {
-//    base: base_time,
-//    iteration: 0,
-//    id: TimeId { data: [0, 0] },
+pub type StewardRc<T> = Arc <T>;
+pub type FieldRc = StewardRc <Any>;
+
+// Note: in the future, we expect we might use a custom hash table type that knows it can rely on DeterministicRandomId to already be random, so we don't need to hash it again. This also applies to FieldId, although there may be some complications in that case.
+// (for now, we need to be able to hash full siphash ids to create other siphash ids.)
+// ( Also -- do we ever try to hash GenericExtendedTime with id of 0 from beginning_of_moment.... )
+// impl Hash for DeterministicRandomId {
+//  fn hash<H: Hasher>(&self, state: &mut H) {
+//    self.data[0].hash(state);
 //  }
 // }
+// impl<Base: BaseTime> Hash for GenericExtendedTime<Base> {
+//  fn hash<H: Hasher>(&self, state: &mut H) {
+//    self.id.hash(state);
+//  }
+// }
+
+fn unwrap_field<'a, C: Column> (field: & 'a FieldRc)->& 'a C::FieldType { field.downcast_ref::<C::FieldType>().expect ("a field had the wrong type for its column").borrow()}
+
+pub trait Accessor<B: Basics> {
+  fn generic_data_and_extended_last_change(&self, id: FieldId) -> Option<(&FieldRc, & ExtendedTime <B>)>;
+  fn data_and_extended_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
+    self.generic_data_and_extended_last_change (FieldId::new (id, C::column_id())).map (| pair | (unwrap_field (pair.0), pair.1))
+  }
+  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
+    self.generic_data_and_extended_last_change::<C> (id).map (| pair | (unwrap_field (pair.0), pair.1.base))
+  }
+  fn get<C: Column>(&self, id: RowId) -> Option<&C::FieldType> {
+    self.generic_data_and_extended_last_change::<C>(id).map(|p| unwrap_field (p.0))
+  }
+  fn last_change<C: Column>(&self, id: RowId) -> Option<&B::Time> {
+    self.generic_data_and_extended_last_change::<C>(id).map(|p| p.1.base)
+  }
+  fn constants(&self) -> &B::Constants;
+
+  /**
+  In general, predictions may NOT depend on the time the predictor is called.
+  However, in some cases, you may want to have a predictor that does something like
+  "predict an event to happen at the beginning of any minute", which isn't technically
+  time-dependent – but if you did it in a time-independent way, you'd have to predict
+  infinitely many events. unsafe_now() is provided to enable you to only compute one of them.
+  
+  When you call unsafe_now() in a predictor, you promise that you will
+  make the SAME predictions for ANY given return value of unsafe_now(), UNLESS:
+  1. The return value is BEFORE the last change time of any of the fields you access, or
+  2. You predict an event, and the return value is AFTER that event.
+  
+  This function is provided by Accessor rather than PredictorAccessor so that functions can be generic in whether they are used in a predictor or not.
+  */
+  fn unsafe_now(&self) -> &B::Time;
+}
+
+pub trait MomentaryAccessor<B: Basics>: Accessor<B> {
+  fn now(&self) -> &B::Time {
+    self.unsafe_now()
+  }
+}
+
+pub trait Mutator<B: Basics>: MomentaryAccessor<B> + Rng {
+  fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>);
+  fn gen_id(&mut self) -> RowId;
+  fn underlying_rng_unsafe (&mut self) ->EventRng;
+}
+pub trait PredictorAccessor<B: Basics, EventFn:?Sized>: Accessor<B> {
+  fn predict_at_time(&mut self, time: B::Time, event: StewardRc <EventFn>);
+
+  ///A specific use of unsafe_now() that is guaranteed to be safe
+  fn predict_immediately(&mut self, event: StewardRc <EventFn>) {
+    let time = self.unsafe_now().clone();
+    self.predict_at_time(time, event)
+  }
+}
+pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {
+  //with slightly better polymorphism we could do this more idiomatically
+  //type Iter<'a>: Iterator<(FieldId, (&'a FieldRc, &'a ExtendedTime<B>))>;
+  //fn iter (&self)->Iter;
+  fn iterate <'a, F> (& 'a self, handler: F) where F: Fn (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
+}
+
+pub struct FiatSnapshot <B: Basics> {
+  constants: StewardRc <B::Constants>,
+  now: B::Time,
+  fields: HashMap<FieldId, (FieldRc, ExtendedTime <B>)>,
+}
+impl<B: Basics> FiatSnapshot <B> {
+  fn from_iter<T>(constants: StewardRc <B::Constants>, now: B::Time, iter: T) -> Self where T: IntoIterator<Item= (FieldId, (FieldRc, ExtendedTime <B>))> {
+    FiatSnapshot {
+      constants: constants,
+      now: now,
+      fields: iter.collect(),
+    }
+  }
+}
+impl<B: Basics> Accessor <B> for FiatSnapshot <B> {
+  fn generic_data_and_extended_last_change(&self, id: FieldId) -> Option<(& FieldRc, & ExtendedTime <B>)> {self.fields.get (id)}
+  fn constants(&self) -> &B::Constants {self.constants.borrow()}
+  fn unsafe_now(&self) -> &B::Time {& self.now}
+}
+impl<B: Basics> MomentaryAccessor <B> for FiatSnapshot <B> {}
+impl<B: Basics> Snapshot <B> for FiatSnapshot <B> {
+  fn iterate <'a, F> (& 'a self, handler: F) where F: Fn (FieldId, (& 'a FieldRc, & ExtendedTime <B>)) {
+    for item in self.fields.iter() {handler (item);}
+  }
+}
+
+
+
+
+
+#[derive (Copy, Clone, PartialEq, Eq)]
+pub enum FiatEventOperationError {
+  InvalidInput,
+  InvalidTime,
+}
+
+// This exists to support a variety of time stewards
+// along with allowing BaseTime to be dense (e.g. a
+// rational number rather than an integer).
+// It is an acceptable peculiarity that even for integer times,
+// After(2) < Before(3).
+// #[derive (Copy, Clone, PartialEq, Eq, Hash)]
+#[derive (Clone, PartialEq, Eq)]
+pub enum ValidSince<BaseTime> {
+  TheBeginning,
+  Before(BaseTime),
+  After(BaseTime),
+}
+
+impl <T: Ord> Ord for ValidSince <T> {
+  fn cmp (&self, other: & Self)->Ordering {
+    match (self, other) {
+      (ValidSince::TheBeginning, ValidSince::TheBeginning) => Ordering::Equal,
+      (ValidSince::TheBeginning, _) => Ordering::Less,
+      (_, ValidSince::TheBeginning) => Ordering::Greater,
+      (ValidSince::Before (something), ValidSince::Before (anything)) => something.cmp (anything),
+      (ValidSince::After (something), ValidSince::After (anything)) => something.cmp (anything),
+      (ValidSince::Before (something), ValidSince::After (anything)) => if something <= anything {Ordering::Less} else {Ordering::Greater},
+      (ValidSince::After (something), ValidSince::Before (anything)) => if something < anything {Ordering::Less} else {Ordering::Greater},
+    }
+  }
+}
+impl <T> PartialEq <T> for ValidSince <T> {
+  fn eq (&self, other: & T)->bool {
+    false
+  }
+}
+
+impl <T: Ord> PartialOrd <T> for ValidSince <T> {
+  fn partial_cmp (&self, other: & T)->Ordering {
+    match (self, other) {
+      ValidSince::TheBeginning => Ordering::Less,
+      ValidSince::Before (something) => if something <= other {Ordering::Less} else {Ordering::Greater},
+      ValidSince::After (something) => if something < other {Ordering::Less} else {Ordering::Greater},
+    }
+  }
+}
+impl <T: Ord> PartialOrd for ValidSince <T> {
+  fn partial_cmp (&self, other: & Self)->Option <Ordering> {
+    Some (self.cmp (other));
+  }
+}
+//impl <T: Ord> PartialOrd <ValidSince <T>> for T {
+//  fn partial_cmp (&self, other: & ValidSince <T>)->Option <Ordering> {
+//    Some (other.partial_cmp (self).unwrap().reverse());
+//  }
+//}
+
+/// TimeStewardLifetimedMethods is a hack to make it possible
+/// for trait TimeSteward to have associated types that are
+/// parameterized by lifetime.
+pub trait TimeStewardLifetimedMethods<'a, B: Basics>: TimeStewardStaticMethods <B> {
+  type Mutator: Mutator <B> + 'a;
+  type PredictorAccessor: PredictorAccessor <B, <Self as TimeStewardStaticMethods <B>>::EventFn> + 'a;
+}
+pub trait TimeStewardStaticMethods <B: Basics>: 'static {
+  type EventFn:?Sized;
+  type PredictorFn:?Sized;
+  type Snapshot: Snapshot <B>;
+
+  /**
+  You are allowed to call snapshot_before(), insert_fiat_event(),
+  and erase_fiat_event() for times >= valid_since().
+  
+  TimeSteward implementors are permitted, but not required, to discard old data in order to save memory. This may make the TimeSteward unusable at some points in its history.
+  
+  All implementors must obey certain restrictions on how other TimeSteward methods may change the result of valid_since(). Implementors may have their own methods that can alter this in customized ways, which should be documented with those individual methods.
+  */
+  fn valid_since(&self) -> ValidSince<B::Time>;
+
+  /**
+  Creates a new, empty TimeSteward.
+  
+  new_empty().valid_since() must equal TheBeginning.
+  */
+  fn new_empty(constants: B::Constants, predictors: Box <[Predictor<Self::PredictorFn>]>) -> Self;
+
+  /**
+  Creates a new TimeSteward from a snapshot.
+  
+  from_snapshot().valid_since() must equal Before(snapshot.now()),
+  and must never go lower than that.
+  */
+  fn from_snapshot <S: Snapshot <B>> (snapshot: S, predictors: Box <[Predictor<Self::PredictorFn>]>) -> Self;
+
+
+  /**
+  Inserts a fiat event at some point in the history.
+  
+  If time < valid_since(), this does nothing and returns Err(InvalidTime). If there is already a fiat event with the same time and distinguisher, this does nothing and returns Err(InvalidInput). Otherwise, it inserts the event and returns Ok.
+  
+  steward.insert_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
+  steward.insert_fiat_event() may not change steward.valid_since().
+  */
+  fn insert_fiat_event(&mut self,
+                       time: B::Time,
+                       id: DeterministicRandomId,
+                       event: StewardRc <Self::EventFn>)
+                       ->Result <(), FiatEventOperationError>;
+
+  /**
+  Erases a fiat event that has been inserted previously.
+  
+  If time < valid_since(), this does nothing and returns Err(InvalidTime). If there is no fiat event with the specified time and distinguisher, this does nothing and returns Err(InvalidInput). Otherwise, it erases the event and returns Ok.
+  
+  steward.erase_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
+  steward.erase_fiat_event() may not change steward.valid_since().
+  */
+  fn erase_fiat_event(&mut self,
+                      time: &B::Time,
+                      id: DeterministicRandomId)
+                      ->Result <(), FiatEventOperationError>;
+
+  /** Returns a "snapshot" into the TimeSteward.
+  
+  The snapshot is guaranteed to be valid and unchanging for the full lifetime of the TimeSteward. It is specific to both the time argument, and the current collection of fiat events. Callers may freely call mutable methods of the same TimeSteward after taking a snapshot, without changing the contents of the snapshot.
+  
+  Each TimeSteward implementor determines exactly how to provide these guarantees. Implementors should provide individual guarantees about the processor-time bounds of snapshot operations.
+  
+  steward.snapshot_before(time) must return Some if time > steward.valid_since().
+  steward.snapshot_before(time) may not increase steward.valid_since() beyond Before(time).
+  */
+  fn snapshot_before(&mut self, time: &B::Time) -> Option<Self::Snapshot>;
+}
+pub trait TimeSteward <B: Basics>: for<'a> TimeStewardLifetimedMethods<'a, B> {}
+
+
+//TODO: everything between here and the modules at the bottom are implementation details that should be moved into a different file
+
+
+// #[derive (Clone)]
+// enum Prediction<B: Basics, E> {
+//   Nothing,
+//   Immediately(E),
+//   At(B::Time, E),
+// }
+
+// #[derive (Clone)]
+pub struct Predictor<PredictorFn: ?Sized> {
+  predictor_id: PredictorId,
+  column_id: ColumnId,
+  function: StewardRc <PredictorFn>,
+}
+// explicitly implement Clone to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
+impl<PredictorFn: ?Sized> Clone for Predictor<PredictorFn> {
+  fn clone(&self) -> Self {
+    Predictor {
+      predictor_id: self.predictor_id,
+      column_id: self.column_id,
+      function: self.function.clone(),
+    }
+  }
+}
+
+// type Event<M> = StewardRc<for<'d> Fn(&'d mut M)>;
+// type PredictorFn<B: Basics, M: Mutator<B>, PA: PredictorAccessor<B>> =
+//  StewardRc<for<'b, 'c> Fn(&'b mut PA, RowId) -> Prediction<B, Event<M>>>;
+
+
+type EventRng = ChaChaRng;
+fn generator_for_event(id: TimeId) -> EventRng {
+  EventRng::from_seed(&[(id.data[0] >> 32) as u32,
+                        (id.data[0] & 0xffffffff) as u32,
+                        (id.data[1] >> 32) as u32,
+                        (id.data[1] & 0xffffffff) as u32])
+}
+
+macro_rules! predictor_accessor_common_methods {
+  ($B: ty, $soonest_prediction: expr) => {
+    fn predict_at_time(&mut self, time: $B::Time, event: Event<$B>) {
+      if time < self.unsafe_now() {
+        return;
+      }
+      let soonest_prediction: &mut Option ($B::Time, Event <$B>) = $soonest_prediction;
+      if let Some((ref old_time, _)) = *soonest_prediction {
+        if old_time <= &time {
+          return;
+        }
+      }
+      *soonest_prediction = Some((time, event));
+    }
+  }
+}
+
+
+struct GenericMutator <B: Basics> {
+  now: ExtendedTime <B>,
+  generator: ChaChaRng,
+}
+impl <B: Basics> GenericMutator <B> {
+  fn new(now: ExtendedTime <B>)->Self {
+    let generator = generator_for_event (now.id);
+    GenericMutator {
+      now: now,
+      generator: generator,
+    }
+  }
+}
+macro_rules! mutator_common_accessor_methods {
+  ($B: ty) => {
+    fn unsafe_now(& self)->$B::Time {self.generic.now.base}
+  }
+}
+macro_rules! mutator_common_methods {
+  () => {
+    fn gen_id(&mut self) -> RowId {data [self.gen::<u64>(), self.gen::<u64>()]}
+    fn underlying_rng_unsafe (&mut self) ->&mut EventRng{self.generic.generator}
+  }
+}
+macro_rules! mutator_rng_methods {
+  () => {
+    fn next_u32(&mut self) -> u32 {self.generic.generator.next_u32()}
+    
+    fn next_f32(&mut self) -> f32 {panic!("Using floating point numbers in TimeSteward events is forbidden by default because it is nondeterministic across platforms. If you know you don't need to be consistent between different computers, or you otherwise know EXACTLY what you're doing, you may explicitly call underlying_rng_unsafe() to get a generator that can produce floats.")}
+    fn next_f64(&mut self) -> f64 {panic!("Using floating point numbers in TimeSteward events is forbidden by default because it is nondeterministic across platforms. If you know you don't need to be consistent between different computers, or you otherwise know EXACTLY what you're doing, you may explicitly call underlying_rng_unsafe() to get a generator that can produce floats.")}
+  }
+}
+
+
+
+
 
 fn extended_time_of_fiat_event<BaseTime: Ord>(time: BaseTime,
                                               id: TimeId)
@@ -228,224 +565,6 @@ fn next_extended_time_of_predicted_event<BaseTime: Ord>
   })
 }
 
-pub type EventRng = ChaChaRng;
-
-fn generator_for_event(id: TimeId) -> EventRng {
-  EventRng::from_seed(&[(id.data[0] >> 32) as u32,
-                        (id.data[0] & 0xffffffff) as u32,
-                        (id.data[1] >> 32) as u32,
-                        (id.data[1] & 0xffffffff) as u32])
-}
-
-/**
-This is intended to be implemented on an empty struct. Requiring Clone is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
-*/
-pub trait Basics: Clone + 'static {
-  type Time: Clone + Ord;
-  type Constants;
-}
-type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
-
-// Note: in the future, we expect we might use a custom hash table type that knows it can rely on DeterministicRandomId to already be random, so we don't need to hash it again. This also applies to FieldId, although there may be some complications in that case.
-// (for now, we need to be able to hash full siphash ids to create other siphash ids.)
-// ( Also -- do we ever try to hash GenericExtendedTime with id of 0 from beginning_of_moment.... )
-// impl Hash for DeterministicRandomId {
-//  fn hash<H: Hasher>(&self, state: &mut H) {
-//    self.data[0].hash(state);
-//  }
-// }
-// impl<Base: BaseTime> Hash for GenericExtendedTime<Base> {
-//  fn hash<H: Hasher>(&self, state: &mut H) {
-//    self.id.hash(state);
-//  }
-// }
-
-pub trait Accessor<B: Basics> {
-  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)>;
-  fn get<C: Column>(&self, id: RowId) -> Option<&C::FieldType> {
-    self.data_and_last_change::<C>(id).map(|p| p.0)
-  }
-  fn last_change<C: Column>(&self, id: RowId) -> Option<&B::Time> {
-    self.data_and_last_change::<C>(id).map(|p| p.1)
-  }
-  fn constants(&self) -> &B::Constants;
-
-  /**
-  In general, predictions may NOT depend on the time the predictor is called.
-  However, in some cases, you may want to have a predictor that does something like
-  "predict an event to happen at the beginning of any minute", which isn't technically
-  time-dependent – but if you did it in a time-independent way, you'd have to predict
-  infinitely many events. unsafe_now() is provided to enable you to only compute one of them.
-  
-  When you call unsafe_now() in a predictor, you promise that you will
-  make the SAME predictions for ANY given return value of unsafe_now(), UNLESS:
-  1. The return value is BEFORE the last change time of any of the fields you access, or
-  2. You predict an event, and the return value is AFTER that event.
-  
-  This function is provided by Accessor rather than PredictorAccessor so that functions can be generic in whether they are used in a predictor or not.
-  */
-  fn unsafe_now(&self) -> &B::Time;
-}
-
-pub trait MomentaryAccessor<B: Basics>: Accessor<B> {
-  fn now(&self) -> &B::Time {
-    self.unsafe_now()
-  }
-}
-
-
-pub trait Mutator<B: Basics>: MomentaryAccessor<B> {
-  // fn get_mut<C: Column>(&mut self, id: RowId) -> Option<&mut C::FieldType> where C::FieldType: Clone;
-  fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>);
-  fn rng(&mut self) -> &mut EventRng;
-  fn random_id(&mut self) -> RowId;
-}
-pub trait PredictorAccessor<B: Basics, EventFn:?Sized>: Accessor<B> {
-  fn predict_at_time(&mut self, time: B::Time, event: Rc<EventFn>);
-
-  ///A specific use of unsafe_now() that is guaranteed to be safe
-  fn predict_immediately(&mut self, event: Rc<EventFn>) {
-    let time = self.unsafe_now().clone();
-    self.predict_at_time(time, event)
-  }
-}
-pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {}
-
-
-#[derive (Copy, Clone, PartialEq, Eq)]
-pub enum FiatEventOperationResult {
-  Success,
-  InvalidInput,
-  InvalidTime,
-}
-
-pub enum ValidSince<BaseTime> {
-  TheBeginning,
-  Before(BaseTime),
-  After(BaseTime),
-}
-
-// This exists to support a variety of time stewards
-// along with allowing BaseTime to be dense (e.g. a
-// rational number rather than an integer).
-// It is an acceptable peculiarity that even for integer times,
-// After(2) < Before(3).
-// #[derive (Copy, Clone, PartialEq, Eq, Hash)]
-// pub enum TimeBoundary<BaseTime> {
-//  Before(BaseTime),
-//  After(BaseTime),
-// }
-// //impl PartialOrd
-
-/// TimeStewardLifetimedMethods is a hack to make it possible
-/// for trait TimeSteward to have associated types that are
-/// parameterized by lifetime.
-/// Example impl if you have types Steward<B> and Snapshot<'a, B>:
-///
-/// impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
-///   type Snapshot = Snapshot<'a, B>;
-///   fn snapshot_before(&'a mut self, time: &B::Time) -> Option<Self::Snapshot> {
-///     // your implementation
-///   }
-/// }
-pub trait TimeStewardLifetimedMethods<'a, B: Basics>: TimeStewardStaticMethods <B> {
-  type Mutator: Mutator <B> + 'a;
-  type PredictorAccessor: PredictorAccessor <B, <Self as TimeStewardStaticMethods <B>>::EventFn> + 'a;
-}
-pub trait TimeStewardStaticMethods <B: Basics>: 'static {
-  type EventFn:?Sized;
-  type PredictorFn:?Sized;
-  type Snapshot: Snapshot <B>;
-
-  /**
-  You are allowed to call snapshot_before(), insert_fiat_event(),
-  and erase_fiat_event() for times >= valid_since().
-  
-  TimeSteward implementors are permitted, but not required, to discard old data in order to save memory. This may make the TimeSteward unusable at some points in its history.
-  
-  All implementors must obey certain restrictions on how other TimeSteward methods may change the result of valid_since(). Implementors may have their own methods that can alter this in customized ways, which should be documented with those individual methods.
-  */
-  fn valid_since(&self) -> ValidSince<B::Time>;
-
-  /**
-  Creates a new, empty TimeSteward.
-  
-  new_empty().valid_since() must equal TheBeginning.
-  */
-  fn new_empty(constants: B::Constants, predictors: Vec<Predictor<Self::PredictorFn>>) -> Self;
-
-  /**
-  Inserts a fiat event at some point in the history.
-  
-  If time < valid_since(), this does nothing and returns InvalidTime. If there is already a fiat event with the same time and distinguisher, this does nothing and returns InvalidInput. Otherwise, it inserts the event and returns Success.
-  
-  steward.insert_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
-  steward.insert_fiat_event() may not change steward.valid_since().
-  */
-  fn insert_fiat_event(&mut self,
-                       time: B::Time,
-                       id: DeterministicRandomId,
-                       event: Rc<Self::EventFn>)
-                       -> FiatEventOperationResult;
-
-  /**
-  Erases a fiat event that has been inserted previously.
-  
-  If time < valid_since(), this does nothing and returns InvalidTime. If there is no fiat event with the specified time and distinguisher, this does nothing and returns InvalidInput. Otherwise, it erases the event and returns Success.
-  
-  steward.erase_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
-  steward.erase_fiat_event() may not change steward.valid_since().
-  */
-  fn erase_fiat_event(&mut self,
-                      time: &B::Time,
-                      id: DeterministicRandomId)
-                      -> FiatEventOperationResult;
-
-  /** Returns a "snapshot" into the TimeSteward.
-  
-  The snapshot is guaranteed to be valid and unchanging for the full lifetime of the TimeSteward. It is specific to both the time argument, and the current collection of fiat events. Callers may freely call mutable methods of the same TimeSteward after taking a snapshot, without changing the contents of the snapshot.
-  
-  Each TimeSteward implementor determines exactly how to provide these guarantees. Implementors should provide individual guarantees about the processor-time bounds of snapshot operations.
-  
-  steward.snapshot_before(time) must return Some if time > steward.valid_since().
-  steward.snapshot_before(time) may not increase steward.valid_since() beyond time.
-  
-  note: we implement "before" and not "after" because we might be banning events that happen during max_time
-  */
-  fn snapshot_before<'b>(&'b mut self, time: &'b B::Time) -> Option<Self::Snapshot>;
-}
-pub trait TimeSteward <B: Basics>: for<'a> TimeStewardLifetimedMethods<'a, B> {}
-
-
-
-// #[derive (Clone)]
-// enum Prediction<B: Basics, E> {
-//   Nothing,
-//   Immediately(E),
-//   At(B::Time, E),
-// }
-
-// #[derive (Clone)]
-pub struct Predictor<PredictorFn: ?Sized> {
-  predictor_id: PredictorId,
-  column_id: ColumnId,
-  function: Rc<PredictorFn>,
-}
-// explicitly implement Clone to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
-impl<PredictorFn: ?Sized> Clone for Predictor<PredictorFn> {
-  fn clone(&self) -> Self {
-    Predictor {
-      predictor_id: self.predictor_id,
-      column_id: self.column_id,
-      function: self.function.clone(),
-    }
-  }
-}
-
-// type Event<M> = Rc<for<'d> Fn(&'d mut M)>;
-// type PredictorFn<B: Basics, M: Mutator<B>, PA: PredictorAccessor<B>> =
-//  Rc<for<'b, 'c> Fn(&'b mut PA, RowId) -> Prediction<B, Event<M>>>;
-
 
 pub mod inefficient_flat_time_steward;
 pub mod memoized_flat_time_steward;
@@ -461,9 +580,4 @@ pub mod collision_detection;
 pub mod examples {
   pub mod handshakes;
   pub mod bouncy_circles;
-}
-
-#[test]
-fn it_works() {
-  // panic!("works!!!!!!!!!!!");
 }
