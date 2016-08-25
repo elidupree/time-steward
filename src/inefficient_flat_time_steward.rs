@@ -6,8 +6,8 @@
 
 
 use super::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, Column, ExtendedTime,
-            EventRng, Basics, TimeSteward, FiatEventOperationResult, ValidSince,
-            TimeStewardLifetimedMethods, TimeStewardStaticMethods};
+            EventRng, Basics, TimeSteward, FiatEventOperationError, ValidSince,
+            TimeStewardLifetimedMethods, TimeStewardStaticMethods, StewardRc, FieldRc,GenericMutator};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
@@ -16,11 +16,12 @@ use std::borrow::Borrow;
 use std::rc::Rc;
 use std::cell::RefCell;
 use rand::Rng;
+use std::cmp::max;
 
 #[derive (Clone)]
 struct Field<B: Basics> {
+  data: FieldRc,
   last_change: ExtendedTime<B>,
-  data: Rc<Any>,
 }
 
 
@@ -33,24 +34,23 @@ struct StewardState<B: Basics> {
 }
 
 struct StewardSettings<B: Basics> {
-  predictors: Vec<Predictor<B>>,
+  predictors: Box <[Predictor<B>]>,
   constants: B::Constants,
 }
 #[derive (Clone)]
 pub struct Steward<B: Basics> {
   state: StewardState<B>,
-  settings: Rc<StewardSettings<B>>,
+  settings: StewardRc <StewardSettings<B>>,
 }
 type StewardImpl<B> = Steward<B>;
 pub struct Snapshot<B: Basics> {
   now: B::Time,
   state: StewardState<B>,
-  settings: Rc<StewardSettings<B>>,
+  settings: StewardRc <StewardSettings<B>>,
 }
 pub struct Mutator<'a, B: Basics> {
-  now: ExtendedTime<B>,
+  generic: GenericMutator <B>,
   steward: &'a mut StewardImpl<B>,
-  generator: EventRng,
 }
 pub struct PredictorAccessor<'a, B: Basics> {
   steward: &'a StewardImpl<B>,
@@ -58,15 +58,15 @@ pub struct PredictorAccessor<'a, B: Basics> {
   dependencies_hasher: RefCell<SiphashIdGenerator>,
 }
 pub type EventFn<B> = for<'d, 'e> Fn(&'d mut Mutator<'e, B>);
-pub type Event<B> = Rc<EventFn<B>>;
+pub type Event<B> = StewardRc <EventFn<B>>;
 pub type Predictor<B> = super::Predictor<PredictorFn<B>>;
 pub type PredictorFn<B> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId);
 
 
 
 impl<B: Basics> super::Accessor<B> for Snapshot<B> {
-  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
-    self.state.get::<C>(id).map(|p| (p.0, &p.1.base))
+  fn generic_data_and_extended_last_change(&self, id: FieldId) -> Option<(& FieldRc, & ExtendedTime <B>)> {
+    self.state.get(id)
   }
   fn constants(&self) -> &B::Constants {
     &self.settings.constants
@@ -76,21 +76,19 @@ impl<B: Basics> super::Accessor<B> for Snapshot<B> {
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
-  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
-    self.steward.state.get::<C>(id).map(|p| (p.0, &p.1.base))
+  fn generic_data_and_extended_last_change(&self, id: FieldId) -> Option<(& FieldRc, & ExtendedTime <B>)> {
+    self.steward.state.get(id)
   }
   fn constants(&self) -> &B::Constants {
     &self.steward.settings.constants
   }
-  fn unsafe_now(&self) -> &B::Time {
-    &self.now.base
-  }
+  mutator_common_accessor_methods! (B);
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
-  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
-    self.steward.state.get::<C>(id).map(|p| {
+  fn generic_data_and_extended_last_change(&self, id: FieldId) -> Option<(& FieldRc, & ExtendedTime <B>)> {
+    self.steward.state.get(id).map(|p| {
       p.1.id.hash(&mut *self.dependencies_hasher.borrow_mut());
-      (p.0, &p.1.base)
+      p
     })
   }
   fn constants(&self) -> &B::Constants {
@@ -113,7 +111,8 @@ impl<'a, B: Basics> PredictorAccessor<'a, B> {
   }
 }
 impl<'a, B: Basics> super::PredictorAccessor<B, EventFn<B>> for PredictorAccessor<'a, B> {
-  fn predict_at_time(&mut self, time: B::Time, event: Event<B>) {
+  predictor_accessor_common_methods!(B, self, &mut self.soonest_prediction);
+  /*fn predict_at_time(&mut self, time: B::Time, event: Event<B>) {
     if time < self.internal_now().base {
       return;
     }
@@ -123,21 +122,24 @@ impl<'a, B: Basics> super::PredictorAccessor<B, EventFn<B>> for PredictorAccesso
       }
     }
     self.soonest_prediction = Some((time, event));
+  }*/
+}
+impl<B: Basics> super::Snapshot<B> for Snapshot<B> {
+  fn iterate <'a, F> (& 'a self, handler: F) where F: Fn (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>)) {
+    for item in self.states.field_states.iter() {handler ((item.0, ((item.1).data, (item.1).last_change)));}
   }
 }
-impl<B: Basics> super::Snapshot<B> for Snapshot<B> {}
 
 impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
     self.steward.state.set_opt::<C>(id, data, &self.now);
   }
-  fn rng(&mut self) -> &mut EventRng {
-    &mut self.generator
-  }
-  fn random_id(&mut self) -> RowId {
-    RowId { data: [self.generator.gen::<u64>(), self.generator.gen::<u64>()] }
-  }
+  mutator_common_methods!();
 }
+impl<'a, B: Basics> Rng for Mutator<'a, B> {
+  mutator_rng_methods!();
+}
+
 
 
 // https://github.com/rust-lang/rfcs/issues/1485
@@ -158,17 +160,11 @@ impl<T> Filter<T> for Option<T> {
 
 
 impl<B: Basics> StewardState<B> {
-  fn get<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &ExtendedTime<B>)> {
+  fn get(&self, id: FieldId) -> Option<(& FieldRc, &ExtendedTime<B>)> {
     self.field_states
-        .get(&FieldId {
-          row_id: id,
-          column_id: C::column_id(),
-        })
+        .get (id)
         .map(|something| {
-          (something.data
-                    .downcast_ref::<C::FieldType>()
-                    .expect("a field had the wrong type for its column")
-                    .borrow(),
+          (& something.data,
            &something.last_change)
         })
   }
@@ -179,7 +175,7 @@ impl<B: Basics> StewardState<B> {
                   column_id: C::column_id(),
                 },
                 Field {
-                  data: Rc::new(value),
+                  data: FieldRc::new(value),
                   last_change: time.clone(),
                 });
   }
@@ -274,14 +270,14 @@ impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
   type Snapshot = Snapshot<B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
-    match self.state.last_event {
+    max (self.invalid_before, match self.state.last_event {
       None => ValidSince::TheBeginning,
       Some(ref time) => ValidSince::After(time.base.clone()),
-    }
+    })
   }
 
   fn new_empty(constants: B::Constants,
-               predictors: Vec<super::Predictor<Self::PredictorFn>>)
+               predictors: Box <[super::Predictor<Self::PredictorFn>]>)
                -> Self {
     StewardImpl {
       state: StewardState {
@@ -300,30 +296,26 @@ impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
                        time: B::Time,
                        id: DeterministicRandomId,
                        event: Event<B>)
-                       -> FiatEventOperationResult {
-    if let Some(ref change) = self.state.last_event {
-      if change.base >= time {
-        return FiatEventOperationResult::InvalidTime;
-      }
+                       ->Result <(), FiatEventOperationError> {
+    if time <self.valid_since() {
+      return Err (FiatEventOperationError::InvalidTime);
     }
     match self.state.fiat_events.insert(super::extended_time_of_fiat_event(time, id), event) {
-      None => FiatEventOperationResult::Success,
-      Some(_) => FiatEventOperationResult::InvalidInput,
+      None => Ok (()),
+      Some(_) => Err (FiatEventOperationError::InvalidInput),
     }
   }
 
   fn erase_fiat_event(&mut self,
                       time: &B::Time,
                       id: DeterministicRandomId)
-                      -> FiatEventOperationResult {
-    if let Some(ref change) = self.state.last_event {
-      if change.base >= *time {
-        return FiatEventOperationResult::InvalidTime;
-      }
+                      ->Result <(), FiatEventOperationError> {
+    if time <self.valid_since() {
+      return Err (FiatEventOperationError::InvalidTime);
     }
     match self.state.fiat_events.remove(&super::extended_time_of_fiat_event(time.clone(), id)) {
-      None => FiatEventOperationResult::InvalidInput,
-      Some(_) => FiatEventOperationResult::Success,
+      None => Err (FiatEventOperationError::InvalidInput),
+      Some(_) => Ok (()),
     }
   }
 

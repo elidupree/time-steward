@@ -235,7 +235,7 @@ pub trait MomentaryAccessor<B: Basics>: Accessor<B> {
 pub trait Mutator<B: Basics>: MomentaryAccessor<B> + Rng {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>);
   fn gen_id(&mut self) -> RowId;
-  fn underlying_rng_unsafe (&mut self) ->EventRng;
+  fn underlying_rng_unsafe (&mut self) ->&mut EventRng;
 }
 pub trait PredictorAccessor<B: Basics, EventFn:?Sized>: Accessor<B> {
   fn predict_at_time(&mut self, time: B::Time, event: StewardRc <EventFn>);
@@ -274,8 +274,8 @@ impl<B: Basics> Accessor <B> for FiatSnapshot <B> {
 }
 impl<B: Basics> MomentaryAccessor <B> for FiatSnapshot <B> {}
 impl<B: Basics> Snapshot <B> for FiatSnapshot <B> {
-  fn iterate <'a, F> (& 'a self, handler: F) where F: Fn (FieldId, (& 'a FieldRc, & ExtendedTime <B>)) {
-    for item in self.fields.iter() {handler (item);}
+  fn iterate <'a, F> (& 'a self, handler: F) where F: Fn (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>)) {
+    for item in self.fields.iter() {handler ((item.0, ((item.1).0, (item.1).1)));}
   }
 }
 
@@ -322,12 +322,12 @@ impl <T> PartialEq <T> for ValidSince <T> {
 }
 
 impl <T: Ord> PartialOrd <T> for ValidSince <T> {
-  fn partial_cmp (&self, other: & T)->Ordering {
-    match (self, other) {
+  fn partial_cmp (&self, other: & T)->Option <Ordering> {
+    Some (match (self, other) {
       ValidSince::TheBeginning => Ordering::Less,
       ValidSince::Before (something) => if something <= other {Ordering::Less} else {Ordering::Greater},
       ValidSince::After (something) => if something < other {Ordering::Less} else {Ordering::Greater},
-    }
+    })
   }
 }
 impl <T: Ord> PartialOrd for ValidSince <T> {
@@ -461,12 +461,12 @@ fn generator_for_event(id: TimeId) -> EventRng {
 }
 
 macro_rules! predictor_accessor_common_methods {
-  ($B: ty, $soonest_prediction: expr) => {
-    fn predict_at_time(&mut self, time: $B::Time, event: Event<$B>) {
-      if time < self.unsafe_now() {
+  ($B: ty, $self_hack: ident, $soonest_prediction: expr) => {
+    fn predict_at_time(&mut $self_hack, time: <$B as $crate::Basics>::Time, event: Event<$B>) {
+      if time <$self_hack.unsafe_now() {
         return;
       }
-      let soonest_prediction: &mut Option ($B::Time, Event <$B>) = $soonest_prediction;
+      let soonest_prediction: &mut Option (<$B as $crate::Basics>::Time, Event <$B>) = $soonest_prediction;
       if let Some((ref old_time, _)) = *soonest_prediction {
         if old_time <= &time {
           return;
@@ -493,12 +493,12 @@ impl <B: Basics> GenericMutator <B> {
 }
 macro_rules! mutator_common_accessor_methods {
   ($B: ty) => {
-    fn unsafe_now(& self)->$B::Time {self.generic.now.base}
+    fn unsafe_now(& self)->& <$B as $crate::Basics>::Time {self.generic.now.base}
   }
 }
 macro_rules! mutator_common_methods {
   () => {
-    fn gen_id(&mut self) -> RowId {data [self.gen::<u64>(), self.gen::<u64>()]}
+    fn gen_id(&mut self) -> RowId {RowId {data: [self.gen::<u64>(), self.gen::<u64>()]}}
     fn underlying_rng_unsafe (&mut self) ->&mut EventRng{self.generic.generator}
   }
 }
