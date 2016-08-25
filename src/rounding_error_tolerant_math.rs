@@ -696,7 +696,7 @@ fn find_root_search(terms: &[Range],
     input_2 = input;
     value_2 = value;
   }
-  if (max_only) {
+  if max_only {
     assert!((value_1.max < 0) != (value_2.max < 0));
     (if value_1.max < 0 {
       input_1
@@ -911,9 +911,9 @@ pub fn quadratic_move_origin_rounding_change_towards_0(terms: &mut [i64],
                                                        input_scale_shift: u32,
                                                        max_error: i64)
                                                        -> bool {
-  let distance_traveled = (((Range::exactly(terms[1]) * origin) >> input_scale_shift) +
+  let distance_traveled = ((Range::exactly(terms[1]) * origin) >> input_scale_shift) +
                            ((Range::exactly(terms[2]) * origin * origin) >>
-                            (input_scale_shift * 2)));
+                            (input_scale_shift * 2));
 
   if distance_traveled.max - distance_traveled.min > max_error * 2 {
     printlnerr!("overflow-ish in quadratic_move_origin_rounding_change_towards_0; error size \
@@ -927,7 +927,7 @@ pub fn quadratic_move_origin_rounding_change_towards_0(terms: &mut [i64],
                                                         max_error);
   terms[0] += distance_traveled.rounded_towards_0();
   terms[1] += ((Range::exactly(terms[2]) * origin) >> (input_scale_shift - 1)).rounded_towards_0();
-  let experimented = (evaluate(&confirm, origin - between_time) >> (input_scale_shift * 2));
+  let experimented = evaluate(&confirm, origin - between_time) >> (input_scale_shift * 2);
   // printlnerr!("experimented {}, actually {}", experimented, terms [0]);
   assert!(experimented.includes(&Range::exactly(terms[0])));
   true
