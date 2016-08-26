@@ -2,11 +2,10 @@ extern crate nalgebra;
 
 use memoized_flat_time_steward as s;
 use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
-     TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor};
+     TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor, StewardRc};
 use collision_detection::simple_grid as collisions;
 
 use time_functions::QuadraticTrajectory;
-use std::rc::Rc;
 use rand::Rng;
 use nalgebra::Vector2;
 use std::thread::sleep;
@@ -31,7 +30,7 @@ const HOW_MANY_CIRCLES: i32 = 20;
 const ARENA_SIZE_SHIFT: u32 = 20;
 const ARENA_SIZE: SpaceCoordinate = 1 << 20;
 const GRID_SIZE_SHIFT: u32 = ARENA_SIZE_SHIFT - 3;
-const GRID_SIZE: SpaceCoordinate = 1 << GRID_SIZE_SHIFT;
+//const GRID_SIZE: SpaceCoordinate = 1 << GRID_SIZE_SHIFT;
 const MAX_DISTANCE_TRAVELED_AT_ONCE: SpaceCoordinate = ARENA_SIZE << 4;
 const TIME_SHIFT: u32 = 20;
 const SECOND: Time = 1 << TIME_SHIFT;
@@ -52,7 +51,7 @@ impl ::collision_detection::Basics for CollisionBasics {
   }
 }
 impl collisions::Basics for CollisionBasics {
-  fn get_bounds<A: MomentaryAccessor<Basics>>(accessor: &A, who: RowId) -> collisions::Bounds {
+  fn get_bounds<A: MomentaryAccessor<Basics>>(accessor: &A, who: RowId,_:()) -> collisions::Bounds {
     let (circle, time) = accessor.data_and_last_change::<Circle>(who)
                                  .expect("no circle despite is being collision detected as a \
                                           circle");
@@ -66,7 +65,7 @@ impl collisions::Basics for CollisionBasics {
   }
   fn when_escapes<A: Accessor<Basics>>(accessor: &A,
                                        who: RowId,
-                                       bounds: collisions::Bounds)
+                                       bounds: collisions::Bounds,_:())
                                        -> Option<Time> {
     let (circle, time) = accessor.data_and_last_change::<Circle>(who)
                                  .expect("no circle despite is being collision detected as a \
@@ -145,7 +144,7 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
   if let Some(yes) = time {
     // printlnerr!(" planned for {}", &yes);
     accessor.predict_at_time(yes,
-                             Rc::new(move |mutator| {
+StewardRc::new(move |mutator| {
                                let new_relationship;
                                let mut new;
                                {
@@ -213,7 +212,7 @@ fn boundary_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as Ti
   if let Some(yes) = time {
     // printlnerr!(" planned for {}", &yes);
     accessor.predict_at_time(yes,
-                             Rc::new(move |mutator| {
+StewardRc::new(move |mutator| {
                                let new_relationship;
                                let mut new;
                                {
@@ -258,38 +257,38 @@ implement_vertex!(Vertex, direction, center, radius);
 pub fn testfunc() {
 
   let mut stew: Steward = ::TimeStewardStaticMethods::new_empty((),
-                                                                vec![s::Predictor {
+                                                                Box::new ([s::Predictor {
                                                  predictor_id: PredictorId(0x5375592f4da8682c),
                                                  column_id: Nearness::column_id(),
-                                                 function: Rc::new(|accessor, id| {
+                                                 function: StewardRc::new(|accessor, id| {
                                                    collision_predictor(accessor, id)
                                                  }),
                                                },
                                                s::Predictor {
                                                  predictor_id: PredictorId(0x87d8a4a095350d30),
                                                  column_id: Circle::column_id(),
-                                                 function: Rc::new(|accessor, id| {
+                                                 function: StewardRc::new(|accessor, id| {
 boundary_predictor(accessor, id)
                                                  }),
                                                },
                                                simple_grid_predictor! (s, CollisionBasics),
-                                             ]);
+                                             ]));
 
   stew.insert_fiat_event(-1,
                          DeterministicRandomId::new(&0),
-                         Rc::new(|mutator| {
+StewardRc::new(|mutator| {
                            for i in 0..HOW_MANY_CIRCLES {
                              let thingy = ARENA_SIZE / 20;
-                             let radius = mutator.rng().gen_range(ARENA_SIZE / 30, ARENA_SIZE / 15);
+                             let radius = mutator.gen_range(ARENA_SIZE / 30, ARENA_SIZE / 15);
                              let id = get_circle_id(i);
 
                              let position =
                                QuadraticTrajectory::new(TIME_SHIFT,
                                                         MAX_DISTANCE_TRAVELED_AT_ONCE,
-                                                        [mutator.rng().gen_range(0, ARENA_SIZE),
-                                                         mutator.rng().gen_range(0, ARENA_SIZE),
-                                                         mutator.rng().gen_range(-thingy, thingy),
-                                                         mutator.rng().gen_range(-thingy, thingy),
+                                                        [mutator.gen_range(0, ARENA_SIZE),
+                                                         mutator.gen_range(0, ARENA_SIZE),
+                                                         mutator.gen_range(-thingy, thingy),
+                                                         mutator.gen_range(-thingy, thingy),
                                                          0,
                                                          0]);
                              mutator.set::<Circle>(id,
@@ -299,7 +298,7 @@ boundary_predictor(accessor, id)
                                                    }));
                              collisions::insert::<CollisionBasics, _>(mutator, id, ());
                            }
-                         }));
+                         })).unwrap();
   let vertex_shader_source = r#"
 #version 140
 in vec2 direction;
@@ -432,9 +431,9 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
     option.as_mut().expect("all these snapshots should have been valid")
   }) {
     printlnerr!("snapshot for {}", snapshot.now());
-    for index in 0..HOW_MANY_CIRCLES {
+    //for index in 0..HOW_MANY_CIRCLES {
       // printlnerr!("{}", snapshot.get::<Circle> (get_circle_id (index)).expect("missing circle").position);
-    }
+    //}
   }
   // panic!("anyway")
 }

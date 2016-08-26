@@ -21,6 +21,8 @@
  * */
 
 #![feature (iter_arith_traits)]
+#![feature (plugin, custom_derive)]
+#![plugin (serde_macros)]
 
 extern crate rand;
 extern crate polynomial;
@@ -28,14 +30,19 @@ extern crate nalgebra;
 extern crate roots;
 #[macro_use]
 extern crate glium;
+extern crate serde;
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher, SipHasher};
-use std::any::Any;
+use std::any::{TypeId, Any};
 use std::sync::Arc;
 use std::cmp::Ordering;
 use std::fmt;
+use std::marker::PhantomData;
+use std::borrow::Borrow;
 use rand::{Rng, ChaChaRng, SeedableRng};
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde::ser::Error;
 
 mod insert_only;
 
@@ -43,7 +50,7 @@ mod insert_only;
 // Answer: they do, so maybe stop using Hash for this sometime
 // ( https://doc.rust-lang.org/std/hash/trait.Hasher.html
 // "represents the ability to hash an arbitrary stream of bytes").
-#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct DeterministicRandomId {
   data: [u64; 2],
 }
@@ -98,10 +105,10 @@ impl fmt::Display for DeterministicRandomId {
 pub type RowId = DeterministicRandomId;
 type TimeId = DeterministicRandomId;
 
-#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct ColumnId(u64);
 
-#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct PredictorId(u64);
 
 
@@ -143,7 +150,7 @@ macro_rules! use_default_equality__unsafe {
 }
 
 
-#[derive (Copy, Clone, PartialEq, Eq, Hash)]
+#[derive (Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FieldId {
   row_id: RowId,
   column_id: ColumnId,
@@ -167,8 +174,8 @@ pub trait Basics: Clone + 'static {
 pub type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 
 type IterationType = u32;
-#[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct GenericExtendedTime<Base: Ord> {
+#[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct GenericExtendedTime<Base: Ord> {
   base: Base,
   iteration: IterationType,
   id: TimeId,
@@ -195,17 +202,17 @@ fn unwrap_field<'a, C: Column> (field: & 'a FieldRc)->& 'a C::FieldType { field.
 
 pub trait Accessor<B: Basics> {
   fn generic_data_and_extended_last_change(&self, id: FieldId) -> Option<(&FieldRc, & ExtendedTime <B>)>;
-  fn data_and_extended_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
-    self.generic_data_and_extended_last_change (FieldId::new (id, C::column_id())).map (| pair | (unwrap_field (pair.0), pair.1))
+  fn data_and_extended_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, & ExtendedTime <B>)> {
+    self.generic_data_and_extended_last_change(FieldId::new (id, C::column_id())).map (| pair | (unwrap_field::<C> (pair.0), pair.1))
   }
   fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
-    self.generic_data_and_extended_last_change::<C> (id).map (| pair | (unwrap_field (pair.0), pair.1.base))
+    self.generic_data_and_extended_last_change(FieldId::new (id, C::column_id())).map (| pair | (unwrap_field::<C> (pair.0), & pair.1.base))
   }
   fn get<C: Column>(&self, id: RowId) -> Option<&C::FieldType> {
-    self.generic_data_and_extended_last_change::<C>(id).map(|p| unwrap_field (p.0))
+    self.generic_data_and_extended_last_change(FieldId::new (id, C::column_id())).map(|p| unwrap_field::<C> (p.0))
   }
   fn last_change<C: Column>(&self, id: RowId) -> Option<&B::Time> {
-    self.generic_data_and_extended_last_change::<C>(id).map(|p| p.1.base)
+    self.generic_data_and_extended_last_change(FieldId::new (id, C::column_id())).map(|p| & p.1.base)
   }
   fn constants(&self) -> &B::Constants;
 
@@ -233,6 +240,7 @@ pub trait MomentaryAccessor<B: Basics>: Accessor<B> {
 }
 
 pub trait Mutator<B: Basics>: MomentaryAccessor<B> + Rng {
+  fn extended_now(&self) -> & ExtendedTime <B>;
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>);
   fn gen_id(&mut self) -> RowId;
   fn underlying_rng_unsafe (&mut self) ->&mut EventRng;
@@ -250,7 +258,7 @@ pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {
   //with slightly better polymorphism we could do this more idiomatically
   //type Iter<'a>: Iterator<(FieldId, (&'a FieldRc, &'a ExtendedTime<B>))>;
   //fn iter (&self)->Iter;
-  fn iterate <'a, F> (& 'a self, handler: F) where F: Fn (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
+  fn iterate <'a, F> (& 'a self, handler: &mut F) where F: FnMut ((FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>)));
 }
 
 pub struct FiatSnapshot <B: Basics> {
@@ -259,31 +267,125 @@ pub struct FiatSnapshot <B: Basics> {
   fields: HashMap<FieldId, (FieldRc, ExtendedTime <B>)>,
 }
 impl<B: Basics> FiatSnapshot <B> {
-  fn from_iter<T>(constants: StewardRc <B::Constants>, now: B::Time, iter: T) -> Self where T: IntoIterator<Item= (FieldId, (FieldRc, ExtendedTime <B>))> {
+  fn from_iter<T>(constants: StewardRc <B::Constants>, now: B::Time, thing: T) -> Self where T: IntoIterator<Item= (FieldId, (FieldRc, ExtendedTime <B>))> {
     FiatSnapshot {
       constants: constants,
       now: now,
-      fields: iter.collect(),
+      fields: thing.into_iter().collect(),
     }
   }
 }
 impl<B: Basics> Accessor <B> for FiatSnapshot <B> {
-  fn generic_data_and_extended_last_change(&self, id: FieldId) -> Option<(& FieldRc, & ExtendedTime <B>)> {self.fields.get (id)}
+  fn generic_data_and_extended_last_change(&self, id: FieldId) -> Option<(& FieldRc, & ExtendedTime <B>)> {self.fields.get (& id).map (| pair | (& pair.0, & pair.1))}
   fn constants(&self) -> &B::Constants {self.constants.borrow()}
   fn unsafe_now(&self) -> &B::Time {& self.now}
 }
 impl<B: Basics> MomentaryAccessor <B> for FiatSnapshot <B> {}
 impl<B: Basics> Snapshot <B> for FiatSnapshot <B> {
-  fn iterate <'a, F> (& 'a self, handler: F) where F: Fn (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>)) {
-    for item in self.fields.iter() {handler ((item.0, ((item.1).0, (item.1).1)));}
+  fn iterate <'a, F> (& 'a self, handler: &mut F) where F: FnMut ((FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>))) {
+    for item in self.fields.iter() {handler ((item.0.clone(), (& (item.1).0, & (item.1).1)));}
   }
 }
 
 
+pub struct SerdeTables <S: Serializer> {
+  serialize: HashMap<ColumnId, fn (& FieldRc, &mut S)->Result <(), S::Error>>,
+}
+//impl <S: Serializer, Hack: Serializer> Borrow <SerdeTables <S>> for SerdeTables <Hack> {
+struct SerdeField<'a, 'b, Hack: Serializer + 'b>(ColumnId, & 'a FieldRc, & 'b SerdeTables <Hack>);
+struct SerdeSnapshot<'a, 'b, B: Basics, Shot: Snapshot <B> + 'a, Hack: Serializer + 'b>(& 'a Shot, & 'b SerdeTables <Hack>, PhantomData <B>);
+impl <'a, 'b, Hack: Serializer> Serialize for SerdeField <'a, 'b, Hack> {
+  fn serialize <'c, S: Serializer+'b> (&'c self, serializer: &mut S)->Result <(), S::Error> {
+    //assert!(TypeId::of::<S>() == TypeId::of::<Hack>(), "hack: this can only actually serialize for the serializer it has tables for");
+    let tables = unsafe {std::mem::transmute:: <& 'b SerdeTables <Hack>, & 'b SerdeTables <S>> (self.2)};
+    match tables.serialize.get(& self.0) {
+      None => Err (S::Error::custom (format! ("Attempt to serialize field from uninitialized column {:?}; did you forget to initialize all the columns from your own code and/or the libraries you're using?", self.0))),
+      Some (function) => function (self.1, serializer),
+    }
+  }
+}
+
+
+impl <'a, 'b, B: Basics, Shot: Snapshot <B>, Hack: Serializer> Serialize for SerdeSnapshot <'a, 'b, B, Shot, Hack> where B::Time: Serialize {
+  fn serialize <S: Serializer> (&self, serializer: &mut S)->Result <(), S::Error> {
+    let mut state = try!(serializer.serialize_map(None));
+    (self.0).iterate (&mut | (id, (data, changed)) | {
+      //once we can actually use an iterator, these should be try!()
+      serializer.serialize_map_key (&mut state, id).unwrap();
+      serializer.serialize_map_value (&mut state, (& SerdeField (id.column_id, & data, self.1), changed)).unwrap();
+    });
+    serializer.serialize_map_end (state)
+  }
+}
+
+pub fn serialize_snapshot <B: Basics, Shot: Snapshot <B>, S: Serializer> (snapshot: &Shot, tables: &SerdeTables <S>, serializer: &mut S)->Result <(), S::Error> where B::Time: Serialize {
+  SerdeSnapshot (snapshot, tables, PhantomData).serialize (serializer)
+}
+
+
+/*
+struct SerdeMapVisitor <B> {
+  marker: PhantomData<FiatSnapshot <B >>
+}
+
+impl<B> SerdeMapVisitor<B> {
+  fn new() -> Self {
+    MyMapVisitor {
+      marker: PhantomData
+    }
+  }
+}
+impl<B: Basics> de::Visitor for SerdeMapVisitor<B>
+{
+    type Value = FiatSnapshot <B>;
+
+    // Deserialize MyMap from an abstract "map" provided by the
+    // Deserializer. The MapVisitor input is a callback provided by
+    // the Deserializer to let us see each entry in the map.
+    fn visit_map<M>(&mut self, mut visitor: M) -> Result<Self::Value, M::Error>
+        where M: de::MapVisitor
+    {
+        let mut values = MyMap::with_capacity(visitor.size_hint().0); 
+        while let Some((key, value)) = try!(visitor.visit()) {
+            values.insert(key, value);
+        }
+
+        try!(visitor.end());
+        Ok(values)
+    }
+
+    // As a convenience, provide a way to deserialize MyMap from
+    // the abstract "unit" type. This corresponds to `null` in JSON.
+    // If your JSON contains `null` for a field that is supposed to
+    // be a MyMap, we interpret that as an empty map.
+    fn visit_unit<E>(&mut self) -> Result<Self::Value, E>
+        where E: de::Error
+    {
+        Ok(MyMap::new())
+    }
+}
+
+// This is the trait that informs Serde how to deserialize MyMap.
+impl<K, V> Deserialize for MyMap<K, V>
+    where K: Deserialize,
+          V: Deserialize
+{
+    fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error>
+        where D: Deserializer
+    {
+        // Instantiate our Visitor and ask the Deserializer to drive
+        // it over the input data, resulting in an instance of MyMap.
+        deserializer.deserialize_map(MyMapVisitor::new())
+    }
+}
+fn deserialize_snapshot <D: Deserializer, B: Basics> (tables: SerdeTables, deserializer: D)->Result <FiatSnapshot <B>, D::Error> {
+  
+}*/
 
 
 
-#[derive (Copy, Clone, PartialEq, Eq)]
+
+#[derive (Copy, Clone, PartialEq, Eq, Debug)]
 pub enum FiatEventOperationError {
   InvalidInput,
   InvalidTime,
@@ -305,13 +407,13 @@ pub enum ValidSince<BaseTime> {
 impl <T: Ord> Ord for ValidSince <T> {
   fn cmp (&self, other: & Self)->Ordering {
     match (self, other) {
-      (ValidSince::TheBeginning, ValidSince::TheBeginning) => Ordering::Equal,
-      (ValidSince::TheBeginning, _) => Ordering::Less,
-      (_, ValidSince::TheBeginning) => Ordering::Greater,
-      (ValidSince::Before (something), ValidSince::Before (anything)) => something.cmp (anything),
-      (ValidSince::After (something), ValidSince::After (anything)) => something.cmp (anything),
-      (ValidSince::Before (something), ValidSince::After (anything)) => if something <= anything {Ordering::Less} else {Ordering::Greater},
-      (ValidSince::After (something), ValidSince::Before (anything)) => if something < anything {Ordering::Less} else {Ordering::Greater},
+      (& ValidSince::TheBeginning, &ValidSince::TheBeginning) => Ordering::Equal,
+      (&ValidSince::TheBeginning, _) => Ordering::Less,
+      (_, &ValidSince::TheBeginning) => Ordering::Greater,
+      (&ValidSince::Before (ref something), &ValidSince::Before (ref anything)) => something.cmp (anything),
+      (&ValidSince::After (ref something), &ValidSince::After (ref anything)) => something.cmp (anything),
+      (&ValidSince::Before (ref something), &ValidSince::After (ref anything)) => if something <= anything {Ordering::Less} else {Ordering::Greater},
+      (&ValidSince::After (ref something), &ValidSince::Before (ref anything)) => if something < anything {Ordering::Less} else {Ordering::Greater},
     }
   }
 }
@@ -323,16 +425,16 @@ impl <T> PartialEq <T> for ValidSince <T> {
 
 impl <T: Ord> PartialOrd <T> for ValidSince <T> {
   fn partial_cmp (&self, other: & T)->Option <Ordering> {
-    Some (match (self, other) {
-      ValidSince::TheBeginning => Ordering::Less,
-      ValidSince::Before (something) => if something <= other {Ordering::Less} else {Ordering::Greater},
-      ValidSince::After (something) => if something < other {Ordering::Less} else {Ordering::Greater},
+    Some (match self {
+& ValidSince::TheBeginning => Ordering::Less,
+& ValidSince::Before (ref something) => if something <= other {Ordering::Less} else {Ordering::Greater},
+& ValidSince::After (ref something) => if something < other {Ordering::Less} else {Ordering::Greater},
     })
   }
 }
 impl <T: Ord> PartialOrd for ValidSince <T> {
   fn partial_cmp (&self, other: & Self)->Option <Ordering> {
-    Some (self.cmp (other));
+    Some (self.cmp (other))
   }
 }
 //impl <T: Ord> PartialOrd <ValidSince <T>> for T {
@@ -463,10 +565,10 @@ fn generator_for_event(id: TimeId) -> EventRng {
 macro_rules! predictor_accessor_common_methods {
   ($B: ty, $self_hack: ident, $soonest_prediction: expr) => {
     fn predict_at_time(&mut $self_hack, time: <$B as $crate::Basics>::Time, event: Event<$B>) {
-      if time <$self_hack.unsafe_now() {
+      if time < *$self_hack.unsafe_now() {
         return;
       }
-      let soonest_prediction: &mut Option (<$B as $crate::Basics>::Time, Event <$B>) = $soonest_prediction;
+      let soonest_prediction: &mut Option <(<$B as $crate::Basics>::Time, Event <$B>)> = $soonest_prediction;
       if let Some((ref old_time, _)) = *soonest_prediction {
         if old_time <= &time {
           return;
@@ -493,13 +595,14 @@ impl <B: Basics> GenericMutator <B> {
 }
 macro_rules! mutator_common_accessor_methods {
   ($B: ty) => {
-    fn unsafe_now(& self)->& <$B as $crate::Basics>::Time {self.generic.now.base}
+    fn unsafe_now(& self)->& <$B as $crate::Basics>::Time {& self.generic.now.base}
   }
 }
 macro_rules! mutator_common_methods {
-  () => {
+  ($B: ty) => {
+    fn extended_now(& self)->& ExtendedTime <$B> {& self.generic.now}
     fn gen_id(&mut self) -> RowId {RowId {data: [self.gen::<u64>(), self.gen::<u64>()]}}
-    fn underlying_rng_unsafe (&mut self) ->&mut EventRng{self.generic.generator}
+    fn underlying_rng_unsafe (&mut self) ->&mut EventRng{&mut self.generic.generator}
   }
 }
 macro_rules! mutator_rng_methods {

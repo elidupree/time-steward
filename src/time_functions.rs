@@ -1,7 +1,5 @@
-use polynomial::Polynomial;
 use nalgebra::{Vector2, Dot};
 use std::cmp::max;
-use roots::find_roots_quartic;
 use ::rounding_error_tolerant_math::*;
 
 

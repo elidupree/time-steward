@@ -7,13 +7,10 @@
 
 use super::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, Column, ExtendedTime,
             EventRng, Basics, TimeSteward, FiatEventOperationError, ValidSince,
-            TimeStewardLifetimedMethods, TimeStewardStaticMethods, StewardRc, FieldRc,GenericMutator};
+            TimeStewardLifetimedMethods, TimeStewardStaticMethods, StewardRc, FieldRc,GenericMutator, Accessor};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
-use std::any::Any;
-use std::borrow::Borrow;
-use std::rc::Rc;
 use std::cell::RefCell;
 use rand::Rng;
 use std::cmp::max;
@@ -29,6 +26,7 @@ struct Field<B: Basics> {
 #[derive (Clone)]
 struct StewardState<B: Basics> {
   last_event: Option<ExtendedTime<B>>,
+  invalid_before: ValidSince <B::Time>,
   field_states: HashMap<FieldId, Field<B>>,
   fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
 }
@@ -125,16 +123,16 @@ impl<'a, B: Basics> super::PredictorAccessor<B, EventFn<B>> for PredictorAccesso
   }*/
 }
 impl<B: Basics> super::Snapshot<B> for Snapshot<B> {
-  fn iterate <'a, F> (& 'a self, handler: F) where F: Fn (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>)) {
-    for item in self.states.field_states.iter() {handler ((item.0, ((item.1).data, (item.1).last_change)));}
+  fn iterate <'a, F> (& 'a self, handler: &mut F) where F: FnMut ((FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>))) {
+    for item in self.state.field_states.iter() {handler ((item.0.clone(), (& (item.1).data, & (item.1).last_change)));}
   }
 }
 
 impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
-    self.steward.state.set_opt::<C>(id, data, &self.now);
+    self.steward.state.set_opt::<C>(id, data, &self.generic.now);
   }
-  mutator_common_methods!();
+  mutator_common_methods!(B);
 }
 impl<'a, B: Basics> Rng for Mutator<'a, B> {
   mutator_rng_methods!();
@@ -162,7 +160,7 @@ impl<T> Filter<T> for Option<T> {
 impl<B: Basics> StewardState<B> {
   fn get(&self, id: FieldId) -> Option<(& FieldRc, &ExtendedTime<B>)> {
     self.field_states
-        .get (id)
+        .get (& id)
         .map(|something| {
           (& something.data,
            &something.last_change)
@@ -175,7 +173,7 @@ impl<B: Basics> StewardState<B> {
                   column_id: C::column_id(),
                 },
                 Field {
-                  data: FieldRc::new(value),
+                  data: StewardRc::new(value),
                   last_change: time.clone(),
                 });
   }
@@ -241,9 +239,8 @@ impl<B: Basics> StewardImpl<B> {
 
   fn execute_event(&mut self, event_time: ExtendedTime<B>, event: Event<B>) {
     event(&mut Mutator {
-      now: event_time.clone(),
+      generic: GenericMutator::new (event_time.clone()),
       steward: &mut *self,
-      generator: super::generator_for_event(event_time.id),
     });
     // if it was a fiat event, clean it up:
     self.state.fiat_events.remove(&event_time);
@@ -270,7 +267,7 @@ impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
   type Snapshot = Snapshot<B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
-    max (self.invalid_before, match self.state.last_event {
+    max (self.state.invalid_before.clone(), match self.state.last_event {
       None => ValidSince::TheBeginning,
       Some(ref time) => ValidSince::After(time.base.clone()),
     })
@@ -282,14 +279,19 @@ impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
     StewardImpl {
       state: StewardState {
         last_event: None,
+        invalid_before: ValidSince::TheBeginning,
         field_states: HashMap::new(),
         fiat_events: BTreeMap::new(),
       },
-      settings: Rc::new(StewardSettings {
+      settings: StewardRc::new(StewardSettings {
         predictors: predictors,
         constants: constants,
       }),
     }
+  }
+  
+  fn from_snapshot <S: super::Snapshot <B>> (snapshot: S, predictors: Box <[super::Predictor<Self::PredictorFn>]>) -> Self {
+    unimplemented!()
   }
 
   fn insert_fiat_event(&mut self,
@@ -297,7 +299,7 @@ impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
                        id: DeterministicRandomId,
                        event: Event<B>)
                        ->Result <(), FiatEventOperationError> {
-    if time <self.valid_since() {
+    if self.valid_since() >time {
       return Err (FiatEventOperationError::InvalidTime);
     }
     match self.state.fiat_events.insert(super::extended_time_of_fiat_event(time, id), event) {
@@ -310,7 +312,7 @@ impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
                       time: &B::Time,
                       id: DeterministicRandomId)
                       ->Result <(), FiatEventOperationError> {
-    if time <self.valid_since() {
+    if self.valid_since() >*time {
       return Err (FiatEventOperationError::InvalidTime);
     }
     match self.state.fiat_events.remove(&super::extended_time_of_fiat_event(time.clone(), id)) {

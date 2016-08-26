@@ -311,7 +311,7 @@ impl<'a> Mul for &'a Range {
         smaller.increase_exponent_by(((overflow + 1 - difference) / 2) as u32);
       }
     }
-    let mut extremes = [result.min * other.min,
+    let extremes = [result.min * other.min,
                         result.max * other.max,
                         result.min * other.max,
                         result.max * other.min];
@@ -329,7 +329,6 @@ impl<'a> Mul<&'a i64> for &'a Range {
   type Output = Range;
   fn mul(self, other: &'a i64) -> Range {
     let mut result = self.clone();
-    let mut other = other.clone();
     let result_high_bit = 63 -
                           min(result.min.abs().leading_zeros(),
                               result.max.abs().leading_zeros()) as i32;
@@ -342,9 +341,9 @@ impl<'a> Mul<&'a i64> for &'a Range {
       }
       result.increase_exponent_by(overflow as u32);
     }
-    if other >= 0 {
-      result.min *= other;
-      result.max *= other;
+    if *other >= 0 {
+      result.min *= *other;
+      result.max *= *other;
     } else {
       result = Range {
         min: result.max * other,
@@ -477,7 +476,7 @@ impl Range {
       result.max = max(result.min * result.min, result.max * result.max);
       result.min = 0;
     } else {
-      let mut extrema = [result.min * result.min, result.max * result.max];
+      let extrema = [result.min * result.min, result.max * result.max];
       if extrema[0] < extrema[1] {
         result.max = extrema[1];
         result.min = extrema[0];
@@ -1149,7 +1148,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
       // printlnerr!("root check: {}: {} and then {} and then {}", root, evaluate (& proxy, root.max - 1),  evaluate (& proxy, root.max), evaluate (& proxy, root.max + 1));
     }
   }
-  for (which, root) in result.iter_mut().enumerate() {
+  for root in result.iter_mut() {
     root.min = root.min.saturating_add(base);
     root.max = root.max.saturating_add(base);
   }

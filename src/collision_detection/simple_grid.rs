@@ -12,9 +12,9 @@ pub struct Bounds {
 
 pub trait Basics: super::Basics {
   fn get_bounds<A: MomentaryAccessor<<Self as super::Basics>::StewardBasics>>(accessor: &A,
-                                                                              who: RowId)
+                                                                              who: RowId, detector: <Self as super::Basics>::DetectorId)
                                                                               -> Bounds;
-  fn when_escapes <A: Accessor <<Self as super::Basics>::StewardBasics>>(accessor: & A, who: RowId, bounds: Bounds)->Option <<<Self as super::Basics>::StewardBasics as ::Basics>::Time>;
+  fn when_escapes <A: Accessor <<Self as super::Basics>::StewardBasics>>(accessor: & A, who: RowId, bounds: Bounds, detector: <Self as super::Basics>::DetectorId)->Option <<<Self as super::Basics>::StewardBasics as ::Basics>::Time>;
 }
 
 
@@ -53,7 +53,7 @@ fn get_bounds<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
                                                        who: RowId,
                                                        me: B::DetectorId)
                                                        -> Bounds {
-  B::get_bounds(mutator, who)
+  B::get_bounds(mutator, who, me)
 }
 pub fn insert<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
                                                        who: RowId,
@@ -117,14 +117,14 @@ macro_rules! simple_grid_predictor {
   $module::Predictor::<<$basics as $crate::collision_detection::Basics>::StewardBasics> {
     predictor_id: PredictorId (<$basics as $crate::collision_detection::Basics>::nearness_column_id().0 ^ 0x3686689daa651bf3),
     column_id: $crate::collision_detection::simple_grid::Member::<$basics>::column_id(),
-    function: Rc::new (| accessor, id | {
+    function: StewardRc::new (| accessor, id | {
       let member;
       {
         let member_reference = accessor.get ::<$crate::collision_detection::simple_grid::Member <$basics>> (id).expect ("row is missing the field the predictor triggered on");
         member = (*member_reference).clone();
       }
-      if let Some (time) = <$basics as $crate::collision_detection::simple_grid::Basics>::when_escapes (accessor, member.row, member.bounds) {
-        accessor.predict_at_time (time, Rc::new (move | mutator | {
+      if let Some (time) = <$basics as $crate::collision_detection::simple_grid::Basics>::when_escapes (accessor, member.row, member.bounds, member.detector) {
+        accessor.predict_at_time (time, StewardRc::new (move | mutator | {
           //TODO: optimize erase-then-insert
           $crate::collision_detection::simple_grid::erase::<$basics,_> (mutator, member.row, member.detector, id, member.bounds);
           $crate::collision_detection::simple_grid::insert::<$basics,_> (mutator, member.row, member.detector);
