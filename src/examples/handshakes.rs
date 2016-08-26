@@ -1,7 +1,6 @@
 use memoized_flat_time_steward as s;
-use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
+use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator, StewardRc,
      TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor};
-use std::rc::Rc;
 use rand::Rng;
 
 use std::io::Write;
@@ -47,20 +46,20 @@ pub fn testfunc() {
 
   let mut stew: Steward =
     ::TimeStewardStaticMethods::new_empty((),
-                                          vec![s::Predictor {
+Box::new ([s::Predictor {
                                                  predictor_id: PredictorId(0x0e7f27c7643f8167),
                                                  column_id: Philosopher::column_id(),
-                                                 function: Rc::new(|pa, whodunnit| {
+                                                 function: StewardRc::new(|pa, whodunnit| {
                                                    printlnerr!("Planning {}", whodunnit);
                                                    let me = pa.get::<Philosopher>(whodunnit)
                                                               .unwrap()
                                                               .clone();
                                                    pa.predict_at_time(me.time_when_next_initiates_handshake,
-                         Rc::new(move |m| {
+StewardRc::new(move |m| {
         let now = *m.now();
-        let friend_id = get_philosopher_id(m.rng().gen_range(0, HOW_MANY_PHILOSOPHERS));
-        let awaken_time_1 = now + m.rng().gen_range(-1, 4);
-        let awaken_time_2 = now + m.rng().gen_range(-1, 7);
+        let friend_id = get_philosopher_id(m.gen_range(0, HOW_MANY_PHILOSOPHERS));
+        let awaken_time_1 = now + m.gen_range(-1, 4);
+        let awaken_time_2 = now + m.gen_range(-1, 7);
         printlnerr!("SHAKE!!! @{}. {}={}; {}={}", now, whodunnit, awaken_time_2, friend_id, awaken_time_1);
         // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
         // IN THE SECOND TIME APPARENTLY
@@ -74,11 +73,11 @@ pub fn testfunc() {
                              }));
       }));
                                                  }),
-                                               }]);
+                                               }]));
 
   stew.insert_fiat_event(0,
                          DeterministicRandomId::new(&0x32e1570766e768a7u64),
-                         Rc::new(|m| {
+StewardRc::new(|m| {
                            printlnerr!("FIAT!!!!!");
                            for i in 0..HOW_MANY_PHILOSOPHERS {
                              m.set::<Philosopher>(get_philosopher_id(i),
@@ -86,7 +85,7 @@ pub fn testfunc() {
                              time_when_next_initiates_handshake: (i + 1) as Time,
                            }));
                            }
-                         }));
+                         })).unwrap();
 
   let mut snapshots = Vec::new();
   for increment in 1..21 {
