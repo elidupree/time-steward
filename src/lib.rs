@@ -288,17 +288,14 @@ impl<B: Basics> Snapshot <B> for FiatSnapshot <B> {
 }
 
 
-pub struct SerdeTables <S: Serializer> {
-  serialize: HashMap<ColumnId, fn (& FieldRc, &mut S)->Result <(), S::Error>>,
-}
-//impl <S: Serializer, Hack: Serializer> Borrow <SerdeTables <S>> for SerdeTables <Hack> {
-struct SerdeField<'a, 'b, Hack: Serializer + 'b>(ColumnId, & 'a FieldRc, & 'b SerdeTables <Hack>);
-struct SerdeSnapshot<'a, 'b, B: Basics, Shot: Snapshot <B> + 'a, Hack: Serializer + 'b>(& 'a Shot, & 'b SerdeTables <Hack>, PhantomData <B>);
-impl <'a, 'b, Hack: Serializer> Serialize for SerdeField <'a, 'b, Hack> {
-  fn serialize <'c, S: Serializer+'b> (&'c self, serializer: &mut S)->Result <(), S::Error> {
+pub struct SerializationTable <S: Serializer> (HashMap<ColumnId, fn (& FieldRc, &mut S)->Result <(), S::Error>>);
+struct SerializationField <'a, 'b, Hack: Serializer + 'b>(ColumnId, & 'a FieldRc, & 'b SerializationTable <Hack>);
+struct SerializationSnapshot<'a, 'b, B: Basics, Shot: Snapshot <B> + 'a, Hack: Serializer + 'b>(& 'a Shot, & 'b SerializationTable <Hack>, PhantomData <B>);
+impl <'a, 'b, Hack: Serializer> Serialize for SerializationField <'a, 'b, Hack> {
+  fn serialize <'c, S: Serializer+'b = Hack> (&'c self, serializer: &mut S)->Result <(), S::Error> {
     //assert!(TypeId::of::<S>() == TypeId::of::<Hack>(), "hack: this can only actually serialize for the serializer it has tables for");
-    let tables = unsafe {std::mem::transmute:: <& 'b SerdeTables <Hack>, & 'b SerdeTables <S>> (self.2)};
-    match tables.serialize.get(& self.0) {
+    let table = unsafe {std::mem::transmute:: <& 'b SerializationTable <Hack>, & 'b SerializationTable <S>> (self.2)};
+    match (table.0).get(& self.0) {
       None => Err (S::Error::custom (format! ("Attempt to serialize field from uninitialized column {:?}; did you forget to initialize all the columns from your own code and/or the libraries you're using?", self.0))),
       Some (function) => function (self.1, serializer),
     }
@@ -306,79 +303,67 @@ impl <'a, 'b, Hack: Serializer> Serialize for SerdeField <'a, 'b, Hack> {
 }
 
 
-impl <'a, 'b, B: Basics, Shot: Snapshot <B>, Hack: Serializer> Serialize for SerdeSnapshot <'a, 'b, B, Shot, Hack> where B::Time: Serialize {
+impl <'a, 'b, B: Basics, Shot: Snapshot <B>, Hack: Serializer> Serialize for SerializationSnapshot <'a, 'b, B, Shot, Hack> where B::Time: Serialize {
   fn serialize <S: Serializer> (&self, serializer: &mut S)->Result <(), S::Error> {
     let mut state = try!(serializer.serialize_map(None));
     (self.0).iterate (&mut | (id, (data, changed)) | {
       //once we can actually use an iterator, these should be try!()
       serializer.serialize_map_key (&mut state, id).unwrap();
-      serializer.serialize_map_value (&mut state, (& SerdeField (id.column_id, & data, self.1), changed)).unwrap();
+      serializer.serialize_map_value (&mut state, (& SerializationField (id.column_id, & data, self.1), changed)).unwrap();
     });
     serializer.serialize_map_end (state)
   }
 }
 
-pub fn serialize_snapshot <B: Basics, Shot: Snapshot <B>, S: Serializer> (snapshot: &Shot, tables: &SerdeTables <S>, serializer: &mut S)->Result <(), S::Error> where B::Time: Serialize {
-  SerdeSnapshot (snapshot, tables, PhantomData).serialize (serializer)
+pub fn serialize_snapshot <B: Basics, Shot: Snapshot <B>, S: Serializer> (snapshot: &Shot, table: & SerializationTable <S>, serializer: &mut S)->Result <(), S::Error> where B::Time: Serialize {
+SerializationSnapshot (snapshot, table, PhantomData).serialize (serializer)
 }
+
 
 
 /*
-struct SerdeMapVisitor <B> {
+pub struct DeserializationTable <M: de::MapVisitor> (HashMap<ColumnId, fn (&mut M)->Result <(FieldRc, ExtendedTime <B>), M::Error>>);
+struct SerdeMapVisitor <'a, B: Basics, D: Deserializer> {
+  table: & 'a DeserializationTable <D>,
   marker: PhantomData<FiatSnapshot <B >>
 }
 
-impl<B> SerdeMapVisitor<B> {
-  fn new() -> Self {
-    MyMapVisitor {
+impl<'a, B: Basics, D: Deserializer>  SerdeMapVisitor<'a, B, D> {
+  fn new(table: & 'a DeserializationTable <B>) -> Self {
+SerdeMapVisitor {table: table,
       marker: PhantomData
     }
   }
 }
-impl<B: Basics> de::Visitor for SerdeMapVisitor<B>
+impl<'a, B: Basics, D: Deserializer>  de::Visitor for SerdeMapVisitor<'a, B, D>
 {
     type Value = FiatSnapshot <B>;
-
-    // Deserialize MyMap from an abstract "map" provided by the
-    // Deserializer. The MapVisitor input is a callback provided by
-    // the Deserializer to let us see each entry in the map.
     fn visit_map<M>(&mut self, mut visitor: M) -> Result<Self::Value, M::Error>
         where M: de::MapVisitor
     {
-        let mut values = MyMap::with_capacity(visitor.size_hint().0); 
-        while let Some((key, value)) = try!(visitor.visit()) {
-            values.insert(key, value);
+        let mut fields = HashMap::with_capacity(visitor.size_hint().0); 
+        while let Some (key) = try!(visitor.visit_key()) {
+    let table = unsafe {std::mem::transmute:: <& 'a DeserializationTable <Hack>, & 'a DeserializationTable <M>> (self. table)};
+    fields.insert (key, match (table.0).get(& self.0) {
+      None => Err (M::Error::custom (format! ("Attempt to deserialize field from uninitialized column {:?}; Maybe you're trying to load a snapshot from a different version of your program? Or did you forget to initialize all the columns from your own code and/or the libraries you're using?", self.0))),
+      Some (function) => function (visitor),
+    });
         }
 
         try!(visitor.end());
         Ok(values)
-    }
+    }}
+//impl<B: Basics, Hack: Deserializer>  for DeserializationField <B, Hack>
+//{
+ //   fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error>
+ //       where D: Deserializer
+ //   {
+ //       deserializer.deserialize_map(SerdeMapVisitor::new())
+ //   }
+//}
+fn deserialize_snapshot <D: Deserializer, B: Basics> (table: DeserializationTable <D>, deserializer: D)->Result <FiatSnapshot <B>, D::Error> {
 
-    // As a convenience, provide a way to deserialize MyMap from
-    // the abstract "unit" type. This corresponds to `null` in JSON.
-    // If your JSON contains `null` for a field that is supposed to
-    // be a MyMap, we interpret that as an empty map.
-    fn visit_unit<E>(&mut self) -> Result<Self::Value, E>
-        where E: de::Error
-    {
-        Ok(MyMap::new())
-    }
-}
-
-// This is the trait that informs Serde how to deserialize MyMap.
-impl<K, V> Deserialize for MyMap<K, V>
-    where K: Deserialize,
-          V: Deserialize
-{
-    fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error>
-        where D: Deserializer
-    {
-        // Instantiate our Visitor and ask the Deserializer to drive
-        // it over the input data, resulting in an instance of MyMap.
-        deserializer.deserialize_map(MyMapVisitor::new())
-    }
-}
-fn deserialize_snapshot <D: Deserializer, B: Basics> (tables: SerdeTables, deserializer: D)->Result <FiatSnapshot <B>, D::Error> {
+        deserializer.deserialize_map(SerdeMapVisitor::new(table))
   
 }*/
 
