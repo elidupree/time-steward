@@ -180,8 +180,8 @@ pub struct GenericExtendedTime<Base: Ord> {
   id: TimeId,
 }
 
-pub type StewardRc<T> = Arc <T>;
-pub type FieldRc = StewardRc <Any>;
+pub type StewardRc<T> = Arc<T>;
+pub type FieldRc = StewardRc<Any>;
 
 // Note: in the future, we expect we might use a custom hash table type that knows it can rely on DeterministicRandomId to already be random, so we don't need to hash it again. This also applies to FieldId, although there may be some complications in that case.
 // (for now, we need to be able to hash full siphash ids to create other siphash ids.)
@@ -197,21 +197,30 @@ pub type FieldRc = StewardRc <Any>;
 //  }
 // }
 
-fn unwrap_field<'a, C: Column> (field: & 'a FieldRc)->& 'a C::FieldType { field.downcast_ref::<C::FieldType>().expect ("a field had the wrong type for its column").borrow()}
+fn unwrap_field<'a, C: Column>(field: &'a FieldRc) -> &'a C::FieldType {
+  field.downcast_ref::<C::FieldType>().expect("a field had the wrong type for its column").borrow()
+}
 
 pub trait Accessor<B: Basics> {
-  fn generic_data_and_extended_last_change(&self, id: FieldId) -> Option<(&FieldRc, & ExtendedTime <B>)>;
-  fn data_and_extended_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, & ExtendedTime <B>)> {
-    self.generic_data_and_extended_last_change(FieldId::new (id, C::column_id())).map (| pair | (unwrap_field::<C> (pair.0), pair.1))
+  fn generic_data_and_extended_last_change(&self,
+                                           id: FieldId)
+                                           -> Option<(&FieldRc, &ExtendedTime<B>)>;
+  fn data_and_extended_last_change<C: Column>(&self,
+                                              id: RowId)
+                                              -> Option<(&C::FieldType, &ExtendedTime<B>)> {
+    self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id()))
+        .map(|pair| (unwrap_field::<C>(pair.0), pair.1))
   }
   fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
-    self.generic_data_and_extended_last_change(FieldId::new (id, C::column_id())).map (| pair | (unwrap_field::<C> (pair.0), & pair.1.base))
+    self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id()))
+        .map(|pair| (unwrap_field::<C>(pair.0), &pair.1.base))
   }
   fn get<C: Column>(&self, id: RowId) -> Option<&C::FieldType> {
-    self.generic_data_and_extended_last_change(FieldId::new (id, C::column_id())).map(|p| unwrap_field::<C> (p.0))
+    self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id()))
+        .map(|p| unwrap_field::<C>(p.0))
   }
   fn last_change<C: Column>(&self, id: RowId) -> Option<&B::Time> {
-    self.generic_data_and_extended_last_change(FieldId::new (id, C::column_id())).map(|p| & p.1.base)
+    self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id())).map(|p| &p.1.base)
   }
   fn constants(&self) -> &B::Constants;
 
@@ -239,34 +248,37 @@ pub trait MomentaryAccessor<B: Basics>: Accessor<B> {
 }
 
 pub trait Mutator<B: Basics>: MomentaryAccessor<B> + Rng {
-  fn extended_now(&self) -> & ExtendedTime <B>;
+  fn extended_now(&self) -> &ExtendedTime<B>;
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>);
   fn gen_id(&mut self) -> RowId;
-  fn underlying_rng_unsafe (&mut self) ->&mut EventRng;
+  fn underlying_rng_unsafe(&mut self) -> &mut EventRng;
 }
 pub trait PredictorAccessor<B: Basics, EventFn:?Sized>: Accessor<B> {
-  fn predict_at_time(&mut self, time: B::Time, event: StewardRc <EventFn>);
+  fn predict_at_time(&mut self, time: B::Time, event: StewardRc<EventFn>);
 
   ///A specific use of unsafe_now() that is guaranteed to be safe
-  fn predict_immediately(&mut self, event: StewardRc <EventFn>) {
+  fn predict_immediately(&mut self, event: StewardRc<EventFn>) {
     let time = self.unsafe_now().clone();
     self.predict_at_time(time, event)
   }
 }
 pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {
-  //with slightly better polymorphism we could do this more idiomatically
-  //type Iter<'a>: Iterator<(FieldId, (&'a FieldRc, &'a ExtendedTime<B>))>;
-  //fn iter (&self)->Iter;
-  fn iterate <'a, F> (& 'a self, handler: &mut F) where F: FnMut ((FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>)));
+  // with slightly better polymorphism we could do this more idiomatically
+  // type Iter<'a>: Iterator<(FieldId, (&'a FieldRc, &'a ExtendedTime<B>))>;
+  // fn iter (&self)->Iter;
+  fn iterate<'a, F>(&'a self, handler: &mut F)
+    where F: FnMut((FieldId, (&'a FieldRc, &'a ExtendedTime<B>)));
 }
 
-pub struct FiatSnapshot <B: Basics> {
-  constants: StewardRc <B::Constants>,
+pub struct FiatSnapshot<B: Basics> {
+  constants: StewardRc<B::Constants>,
   now: B::Time,
-  fields: HashMap<FieldId, (FieldRc, ExtendedTime <B>)>,
+  fields: HashMap<FieldId, (FieldRc, ExtendedTime<B>)>,
 }
-impl<B: Basics> FiatSnapshot <B> {
-  fn from_iter<T>(constants: StewardRc <B::Constants>, now: B::Time, thing: T) -> Self where T: IntoIterator<Item= (FieldId, (FieldRc, ExtendedTime <B>))> {
+impl<B: Basics> FiatSnapshot<B> {
+  fn from_iter<T>(constants: StewardRc<B::Constants>, now: B::Time, thing: T) -> Self
+    where T: IntoIterator<Item = (FieldId, (FieldRc, ExtendedTime<B>))>
+  {
     FiatSnapshot {
       constants: constants,
       now: now,
@@ -274,29 +286,51 @@ impl<B: Basics> FiatSnapshot <B> {
     }
   }
 }
-impl<B: Basics> Accessor <B> for FiatSnapshot <B> {
-  fn generic_data_and_extended_last_change(&self, id: FieldId) -> Option<(& FieldRc, & ExtendedTime <B>)> {self.fields.get (& id).map (| pair | (& pair.0, & pair.1))}
-  fn constants(&self) -> &B::Constants {self.constants.borrow()}
-  fn unsafe_now(&self) -> &B::Time {& self.now}
+impl<B: Basics> Accessor<B> for FiatSnapshot<B> {
+  fn generic_data_and_extended_last_change(&self,
+                                           id: FieldId)
+                                           -> Option<(&FieldRc, &ExtendedTime<B>)> {
+    self.fields.get(&id).map(|pair| (&pair.0, &pair.1))
+  }
+  fn constants(&self) -> &B::Constants {
+    self.constants.borrow()
+  }
+  fn unsafe_now(&self) -> &B::Time {
+    &self.now
+  }
 }
-impl<B: Basics> MomentaryAccessor <B> for FiatSnapshot <B> {}
-impl<B: Basics> Snapshot <B> for FiatSnapshot <B> {
-  fn iterate <'a, F> (& 'a self, handler: &mut F) where F: FnMut ((FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>))) {
-    for item in self.fields.iter() {handler ((item.0.clone(), (& (item.1).0, & (item.1).1)));}
+impl<B: Basics> MomentaryAccessor<B> for FiatSnapshot<B> {}
+impl<B: Basics> Snapshot<B> for FiatSnapshot<B> {
+  fn iterate<'a, F>(&'a self, handler: &mut F)
+    where F: FnMut((FieldId, (&'a FieldRc, &'a ExtendedTime<B>)))
+  {
+    for item in self.fields.iter() {
+      handler((item.0.clone(), (&(item.1).0, &(item.1).1)));
+    }
   }
 }
 
 
-pub struct SerializationTable <S: Serializer> (HashMap<ColumnId, fn (& FieldRc, &mut S)->Result <(), S::Error>>);
-struct SerializationField <'a, 'b, Hack: Serializer + 'b>(ColumnId, & 'a FieldRc, & 'b SerializationTable <Hack>);
+pub struct SerializationTable<S: Serializer>(HashMap<ColumnId,
+                                                     fn(&FieldRc, &mut S) -> Result<(), S::Error>>);
+struct SerializationField<'a, 'b, Hack: Serializer + 'b>(ColumnId,
+                                                         &'a FieldRc,
+                                                         &'b SerializationTable<Hack>);
 struct SerializationSnapshot<'a, 'b, B: Basics, Shot: Snapshot <B> + 'a, Hack: Serializer + 'b>(& 'a Shot, & 'b SerializationTable <Hack>, PhantomData <B>);
-impl <'a, 'b, Hack: Serializer> Serialize for SerializationField <'a, 'b, Hack> {
-  fn serialize <'c, S: Serializer+'b> (&'c self, serializer: &mut S)->Result <(), S::Error> {
-    //assert!(TypeId::of::<S>() == TypeId::of::<Hack>(), "hack: this can only actually serialize for the serializer it has tables for");
-    let table = unsafe {std::mem::transmute:: <& 'b SerializationTable <Hack>, & 'b SerializationTable <S>> (self.2)};
-    match (table.0).get(& self.0) {
-      None => Err (S::Error::custom (format! ("Attempt to serialize field from uninitialized column {:?}; did you forget to initialize all the columns from your own code and/or the libraries you're using?", self.0))),
-      Some (function) => function (self.1, serializer),
+impl<'a, 'b, Hack: Serializer> Serialize for SerializationField<'a, 'b, Hack> {
+  fn serialize<'c, S: Serializer + 'b>(&'c self, serializer: &mut S) -> Result<(), S::Error> {
+    // assert!(TypeId::of::<S>() == TypeId::of::<Hack>(), "hack: this can only actually serialize for the serializer it has tables for");
+    let table = unsafe {
+      std::mem::transmute::<&'b SerializationTable<Hack>, &'b SerializationTable<S>>(self.2)
+    };
+    match (table.0).get(&self.0) {
+      None => {
+        Err(S::Error::custom(format!("Attempt to serialize field from uninitialized column \
+                                      {:?}; did you forget to initialize all the columns from \
+                                      your own code and/or the libraries you're using?",
+                                     self.0)))
+      }
+      Some(function) => function(self.1, serializer),
     }
   }
 }
@@ -306,7 +340,7 @@ impl <'a, 'b, B: Basics, Shot: Snapshot <B>, Hack: Serializer> Serialize for Ser
   fn serialize <S: Serializer> (&self, serializer: &mut S)->Result <(), S::Error> {
     let mut state = try!(serializer.serialize_map(None));
     (self.0).iterate (&mut | (id, (data, changed)) | {
-      //once we can actually use an iterator, these should be try!()
+// once we can actually use an iterator, these should be try!()
       serializer.serialize_map_key (&mut state, id).unwrap();
       serializer.serialize_map_value (&mut state, (& SerializationField (id.column_id, & data, self.1), changed)).unwrap();
     });
@@ -315,7 +349,7 @@ impl <'a, 'b, B: Basics, Shot: Snapshot <B>, Hack: Serializer> Serialize for Ser
 }
 
 pub fn serialize_snapshot <B: Basics, Shot: Snapshot <B>, S: Serializer> (snapshot: &Shot, table: & SerializationTable <S>, serializer: &mut S)->Result <(), S::Error> where B::Time: Serialize {
-SerializationSnapshot (snapshot, table, PhantomData).serialize (serializer)
+  SerializationSnapshot(snapshot, table, PhantomData).serialize(serializer)
 }
 
 
@@ -388,44 +422,72 @@ pub enum ValidSince<BaseTime> {
   After(BaseTime),
 }
 
-impl <T: Ord> Ord for ValidSince <T> {
-  fn cmp (&self, other: & Self)->Ordering {
+impl<T: Ord> Ord for ValidSince<T> {
+  fn cmp(&self, other: &Self) -> Ordering {
     match (self, other) {
-      (& ValidSince::TheBeginning, &ValidSince::TheBeginning) => Ordering::Equal,
+      (&ValidSince::TheBeginning, &ValidSince::TheBeginning) => Ordering::Equal,
       (&ValidSince::TheBeginning, _) => Ordering::Less,
       (_, &ValidSince::TheBeginning) => Ordering::Greater,
-      (&ValidSince::Before (ref something), &ValidSince::Before (ref anything)) => something.cmp (anything),
-      (&ValidSince::After (ref something), &ValidSince::After (ref anything)) => something.cmp (anything),
-      (&ValidSince::Before (ref something), &ValidSince::After (ref anything)) => if something <= anything {Ordering::Less} else {Ordering::Greater},
-      (&ValidSince::After (ref something), &ValidSince::Before (ref anything)) => if something < anything {Ordering::Less} else {Ordering::Greater},
+      (&ValidSince::Before(ref something),
+       &ValidSince::Before(ref anything)) => something.cmp(anything),
+      (&ValidSince::After(ref something),
+       &ValidSince::After(ref anything)) => something.cmp(anything),
+      (&ValidSince::Before(ref something),
+       &ValidSince::After(ref anything)) => {
+        if something <= anything {
+          Ordering::Less
+        } else {
+          Ordering::Greater
+        }
+      }
+      (&ValidSince::After(ref something),
+       &ValidSince::Before(ref anything)) => {
+        if something < anything {
+          Ordering::Less
+        } else {
+          Ordering::Greater
+        }
+      }
     }
   }
 }
-impl <T> PartialEq <T> for ValidSince <T> {
-  fn eq (&self, other: & T)->bool {
+impl<T> PartialEq<T> for ValidSince<T> {
+  fn eq(&self, other: &T) -> bool {
     false
   }
 }
 
-impl <T: Ord> PartialOrd <T> for ValidSince <T> {
-  fn partial_cmp (&self, other: & T)->Option <Ordering> {
-    Some (match self {
-& ValidSince::TheBeginning => Ordering::Less,
-& ValidSince::Before (ref something) => if something <= other {Ordering::Less} else {Ordering::Greater},
-& ValidSince::After (ref something) => if something < other {Ordering::Less} else {Ordering::Greater},
+impl<T: Ord> PartialOrd<T> for ValidSince<T> {
+  fn partial_cmp(&self, other: &T) -> Option<Ordering> {
+    Some(match self {
+      &ValidSince::TheBeginning => Ordering::Less,
+      &ValidSince::Before(ref something) => {
+        if something <= other {
+          Ordering::Less
+        } else {
+          Ordering::Greater
+        }
+      }
+      &ValidSince::After(ref something) => {
+        if something < other {
+          Ordering::Less
+        } else {
+          Ordering::Greater
+        }
+      }
     })
   }
 }
-impl <T: Ord> PartialOrd for ValidSince <T> {
-  fn partial_cmp (&self, other: & Self)->Option <Ordering> {
-    Some (self.cmp (other))
+impl<T: Ord> PartialOrd for ValidSince<T> {
+  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+    Some(self.cmp(other))
   }
 }
-//impl <T: Ord> PartialOrd <ValidSince <T>> for T {
+// impl <T: Ord> PartialOrd <ValidSince <T>> for T {
 //  fn partial_cmp (&self, other: & ValidSince <T>)->Option <Ordering> {
 //    Some (other.partial_cmp (self).unwrap().reverse());
 //  }
-//}
+// }
 
 /// TimeStewardLifetimedMethods is a hack to make it possible
 /// for trait TimeSteward to have associated types that are
@@ -454,7 +516,7 @@ pub trait TimeStewardStaticMethods <B: Basics>: 'static {
   
   new_empty().valid_since() must equal TheBeginning.
   */
-  fn new_empty(constants: B::Constants, predictors: Box <[Predictor<Self::PredictorFn>]>) -> Self;
+  fn new_empty(constants: B::Constants, predictors: Box<[Predictor<Self::PredictorFn>]>) -> Self;
 
   /**
   Creates a new TimeSteward from a snapshot.
@@ -462,7 +524,9 @@ pub trait TimeStewardStaticMethods <B: Basics>: 'static {
   from_snapshot().valid_since() must equal Before(snapshot.now()),
   and must never go lower than that.
   */
-  fn from_snapshot <S: Snapshot <B>> (snapshot: S, predictors: Box <[Predictor<Self::PredictorFn>]>) -> Self;
+  fn from_snapshot<S: Snapshot<B>>(snapshot: S,
+                                   predictors: Box<[Predictor<Self::PredictorFn>]>)
+                                   -> Self;
 
 
   /**
@@ -476,8 +540,8 @@ pub trait TimeStewardStaticMethods <B: Basics>: 'static {
   fn insert_fiat_event(&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
-                       event: StewardRc <Self::EventFn>)
-                       ->Result <(), FiatEventOperationError>;
+                       event: StewardRc<Self::EventFn>)
+                       -> Result<(), FiatEventOperationError>;
 
   /**
   Erases a fiat event that has been inserted previously.
@@ -490,7 +554,7 @@ pub trait TimeStewardStaticMethods <B: Basics>: 'static {
   fn erase_fiat_event(&mut self,
                       time: &B::Time,
                       id: DeterministicRandomId)
-                      ->Result <(), FiatEventOperationError>;
+                      -> Result<(), FiatEventOperationError>;
 
   /** Returns a "snapshot" into the TimeSteward.
   
@@ -506,7 +570,7 @@ pub trait TimeStewardStaticMethods <B: Basics>: 'static {
 pub trait TimeSteward <B: Basics>: for<'a> TimeStewardLifetimedMethods<'a, B> {}
 
 
-//TODO: everything between here and the modules at the bottom are implementation details that should be moved into a different file
+// TODO: everything between here and the modules at the bottom are implementation details that should be moved into a different file
 
 
 // #[derive (Clone)]
@@ -520,7 +584,7 @@ pub trait TimeSteward <B: Basics>: for<'a> TimeStewardLifetimedMethods<'a, B> {}
 pub struct Predictor<PredictorFn: ?Sized> {
   predictor_id: PredictorId,
   column_id: ColumnId,
-  function: StewardRc <PredictorFn>,
+  function: StewardRc<PredictorFn>,
 }
 // explicitly implement Clone to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 impl<PredictorFn: ?Sized> Clone for Predictor<PredictorFn> {
@@ -564,13 +628,13 @@ macro_rules! predictor_accessor_common_methods {
 }
 
 
-struct GenericMutator <B: Basics> {
-  now: ExtendedTime <B>,
+struct GenericMutator<B: Basics> {
+  now: ExtendedTime<B>,
   generator: ChaChaRng,
 }
-impl <B: Basics> GenericMutator <B> {
-  fn new(now: ExtendedTime <B>)->Self {
-    let generator = generator_for_event (now.id);
+impl<B: Basics> GenericMutator<B> {
+  fn new(now: ExtendedTime<B>) -> Self {
+    let generator = generator_for_event(now.id);
     GenericMutator {
       now: now,
       generator: generator,

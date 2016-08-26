@@ -46,15 +46,15 @@ pub fn testfunc() {
 
   let mut stew: Steward =
     ::TimeStewardStaticMethods::new_empty((),
-Box::new ([s::Predictor {
-                                                 predictor_id: PredictorId(0x0e7f27c7643f8167),
-                                                 column_id: Philosopher::column_id(),
-                                                 function: StewardRc::new(|pa, whodunnit| {
-                                                   printlnerr!("Planning {}", whodunnit);
-                                                   let me = pa.get::<Philosopher>(whodunnit)
-                                                              .unwrap()
-                                                              .clone();
-                                                   pa.predict_at_time(me.time_when_next_initiates_handshake,
+                                          Box::new([s::Predictor {
+                                                      predictor_id: PredictorId(0x0e7f27c7643f8167),
+                                                      column_id: Philosopher::column_id(),
+                                                      function: StewardRc::new(|pa, whodunnit| {
+                                                        printlnerr!("Planning {}", whodunnit);
+                                                        let me = pa.get::<Philosopher>(whodunnit)
+                                                                   .unwrap()
+                                                                   .clone();
+                                                        pa.predict_at_time(me.time_when_next_initiates_handshake,
 StewardRc::new(move |m| {
         let now = *m.now();
         let friend_id = get_philosopher_id(m.gen_range(0, HOW_MANY_PHILOSOPHERS));
@@ -72,12 +72,12 @@ StewardRc::new(move |m| {
                                time_when_next_initiates_handshake: awaken_time_2,
                              }));
       }));
-                                                 }),
-                                               }]));
+                                                      }),
+                                                    }]));
 
   stew.insert_fiat_event(0,
                          DeterministicRandomId::new(&0x32e1570766e768a7u64),
-StewardRc::new(|m| {
+                         StewardRc::new(|m| {
                            printlnerr!("FIAT!!!!!");
                            for i in 0..HOW_MANY_PHILOSOPHERS {
                              m.set::<Philosopher>(get_philosopher_id(i),
@@ -85,7 +85,8 @@ StewardRc::new(|m| {
                              time_when_next_initiates_handshake: (i + 1) as Time,
                            }));
                            }
-                         })).unwrap();
+                         }))
+      .unwrap();
 
   let mut snapshots = Vec::new();
   for increment in 1..21 {
