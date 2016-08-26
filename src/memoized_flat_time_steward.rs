@@ -5,32 +5,31 @@
 //!
 
 
-use super::{DeterministicRandomId, SiphashIdGenerator, RowId, ColumnId, FieldId, PredictorId,
-            Column, ExtendedTime, EventRng, Basics, TimeSteward, FiatEventOperationResult,
+use super::{DeterministicRandomId, SiphashIdGenerator, RowId, ColumnId, FieldId, PredictorId, StewardRc, FieldRc, Accessor, GenericMutator,
+            Column, ExtendedTime, EventRng, Basics, TimeSteward, FiatEventOperationError,
             ValidSince, TimeStewardLifetimedMethods, TimeStewardStaticMethods};
 
 use std::collections::{HashMap, BTreeMap, HashSet};
 use std::collections::hash_map::Entry;
 use std::hash::Hash;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
-use std::any::Any;
-use std::borrow::Borrow;
 use std::rc::Rc;
-use std::cell::{Cell, RefCell};
+use std::cell::{RefCell};
 use std::ops::Drop;
 use rand::Rng;
+use std::cmp::max;
 use insert_only;
 
 type SnapshotIdx = u64;
 
 #[derive (Clone)]
 struct Field<B: Basics> {
+  data: FieldRc,
   last_change: ExtendedTime<B>,
-  data: Rc<Any>,
+  first_snapshot_not_updated: SnapshotIdx,
 }
 struct SnapshotField<B: Basics> {
   data: Option<Field<B>>,
-  touched_by_steward: Cell<bool>,
 }
 
 
@@ -60,6 +59,7 @@ struct StewardShared<B: Basics> {
 #[derive (Clone)]
 struct StewardOwned<B: Basics> {
   last_event: Option<ExtendedTime<B>>,
+  invalid_before: ValidSince <B::Time>,
   fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
   next_snapshot: SnapshotIdx,
 
@@ -79,11 +79,10 @@ pub struct Snapshot<B: Basics> {
   shared: Rc<StewardShared<B>>,
 }
 pub struct Mutator<'a, B: Basics> {
-  now: ExtendedTime<B>,
+generic: GenericMutator <B>,
   steward: &'a mut StewardOwned<B>,
   shared: &'a StewardShared<B>,
   fields: &'a mut Fields<B>,
-  generator: EventRng,
   predictions_needed: HashSet<(RowId, PredictorId)>,
 }
 struct PredictorAccessorResults<B: Basics> {
@@ -101,7 +100,7 @@ pub struct PredictorAccessor<'a, B: Basics> {
   results: RefCell<PredictorAccessorResults<B>>,
 }
 pub type EventFn<B> = for<'d, 'e> Fn(&'d mut Mutator<'e, B>);
-pub type Event<B> = Rc<EventFn<B>>;
+pub type Event<B> = StewardRc <EventFn<B>>;
 pub type Predictor<B> = super::Predictor<PredictorFn<B>>;
 pub type PredictorFn<B> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId);
 
@@ -114,26 +113,19 @@ impl<B: Basics> Drop for Snapshot<B> {
 }
 
 impl<B: Basics> super::Accessor<B> for Snapshot<B> {
-  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
-    let field_id = FieldId {
-      row_id: id,
-      column_id: C::column_id(),
-    };
-    extract_field_info::<B, C>(self.field_states
-                                   .get_default(field_id, || {
+  fn generic_data_and_extended_last_change(&self, id: FieldId) -> Option<(& FieldRc, & ExtendedTime <B>)> {
+      self.field_states
+                                   .get_default(id, || {
                                      SnapshotField {
                                        data: self.shared
                                                  .fields
                                                  .borrow()
                                                  .field_states
-                                                 .get(&field_id)
+                                                 .get(&id)
                                                  .cloned(),
-                                       touched_by_steward: Cell::new(false),
                                      }
                                    })
-                                   .data
-                                   .as_ref())
-      .map(|p| (p.0, &p.1.base))
+                                   .data .as_ref()     .map(|p| (&p. data, &p.last_change))
   }
   fn constants(&self) -> &B::Constants {
     &self.shared.constants
@@ -143,33 +135,27 @@ impl<B: Basics> super::Accessor<B> for Snapshot<B> {
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
-  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
-    self.fields.get::<C>(id).map(|p| (p.0, &p.1.base))
+  fn generic_data_and_extended_last_change(&self, id: FieldId) -> Option<(& FieldRc, & ExtendedTime <B>)> {
+    self.fields.get(id)
   }
   fn constants(&self) -> &B::Constants {
     &self.shared.constants
   }
-  fn unsafe_now(&self) -> &B::Time {
-    &self.now.base
-  }
+  mutator_common_accessor_methods! (B);
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
-  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
-    let field_id = FieldId {
-      row_id: id,
-      column_id: C::column_id(),
-    };
+  fn generic_data_and_extended_last_change(&self, id: FieldId) -> Option<(& FieldRc, & ExtendedTime <B>)> {
     let mut results = self.results.borrow_mut();
     self.steward
         .borrow_mut()
         .prediction_dependencies
-        .entry(field_id)
+        .entry(id)
         .or_insert(HashSet::new())
         .insert((self.about_row_id, self.predictor_id));
-    results.dependencies.push(field_id);
-    self.fields.get::<C>(id).map(|p| {
+    results.dependencies.push(id);
+    self.fields.get(id).map(|p| {
       p.1.id.hash(&mut results.dependencies_hasher);
-      (p.0, &p.1.base)
+      p
     })
   }
   fn constants(&self) -> &B::Constants {
@@ -183,20 +169,15 @@ impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
 impl<B: Basics> super::MomentaryAccessor<B> for Snapshot<B> {}
 impl<'a, B: Basics> super::MomentaryAccessor<B> for Mutator<'a, B> {}
 impl<'a, B: Basics> super::PredictorAccessor<B, EventFn<B>> for PredictorAccessor<'a, B> {
-  fn predict_at_time(&mut self, time: B::Time, event: Event<B>) {
-    if time < self.internal_now.base {
-      return;
-    }
-    let mut results = self.results.borrow_mut();
-    if let Some((ref old_time, _)) = results.soonest_prediction {
-      if old_time <= &time {
-        return;
-      }
-    }
-    results.soonest_prediction = Some((time, event));
-  }
+  predictor_accessor_common_methods! (B, self, &mut self.results.borrow_mut().soonest_prediction);
 }
-impl<B: Basics> super::Snapshot<B> for Snapshot<B> {}
+impl<B: Basics> super::Snapshot<B> for Snapshot<B> {
+  fn iterate <'a, F> (& 'a self, handler: &mut F) where F: FnMut ((FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>))) {
+unimplemented!()
+  }
+
+  
+}
 
 impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
@@ -205,18 +186,17 @@ impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
       column_id: C::column_id(),
     };
     let old_value = self.fields.field_states.get(&field_id).cloned();
-    let existence_changed = self.fields.set_opt::<C>(id, data, &self.now);
-    for snapshot_map in self.fields.changed_since_snapshots.iter().rev() {
-      let info = snapshot_map.1.get_default(field_id, || {
-        SnapshotField {
-          data: old_value.clone(),
-          touched_by_steward: Cell::new(false),
-        }
-      });
-      if info.touched_by_steward.get() {
+    let existence_changed = self.fields.set_opt::<C>(id, data, &self.generic.now, self.steward.next_snapshot);
+    for (index, snapshot_map) in self.fields.changed_since_snapshots.iter().rev() {
+      //TODO: re-creating destroyed fields waste time with old snapshots. Fix?
+      if old_value. as_ref().map_or (false, | value |*index <value.first_snapshot_not_updated) {
         break;
       }
-      info.touched_by_steward.set(true);
+      snapshot_map.get_default(field_id, || {
+        SnapshotField {
+          data: old_value.clone(),
+        }
+      });
     }
 
     if existence_changed {
@@ -233,12 +213,10 @@ impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
       entry.remove();
     }
   }
-  fn rng(&mut self) -> &mut EventRng {
-    &mut self.generator
-  }
-  fn random_id(&mut self) -> RowId {
-    RowId { data: [self.generator.gen::<u64>(), self.generator.gen::<u64>()] }
-  }
+mutator_common_methods! (B);
+}
+impl<'a, B: Basics> Rng for Mutator<'a, B> {
+mutator_rng_methods!();
 }
 
 
@@ -258,36 +236,16 @@ impl<T> Filter<T> for Option<T> {
   }
 }
 
-fn extract_field_info<B: Basics, C: Column>(option: Option<&Field<B>>)
-                                            -> Option<(&C::FieldType, &ExtendedTime<B>)> {
-  option.map(|something| {
-    (something.data
-              .downcast_ref::<C::FieldType>()
-              .expect("a field had the wrong type for its column")
-              .borrow(),
-     &something.last_change)
-  })
-
-}
-
-fn get<C: Column, Value>(map: &HashMap<FieldId, Value>, id: RowId) -> Option<&Value> {
-  map.get(&FieldId {
-    row_id: id,
-    column_id: C::column_id(),
-  })
-
-}
-
 impl<B: Basics> Fields<B> {
-  fn get<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &ExtendedTime<B>)> {
-    let field_states = &self.field_states;
-    extract_field_info::<B, C>(get::<C, Field<B>>(field_states, id))
+  fn get(&self, id: FieldId) -> Option<(& FieldRc, &ExtendedTime<B>)> {
+self.field_states. get (& id).map (| field | (&field.data, &field.last_change))
   }
   // returns true if the field changed from existing to nonexistent or vice versa
-  fn set<C: Column>(&mut self, id: RowId, value: C::FieldType, time: &ExtendedTime<B>) -> bool {
+  fn set<C: Column>(&mut self, id: RowId, value: C::FieldType, time: &ExtendedTime<B>, next_snapshot: SnapshotIdx) -> bool {
     let field = Field {
-      data: Rc::new(value),
+      data: StewardRc::new(value),
       last_change: time.clone(),
+      first_snapshot_not_updated: next_snapshot,
     };
     match self.field_states
               .entry(FieldId {
@@ -317,10 +275,10 @@ impl<B: Basics> Fields<B> {
   fn set_opt<C: Column>(&mut self,
                         id: RowId,
                         value_opt: Option<C::FieldType>,
-                        time: &ExtendedTime<B>)
+                        time: &ExtendedTime<B>, next_snapshot: SnapshotIdx)
                         -> bool {
     if let Some(value) = value_opt {
-      self.set::<C>(id, value, time)
+      self.set::<C>(id, value, time, next_snapshot)
     } else {
       self.remove::<C>(id)
     }
@@ -408,11 +366,10 @@ impl<B: Basics> Steward<B> {
     {
       let field_ref = &mut *self.shared.fields.borrow_mut();
       let mut mutator = Mutator {
-        now: event_time.clone(),
+generic: GenericMutator::new (event_time.clone()),
         steward: &mut self.owned,
         shared: &self.shared,
         fields: field_ref,
-        generator: super::generator_for_event(event_time.id),
         predictions_needed: HashSet::new(),
       };
       event(&mut mutator);
@@ -495,25 +452,26 @@ impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
   type Snapshot = Snapshot<B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
-    match self.owned.last_event {
+    max (self.owned.invalid_before.clone(), match self.owned.last_event {
       None => ValidSince::TheBeginning,
       Some(ref time) => ValidSince::After(time.base.clone()),
-    }
+    })
   }
 
   fn new_empty(constants: B::Constants,
-               predictors: Vec<super::Predictor<Self::PredictorFn>>)
+               predictors: Box <[super::Predictor<Self::PredictorFn>]>)
                -> Self {
     let mut predictors_by_id = HashMap::new();
     let mut predictors_by_column = HashMap::new();
-    for predictor in predictors {
+    for predictor in predictors.iter() {
       predictors_by_id.insert(predictor.predictor_id, predictor.clone());
-      predictors_by_column.entry(predictor.column_id).or_insert(Vec::new()).push(predictor);
+      predictors_by_column.entry(predictor.column_id).or_insert(Vec::new()).push(predictor.clone());
     }
 
     Steward {
       owned: StewardOwned {
         last_event: None,
+        invalid_before: ValidSince::TheBeginning,
         fiat_events: BTreeMap::new(),
         next_snapshot: 0,
         predictions_by_time: BTreeMap::new(),
@@ -531,35 +489,36 @@ impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
       }),
     }
   }
+  
+  fn from_snapshot <S: super::Snapshot <B>> (snapshot: S, predictors: Box <[super::Predictor<Self::PredictorFn>]>) -> Self {
+    unimplemented!()
+  }
 
+  
   fn insert_fiat_event(&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
                        event: Event<B>)
-                       -> FiatEventOperationResult {
-    if let Some(ref change) = self.owned.last_event {
-      if change.base >= time {
-        return FiatEventOperationResult::InvalidTime;
-      }
+                       ->Result <(), FiatEventOperationError> {
+    if self.valid_since() >time {
+      return Err (FiatEventOperationError::InvalidTime);
     }
     match self.owned.fiat_events.insert(super::extended_time_of_fiat_event(time, id), event) {
-      None => FiatEventOperationResult::Success,
-      Some(_) => FiatEventOperationResult::InvalidInput,
+      None => Ok (()),
+      Some(_) => Err (FiatEventOperationError::InvalidInput),
     }
   }
 
   fn erase_fiat_event(&mut self,
                       time: &B::Time,
                       id: DeterministicRandomId)
-                      -> FiatEventOperationResult {
-    if let Some(ref change) = self.owned.last_event {
-      if change.base >= *time {
-        return FiatEventOperationResult::InvalidTime;
-      }
+                      ->Result <(), FiatEventOperationError> {
+    if self.valid_since() >*time {
+      return Err (FiatEventOperationError::InvalidTime);
     }
     match self.owned.fiat_events.remove(&super::extended_time_of_fiat_event(time.clone(), id)) {
-      None => FiatEventOperationResult::InvalidInput,
-      Some(_) => FiatEventOperationResult::Success,
+      None => Err (FiatEventOperationError::InvalidInput),
+      Some(_) => Ok (()),
     }
   }
 

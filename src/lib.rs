@@ -20,7 +20,6 @@
  *
  * */
 
-#![feature (iter_arith_traits)]
 #![feature (plugin, custom_derive)]
 #![plugin (serde_macros)]
 
@@ -34,7 +33,7 @@ extern crate serde;
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher, SipHasher};
-use std::any::{TypeId, Any};
+use std::any::Any;
 use std::sync::Arc;
 use std::cmp::Ordering;
 use std::fmt;
@@ -292,7 +291,7 @@ pub struct SerializationTable <S: Serializer> (HashMap<ColumnId, fn (& FieldRc, 
 struct SerializationField <'a, 'b, Hack: Serializer + 'b>(ColumnId, & 'a FieldRc, & 'b SerializationTable <Hack>);
 struct SerializationSnapshot<'a, 'b, B: Basics, Shot: Snapshot <B> + 'a, Hack: Serializer + 'b>(& 'a Shot, & 'b SerializationTable <Hack>, PhantomData <B>);
 impl <'a, 'b, Hack: Serializer> Serialize for SerializationField <'a, 'b, Hack> {
-  fn serialize <'c, S: Serializer+'b = Hack> (&'c self, serializer: &mut S)->Result <(), S::Error> {
+  fn serialize <'c, S: Serializer+'b> (&'c self, serializer: &mut S)->Result <(), S::Error> {
     //assert!(TypeId::of::<S>() == TypeId::of::<Hack>(), "hack: this can only actually serialize for the serializer it has tables for");
     let table = unsafe {std::mem::transmute:: <& 'b SerializationTable <Hack>, & 'b SerializationTable <S>> (self.2)};
     match (table.0).get(& self.0) {
@@ -666,6 +665,6 @@ pub mod time_functions;
 pub mod collision_detection;
 
 pub mod examples {
-  pub mod handshakes;
+  //pub mod handshakes;
   pub mod bouncy_circles;
 }
