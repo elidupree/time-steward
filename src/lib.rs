@@ -716,6 +716,7 @@ fn next_extended_time_of_predicted_event<BaseTime: Ord>
   })
 }
 
+pub mod data_structures;
 
 pub mod inefficient_flat_time_steward;
 pub mod memoized_flat_time_steward;
