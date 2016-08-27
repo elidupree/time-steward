@@ -24,6 +24,9 @@ mod PartiallyPersistentNonindexedSet {
     data: Arc <UnsafeCell <Vec<RwLock <Entry <K>>>>>,
     deletions: usize,
   }
+  unsafe impl<K: Clone + Eq> Send for Buffer <K>{}
+  unsafe impl<K: Clone + Eq> Sync for Buffer <K>{}
+  
   pub struct Snapshot <K: Clone + Eq> {
     buffer: Buffer <K>,
     used_length: usize,
