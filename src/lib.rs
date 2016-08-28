@@ -23,6 +23,7 @@
 #![feature(optin_builtin_traits)]
 #![feature (plugin, custom_derive)]
 #![plugin (serde_macros)]
+#![plugin (quickcheck_macros)]
 
 extern crate rand;
 extern crate polynomial;
@@ -31,6 +32,7 @@ extern crate roots;
 #[macro_use]
 extern crate glium;
 extern crate serde;
+extern crate quickcheck;
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher, SipHasher};

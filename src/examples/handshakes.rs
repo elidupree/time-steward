@@ -106,7 +106,7 @@ StewardRc::new(move |m| {
   // panic!("anyway")
 }
 
-#[test]
+//#[test]
 fn actuallytest() {
   testfunc();
 }

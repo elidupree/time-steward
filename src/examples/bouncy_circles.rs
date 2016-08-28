@@ -443,7 +443,7 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
   // panic!("anyway")
 }
 
-#[test]
+//#[test]
 fn actuallytest() {
   testfunc();
 }
