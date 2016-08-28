@@ -232,11 +232,20 @@ macro_rules! printlnerr(
   }
 #[cfg (test)]
 mod tests {
-use super::*; use std::collections::HashSet;
+use super::*; use std::collections::HashSet;        use std::thread; use std::sync::mpsc::channel;
   #[quickcheck]
   fn test_operation_sequence (operations: Vec<(usize, bool)>)->bool {
     let mut existences: HashSet <usize> = HashSet::new();
     let mut set: Set <usize> = Set::new();
+    
+    let (send_snapshot, receive_snapshot) = channel::<Option <(Snapshot <usize>, HashSet <usize>)>>();
+    let (send_results, receive_results) = channel();
+    let check_thread = thread::spawn ( move | | {
+      while let Some ((snapshot, checker)) = receive_snapshot.recv().unwrap() {
+        let checker_2 = snapshot.iter().collect();
+        send_results.send (checker == checker_2);
+      }
+    });
     for operation in operations {
       if existences.contains(& operation.0) != operation.1 {
         if operation.1 {
@@ -248,14 +257,12 @@ use super::*; use std::collections::HashSet;
         }
         let checker = existences.clone();
         let snapshot = set.snapshot();
-        use std::thread;
-        if !thread::spawn ( move | | {
-          let checker_2 = snapshot.iter().collect();
-          checker == checker_2
-        }).join().unwrap() {return false;}
-        
+
+        send_snapshot.send (Some ((snapshot, checker)));
+        if ! receive_results.recv().unwrap() {send_snapshot.send (None); check_thread.join(); return false;}
       }
     }
+    send_snapshot.send (None); check_thread.join(); 
     true
 }
 //#[test]
