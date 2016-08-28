@@ -46,11 +46,11 @@ mod PartiallyPersistentNonindexedSet {
   const MAX_TRANSFER_SPEED: usize = 8;
   
   impl<K: Clone + Eq + Hash> Snapshot <K> {
-    pub fn iter <'a> (& 'a self)->SnapshotIter <'a, K> {SnapshotIter {snapshot: self, position: self.used_length, ignore: HashSet::new(),}}
+    pub fn iter <'a> (& 'a self)->SnapshotIter <'a, K> {SnapshotIter {snapshot: self, position: self.used_length, ignore: HashSet::with_capacity(self.buffer.deletions),}}
   }
   impl<'a, K: Clone + Eq + Hash> SnapshotIter <'a, K> {
     /// Do a single iteration step, which MAY return an iteration result,
-    /// and is guaranteed to finish in O(1) worst-case time.
+    /// and is guaranteed to finish in O(1) time (worst-case except for bad luck with hashing).
     pub fn step (&mut self)->Option <Option <K>> {
       if self.position == 0 {return Some (None);}
       self.position -= 1;
@@ -151,8 +151,10 @@ mod PartiallyPersistentNonindexedSet {
         };
         self.next_transfer_index = 0;
       }
-      unsafe {assert!((*self.live_buffer.data.get()).len() < (*self.live_buffer.data.get()).capacity());
-      assert!((*self.next_buffer.data.get()).len() < (*self.next_buffer.data.get()).capacity());}
+      unsafe {
+        assert!((*self.live_buffer.data.get()).len() < (*self.live_buffer.data.get()).capacity());
+        assert!((*self.next_buffer.data.get()).len() < (*self.next_buffer.data.get()).capacity()/2);
+      }
     }
   }
 }
