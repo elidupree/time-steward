@@ -32,6 +32,7 @@ extern crate roots;
 #[macro_use]
 extern crate glium;
 extern crate serde;
+#[cfg (test)]
 extern crate quickcheck;
 
 use std::collections::HashMap;

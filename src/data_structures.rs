@@ -230,8 +230,9 @@ macro_rules! printlnerr(
       }
     }
   }
-  
-
+#[cfg (test)]
+mod tests {
+use super::*; use std::collections::HashSet;
   #[quickcheck]
   fn test_operation_sequence (operations: Vec<(usize, bool)>)->bool {
     let mut existences: HashSet <usize> = HashSet::new();
@@ -261,5 +262,5 @@ macro_rules! printlnerr(
 fn hack () { 
 
 //test_operation_sequence ((0..100).map (| number | (number, true)).collect());
-}
+}}
 }
