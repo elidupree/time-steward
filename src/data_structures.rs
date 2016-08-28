@@ -233,12 +233,13 @@ macro_rules! printlnerr(
 #[cfg (test)]
 mod tests {
 use super::*; use std::collections::HashSet;        use std::thread; use std::sync::mpsc::channel;
+type key = u8;
   #[quickcheck]
-  fn test_operation_sequence (operations: Vec<(usize, bool)>)->bool {
-    let mut existences: HashSet <usize> = HashSet::new();
-    let mut set: Set <usize> = Set::new();
+  fn test_operation_sequence (operations: Vec<(key, bool)>)->bool {
+    let mut existences: HashSet <key> = HashSet::new();
+    let mut set: Set <key> = Set::new();
     
-    let (send_snapshot, receive_snapshot) = channel::<Option <(Snapshot <usize>, HashSet <usize>)>>();
+    let (send_snapshot, receive_snapshot) = channel::<Option <(Snapshot <key>, HashSet <key>)>>();
     let (send_results, receive_results) = channel();
     let check_thread = thread::spawn ( move | | {
       while let Some ((snapshot, checker)) = receive_snapshot.recv().unwrap() {
