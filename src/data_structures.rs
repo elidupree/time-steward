@@ -28,7 +28,6 @@ macro_rules! printlnerr(
   #[derive (Debug)]
   struct BufferInner <K: Clone + Eq> {
     data: Vec<Entry <K>>,
-    marker: AtomicBool,
   }
   #[derive (Clone, Debug)]
   struct Buffer <K: Clone + Eq> {
@@ -60,12 +59,6 @@ macro_rules! printlnerr(
   unsafe impl<K: Clone + Eq + Sync> Sync for Snapshot <K>{}
   impl<K: Clone + Eq + Hash> Snapshot <K> {
     pub fn iter <'a> (& 'a self)->SnapshotIter <'a, K> {
-      //this Acquire should sync with at least the Release performed just after the
-      //last insertion into this buffer.
-      //To make sure we only need to do this once, at the beginning of iteration,
-      //we deliberately unimplemented Send for the iterator type
-      unsafe {(*self.buffer.data.get()).marker.load (Ordering::Acquire)};
-
       SnapshotIter {
         snapshot: self,
         position: self.used_length,
@@ -73,7 +66,6 @@ macro_rules! printlnerr(
       }
     }
   }
-  impl<'a, K> !marker::Send for SnapshotIter <'a, K> {}
   impl<'a, K: Clone + Eq + Hash> SnapshotIter <'a, K> {
     /// Do a single iteration step, which MAY return an iteration result,
     /// and is guaranteed to finish in O(1) time (worst-case except for bad luck with hashing).
@@ -101,8 +93,8 @@ macro_rules! printlnerr(
   impl<K: Clone + Eq + Debug> Set <K> {
     pub fn new()->Set <K> {
       Set {
-        live_buffer: Buffer {data: Arc::new (UnsafeCell::new (BufferInner {data: Vec::new (), marker: AtomicBool::new(false)})), deletions: 0},
-        next_buffer: Buffer {data: Arc::new (UnsafeCell::new (BufferInner {data: Vec:: with_capacity(2), marker: AtomicBool::new(false)})), deletions: 0},
+        live_buffer: Buffer {data: Arc::new (UnsafeCell::new (BufferInner {data: Vec::new ()})), deletions: 0},
+        next_buffer: Buffer {data: Arc::new (UnsafeCell::new (BufferInner {data: Vec:: with_capacity(2)})), deletions: 0},
         next_transfer_index: 0,
         potential_next_buffer_usage: 0,
         operating: false,
@@ -118,7 +110,6 @@ macro_rules! printlnerr(
       let live_data = unsafe {self.live_buffer.data.get().as_mut().unwrap()};
       live_data.data.push (Entry {key: key, insertion: true});
       self.potential_next_buffer_usage += 1;
-      live_data.marker.store (false, Ordering::Release);
       self.operating = false;
     }
     /// Removes a value from the set.
@@ -139,7 +130,6 @@ macro_rules! printlnerr(
       self.next_buffer.deletions += 1;
       next_data.data.push (Entry {key: key, insertion: false});
       self.potential_next_buffer_usage += 1;
-      live_data.marker.store (false, Ordering::Release);
       self.operating = false;
     }
     /// Takes out a snapshot to the current state of the set.
@@ -219,7 +209,7 @@ macro_rules! printlnerr(
         //danger: after we overwrite self.next_buffer, we may have deallocated
         //the memory for live_data
         self.next_buffer = Buffer {
-          data: Arc::new (UnsafeCell::new (BufferInner {data: Vec::with_capacity ((self.potential_next_buffer_usage + 1)*4), marker: AtomicBool::new(false)})), deletions: 0,
+          data: Arc::new (UnsafeCell::new (BufferInner {data: Vec::with_capacity ((self.potential_next_buffer_usage + 1)*4)})), deletions: 0,
         };
       }
       //printlnerr!("ending {:?}", self);
