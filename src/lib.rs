@@ -20,6 +20,7 @@
  *
  * */
 
+#![feature(optin_builtin_traits)]
 #![feature (plugin, custom_derive)]
 #![plugin (serde_macros)]
 
