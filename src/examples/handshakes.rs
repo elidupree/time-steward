@@ -1,7 +1,10 @@
-use memoized_flat_time_steward as s;
+use inefficient_flat_time_steward as s;
 use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator, StewardRc,
-     TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor};
+     TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor, Snapshot};
 use rand::Rng;
+//use serde_json;
+use bincode::serde::{Serializer, Deserializer};
+use bincode;
 
 use std::io::Write;
 macro_rules! printlnerr(
@@ -22,7 +25,7 @@ impl ::Basics for Basics {
   type Constants = ();
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct Philosopher {
   // This is sometimes in the future because
   // they muse philosophically about handshakes
@@ -42,15 +45,31 @@ fn get_philosopher_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x2302c38efb47e0d0u64, index))
 }
 
-pub fn testfunc() {
 
-  let mut stew: Steward =
+macro_rules! for_all_columns {
+  ($macro_name: ident {Column, $($macro_arguments:tt)*}) => {{
+    for_these_columns! {$macro_name {Column, $($macro_arguments)*}, Philosopher}
+  }};
+}
+make_deserialize_snapshot! (deserialize_snapshot);
+
+fn display_snapshot <S: ::Snapshot <Basics>> (snapshot: & S) {
+    printlnerr!("snapshot for {}", snapshot.now());
+    for index in 0..HOW_MANY_PHILOSOPHERS {
+      printlnerr!("{}",
+                  snapshot.get::<Philosopher>(get_philosopher_id(index))
+                          .expect("missing philosopher")
+                          .time_when_next_initiates_handshake);
+    }
+}
+
+pub fn testfunc() {  let mut stew: Steward =
     ::TimeStewardStaticMethods::new_empty((),
                                           Box::new([s::Predictor {
                                                       predictor_id: PredictorId(0x0e7f27c7643f8167),
                                                       column_id: Philosopher::column_id(),
                                                       function: StewardRc::new(|pa, whodunnit| {
-                                                        printlnerr!("Planning {}", whodunnit);
+                                                        //printlnerr!("Planning {}", whodunnit);
                                                         let me = pa.get::<Philosopher>(whodunnit)
                                                                    .unwrap()
                                                                    .clone();
@@ -95,18 +114,23 @@ StewardRc::new(move |m| {
   for snapshot in snapshots.iter_mut().map(|option| {
     option.as_mut().expect("all these snapshots should have been valid")
   }) {
-    printlnerr!("snapshot for {}", snapshot.now());
-    for index in 0..HOW_MANY_PHILOSOPHERS {
-      printlnerr!("{}",
-                  snapshot.get::<Philosopher>(get_philosopher_id(index))
-                          .expect("missing philosopher")
-                          .time_when_next_initiates_handshake);
+    display_snapshot (snapshot);
+    let mut writer: Vec<u8> =Vec:: with_capacity (128);
+    {
+  let serialization_table = make_serialization_table! (Serializer <Vec<u8>>);
+
+      let mut serializer = Serializer::new (&mut writer);
+      ::serialize_snapshot (snapshot, & serialization_table, &mut serializer);
     }
+    //let serialized = String::from_utf8 (serializer.into_inner()).unwrap();
+    printlnerr!("{:?}", writer);
+    let deserialized = deserialize_snapshot:: <Basics,_> (&mut Deserializer::new (&mut writer.as_slice(), bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/)).unwrap();
+    display_snapshot (& deserialized);
   }
   // panic!("anyway")
 }
 
-//#[test]
+#[test]
 fn actuallytest() {
   testfunc();
 }

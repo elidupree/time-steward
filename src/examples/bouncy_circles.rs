@@ -89,7 +89,7 @@ impl collisions::Basics for CollisionBasics {
 
 type Nearness = ::collision_detection::Nearness<CollisionBasics>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Circle {
   position: QuadraticTrajectory,
   radius: SpaceCoordinate,
@@ -100,7 +100,7 @@ impl Column for Circle {
     ColumnId(0x6422505ce8c8ce8e)
   }
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Intersection {
   induced_acceleration: Vector2<SpaceCoordinate>,
 }

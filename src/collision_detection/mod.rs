@@ -1,6 +1,7 @@
 use {RowId, ColumnId, Column, Accessor};
 use std::any::Any;
 use std::hash::Hash;
+use serde::{Serialize, Deserialize};
 
 pub mod inefficient;
 #[macro_use]
@@ -8,10 +9,11 @@ pub mod simple_grid;
 
 pub trait Basics: Clone + Any {
   type StewardBasics: ::Basics;
-  type DetectorId: Copy + Any + Hash;//=()
+  type DetectorId: Copy + Any + Hash + Serialize + Deserialize;//=()
   fn nearness_column_id() -> ColumnId;
 }
 
+#[derive (Serialize, Deserialize)]
 pub struct Nearness<B: Basics> {
   detector_id: B::DetectorId,
   ids: [RowId; 2],

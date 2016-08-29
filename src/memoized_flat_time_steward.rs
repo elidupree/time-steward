@@ -176,6 +176,8 @@ impl<'a, B: Basics> super::PredictorAccessor<B, EventFn<B>> for PredictorAccesso
   predictor_accessor_common_methods!(B, self, &mut self.results.borrow_mut().soonest_prediction);
 }
 impl<B: Basics> super::Snapshot<B> for Snapshot<B> {
+  fn num_fields (&self)->usize {unimplemented!()}
+    
   fn iterate<'a, F>(&'a self, handler: &mut F)
     where F: FnMut((FieldId, (&'a FieldRc, &'a ExtendedTime<B>)))
   {

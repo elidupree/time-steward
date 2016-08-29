@@ -4,7 +4,7 @@ use {RowId, ColumnId, Column, Accessor, MomentaryAccessor, Mutator};
 use std::marker::PhantomData;
 use std::hash::Hash;
 
-#[derive (Copy, Clone, Hash)]
+#[derive (Copy, Clone, Hash, Serialize, Deserialize)]
 pub struct Bounds {
   pub min: [i64; 2],
   pub max: [i64; 2],
@@ -31,7 +31,7 @@ impl<B: Basics> Column for Cell<B> {
 
 ///TODO: this should not be public; it's only public so that it can be used in a macro expansion,
 ///which would be a generic function if rust had better polymorphism
-#[derive (Clone)]
+#[derive (Clone, Serialize, Deserialize)]
 pub struct Member<B: Basics> {
   pub row: RowId,
   pub bounds: Bounds,

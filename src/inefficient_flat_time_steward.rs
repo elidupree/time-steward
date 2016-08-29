@@ -130,6 +130,7 @@ impl<'a, B: Basics> super::PredictorAccessor<B, EventFn<B>> for PredictorAccesso
    * } */
 }
 impl<B: Basics> super::Snapshot<B> for Snapshot<B> {
+  fn num_fields (&self)->usize {self.state.field_states.len()}
   fn iterate<'a, F>(&'a self, handler: &mut F)
     where F: FnMut((FieldId, (&'a FieldRc, &'a ExtendedTime<B>)))
   {
