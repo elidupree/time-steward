@@ -142,21 +142,31 @@ mod partially_persistent_nonindexed_set {
       self.make_room(currently_existent);
       let live_data = unsafe { self.live_buffer.data.get().as_mut().unwrap() };
       let next_data = unsafe { self.next_buffer.data.get().as_mut().unwrap() };
-      self.live_buffer.deletions += 1;
-      live_data.data.push(Entry {
-        key: key.clone(),
-        insertion: false,
-      });
+      
+      // Usually insert the deletion, but sometimes
+      // we just swapped the buffers and the insertion is already gone.
+      // If there are NO insertions and a buffer,
+      // we know we don't need to insert a deletion.
+      // (These checks are currently necessary to avoid underflow in make_room())
+      if live_data.data.len() != self.live_buffer.deletions {
+        self.live_buffer.deletions += 1;
+        live_data.data.push(Entry {
+          key: key.clone(),
+          insertion: false,
+        });
+      }
       // the next buffer doesn't necessarily have an insertion
       // corresponding to this deletion, so this could be wasteful. However,
       // it would also be wasteful to look up whether the insertion is there
       // (we currently get away with not even being ABLE to do so)
-      self.next_buffer.deletions += 1;
-      next_data.data.push(Entry {
-        key: key,
-        insertion: false,
-      });
-      self.potential_next_buffer_usage += 1;
+      if next_data.data.len() != self.next_buffer.deletions {
+        self.next_buffer.deletions += 1;
+        next_data.data.push(Entry {
+          key: key,
+          insertion: false,
+        });
+        self.potential_next_buffer_usage += 1;
+      }
       
       self.operating = false;
     }
@@ -204,13 +214,17 @@ mod partially_persistent_nonindexed_set {
     // X >= (Z*(51) - 49)/(5*Z)
     // X >= 51/5 >10
     fn make_room<F: Fn(&K) -> bool>(&mut self, currently_existent: F) {
-      const MAX_TRANSFER_SPEED: usize = 11;
+      
+      // MAX_TRANSFER_SPEED could safely be 11 as per the above calculation,
+      // but cache efficiency is probably better with a higher value.
+      const MAX_TRANSFER_SPEED: usize = 32;
+      
       unsafe {
         assert!((*self.next_buffer.data.get()).data.len() <= self.potential_next_buffer_usage)
       };
       let live_data = unsafe { self.live_buffer.data.get().as_ref().unwrap() };
       let next_data = unsafe { self.next_buffer.data.get().as_mut().unwrap() };
-      // printlnerr!("starting {:?} \n LIFE: {:?}\n NEXT: {:?}\n CAPACITIES: {} {} DELETIONS: {}/{} {}/{} ", self, live_data, next_data, live_data.data.capacity(), next_data.data.capacity(), self.live_buffer.deletions, live_data.data.len(), self.next_buffer.deletions, next_data.data.len());
+      println!("starting {:?} \n LIFE: {:?}\n NEXT: {:?}\n CAPACITIES: {} {} DELETIONS: {}/{} {}/{} ", self, live_data, next_data, live_data.data.capacity(), next_data.data.capacity(), self.live_buffer.deletions, live_data.data.len(), self.next_buffer.deletions, next_data.data.len());
       let buffer_pushes_before_reset_needed = min(live_data.data.capacity() - live_data.data.len(),
                                                   next_data.data.capacity() / 2 -
                                                   self.potential_next_buffer_usage);
@@ -226,7 +240,7 @@ mod partially_persistent_nonindexed_set {
       let transfer_steps_needed_before_reset_possible = live_data.data.len() +
                                                         operations_before_reset_possibly_needed -
                                                         self.next_transfer_index;
-      // printlnerr!("NEEDED {:?} \n OPERATIONS: {:?}\n (buffer pushes): {:?}\n (deletions): {} {} ", transfer_steps_needed_before_reset_possible , operations_before_reset_possibly_needed , buffer_pushes_before_reset_needed , deletions_before_reset_needed , "something");
+      println!("NEEDED {:?} \n OPERATIONS: {:?}\n (buffer pushes): {:?}\n (deletions): {} {} ", transfer_steps_needed_before_reset_possible , operations_before_reset_possibly_needed , buffer_pushes_before_reset_needed , deletions_before_reset_needed , "something");
       assert!(transfer_steps_needed_before_reset_possible <=
               (operations_before_reset_possibly_needed + 1) * MAX_TRANSFER_SPEED);
       if transfer_steps_needed_before_reset_possible >
@@ -242,7 +256,7 @@ mod partially_persistent_nonindexed_set {
           }
         }
       }
-      // printlnerr!("ending {:?} \n LIFE: {:?}\n NEXT: {:?}\n CAPACITIES: {} {} ", self, live_data, next_data, live_data.data.capacity(), next_data.data.capacity());
+      println!("ending {:?} \n LIFE: {:?}\n NEXT: {:?}\n CAPACITIES: {} {} ", self, live_data, next_data, live_data.data.capacity(), next_data.data.capacity());
       if operations_before_reset_possibly_needed == 0 {
         self.next_transfer_index = 0;
         self.potential_next_buffer_usage = next_data.data.len() - self.next_buffer.deletions;
@@ -256,7 +270,7 @@ mod partially_persistent_nonindexed_set {
           deletions: 0,
         };
       }
-      // printlnerr!("ending {:?}", self);
+      
       unsafe {
         assert!((*self.live_buffer.data.get()).data.len() <
                 (*self.live_buffer.data.get()).data.capacity());
