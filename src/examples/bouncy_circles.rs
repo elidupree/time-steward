@@ -35,13 +35,13 @@ const MAX_DISTANCE_TRAVELED_AT_ONCE: SpaceCoordinate = ARENA_SIZE << 4;
 const TIME_SHIFT: u32 = 20;
 const SECOND: Time = 1 << TIME_SHIFT;
 
-#[derive (Copy, Clone, Serialize, Deserialize)]
+#[derive (Copy, Clone, Debug, Serialize, Deserialize)]
 struct SerializableVector2 <Coordinate> {
   x: Coordinate, y: Coordinate
 }
 impl <Coordinate> SerializableVector2 <Coordinate> {
-  fn new (source: Vector2) {SerializableVector2 {x: source.x, y: source.y}}
-  fn get (self)->Vector2 {Vector2::new (self.x, self.y)}
+  fn new (source: Vector2 <Coordinate>)->Self {SerializableVector2 {x: source.x, y: source.y}}
+  fn get (self)->Vector2 <Coordinate> {Vector2::new (self.x, self.y)}
 }
 
 #[derive(Clone)]
