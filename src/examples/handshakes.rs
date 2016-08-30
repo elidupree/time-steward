@@ -1,18 +1,12 @@
 use inefficient_flat_time_steward as s;
 use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator, StewardRc,
-     TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor, Snapshot};
+     TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor};
 use rand::Rng;
 // use serde_json;
 use bincode::serde::{Serializer, Deserializer};
 use bincode;
 
 use std::io::Write;
-macro_rules! printlnerr(
-    ($($arg:tt)*) => { {
-        let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
-        r.expect("failed printing to stderr");
-    } }
-);
 
 type Time = i64;
 
@@ -54,9 +48,9 @@ macro_rules! for_all_columns {
 make_snapshot_serde_functions! (serialize_snapshot, deserialize_snapshot);
 
 fn display_snapshot<S: ::Snapshot<Basics>>(snapshot: &S) {
-  printlnerr!("snapshot for {}", snapshot.now());
+  println!("snapshot for {}", snapshot.now());
   for index in 0..HOW_MANY_PHILOSOPHERS {
-    printlnerr!("{}",
+    println!("{}",
                 snapshot.get::<Philosopher>(get_philosopher_id(index))
                         .expect("missing philosopher")
                         .time_when_next_initiates_handshake);
@@ -70,7 +64,7 @@ pub fn testfunc() {
                                                       predictor_id: PredictorId(0x0e7f27c7643f8167),
                                                       column_id: Philosopher::column_id(),
                                                       function: StewardRc::new(|pa, whodunnit| {
-                                                        // printlnerr!("Planning {}", whodunnit);
+                                                        println!("Planning {}", whodunnit);
                                                         let me = pa.get::<Philosopher>(whodunnit)
                                                                    .unwrap()
                                                                    .clone();
@@ -80,7 +74,7 @@ StewardRc::new(move |m| {
         let friend_id = get_philosopher_id(m.gen_range(0, HOW_MANY_PHILOSOPHERS));
         let awaken_time_1 = now + m.gen_range(-1, 4);
         let awaken_time_2 = now + m.gen_range(-1, 7);
-        printlnerr!("SHAKE!!! @{}. {}={}; {}={}", now, whodunnit, awaken_time_2, friend_id, awaken_time_1);
+        println!("SHAKE!!! @{}. {}={}; {}={}", now, whodunnit, awaken_time_2, friend_id, awaken_time_1);
         // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
         // IN THE SECOND TIME APPARENTLY
         m.set::<Philosopher>(friend_id,
@@ -98,7 +92,7 @@ StewardRc::new(move |m| {
   stew.insert_fiat_event(0,
                          DeterministicRandomId::new(&0x32e1570766e768a7u64),
                          StewardRc::new(|m| {
-                           printlnerr!("FIAT!!!!!");
+                           println!("FIAT!!!!!");
                            for i in 0..HOW_MANY_PHILOSOPHERS {
                              m.set::<Philosopher>(get_philosopher_id(i),
                            Some(Philosopher {
@@ -119,10 +113,10 @@ StewardRc::new(move |m| {
     let mut writer: Vec<u8> = Vec::with_capacity(128);
     {
       let mut serializer = Serializer::new(&mut writer);
-      serialize_snapshot(snapshot, &mut serializer);
+      serialize_snapshot(snapshot, &mut serializer).unwrap();
     }
     // let serialized = String::from_utf8 (serializer.into_inner()).unwrap();
-    printlnerr!("{:?}", writer);
+    println!("{:?}", writer);
     let deserialized = deserialize_snapshot:: <Basics,_> (&mut Deserializer::new (&mut writer.as_slice(), bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/)).unwrap();
     display_snapshot(&deserialized);
   }

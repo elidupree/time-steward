@@ -1154,6 +1154,10 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
   result
 }
 
+#[cfg (test)]
+mod tests {
+use super::*;
+use std::io::Write;
 
 fn test_roots(given_roots: Vec<Range>) {
   let mut polynomial = vec![Range::exactly(1)];
@@ -1161,7 +1165,7 @@ fn test_roots(given_roots: Vec<Range>) {
     polynomial = multiply_polynomials(polynomial.as_slice(), &[-root, Range::exactly(1)])
   }
   let computed = roots(polynomial.as_slice(), -i64::max_value(), i64::max_value());
-  printlnerr!("\nFor roots {:?}\n  Computed polynomial {:?}\n  And roots {:?}\n  Evaluated root \
+  println!("\nFor roots {:?}\n  Computed polynomial {:?}\n  And roots {:?}\n  Evaluated root \
                minima: {:?}",
               given_roots,
               polynomial,
@@ -1172,9 +1176,9 @@ fn test_roots(given_roots: Vec<Range>) {
 }
 
 
-// #[test]
+#[test]
 fn tests() {
-  printlnerr!(" {:?}", Range::exactly(-47).squared());
+  println!(" {:?}", Range::exactly(-47).squared());
   assert!(Range::exactly(-47).squared() == Range::exactly(2209));
   assert!(Range::exactly(-440) * Range::exactly(1) == Range::exactly(-440));
   assert!(Range::exactly(-440) * Range::exactly(1) * 4 == Range::exactly(-1760));
@@ -1228,4 +1232,6 @@ fn tests() {
                       Range::exactly(1)],
                     -i64::max_value(),
                     i64::max_value()));
+}
+
 }

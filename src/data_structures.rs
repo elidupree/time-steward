@@ -1,13 +1,12 @@
 mod partially_persistent_nonindexed_set {
   use std::sync::Arc;
-  use std::sync::atomic::{AtomicBool, Ordering};
   use std::cmp::min;
   use std::collections::HashSet;
   use std::hash::Hash;
   use std::mem;
   use std::cell::UnsafeCell;
-  use std::marker;
   use std::fmt::Debug;
+  
   use std::io::Write;
   macro_rules! printlnerr(
     ($($arg:tt)*) => { {
@@ -110,6 +109,7 @@ mod partially_persistent_nonindexed_set {
         operating: false,
       }
     }
+    
     /// Adds a value to the set.
     ///
     /// Complexity: O(1) worst-case if K does not implement Drop, O(1) amortized otherwise.
@@ -118,6 +118,7 @@ mod partially_persistent_nonindexed_set {
               "Attempt to call PartiallyPersistentNonindexedSet::insert() from inside its own \
                existence checker callback; what ghastly code led to this situation?");
       self.operating = true;
+      
       self.make_room(currently_existent);
       let live_data = unsafe { self.live_buffer.data.get().as_mut().unwrap() };
       live_data.data.push(Entry {
@@ -125,8 +126,10 @@ mod partially_persistent_nonindexed_set {
         insertion: true,
       });
       self.potential_next_buffer_usage += 1;
+      
       self.operating = false;
     }
+    
     /// Removes a value from the set.
     ///
     /// Complexity: O(1) worst-case if K does not implement Drop, O(1) amortized otherwise.
@@ -135,6 +138,7 @@ mod partially_persistent_nonindexed_set {
               "Attempt to call PartiallyPersistentNonindexedSet::insert() from inside its own \
                existence checker callback; what ghastly code led to this situation?");
       self.operating = true;
+      
       self.make_room(currently_existent);
       let live_data = unsafe { self.live_buffer.data.get().as_mut().unwrap() };
       let next_data = unsafe { self.next_buffer.data.get().as_mut().unwrap() };
@@ -153,8 +157,10 @@ mod partially_persistent_nonindexed_set {
         insertion: false,
       });
       self.potential_next_buffer_usage += 1;
+      
       self.operating = false;
     }
+    
     /// Takes out a snapshot to the current state of the set.
     ///
     /// These snapshots can safely be passed to other threads
@@ -266,18 +272,17 @@ mod partially_persistent_nonindexed_set {
     use std::collections::HashSet;
     use std::thread;
     use std::sync::mpsc::channel;
-    type key = u8;
-    #[quickcheck]
-    fn test_operation_sequence(operations: Vec<(key, bool)>) -> bool {
-      let mut existences: HashSet<key> = HashSet::new();
-      let mut set: Set<key> = Set::new();
+    type Key = u8;
+    fn test_operation_sequence(operations: Vec<(Key, bool)>) -> bool {
+      let mut existences: HashSet<Key> = HashSet::new();
+      let mut set: Set<Key> = Set::new();
 
-      let (send_snapshot, receive_snapshot) = channel::<Option<(Snapshot<key>, HashSet<key>)>>();
+      let (send_snapshot, receive_snapshot) = channel::<Option<(Snapshot<Key>, HashSet<Key>)>>();
       let (send_results, receive_results) = channel();
       let check_thread = thread::spawn(move || {
         while let Some((snapshot, checker)) = receive_snapshot.recv().unwrap() {
           let checker_2 = snapshot.iter().collect();
-          send_results.send(checker == checker_2);
+          send_results.send(checker == checker_2).unwrap();
         }
       });
       for operation in operations {
@@ -292,22 +297,34 @@ mod partially_persistent_nonindexed_set {
           let checker = existences.clone();
           let snapshot = set.snapshot();
 
-          send_snapshot.send(Some((snapshot, checker)));
+          send_snapshot.send(Some((snapshot, checker))).unwrap();
           if !receive_results.recv().unwrap() {
-            send_snapshot.send(None);
-            check_thread.join();
+            send_snapshot.send(None).unwrap();
+            check_thread.join().unwrap();
             return false;
           }
         }
       }
-      send_snapshot.send(None);
-      check_thread.join();
+      send_snapshot.send(None).unwrap();
+      check_thread.join().unwrap();
       true
     }
-    // #[test]
-    fn hack() {
-
-      // test_operation_sequence ((0..100).map (| number | (number, true)).collect());
+    #[quickcheck]
+    fn operation_sequences_work(operations: Vec<(Key, bool)>) -> bool {
+      test_operation_sequence (operations)
+    }
+    #[test]
+    fn many_insertions() {
+      test_operation_sequence ((0..255).map (| number | (number, true)).collect());
+    }
+    #[test]
+    fn many_insertions_and_deletions() {
+      test_operation_sequence (
+        (0..100).map (| number | (number, true))
+        .chain ((0..100).map (| number | (number, false)))
+        .chain ((0..100).map (| number | (number, true)))
+        .chain ((0..100).map (| number | (99 - number, false)))
+        .collect());
     }
   }
 }

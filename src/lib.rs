@@ -43,10 +43,9 @@ use std::any::Any;
 use std::sync::Arc;
 use std::cmp::Ordering;
 use std::fmt;
-use std::marker::PhantomData;
 use std::borrow::Borrow;
 use rand::{Rng, ChaChaRng, SeedableRng};
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde::{Serialize, Serializer, Deserialize};
 use serde::ser::Error;
 use serde::de;
 
@@ -142,7 +141,7 @@ pub trait Column {
   TODO: perhaps we can create default implementations of this for POD types.
   TODO: can we create automated tests for implementations of this function?
   */
-  fn guaranteed_equal__unsafe(first: &Self::FieldType, second: &Self::FieldType) -> bool {
+  fn guaranteed_equal__unsafe(_: &Self::FieldType, _: &Self::FieldType) -> bool {
     false
   }
 }
@@ -391,7 +390,6 @@ use serde as __time_steward_make_snapshot_serde_functions_impl_serde;
 
 pub fn $serialize_snapshot_name <'a, B: $crate::Basics, Shot: $crate::Snapshot <B>, S: __time_steward_make_snapshot_serde_functions_impl_serde::Serializer> (snapshot: & 'a Shot, serializer: &mut S)->Result <(), S::Error> where B::Time: __time_steward_make_snapshot_serde_functions_impl_serde::Serialize, & 'a Shot: IntoIterator <Item = $crate::SnapshotEntry <'a, B>>  {
   use std::collections::HashMap;
-  use std::marker::PhantomData;
   use serde::Serialize;
   let mut table = $crate::SerializationTable (HashMap::new());
   for_all_columns! (__time_steward_insert_serialization_function {Column, S, table});
@@ -527,7 +525,7 @@ impl<T: Ord> Ord for ValidSince<T> {
   }
 }
 impl<T> PartialEq<T> for ValidSince<T> {
-  fn eq(&self, other: &T) -> bool {
+  fn eq(&self, _: &T) -> bool {
     false
   }
 }
