@@ -376,7 +376,7 @@ pub fn serialize_column <C: Column, S: Serializer> (field: & FieldRc, serializer
 #[macro_export]
 macro_rules! __time_steward_insert_deserialization_function {
   ($column: ty, $B: ty, $M: ty, $table: ident) => {
-    $table.0.insert (<$column as $crate::Column>::column_id(), $crate::deserialize_column::<$B, $column, $M>);
+    $table.insert (<$column as $crate::Column>::column_id(), $crate::deserialize_column::<$B, $column, $M>);
   }
 }
 
@@ -411,56 +411,71 @@ macro_rules! make_serialization_table {
 #[macro_export]
 macro_rules! make_deserialize_snapshot {
 ($function_name: ident) => {
-
+mod __time_steward_make_deserialize_snapshot_impl {
 use std::collections::HashMap;
 use serde;
 use std::marker::PhantomData;
 
-struct __TimeSteward_DeserializationTable <B: $crate::Basics, M: serde::de::MapVisitor> (HashMap<$crate::ColumnId, fn (&mut M)->Result <($crate::FieldRc, $crate::ExtendedTime <B>), M::Error>>);
-struct __TimeSteward_SerdeMapVisitor <B: $crate::Basics> {
+pub type DeserializationTable <B: $crate::Basics, M: serde::de::MapVisitor> = HashMap<$crate::ColumnId, fn (&mut M)->Result <($crate::FieldRc, $crate::ExtendedTime <B>), M::Error>>;
+pub struct SerdeMapVisitor <B: $crate::Basics> {
   marker: PhantomData<$crate::FiatSnapshot <B >>
 }
-struct __TimeSteward_DeserializedMap <B: $crate::Basics> (HashMap<$crate::FieldId, ($crate::FieldRc, $crate::ExtendedTime<B>)>);
-impl<B: $crate::Basics> serde::Deserialize for __TimeSteward_DeserializedMap <B> {fn deserialize <D> (_: &mut D)->Result <Self, D::Error> where D: serde::Deserializer {panic!(" I believe that Visitor::Value requiring Deserialize is bogus, so this panic will never occur.")}}
+pub struct DeserializedMap <B: $crate::Basics> {
+  pub data: HashMap<$crate::FieldId, ($crate::FieldRc, $crate::ExtendedTime<B>)>,
+}
+impl<B: $crate::Basics> serde::Deserialize for DeserializedMap <B> {
+  fn deserialize <D> (_: &mut D)->Result <Self, D::Error> where D: serde::Deserializer {
+    panic!("I believe that Visitor::Value requiring Deserialize is bogus, so this panic will never occur.")
+  }
+}
 
 
-impl<B: $crate::Basics>  __TimeSteward_SerdeMapVisitor<B> {
-  fn new() -> Self {
-    __TimeSteward_SerdeMapVisitor {
+impl<B: $crate::Basics> SerdeMapVisitor<B> {
+  pub fn new() -> Self {
+    SerdeMapVisitor {
       marker: PhantomData
     }
   }
 }
-impl<B: $crate::Basics>  serde::de::Visitor for __TimeSteward_SerdeMapVisitor<B>
+impl<B: $crate::Basics>  serde::de::Visitor for SerdeMapVisitor<B>
 {
-  type Value = __TimeSteward_DeserializedMap <B>;
+  type Value = DeserializedMap <B>;
   fn visit_map<M>(&mut self, mut visitor: M) -> Result<Self::Value, M::Error>
     where M: serde::de::MapVisitor
   {
-    let mut table: __TimeSteward_DeserializationTable <B, M> = __TimeSteward_DeserializationTable (HashMap::new());
-    for_all_columns! (__time_steward_insert_deserialization_function {Column, B, M, table});
+    let mut table: DeserializationTable <B, M> = DeserializationTable::<B, M>::new();
+    super::__time_steward_make_deserialize_snapshot_impl_populate_table:: <B, M> (&mut table);
     
     let mut fields = HashMap::with_capacity(visitor.size_hint().0); 
     
     use serde::Error;
     while let Some (key) = try!(visitor.visit_key::<$crate::FieldId>()) {
-      fields.insert (key, match (table.0).get(& key.column_id) {
+      fields.insert (key, match table.get(& key.column_id) {
         None => return Err (M::Error::custom (format! ("Attempt to deserialize field from uninitialized column {:?}; Maybe you're trying to load a snapshot from a different version of your program? Or did you forget to initialize all the columns from your own code and/or the libraries you're using?", key. column_id))),
         Some (function) => try! (function (&mut visitor)),
       });
     }
 
     try!(visitor.end());
-    Ok(__TimeSteward_DeserializedMap (fields) )
+    Ok(DeserializedMap {data: fields})
   }
 }
 
-fn $function_name <B: $crate::Basics, D: serde::Deserializer> (deserializer: &mut D)->Result <$crate::FiatSnapshot <B>, D::Error> {
+}
+
+use serde as __time_steward_make_deserialize_snapshot_impl_serde;
+
+fn __time_steward_make_deserialize_snapshot_impl_populate_table <B: $crate::Basics, M: __time_steward_make_deserialize_snapshot_impl_serde::de::MapVisitor> (table: &mut __time_steward_make_deserialize_snapshot_impl::DeserializationTable <B, M>) {
+    for_all_columns! (__time_steward_insert_deserialization_function {Column, B, M, table});
+
+}
+
+fn $function_name <B: $crate::Basics, D: __time_steward_make_deserialize_snapshot_impl_serde::Deserializer> (deserializer: &mut D)->Result <$crate::FiatSnapshot <B>, D::Error> {
   use serde::{Deserialize};
   Ok ($crate::FiatSnapshot {
     now: try! (B::Time::deserialize (deserializer)),
     constants: StewardRc::new (try! (B::Constants::deserialize (deserializer))),
-    fields: try! (deserializer.deserialize_map(__TimeSteward_SerdeMapVisitor::<B>::new())).0,
+    fields: try! (deserializer.deserialize_map(__time_steward_make_deserialize_snapshot_impl ::SerdeMapVisitor::<B>::new())). data,
   })
 }
 
