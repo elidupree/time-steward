@@ -20,6 +20,7 @@ use std::ops::Drop;
 use rand::Rng;
 use std::cmp::max;
 use insert_only;
+use data_structures::partially_persistent_nonindexed_set;
 
 type SnapshotIdx = u64;
 
@@ -55,18 +56,19 @@ struct StewardShared<B: Basics> {
   constants: B::Constants,
   fields: RefCell<Fields<B>>,
 }
-#[derive (Clone)]
+
 struct StewardOwned<B: Basics> {
   last_event: Option<ExtendedTime<B>>,
   invalid_before: ValidSince<B::Time>,
   fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
   next_snapshot: SnapshotIdx,
+  existent_fields: partially_persistent_nonindexed_set::Set <FieldId>,
 
   predictions_by_time: BTreeMap<ExtendedTime<B>, Rc<Prediction<B>>>,
   predictions_by_id: HashMap<(RowId, PredictorId), Rc<Prediction<B>>>,
   prediction_dependencies: HashMap<FieldId, HashSet<(RowId, PredictorId)>>,
 }
-#[derive (Clone)]
+
 pub struct Steward<B: Basics> {
   owned: StewardOwned<B>,
   shared: Rc<StewardShared<B>>,
@@ -76,6 +78,8 @@ pub struct Snapshot<B: Basics> {
   index: SnapshotIdx,
   field_states: Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>,
   shared: Rc<StewardShared<B>>,
+  num_fields: usize,
+  field_ids: partially_persistent_nonindexed_set::Snapshot <FieldId>,
 }
 pub struct Mutator<'a, B: Basics> {
   generic: GenericMutator<B>,
@@ -183,22 +187,22 @@ impl<'a, B: Basics> super::PredictorAccessor<B, EventFn<B>> for PredictorAccesso
 }
 impl<B: Basics> super::Snapshot<B> for Snapshot<B> {
   fn num_fields(&self) -> usize {
-    unimplemented!()
+    self.num_fields
   }
 }
 use std::collections::hash_map;
-pub struct SnapshotIter <'a, B: Basics> (hash_map::Iter <'a, FieldId, Field <B>>);
+pub struct SnapshotIter <'a, B: Basics> (partially_persistent_nonindexed_set::SnapshotIter <'a, FieldId>, & 'a Snapshot <B>);
 impl <'a, B: Basics> Iterator for SnapshotIter <'a, B> {
   type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
   fn next (&mut self)->Option <Self::Item> {
-    unimplemented!()
+    (self.0).next().map (| id | (id, (self.1).generic_data_and_extended_last_change (id).expect ("the snapshot thinks a FieldId exists when it doesn't")))
   }
-  fn size_hint (&self)->(usize, Option <usize>) {self.0.size_hint()}
+  fn size_hint (&self)->(usize, Option <usize>) {(self.1.num_fields, Some (self.1.num_fields))}
 }
 impl <'a, B: Basics> IntoIterator for & 'a Snapshot <B> {
   type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
   type IntoIter = SnapshotIter <'a, B>;
-  fn into_iter (self)->Self::IntoIter {unimplemented! ()}
+  fn into_iter (self)->Self::IntoIter {SnapshotIter (self.field_ids.iter(), self)}
 }
 
 
@@ -214,7 +218,7 @@ impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
                                                      &self.generic.now,
                                                      self.steward.next_snapshot);
     // Old snapshot are already "updated" with all nonexistent values
-    if let Some(value) = old_value {
+    if let Some(ref value) = old_value {
       for (index, snapshot_map) in self.fields.changed_since_snapshots.iter().rev() {
         if *index < value.first_snapshot_not_updated {
           break;
@@ -230,6 +234,13 @@ impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
           self.predictions_needed.insert((id, predictor.predictor_id));
         }
       });
+      if old_value.is_none() {
+        let fields = &self.fields;
+        self.steward.existent_fields.insert (field_id, & | id | fields.field_states.contains_key (id));
+      } else {
+        let fields = &self.fields;
+        self.steward.existent_fields.remove (field_id, & | id | fields.field_states.contains_key (id));
+      }
     }
     if let Entry::Occupied(entry) = self.steward.prediction_dependencies.entry(field_id) {
       for prediction in entry.get() {
@@ -517,6 +528,7 @@ impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
         invalid_before: ValidSince::TheBeginning,
         fiat_events: BTreeMap::new(),
         next_snapshot: 0,
+        existent_fields: partially_persistent_nonindexed_set::Set::new(),
         predictions_by_time: BTreeMap::new(),
         predictions_by_id: HashMap::new(),
         prediction_dependencies: HashMap::new(),
@@ -608,6 +620,8 @@ impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
                         .or_insert(Rc::new(insert_only::HashMap::new()))
                         .clone(),
       shared: self.shared.clone(),
+      num_fields: self.shared.fields.borrow().field_states.len(),
+      field_ids: self.owned.existent_fields.snapshot(),
     });
 
     self.owned.next_snapshot += 1;

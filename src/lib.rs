@@ -155,7 +155,7 @@ macro_rules! use_default_equality__unsafe {
 }
 
 
-#[derive (Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive (Copy, Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub struct FieldId {
   row_id: RowId,
   column_id: ColumnId,
@@ -179,7 +179,7 @@ pub trait Basics: Clone + 'static {
 pub type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 
 type IterationType = u32;
-#[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct GenericExtendedTime<Base: Ord> {
   base: Base,
   iteration: IterationType,

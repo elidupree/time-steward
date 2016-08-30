@@ -1,4 +1,4 @@
-mod partially_persistent_nonindexed_set {
+pub mod partially_persistent_nonindexed_set {
   use std::sync::Arc;
   use std::cmp::min;
   use std::collections::HashSet;
