@@ -51,7 +51,7 @@ macro_rules! for_all_columns {
     for_these_columns! {$macro_name {Column, $($macro_arguments)*}, Philosopher}
   }};
 }
-make_deserialize_snapshot! (deserialize_snapshot);
+make_snapshot_serde_functions! (serialize_snapshot, deserialize_snapshot);
 
 fn display_snapshot<S: ::Snapshot<Basics>>(snapshot: &S) {
   printlnerr!("snapshot for {}", snapshot.now());
@@ -118,10 +118,8 @@ StewardRc::new(move |m| {
     display_snapshot(snapshot);
     let mut writer: Vec<u8> = Vec::with_capacity(128);
     {
-      let serialization_table = make_serialization_table! (Serializer <Vec<u8>>);
-
       let mut serializer = Serializer::new(&mut writer);
-      ::serialize_snapshot(snapshot, &serialization_table, &mut serializer);
+      serialize_snapshot(snapshot, &mut serializer);
     }
     // let serialized = String::from_utf8 (serializer.into_inner()).unwrap();
     printlnerr!("{:?}", writer);

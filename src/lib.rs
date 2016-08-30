@@ -327,7 +327,6 @@ pub struct SerializationTable<S: Serializer>(HashMap<ColumnId,
 struct SerializationField<'a, 'b, Hack: Serializer + 'b>(ColumnId,
                                                          &'a FieldRc,
                                                          &'b SerializationTable<Hack>);
-struct SerializationSnapshot<'a, 'b, B: Basics, Shot: Snapshot <B> + 'a, Hack: Serializer + 'b>(& 'a Shot, & 'b SerializationTable <Hack>, PhantomData <B>);
 impl<'a, 'b, Hack: Serializer> Serialize for SerializationField<'a, 'b, Hack> {
   fn serialize<'c, S: Serializer + 'b>(&'c self, serializer: &mut S) -> Result<(), S::Error> {
     // assert!(TypeId::of::<S>() == TypeId::of::<Hack>(), "hack: this can only actually serialize for the serializer it has tables for");
@@ -344,25 +343,6 @@ impl<'a, 'b, Hack: Serializer> Serialize for SerializationField<'a, 'b, Hack> {
       Some(function) => function(self.1, serializer),
     }
   }
-}
-
-
-impl <'a, 'b, B: Basics, Shot: Snapshot <B>, Hack: Serializer> Serialize for SerializationSnapshot <'a, 'b, B, Shot, Hack> where B::Time: Serialize {
-  fn serialize <S: Serializer> (&self, serializer: &mut S)->Result <(), S::Error> {
-    try! ((self.0).now().serialize (serializer));
-    try! ((self.0).constants().serialize (serializer));
-    let mut state = try!(serializer.serialize_map(Some ((self.0).num_fields())));
-    (self.0).iterate (&mut | (id, (data, changed)) | {
-// once we can actually use an iterator, these should be try!()
-      serializer.serialize_map_key (&mut state, id).unwrap();
-      serializer.serialize_map_value (&mut state, (& SerializationField (id.column_id, & data, self.1), changed)).unwrap();
-    });
-    serializer.serialize_map_end (state)
-  }
-}
-
-pub fn serialize_snapshot <B: Basics, Shot: Snapshot <B>, S: Serializer> (snapshot: &Shot, table: & SerializationTable <S>, serializer: &mut S)->Result <(), S::Error> where B::Time: Serialize {
-  SerializationSnapshot(snapshot, table, PhantomData).serialize(serializer)
 }
 
 pub fn deserialize_column<B: Basics, C: Column, M: de::MapVisitor>
@@ -405,21 +385,31 @@ macro_rules! for_these_columns {
   ($macro_name: ident {Column, $($macro_arguments:tt)*}) => {{}};
 }
 
-
 #[macro_export]
-macro_rules! make_serialization_table {
-  ($S:ty) => {{
-    use std::collections::HashMap;
-    let mut table = $crate::SerializationTable (HashMap::new());
-    for_all_columns! (__time_steward_insert_serialization_function {Column, $S, table});
-    table
-  }}
+macro_rules! make_snapshot_serde_functions {
+($serialize_snapshot_name: ident, $deserialize_snapshot_name: ident) => {
+
+use serde as __time_steward_make_snapshot_serde_functions_impl_serde;
+
+pub fn $serialize_snapshot_name <B: $crate::Basics, Shot: $crate::Snapshot <B>, S: __time_steward_make_snapshot_serde_functions_impl_serde::Serializer> (snapshot: &Shot, serializer: &mut S)->Result <(), S::Error> where B::Time: __time_steward_make_snapshot_serde_functions_impl_serde::Serialize {
+  use std::collections::HashMap;
+  use std::marker::PhantomData;
+  use serde::Serialize;
+  let mut table = $crate::SerializationTable (HashMap::new());
+  for_all_columns! (__time_steward_insert_serialization_function {Column, S, table});
+  
+  try! (snapshot.now().serialize (serializer));
+  try! (snapshot.constants().serialize (serializer));
+  let mut state = try!(serializer.serialize_map(Some (snapshot.num_fields())));
+  snapshot.iterate (&mut | (id, (data, changed)) | {
+// once we can actually use an iterator, these should be try!()
+    serializer.serialize_map_key (&mut state, id).unwrap();
+    serializer.serialize_map_value (&mut state, (& $crate::SerializationField (id.column_id, & data, & table), changed)).unwrap();
+  });
+  serializer.serialize_map_end (state)
 }
 
-#[macro_export]
-macro_rules! make_deserialize_snapshot {
-($function_name: ident) => {
-mod __time_steward_make_deserialize_snapshot_impl {
+mod __time_steward_make_snapshot_serde_functions_impl {
 use std::collections::HashMap;
 use serde;
 use std::marker::PhantomData;
@@ -452,7 +442,7 @@ impl<B: $crate::Basics>  serde::de::Visitor for SerdeMapVisitor<B>
     where M: serde::de::MapVisitor
   {
     let mut table: DeserializationTable <B, M> = DeserializationTable::<B, M>::new();
-    super::__time_steward_make_deserialize_snapshot_impl_populate_table:: <B, M> (&mut table);
+    super::__time_steward_make_snapshot_serde_functions_impl_populate_table:: <B, M> (&mut table);
     
     let mut fields = HashMap::with_capacity(visitor.size_hint().0); 
     
@@ -471,19 +461,18 @@ impl<B: $crate::Basics>  serde::de::Visitor for SerdeMapVisitor<B>
 
 }
 
-use serde as __time_steward_make_deserialize_snapshot_impl_serde;
 
-fn __time_steward_make_deserialize_snapshot_impl_populate_table <B: $crate::Basics, M: __time_steward_make_deserialize_snapshot_impl_serde::de::MapVisitor> (table: &mut __time_steward_make_deserialize_snapshot_impl::DeserializationTable <B, M>) {
+fn __time_steward_make_snapshot_serde_functions_impl_populate_table <B: $crate::Basics, M: __time_steward_make_snapshot_serde_functions_impl_serde::de::MapVisitor> (table: &mut __time_steward_make_snapshot_serde_functions_impl::DeserializationTable <B, M>) {
     for_all_columns! (__time_steward_insert_deserialization_function {Column, B, M, table});
 
 }
 
-fn $function_name <B: $crate::Basics, D: __time_steward_make_deserialize_snapshot_impl_serde::Deserializer> (deserializer: &mut D)->Result <$crate::FiatSnapshot <B>, D::Error> {
+fn $deserialize_snapshot_name <B: $crate::Basics, D: __time_steward_make_snapshot_serde_functions_impl_serde::Deserializer> (deserializer: &mut D)->Result <$crate::FiatSnapshot <B>, D::Error> {
   use serde::{Deserialize};
   Ok ($crate::FiatSnapshot {
     now: try! (B::Time::deserialize (deserializer)),
     constants: StewardRc::new (try! (B::Constants::deserialize (deserializer))),
-    fields: try! (deserializer.deserialize_map(__time_steward_make_deserialize_snapshot_impl ::SerdeMapVisitor::<B>::new())). data,
+    fields: try! (deserializer.deserialize_map(__time_steward_make_snapshot_serde_functions_impl ::SerdeMapVisitor::<B>::new())). data,
   })
 }
 
