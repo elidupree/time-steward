@@ -270,7 +270,7 @@ pub trait PredictorAccessor<B: Basics, EventFn:?Sized>: Accessor<B> {
   }
 }
 pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {
-  fn num_fields (&self)->usize;
+  fn num_fields(&self) -> usize;
   // with slightly better polymorphism we could do this more idiomatically
   // type Iter<'a>: Iterator<(FieldId, (&'a FieldRc, &'a ExtendedTime<B>))>;
   // fn iter (&self)->Iter;
@@ -309,7 +309,9 @@ impl<B: Basics> Accessor<B> for FiatSnapshot<B> {
 }
 impl<B: Basics> MomentaryAccessor<B> for FiatSnapshot<B> {}
 impl<B: Basics> Snapshot<B> for FiatSnapshot<B> {
-  fn num_fields (&self)->usize {self.fields.len()}
+  fn num_fields(&self) -> usize {
+    self.fields.len()
+  }
   fn iterate<'a, F>(&'a self, handler: &mut F)
     where F: FnMut((FieldId, (&'a FieldRc, &'a ExtendedTime<B>)))
   {
@@ -363,14 +365,20 @@ pub fn serialize_snapshot <B: Basics, Shot: Snapshot <B>, S: Serializer> (snapsh
   SerializationSnapshot(snapshot, table, PhantomData).serialize(serializer)
 }
 
-pub fn deserialize_column <B: Basics, C: Column, M: de::MapVisitor> (visitor: &mut M)->Result <(FieldRc, ExtendedTime <B>), M::Error> {
-  let (data, time) = try! (visitor.visit_value:: <(C::FieldType, ExtendedTime <B>)>());
-  Ok ((StewardRc::new (data), time))
+pub fn deserialize_column<B: Basics, C: Column, M: de::MapVisitor>
+  (visitor: &mut M)
+   -> Result<(FieldRc, ExtendedTime<B>), M::Error> {
+  let (data, time) = try!(visitor.visit_value::<(C::FieldType, ExtendedTime<B>)>());
+  Ok((StewardRc::new(data), time))
 }
 
-pub fn serialize_column <C: Column, S: Serializer> (field: & FieldRc, serializer: &mut S)->Result <(), S::Error> {
-  try! (field.downcast_ref::<C::FieldType>().expect("a field had the wrong type for its column").serialize (serializer));
-  Ok (())
+pub fn serialize_column<C: Column, S: Serializer>(field: &FieldRc,
+                                                  serializer: &mut S)
+                                                  -> Result<(), S::Error> {
+  try!(field.downcast_ref::<C::FieldType>()
+            .expect("a field had the wrong type for its column")
+            .serialize(serializer));
+  Ok(())
 }
 
 #[macro_export]
@@ -812,5 +820,5 @@ pub mod collision_detection;
 
 pub mod examples {
   pub mod handshakes;
-  //pub mod bouncy_circles;
+  // pub mod bouncy_circles;
 }

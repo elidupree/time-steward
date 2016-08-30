@@ -29,7 +29,7 @@ struct Field<B: Basics> {
   last_change: ExtendedTime<B>,
   first_snapshot_not_updated: SnapshotIdx,
 }
-type SnapshotField<B: Basics> = (FieldRc, ExtendedTime <B>);
+type SnapshotField<B: Basics> = (FieldRc, ExtendedTime<B>);
 
 
 type FieldsMap<B: Basics> = HashMap<FieldId, Field<B>>;
@@ -118,12 +118,18 @@ impl<B: Basics> super::Accessor<B> for Snapshot<B> {
     self.field_states
         .get_default(id, || {
           self.shared
-                      .fields
-                      .borrow()
-                      .field_states
-                      .get(&id)
-                      . and_then (| field | if field.first_snapshot_not_updated >self.index {None} else {Some ((field.data.clone(), field.last_change.clone()))})
-          
+              .fields
+              .borrow()
+              .field_states
+              .get(&id)
+              .and_then(|field| {
+                if field.first_snapshot_not_updated > self.index {
+                  None
+                } else {
+                  Some((field.data.clone(), field.last_change.clone()))
+                }
+              })
+
         })
         .map(|p| (&p.0, &p.1))
   }
@@ -176,8 +182,10 @@ impl<'a, B: Basics> super::PredictorAccessor<B, EventFn<B>> for PredictorAccesso
   predictor_accessor_common_methods!(B, self, &mut self.results.borrow_mut().soonest_prediction);
 }
 impl<B: Basics> super::Snapshot<B> for Snapshot<B> {
-  fn num_fields (&self)->usize {unimplemented!()}
-    
+  fn num_fields(&self) -> usize {
+    unimplemented!()
+  }
+
   fn iterate<'a, F>(&'a self, handler: &mut F)
     where F: FnMut((FieldId, (&'a FieldRc, &'a ExtendedTime<B>)))
   {
@@ -197,13 +205,14 @@ impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
                                                      &self.generic.now,
                                                      self.steward.next_snapshot);
     // Old snapshot are already "updated" with all nonexistent values
-    if let Some (value) = old_value {
-    for (index, snapshot_map) in self.fields.changed_since_snapshots.iter().rev() {
-      if *index < value.first_snapshot_not_updated {
-        break;
+    if let Some(value) = old_value {
+      for (index, snapshot_map) in self.fields.changed_since_snapshots.iter().rev() {
+        if *index < value.first_snapshot_not_updated {
+          break;
+        }
+        snapshot_map.get_default(field_id,
+                                 || Some((value.data.clone(), value.last_change.clone())));
       }
-      snapshot_map.get_default(field_id, || Some ((value.data.clone(), value.last_change.clone())));
-    }
     }
 
     if existence_changed {
