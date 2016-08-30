@@ -390,27 +390,8 @@ impl<B: Basics> Steward<B> {
       }
     }
   }
-
-  fn execute_event(&mut self, event_time: ExtendedTime<B>, event: Event<B>) {
-    let predictions_needed;
-
-    {
-      let field_ref = &mut *self.shared.fields.borrow_mut();
-      let mut mutator = Mutator {
-        generic: GenericMutator::new(event_time.clone()),
-        steward: &mut self.owned,
-        shared: &self.shared,
-        fields: field_ref,
-        predictions_needed: HashSet::new(),
-      };
-      event(&mut mutator);
-      predictions_needed = mutator.predictions_needed;
-    }
-    // if it was a fiat event, clean it up:
-    self.owned.fiat_events.remove(&event_time);
-    self.owned.last_event = Some(event_time);
-
-    for (row_id, predictor_id) in predictions_needed {
+  
+  fn make_prediction (&mut self, row_id: RowId, predictor_id: PredictorId) {
       self.clear_prediction(row_id, predictor_id);
       if self.shared
              .fields
@@ -418,7 +399,7 @@ impl<B: Basics> Steward<B> {
              .field_states
              .get(&FieldId::new(row_id, self.get_predictor(predictor_id).column_id))
              .is_none() {
-        continue;
+        return;
       }
 
       let now = self.owned
@@ -468,6 +449,29 @@ impl<B: Basics> Steward<B> {
       if let Some((ref time, _)) = prediction.what_will_happen {
         self.owned.predictions_by_time.insert(time.clone(), prediction.clone());
       }
+  }
+
+  fn execute_event(&mut self, event_time: ExtendedTime<B>, event: Event<B>) {
+    let predictions_needed;
+
+    {
+      let field_ref = &mut *self.shared.fields.borrow_mut();
+      let mut mutator = Mutator {
+        generic: GenericMutator::new(event_time.clone()),
+        steward: &mut self.owned,
+        shared: &self.shared,
+        fields: field_ref,
+        predictions_needed: HashSet::new(),
+      };
+      event(&mut mutator);
+      predictions_needed = mutator.predictions_needed;
+    }
+    // if it was a fiat event, clean it up:
+    self.owned.fiat_events.remove(&event_time);
+    self.owned.last_event = Some(event_time);
+
+    for (row_id, predictor_id) in predictions_needed {
+      self.make_prediction (row_id, predictor_id);
     }
   }
 
@@ -536,13 +540,23 @@ impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
                                           where & 'a S: IntoIterator <Item = super::SnapshotEntry <'a, B>> {
     let mut result = Self::new_empty(snapshot.constants().clone(), predictors);
     result.owned.invalid_before = ValidSince::Before (snapshot.now().clone());
+    let mut predictions_needed = HashSet::new();
     result.shared.fields.borrow_mut().field_states = snapshot.into_iter().map (| (id, stuff) | {
       if match result.owned.last_event {
         None => true,
         Some (ref time) => stuff.1 > time,
       } {result.owned.last_event = Some (stuff.1.clone());}
+      result.shared.predictors_by_column.get(& id.column_id).map(|predictors| {
+        for predictor in predictors {
+          predictions_needed.insert((id.row_id, predictor.predictor_id));
+        }
+      });
       (id, Field {data: stuff.0.clone(), last_change: stuff.1.clone(), first_snapshot_not_updated: 0})
     }).collect();
+    for (row_id, predictor_id) in predictions_needed {
+      result.make_prediction (row_id, predictor_id);
+    }
+    
     result
   }
 
