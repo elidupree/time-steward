@@ -15,7 +15,7 @@ macro_rules! printlnerr(
 // TODO: optimize away the pointless inefficiencies I introduced
 // note: the third time is not acceleration, but the coefficient of X squared, which is 2 times acceleration
 pub type Coordinate = i64;
-#[derive (Clone, Debug)]
+#[derive (Clone, Debug, Serialize, Deserialize)]
 pub struct QuadraticTrajectory {
   data: [[Coordinate; 3]; 2],
   time_scale_shift: u32,

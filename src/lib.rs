@@ -324,7 +324,7 @@ impl<B: Basics> Snapshot<B> for FiatSnapshot<B> {
 
 pub struct SerializationTable<S: Serializer>(HashMap<ColumnId,
                                                      fn(&FieldRc, &mut S) -> Result<(), S::Error>>);
-struct SerializationField<'a, 'b, Hack: Serializer + 'b>(ColumnId,
+pub struct SerializationField<'a, 'b, Hack: Serializer + 'b>(ColumnId,
                                                          &'a FieldRc,
                                                          &'b SerializationTable<Hack>);
 impl<'a, 'b, Hack: Serializer> Serialize for SerializationField<'a, 'b, Hack> {

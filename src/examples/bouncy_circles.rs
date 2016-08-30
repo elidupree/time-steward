@@ -35,6 +35,15 @@ const MAX_DISTANCE_TRAVELED_AT_ONCE: SpaceCoordinate = ARENA_SIZE << 4;
 const TIME_SHIFT: u32 = 20;
 const SECOND: Time = 1 << TIME_SHIFT;
 
+#[derive (Copy, Clone, Serialize, Deserialize)]
+struct SerializableVector2 <Coordinate> {
+  x: Coordinate, y: Coordinate
+}
+impl <Coordinate> SerializableVector2 <Coordinate> {
+  fn new (source: Vector2) {SerializableVector2 {x: source.x, y: source.y}}
+  fn get (self)->Vector2 {Vector2::new (self.x, self.y)}
+}
+
 #[derive(Clone)]
 struct Basics;
 impl ::Basics for Basics {
@@ -102,7 +111,7 @@ impl Column for Circle {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Intersection {
-  induced_acceleration: Vector2<SpaceCoordinate>,
+  induced_acceleration: SerializableVector2 <SpaceCoordinate>,
 }
 impl Column for Intersection {
   type FieldType = Self;
@@ -165,10 +174,10 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
                                  if let Some(intersection) = relationship {
                                    new.0
                                       .position
-                                      .add_acceleration(-intersection.induced_acceleration);
+                                      .add_acceleration(-intersection.induced_acceleration.get());
                                    new.1
                                       .position
-                                      .add_acceleration(intersection.induced_acceleration);
+                                      .add_acceleration(intersection.induced_acceleration.get());
                                    new_relationship = None;
                                    printlnerr!("Parted {} At {}", id, mutator.now());
                                  } else {
@@ -179,7 +188,7 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
                                    new.0.position.add_acceleration(acceleration);
                                    new.1.position.add_acceleration(-acceleration);
                                    new_relationship = Some(Intersection {
-                                     induced_acceleration: acceleration,
+                                     induced_acceleration: SerializableVector2 ::new (acceleration),
                                    });
 
                                    printlnerr!("Joined {} At {}", id, mutator.now());
@@ -228,7 +237,7 @@ fn boundary_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as Ti
                                  new.position.update_by(mutator.now() - me.1);
                                  if let Some(intersection) = relationship {
                                    new.position
-                                      .add_acceleration(-intersection.induced_acceleration);
+                                      .add_acceleration(-intersection.induced_acceleration.get());
                                    new_relationship = None;
                                  } else {
                                    let acceleration = -(new.position.evaluate() -
@@ -237,7 +246,7 @@ fn boundary_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as Ti
                                                       (ARENA_SIZE * 4 / (ARENA_SIZE - me.0.radius));
                                    new.position.add_acceleration(acceleration);
                                    new_relationship = Some(Intersection {
-                                     induced_acceleration: acceleration,
+                                     induced_acceleration: SerializableVector2 ::new (acceleration),
                                    });
 
                                  }
