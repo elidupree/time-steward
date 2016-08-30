@@ -133,14 +133,23 @@ impl<B: Basics> super::Snapshot<B> for Snapshot<B> {
   fn num_fields(&self) -> usize {
     self.state.field_states.len()
   }
-  fn iterate<'a, F>(&'a self, handler: &mut F)
-    where F: FnMut((FieldId, (&'a FieldRc, &'a ExtendedTime<B>)))
-  {
-    for item in self.state.field_states.iter() {
-      handler((item.0.clone(), (&(item.1).data, &(item.1).last_change)));
-    }
-  }
 }
+use std::collections::hash_map;
+pub struct SnapshotIter <'a, B: Basics> (hash_map::Iter <'a, FieldId, Field <B>>);
+impl <'a, B: Basics> Iterator for SnapshotIter <'a, B> {
+  type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
+  fn next (&mut self)->Option <Self::Item> {
+    (self.0).next().map (| (id, stuff) | (id.clone(), (& stuff.data, & stuff.last_change)))
+  }
+  fn size_hint (&self)->(usize, Option <usize>) {self.0.size_hint()}
+}
+impl <'a, B: Basics> IntoIterator for & 'a Snapshot <B> {
+  type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
+  type IntoIter = SnapshotIter <'a, B>;
+  fn into_iter (self)->Self::IntoIter {SnapshotIter (self.state.field_states.iter())}
+}
+
+
 
 impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
@@ -302,10 +311,30 @@ impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
     }
   }
 
-  fn from_snapshot<S: super::Snapshot<B>>(snapshot: S,
+  fn from_snapshot<'a, S: super::Snapshot<B>>(snapshot: & 'a S,
                                           predictors: Box<[super::Predictor<Self::PredictorFn>]>)
-                                          -> Self {
-    unimplemented!()
+                                          -> Self
+                                          where & 'a S: IntoIterator <Item = super::SnapshotEntry <'a, B>> {
+    let mut result = StewardImpl {
+      state: StewardState {
+        last_event: None,
+        invalid_before: ValidSince::Before (snapshot.now().clone()),
+        field_states: HashMap::new(),
+        fiat_events: BTreeMap::new(),
+      },
+      settings: StewardRc::new(StewardSettings {
+        predictors: predictors,
+        constants: snapshot.constants().clone(),
+      }),
+    };
+    result.state.field_states = snapshot.into_iter().map (| (id, stuff) | {
+      if match result.state.last_event {
+        None => true,
+        Some (ref time) => stuff.1 > time,
+      } {result.state.last_event = Some (stuff.1.clone());}
+      (id, Field {data: stuff.0.clone(), last_change: stuff.1.clone()})
+    }).collect();
+    result
   }
 
   fn insert_fiat_event(&mut self,

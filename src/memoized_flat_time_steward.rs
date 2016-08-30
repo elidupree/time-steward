@@ -185,13 +185,22 @@ impl<B: Basics> super::Snapshot<B> for Snapshot<B> {
   fn num_fields(&self) -> usize {
     unimplemented!()
   }
-
-  fn iterate<'a, F>(&'a self, handler: &mut F)
-    where F: FnMut((FieldId, (&'a FieldRc, &'a ExtendedTime<B>)))
-  {
+}
+use std::collections::hash_map;
+pub struct SnapshotIter <'a, B: Basics> (hash_map::Iter <'a, FieldId, Field <B>>);
+impl <'a, B: Basics> Iterator for SnapshotIter <'a, B> {
+  type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
+  fn next (&mut self)->Option <Self::Item> {
     unimplemented!()
   }
+  fn size_hint (&self)->(usize, Option <usize>) {self.0.size_hint()}
 }
+impl <'a, B: Basics> IntoIterator for & 'a Snapshot <B> {
+  type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
+  type IntoIter = SnapshotIter <'a, B>;
+  fn into_iter (self)->Self::IntoIter {unimplemented! ()}
+}
+
 
 impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
@@ -520,11 +529,23 @@ impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
     }
   }
 
-  fn from_snapshot<S: super::Snapshot<B>>(snapshot: S,
+
+  fn from_snapshot<'a, S: super::Snapshot<B>>(snapshot: & 'a S,
                                           predictors: Box<[super::Predictor<Self::PredictorFn>]>)
-                                          -> Self {
-    unimplemented!()
+                                          -> Self
+                                          where & 'a S: IntoIterator <Item = super::SnapshotEntry <'a, B>> {
+    let mut result = Self::new_empty(snapshot.constants().clone(), predictors);
+    result.owned.invalid_before = ValidSince::Before (snapshot.now().clone());
+    result.shared.fields.borrow_mut().field_states = snapshot.into_iter().map (| (id, stuff) | {
+      if match result.owned.last_event {
+        None => true,
+        Some (ref time) => stuff.1 > time,
+      } {result.owned.last_event = Some (stuff.1.clone());}
+      (id, Field {data: stuff.0.clone(), last_change: stuff.1.clone(), first_snapshot_not_updated: 0})
+    }).collect();
+    result
   }
+
 
 
   fn insert_fiat_event(&mut self,

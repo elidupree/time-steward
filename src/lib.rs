@@ -175,7 +175,7 @@ This is intended to be implemented on an empty struct. Requiring Clone is a hack
 */
 pub trait Basics: Clone + 'static {
   type Time: Clone + Ord + Serialize + Deserialize;
-  type Constants: Serialize + Deserialize;
+  type Constants: Clone + Serialize + Deserialize;
 }
 pub type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 
@@ -269,30 +269,21 @@ pub trait PredictorAccessor<B: Basics, EventFn:?Sized>: Accessor<B> {
     self.predict_at_time(time, event)
   }
 }
+pub type SnapshotEntry <'a, B: Basics> = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
+// where for <'a> & 'a Self: IntoIterator <Item = SnapshotEntry <'a, B>>
 pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {
   fn num_fields(&self) -> usize;
   // with slightly better polymorphism we could do this more idiomatically
   // type Iter<'a>: Iterator<(FieldId, (&'a FieldRc, &'a ExtendedTime<B>))>;
   // fn iter (&self)->Iter;
-  fn iterate<'a, F>(&'a self, handler: &mut F)
-    where F: FnMut((FieldId, (&'a FieldRc, &'a ExtendedTime<B>)));
+  //fn iterate<'a, F>(&'a self, handler: &mut F)
+  //  where F: FnMut((FieldId, (&'a FieldRc, &'a ExtendedTime<B>)));
 }
 
 pub struct FiatSnapshot<B: Basics> {
   constants: StewardRc<B::Constants>,
   now: B::Time,
   fields: HashMap<FieldId, (FieldRc, ExtendedTime<B>)>,
-}
-impl<B: Basics> FiatSnapshot<B> {
-  fn from_iter<T>(constants: StewardRc<B::Constants>, now: B::Time, thing: T) -> Self
-    where T: IntoIterator<Item = (FieldId, (FieldRc, ExtendedTime<B>))>
-  {
-    FiatSnapshot {
-      constants: constants,
-      now: now,
-      fields: thing.into_iter().collect(),
-    }
-  }
 }
 impl<B: Basics> Accessor<B> for FiatSnapshot<B> {
   fn generic_data_and_extended_last_change(&self,
@@ -312,13 +303,20 @@ impl<B: Basics> Snapshot<B> for FiatSnapshot<B> {
   fn num_fields(&self) -> usize {
     self.fields.len()
   }
-  fn iterate<'a, F>(&'a self, handler: &mut F)
-    where F: FnMut((FieldId, (&'a FieldRc, &'a ExtendedTime<B>)))
-  {
-    for item in self.fields.iter() {
-      handler((item.0.clone(), (&(item.1).0, &(item.1).1)));
-    }
+}
+use std::collections::hash_map;
+pub struct FiatSnapshotIter <'a, B: Basics> (hash_map::Iter <'a, FieldId, (FieldRc, ExtendedTime <B>)>);
+impl <'a, B: Basics> Iterator for FiatSnapshotIter <'a, B> {
+  type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
+  fn next (&mut self)->Option <Self::Item> {
+    (self.0).next().map (| (id, stuff) | (id.clone(), (& stuff.0, & stuff.1)))
   }
+  fn size_hint (&self)->(usize, Option <usize>) {self.0.size_hint()}
+}
+impl <'a, B: Basics> IntoIterator for & 'a FiatSnapshot <B> {
+  type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
+  type IntoIter = FiatSnapshotIter <'a, B>;
+  fn into_iter (self)->Self::IntoIter {FiatSnapshotIter (self.fields.iter())}
 }
 
 
@@ -391,7 +389,7 @@ macro_rules! make_snapshot_serde_functions {
 
 use serde as __time_steward_make_snapshot_serde_functions_impl_serde;
 
-pub fn $serialize_snapshot_name <B: $crate::Basics, Shot: $crate::Snapshot <B>, S: __time_steward_make_snapshot_serde_functions_impl_serde::Serializer> (snapshot: &Shot, serializer: &mut S)->Result <(), S::Error> where B::Time: __time_steward_make_snapshot_serde_functions_impl_serde::Serialize {
+pub fn $serialize_snapshot_name <'a, B: $crate::Basics, Shot: $crate::Snapshot <B>, S: __time_steward_make_snapshot_serde_functions_impl_serde::Serializer> (snapshot: & 'a Shot, serializer: &mut S)->Result <(), S::Error> where B::Time: __time_steward_make_snapshot_serde_functions_impl_serde::Serialize, & 'a Shot: IntoIterator <Item = $crate::SnapshotEntry <'a, B>>  {
   use std::collections::HashMap;
   use std::marker::PhantomData;
   use serde::Serialize;
@@ -401,11 +399,10 @@ pub fn $serialize_snapshot_name <B: $crate::Basics, Shot: $crate::Snapshot <B>, 
   try! (snapshot.now().serialize (serializer));
   try! (snapshot.constants().serialize (serializer));
   let mut state = try!(serializer.serialize_map(Some (snapshot.num_fields())));
-  snapshot.iterate (&mut | (id, (data, changed)) | {
-// once we can actually use an iterator, these should be try!()
-    serializer.serialize_map_key (&mut state, id).unwrap();
-    serializer.serialize_map_value (&mut state, (& $crate::SerializationField (id.column_id, & data, & table), changed)).unwrap();
-  });
+  for (id, (data, changed)) in snapshot {
+    try! (serializer.serialize_map_key (&mut state, id));
+    try! (serializer.serialize_map_value (&mut state, (& $crate::SerializationField (id.column_id, & data, & table), changed)));
+  };
   serializer.serialize_map_end (state)
 }
 
@@ -602,9 +599,10 @@ pub trait TimeStewardStaticMethods <B: Basics>: 'static {
   from_snapshot().valid_since() must equal Before(snapshot.now()),
   and must never go lower than that.
   */
-  fn from_snapshot<S: Snapshot<B>>(snapshot: S,
+  fn from_snapshot<'a, S: Snapshot<B>>(snapshot: & 'a S,
                                    predictors: Box<[Predictor<Self::PredictorFn>]>)
-                                   -> Self;
+                                   -> Self
+                                   where & 'a S: IntoIterator <Item = SnapshotEntry <'a, B>> ;
 
 
   /**
