@@ -23,7 +23,7 @@
 #![feature(unboxed_closures)]
 #![feature (plugin, custom_derive)]
 #![plugin (serde_macros)]
-#![plugin (quickcheck_macros)]
+//#![plugin (quickcheck_macros)]
 
 extern crate rand;
 extern crate polynomial;

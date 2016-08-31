@@ -323,7 +323,7 @@ pub mod partially_persistent_nonindexed_set {
       check_thread.join().unwrap();
       true
     }
-    #[quickcheck]
+    //#[quickcheck]
     fn operation_sequences_work(operations: Vec<(Key, bool)>) -> bool {
       test_operation_sequence (operations)
     }
