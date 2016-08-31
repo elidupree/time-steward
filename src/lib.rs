@@ -41,6 +41,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher, SipHasher};
 use std::any::Any;
 use std::sync::Arc;
+use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::fmt;
 use std::borrow::Borrow;
@@ -175,11 +176,14 @@ impl FieldId {
 // Serialize is required for synchronization checking.
 // I don't have plans to use Deserialize, but it's possible that I might,
 // so I included it for more future-proofing.
-pub trait EventFn <B: Basics>: Send + Sync + Serialize + Deserialize {
-  fn call <M: Mutator <B>> (mutator: &mut M);
+// I'm not sure if 'static is strictly necessary, but it makes things easier, and
+// wanting a non-'static callback (which still must live at least as long as the TimeSteward)
+// seems like a very strange situation.
+pub trait EventFn <B: Basics>: Send + Sync + Serialize + Deserialize + 'static {
+  fn call <M: Mutator <B>> (&self, mutator: &mut M);
 }
-pub trait PredictorFn <B: Basics>: Send + Sync + Serialize + Deserialize {
-  fn call <M: PredictorAccessor <B>> (mutator: &mut M, id: RowId);
+pub trait PredictorFn <B: Basics>: Send + Sync + Serialize + Deserialize + 'static {
+  fn call <M: PredictorAccessor <B>> (&self, mutator: &mut M, id: RowId);
 }
 
 
@@ -674,60 +678,71 @@ fn generator_for_event(id: TimeId) -> EventRng {
                         (id.data[1] & 0xffffffff) as u32])
 }
 
-macro_rules! make_dynamic_callbacks {() => {
+macro_rules! make_dynamic_callbacks {
 
-struct DynamicEventFn <B: Basics, E: EventFn <B>, M: Mutator <B>> (E, PhantomData <B>, PhantomData <M>);
-struct DynamicPredictorFn <B: Basics, P: PredictorFn <B>, PA: PredictorAccessor <B>> (P, PhantomData <B>, PhantomData <PA>);
+($M: ident, $PA: ident, $DynamicEventFn: ident, $DynamicPredictorFn: ident, $DynamicPredictor: ident, $StandardSettings: ident) => {
 
-impl<'a, B: Basics, E: EventFn <B>, M: Mutator <B>> Fn <(& 'a mut M)> for DynamicEventFn <B, E, M> {
-  extern "rust-call" fn call (&self, mutator: & 'a mut M) {
-    self.0.call (mutator)
+mod __time_steward_make_dynamic_callbacks_impl {
+
+use $crate::{Basics, EventFn, PredictorFn, RowId, ColumnId, PredictorId, StewardRc, TimeStewardSettings};
+use std::collections::HashMap;
+use std::marker::PhantomData;
+
+pub struct DynamicEventFn <B: Basics, E: EventFn <B>> (E, PhantomData <B>);
+pub struct DynamicPredictorFn <B: Basics, P: PredictorFn <B>> (P, PhantomData <B>);
+
+impl<B: Basics, E: EventFn <B>> DynamicEventFn <B, E> {
+  pub fn new (event: E)->Self {DynamicEventFn (event, PhantomData)}
+}
+impl<B: Basics, P: PredictorFn <B>> DynamicPredictorFn <B, P> {
+  pub fn new (predictor: P)->Self {DynamicPredictorFn (predictor, PhantomData)}
+}
+
+impl<'a, 'b, B: Basics, E: EventFn <B>> Fn <(& 'a mut super::$M <'b, B>,)> for DynamicEventFn <B, E> {
+  extern "rust-call" fn call (&self, arguments: (& 'a mut super::$M <'b, B>,)) {
+    self.0.call (arguments.0)
   }
 }
-impl<'a, B: Basics, P: PredictorFn <B>, PA: PredictorAccessor <B>> Fn <(& 'a mut PA, RowId)> for DynamicPredictorFn <B, P, PA> {
-  extern "rust-call" fn call (&self, arguments: (& 'a mut PA, RowId)) {
+impl<'a, 'b, B: Basics, P: PredictorFn <B>> Fn <(& 'a mut super::$PA <'b, B>, RowId)> for DynamicPredictorFn <B, P> {
+  extern "rust-call" fn call (&self, arguments: (& 'a mut super::$PA <'b, B>, RowId)) {
     self.0.call (arguments.0, arguments.1)
   }
 }
 
-impl<'a, B: Basics, E: EventFn <B>, M: Mutator <B>> FnMut <(& 'a mut M)> for DynamicEventFn <B, E, M> {
-  extern "rust-call" fn call_mut (&mut self, mutator: & 'a mut M) {
-    self.call (mutator)
-  }
-}
-impl<'a, B: Basics, E: EventFn <B>, M: Mutator <B>> FnOnce <(& 'a mut M)> for DynamicEventFn <B, E, M> {
-  type Output = ();
-  extern "rust-call" fn call_once (self, mutator: & 'a mut M) {
-    self.call (mutator)
-  }
-}
-
-
-impl<'a, B: Basics, P: PredictorFn <B>, PA: PredictorAccessor <B>> FnMut <(& 'a mut PA, RowId)> for DynamicPredictorFn <B, P, PA> {
-  extern "rust-call" fn call_mut (&mut self, arguments: (& 'a mut PA, RowId)) {
+impl<'a, 'b, B: Basics, E: EventFn <B>> FnMut <(& 'a mut super::$M <'b, B>,)> for DynamicEventFn <B, E> {
+  extern "rust-call" fn call_mut (&mut self, arguments: (& 'a mut super::$M <'b, B>,)) {
     self.call (arguments)
   }
 }
-impl<'a, B: Basics, P: PredictorFn <B>, PA: PredictorAccessor <B>> FnOnce <(& 'a mut PA, RowId)> for DynamicPredictorFn <B, P, PA> {
+impl<'a, 'b, B: Basics, E: EventFn <B>> FnOnce <(& 'a mut super::$M <'b, B>,)> for DynamicEventFn <B, E> {
   type Output = ();
-  extern "rust-call" fn call_once (self, arguments: (& 'a mut PA, RowId)) {
+  extern "rust-call" fn call_once (self, arguments: (& 'a mut super::$M <'b, B>,)) {
     self.call (arguments)
   }
 }
 
-}}
 
-
+impl<'a, 'b, B: Basics, P: PredictorFn <B>> FnMut <(& 'a mut super::$PA <'b, B>, RowId)> for DynamicPredictorFn <B, P> {
+  extern "rust-call" fn call_mut (&mut self, arguments: (& 'a mut super::$PA <'b, B>, RowId)) {
+    self.call (arguments)
+  }
+}
+impl<'a, 'b, B: Basics, P: PredictorFn <B>> FnOnce <(& 'a mut super::$PA <'b, B>, RowId)> for DynamicPredictorFn <B, P> {
+  type Output = ();
+  extern "rust-call" fn call_once (self, arguments: (& 'a mut super::$PA <'b, B>, RowId)) {
+    self.call (arguments)
+  }
+}
 
 // #[derive (Clone)]
-struct DynamicPredictor <B: Basics, P: PredictorAccessor <B>> {
-  predictor_id: PredictorId,
-  column_id: ColumnId,
-  function: StewardRc <Fn(&mut P)>,
+pub struct DynamicPredictor <B: Basics> {
+  pub predictor_id: PredictorId,
+  pub column_id: ColumnId,
+  pub function: StewardRc <for <'a, 'b> Fn(& 'a mut super::$PA <'b, B>, RowId)>,
   _marker: PhantomData <B>,
 }
 // explicitly implement Clone to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
-impl<B: Basics, P: PredictorAccessor <B>> Clone for DynamicPredictor<B, P> {
+impl<B: Basics> Clone for DynamicPredictor<B> {
   fn clone(&self) -> Self {
     DynamicPredictor {
       predictor_id: self.predictor_id,
@@ -738,39 +753,77 @@ impl<B: Basics, P: PredictorAccessor <B>> Clone for DynamicPredictor<B, P> {
   }
 }
 
-// Public for the sake of TimeSteward implementors; TimeSteward users shouldn't refer to this directly.
-pub struct StandardSettings <B: Basics, P: PredictorAccessor <B>> {
-  predictors_by_column: HashMap<ColumnId, Vec<DynamicPredictor <B, P>>>,
-  predictors_by_id: HashMap<PredictorId, DynamicPredictor <B, P>>,
+pub struct StandardSettings <B: Basics> {
+  pub predictors_by_column: HashMap<ColumnId, Vec<DynamicPredictor <B>>>,
+  pub predictors_by_id: HashMap<PredictorId, DynamicPredictor <B>>,
 }
-impl<B: Basics, P: PredictorAccessor <B>> TimeStewardSettings <B> for StandardSettings <B, P> {
+impl<B: Basics> TimeStewardSettings <B> for StandardSettings <B> {
   fn new()->Self {
     StandardSettings {
       predictors_by_id: HashMap::new(),
       predictors_by_column: HashMap::new(),
     }
   }
-  fn insert_predictor <PC: PredictorFn <B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: PC) {
-    let predictor = DynamicPredictor {predictor_id: predictor_id, column_id: column_id, function: StewardRc::new (DynamicPredictorFn (function, PhantomData))};
+  fn insert_predictor <P: PredictorFn <B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: P) {
+    let predictor = DynamicPredictor {
+      predictor_id: predictor_id,
+      column_id: column_id,
+      function: StewardRc::new (DynamicPredictorFn::new (function)),
+      _marker: PhantomData,
+    };
     self.predictors_by_id.insert(predictor.predictor_id, predictor.clone());
     self.predictors_by_column.entry(predictor.column_id).or_insert(Vec::new()).push(predictor);
   }
 }
 
+}
 
+use self::__time_steward_make_dynamic_callbacks_impl::DynamicEventFn as $DynamicEventFn;
+use self::__time_steward_make_dynamic_callbacks_impl::DynamicPredictor as $DynamicPredictor;
+use self::__time_steward_make_dynamic_callbacks_impl::DynamicPredictorFn as $DynamicPredictorFn;
+pub use self::__time_steward_make_dynamic_callbacks_impl::StandardSettings as $StandardSettings;
+
+}}
+
+struct GenericPredictorAccessor<B: Basics, E> {
+  soonest_prediction: Option<(B::Time, E)>,
+  dependencies: RefCell<(Vec<FieldId>, SiphashIdGenerator)>,
+}
+impl<B: Basics, E> GenericPredictorAccessor <B, E> {
+  fn new() -> Self {
+    GenericPredictorAccessor {
+      soonest_prediction: None,
+      dependencies: RefCell::new ((Vec::new(), SiphashIdGenerator::new())),
+    }
+  }
+}
+
+macro_rules! predictor_accessor_common_accessor_methods {
+  ($B: ty, $get: ident) => {
+    fn generic_data_and_extended_last_change(&self,
+                                             id: FieldId)
+                                             -> Option<(&FieldRc, &ExtendedTime<$B>)> {
+      let dependencies: &mut (Vec<FieldId>, SiphashIdGenerator) = &mut*self.generic.dependencies.borrow_mut();
+      dependencies.0.push(id);
+      self.$get(id).map(|p| {
+        p.1.id.hash(&mut dependencies.1);
+        p
+      })
+    }
+  }
+}
 macro_rules! predictor_accessor_common_methods {
-  ($B: ty, $self_hack: ident, $soonest_prediction: expr) => {
-    fn predict_at_time <E: $crate::EventFn <$B>> (&mut $self_hack, time: <$B as $crate::Basics>::Time, event: E) {
-      if time < *$self_hack.unsafe_now() {
+  ($B: ty, $DynamicEventFn: ident) => {
+    fn predict_at_time <E: $crate::EventFn <$B>> (&mut self, time: <$B as $crate::Basics>::Time, event: E) {
+      if time < *self.unsafe_now() {
         return;
       }
-      let soonest_prediction: &mut Option <(<$B as $crate::Basics>::Time, Event <$B>)> = $soonest_prediction;
-      if let Some((ref old_time, _)) = *soonest_prediction {
+      if let Some((ref old_time, _)) = self.generic.soonest_prediction {
         if old_time <= &time {
           return;
         }
       }
-      *soonest_prediction = Some((time, event));
+      self.generic.soonest_prediction = Some((time, StewardRc::new ($DynamicEventFn ::new (event))));
     }
   }
 }
@@ -878,6 +931,6 @@ pub mod time_functions;
 pub mod collision_detection;
 
 pub mod examples {
-  pub mod handshakes;
+  //pub mod handshakes;
   //pub mod bouncy_circles;
 }
