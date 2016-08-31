@@ -1221,11 +1221,11 @@ fn tests() {
 
 
 
-  printlnerr!(" {:?}",
+  println!(" {:?}",
               roots(&[Range::new(-900, -800), Range::new(500, 501), Range::exactly(50)],
                     -i64::max_value(),
                     i64::max_value()));
-  printlnerr!(" {:?}",
+  println!(" {:?}",
               roots(&[Range::new(-900, -800),
                       Range::new(500, 501),
                       Range::exactly(50),

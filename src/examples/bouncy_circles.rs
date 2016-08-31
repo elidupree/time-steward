@@ -2,7 +2,7 @@ extern crate nalgebra;
 
 use memoized_flat_time_steward as s;
 use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
-     TimeStewardStaticMethods, Accessor, MomentaryAccessor, PredictorAccessor, StewardRc};
+     Accessor, MomentaryAccessor, PredictorAccessor, StewardRc};
 use collision_detection::simple_grid as collisions;
 
 use time_functions::QuadraticTrajectory;

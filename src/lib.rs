@@ -20,7 +20,7 @@
  *
  * */
 
-#![feature(optin_builtin_traits)]
+#![feature(unboxed_closures)]
 #![feature (plugin, custom_derive)]
 #![plugin (serde_macros)]
 #![plugin (quickcheck_macros)]
@@ -44,6 +44,7 @@ use std::sync::Arc;
 use std::cmp::Ordering;
 use std::fmt;
 use std::borrow::Borrow;
+use std::marker::PhantomData;
 use rand::{Rng, ChaChaRng, SeedableRng};
 use serde::{Serialize, Serializer, Deserialize};
 use serde::ser::Error;
@@ -169,6 +170,19 @@ impl FieldId {
   }
 }
 
+// I'm not sure exactly what synchronization properties we will need for these callbacks,
+// so I'm requiring both Send and Sync for now to future-proof them.
+// Serialize is required for synchronization checking.
+// I don't have plans to use Deserialize, but it's possible that I might,
+// so I included it for more future-proofing.
+pub trait EventFn <B: Basics>: Send + Sync + Serialize + Deserialize {
+  fn call <M: Mutator <B>> (mutator: &mut M);
+}
+pub trait PredictorFn <B: Basics>: Send + Sync + Serialize + Deserialize {
+  fn call <M: PredictorAccessor <B>> (mutator: &mut M, id: RowId);
+}
+
+
 /**
 This is intended to be implemented on an empty struct. Requiring Clone is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 */
@@ -259,11 +273,11 @@ pub trait Mutator<B: Basics>: MomentaryAccessor<B> + Rng {
   fn gen_id(&mut self) -> RowId;
   fn underlying_rng_unsafe(&mut self) -> &mut EventRng;
 }
-pub trait PredictorAccessor<B: Basics, EventFn:?Sized>: Accessor<B> {
-  fn predict_at_time(&mut self, time: B::Time, event: StewardRc<EventFn>);
+pub trait PredictorAccessor<B: Basics>: Accessor<B> {
+  fn predict_at_time <E: EventFn <B>> (&mut self, time: B::Time, event: E);
 
   ///A specific use of unsafe_now() that is guaranteed to be safe
-  fn predict_immediately(&mut self, event: StewardRc<EventFn>) {
+  fn predict_immediately<E: EventFn <B>> (&mut self, event: E) {
     let time = self.unsafe_now().clone();
     self.predict_at_time(time, event)
   }
@@ -272,16 +286,14 @@ pub type SnapshotEntry <'a, B: Basics> = (FieldId, (& 'a FieldRc, & 'a ExtendedT
 // where for <'a> & 'a Self: IntoIterator <Item = SnapshotEntry <'a, B>>
 pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {
   fn num_fields(&self) -> usize;
-  // with slightly better polymorphism we could do this more idiomatically
+  // with slightly better polymorphism we could do this more straightforwardly
   // type Iter<'a>: Iterator<(FieldId, (&'a FieldRc, &'a ExtendedTime<B>))>;
   // fn iter (&self)->Iter;
-  //fn iterate<'a, F>(&'a self, handler: &mut F)
-  //  where F: FnMut((FieldId, (&'a FieldRc, &'a ExtendedTime<B>)));
 }
 
 pub struct FiatSnapshot<B: Basics> {
-  constants: StewardRc<B::Constants>,
   now: B::Time,
+  constants: StewardRc<B::Constants>,
   fields: HashMap<FieldId, (FieldRc, ExtendedTime<B>)>,
 }
 impl<B: Basics> Accessor<B> for FiatSnapshot<B> {
@@ -562,17 +574,14 @@ impl<T: Ord> PartialOrd for ValidSince<T> {
 //  }
 // }
 
-/// TimeStewardLifetimedMethods is a hack to make it possible
-/// for trait TimeSteward to have associated types that are
-/// parameterized by lifetime.
-pub trait TimeStewardLifetimedMethods<'a, B: Basics>: TimeStewardStaticMethods <B> {
-  type Mutator: Mutator <B> + 'a;
-  type PredictorAccessor: PredictorAccessor <B, <Self as TimeStewardStaticMethods <B>>::EventFn> + 'a;
+pub trait TimeStewardSettings <B: Basics> {
+  fn new()->Self;
+  fn insert_predictor <P: PredictorFn <B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: P);
 }
-pub trait TimeStewardStaticMethods <B: Basics>: 'static {
-  type EventFn:?Sized;
-  type PredictorFn:?Sized;
+
+pub trait TimeSteward <B: Basics> {
   type Snapshot: Snapshot <B>;
+  type Settings: TimeStewardSettings <B>;
 
   /**
   You are allowed to call snapshot_before(), insert_fiat_event(),
@@ -589,7 +598,7 @@ pub trait TimeStewardStaticMethods <B: Basics>: 'static {
   
   new_empty().valid_since() must equal TheBeginning.
   */
-  fn new_empty(constants: B::Constants, predictors: Box<[Predictor<Self::PredictorFn>]>) -> Self;
+  fn new_empty(constants: B::Constants, settings: Self::Settings) -> Self;
 
   /**
   Creates a new TimeSteward from a snapshot.
@@ -597,8 +606,7 @@ pub trait TimeStewardStaticMethods <B: Basics>: 'static {
   from_snapshot().valid_since() must equal Before(snapshot.now()),
   and must never go lower than that.
   */
-  fn from_snapshot<'a, S: Snapshot<B>>(snapshot: & 'a S,
-                                   predictors: Box<[Predictor<Self::PredictorFn>]>)
+  fn from_snapshot<'a, S: Snapshot<B>>(snapshot: & 'a S, settings: Self::Settings)
                                    -> Self
                                    where & 'a S: IntoIterator <Item = SnapshotEntry <'a, B>> ;
 
@@ -611,10 +619,10 @@ pub trait TimeStewardStaticMethods <B: Basics>: 'static {
   steward.insert_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
   steward.insert_fiat_event() may not change steward.valid_since().
   */
-  fn insert_fiat_event(&mut self,
+  fn insert_fiat_event<E: EventFn <B> + Serialize + Deserialize> (&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
-                       event: StewardRc<Self::EventFn>)
+                       event: E)
                        -> Result<(), FiatEventOperationError>;
 
   /**
@@ -641,7 +649,6 @@ pub trait TimeStewardStaticMethods <B: Basics>: 'static {
   */
   fn snapshot_before(&mut self, time: &B::Time) -> Option<Self::Snapshot>;
 }
-pub trait TimeSteward <B: Basics>: for<'a> TimeStewardLifetimedMethods<'a, B> {}
 
 
 // TODO: everything between here and the modules at the bottom are implementation details that should be moved into a different file
@@ -653,23 +660,6 @@ pub trait TimeSteward <B: Basics>: for<'a> TimeStewardLifetimedMethods<'a, B> {}
 //   Immediately(E),
 //   At(B::Time, E),
 // }
-
-// #[derive (Clone)]
-pub struct Predictor<PredictorFn: ?Sized> {
-  predictor_id: PredictorId,
-  column_id: ColumnId,
-  function: StewardRc<PredictorFn>,
-}
-// explicitly implement Clone to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
-impl<PredictorFn: ?Sized> Clone for Predictor<PredictorFn> {
-  fn clone(&self) -> Self {
-    Predictor {
-      predictor_id: self.predictor_id,
-      column_id: self.column_id,
-      function: self.function.clone(),
-    }
-  }
-}
 
 // type Event<M> = StewardRc<for<'d> Fn(&'d mut M)>;
 // type PredictorFn<B: Basics, M: Mutator<B>, PA: PredictorAccessor<B>> =
@@ -684,9 +674,93 @@ fn generator_for_event(id: TimeId) -> EventRng {
                         (id.data[1] & 0xffffffff) as u32])
 }
 
+macro_rules! make_dynamic_callbacks {() => {
+
+struct DynamicEventFn <B: Basics, E: EventFn <B>, M: Mutator <B>> (E, PhantomData <B>, PhantomData <M>);
+struct DynamicPredictorFn <B: Basics, P: PredictorFn <B>, PA: PredictorAccessor <B>> (P, PhantomData <B>, PhantomData <PA>);
+
+impl<'a, B: Basics, E: EventFn <B>, M: Mutator <B>> Fn <(& 'a mut M)> for DynamicEventFn <B, E, M> {
+  extern "rust-call" fn call (&self, mutator: & 'a mut M) {
+    self.0.call (mutator)
+  }
+}
+impl<'a, B: Basics, P: PredictorFn <B>, PA: PredictorAccessor <B>> Fn <(& 'a mut PA, RowId)> for DynamicPredictorFn <B, P, PA> {
+  extern "rust-call" fn call (&self, arguments: (& 'a mut PA, RowId)) {
+    self.0.call (arguments.0, arguments.1)
+  }
+}
+
+impl<'a, B: Basics, E: EventFn <B>, M: Mutator <B>> FnMut <(& 'a mut M)> for DynamicEventFn <B, E, M> {
+  extern "rust-call" fn call_mut (&mut self, mutator: & 'a mut M) {
+    self.call (mutator)
+  }
+}
+impl<'a, B: Basics, E: EventFn <B>, M: Mutator <B>> FnOnce <(& 'a mut M)> for DynamicEventFn <B, E, M> {
+  type Output = ();
+  extern "rust-call" fn call_once (self, mutator: & 'a mut M) {
+    self.call (mutator)
+  }
+}
+
+
+impl<'a, B: Basics, P: PredictorFn <B>, PA: PredictorAccessor <B>> FnMut <(& 'a mut PA, RowId)> for DynamicPredictorFn <B, P, PA> {
+  extern "rust-call" fn call_mut (&mut self, arguments: (& 'a mut PA, RowId)) {
+    self.call (arguments)
+  }
+}
+impl<'a, B: Basics, P: PredictorFn <B>, PA: PredictorAccessor <B>> FnOnce <(& 'a mut PA, RowId)> for DynamicPredictorFn <B, P, PA> {
+  type Output = ();
+  extern "rust-call" fn call_once (self, arguments: (& 'a mut PA, RowId)) {
+    self.call (arguments)
+  }
+}
+
+}}
+
+
+
+// #[derive (Clone)]
+struct DynamicPredictor <B: Basics, P: PredictorAccessor <B>> {
+  predictor_id: PredictorId,
+  column_id: ColumnId,
+  function: StewardRc <Fn(&mut P)>,
+  _marker: PhantomData <B>,
+}
+// explicitly implement Clone to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
+impl<B: Basics, P: PredictorAccessor <B>> Clone for DynamicPredictor<B, P> {
+  fn clone(&self) -> Self {
+    DynamicPredictor {
+      predictor_id: self.predictor_id,
+      column_id: self.column_id,
+      function: self.function.clone(),
+      _marker: PhantomData,
+    }
+  }
+}
+
+// Public for the sake of TimeSteward implementors; TimeSteward users shouldn't refer to this directly.
+pub struct StandardSettings <B: Basics, P: PredictorAccessor <B>> {
+  predictors_by_column: HashMap<ColumnId, Vec<DynamicPredictor <B, P>>>,
+  predictors_by_id: HashMap<PredictorId, DynamicPredictor <B, P>>,
+}
+impl<B: Basics, P: PredictorAccessor <B>> TimeStewardSettings <B> for StandardSettings <B, P> {
+  fn new()->Self {
+    StandardSettings {
+      predictors_by_id: HashMap::new(),
+      predictors_by_column: HashMap::new(),
+    }
+  }
+  fn insert_predictor <PC: PredictorFn <B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: PC) {
+    let predictor = DynamicPredictor {predictor_id: predictor_id, column_id: column_id, function: StewardRc::new (DynamicPredictorFn (function, PhantomData))};
+    self.predictors_by_id.insert(predictor.predictor_id, predictor.clone());
+    self.predictors_by_column.entry(predictor.column_id).or_insert(Vec::new()).push(predictor);
+  }
+}
+
+
 macro_rules! predictor_accessor_common_methods {
   ($B: ty, $self_hack: ident, $soonest_prediction: expr) => {
-    fn predict_at_time(&mut $self_hack, time: <$B as $crate::Basics>::Time, event: Event<$B>) {
+    fn predict_at_time <E: $crate::EventFn <$B>> (&mut $self_hack, time: <$B as $crate::Basics>::Time, event: E) {
       if time < *$self_hack.unsafe_now() {
         return;
       }
@@ -793,7 +867,7 @@ fn next_extended_time_of_predicted_event<BaseTime: Ord>
 pub mod data_structures;
 
 pub mod inefficient_flat_time_steward;
-pub mod memoized_flat_time_steward;
+//pub mod memoized_flat_time_steward;
 // pub mod amortized_time_steward;
 
 // pub mod crossverified_time_stewards;
@@ -805,5 +879,5 @@ pub mod collision_detection;
 
 pub mod examples {
   pub mod handshakes;
-  pub mod bouncy_circles;
+  //pub mod bouncy_circles;
 }

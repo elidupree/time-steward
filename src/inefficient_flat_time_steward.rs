@@ -7,7 +7,7 @@
 
 use super::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, Column, ExtendedTime,
             EventRng, Basics, TimeSteward, FiatEventOperationError, ValidSince,
-            TimeStewardLifetimedMethods, TimeStewardStaticMethods, StewardRc, FieldRc,
+            StewardRc, FieldRc,
             GenericMutator, Accessor};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
@@ -115,7 +115,7 @@ impl<'a, B: Basics> PredictorAccessor<'a, B> {
         .expect("how can we be calling a predictor when there are no fields yet?")
   }
 }
-impl<'a, B: Basics> super::PredictorAccessor<B, EventFn<B>> for PredictorAccessor<'a, B> {
+impl<'a, B: Basics> super::PredictorAccessor<B> for PredictorAccessor<'a, B> {
   predictor_accessor_common_methods!(B, self, &mut self.soonest_prediction);
   /* fn predict_at_time(&mut self, time: B::Time, event: Event<B>) {
    * if time < self.internal_now().base {
@@ -275,16 +275,9 @@ impl<B: Basics> StewardImpl<B> {
   }
 }
 
-
-impl<B: Basics> Steward<B> {}
-impl<'a, B: Basics> TimeStewardLifetimedMethods<'a, B> for Steward<B> {
-  type Mutator = Mutator <'a, B>;
-  type PredictorAccessor = PredictorAccessor <'a, B>;
-}
-impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
-  type EventFn = EventFn <B>;
-  type PredictorFn = PredictorFn <B>;
+impl<B: Basics> TimeSteward <B> for Steward<B> {
   type Snapshot = Snapshot<B>;
+  type Settings = super::StandardSettings <B, PredictorAccessor <B>>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     max(self.state.invalid_before.clone(),
@@ -378,4 +371,3 @@ impl<B: Basics> TimeStewardStaticMethods<B> for Steward<B> {
     })
   }
 }
-impl<B: Basics> TimeSteward<B> for Steward<B> {}
