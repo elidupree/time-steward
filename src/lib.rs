@@ -186,6 +186,32 @@ pub trait PredictorFn <B: Basics>: Send + Sync + Serialize + Deserialize + 'stat
   fn call <M: PredictorAccessor <B>> (&self, mutator: &mut M, id: RowId);
 }
 
+macro_rules! time_steward_predictor {
+  ($B: ty, struct $name: ident {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $accessor_name: ident, $row_name: ident | $contents: expr) => {{
+    #[derive (Serialize, Deserialize)]
+    struct $name {$($field_name: $field_type),*}
+    impl $crate::PredictorFn <$B> for $name {
+      fn call <P: $crate::PredictorAccessor <$B>> (&$self_name, $accessor_name: &mut P, $row_name: RowId) {
+        $contents
+      }
+    }
+    $name {$($field_name: $field_value),*}
+  }}
+}
+
+macro_rules! time_steward_event {
+  ($B: ty, struct $name: ident {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $mutator_name: ident | $contents: expr) => {{
+    #[derive (Serialize, Deserialize)]
+    struct $name {$($field_name: $field_type),*}
+    impl $crate::EventFn <$B> for $name {
+      fn call <M: $crate::Mutator <$B>> (&$self_name, $mutator_name: &mut M) {
+        $contents
+      }
+    }
+    $name {$($field_name: $field_value),*}
+  }}
+}
+
 
 /**
 This is intended to be implemented on an empty struct. Requiring Clone is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
@@ -253,7 +279,7 @@ pub trait Accessor<B: Basics> {
   However, in some cases, you may want to have a predictor that does something like
   "predict an event to happen at the beginning of any minute", which isn't technically
   time-dependent – but if you did it in a time-independent way, you'd have to predict
-  infinitely many events. unsafe_now() is provided to enable you to only compute one of them.
+  infinitely many events. Unsafe_now() is provided to enable you to only compute one of them.
   
   When you call unsafe_now() in a predictor, you promise that you will
   make the SAME predictions for ANY given return value of unsafe_now(), UNLESS:
