@@ -20,7 +20,7 @@
  *
  * */
 
-#![feature(unboxed_closures)]
+#![feature(unboxed_closures, fn_traits)]
 #![feature (plugin, custom_derive)]
 #![plugin (serde_macros)]
 //#![plugin (quickcheck_macros)]
@@ -931,6 +931,6 @@ pub mod time_functions;
 pub mod collision_detection;
 
 pub mod examples {
-  //pub mod handshakes;
+  pub mod handshakes;
   //pub mod bouncy_circles;
 }

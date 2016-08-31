@@ -205,22 +205,24 @@ impl<B: Basics> StewardState<B> {
 }
 impl<B: Basics> StewardImpl<B> {
   fn next_event(&self) -> Option<(ExtendedTime<B>, Event<B>)> {
-    let first_fiat_event_iter = self.state
+    unimplemented!()/*let first_fiat_event_iter = self.state
                                     .fiat_events
                                     .iter()
                                     .map(|ev| (ev.0.clone(), ev.1.clone()));
-    let predicted_events_iter = self.state.field_states.keys().flat_map(
-      move |field_id| {
-        self.settings.settings.predictors_by_column.get(& field_id.column_id).unwrap_or (& Vec::new()).iter().filter_map (
-          | predictor | {
-                let mut pa = PredictorAccessor {
-                  generic: super::GenericPredictorAccessor::new(),
-                  steward: self,
-                };
-                (predictor.function)(&mut pa, field_id.row_id);
-                let dependencies_hash = pa.generic.dependencies.borrow().1.generate();
-                pa.generic.soonest_prediction.and_then(|(event_base_time, event)| {
-                  super::next_extended_time_of_predicted_event(predictor.predictor_id,
+    let predicted_events_iter = self.state.field_states.keys().flat_map(|field_id| {
+        self.settings.settings.predictors_by_column.get(& field_id.column_id).unwrap_or (& Vec::new()).iter().filter_map (| predictor | {
+                let generic;
+                {
+                  let mut pa = PredictorAccessor {
+                    generic: super::GenericPredictorAccessor::new(),
+                    steward: self,
+                  };
+                  (predictor.function)(&mut pa, field_id.row_id);
+                  generic = pa.generic;
+                }
+                let dependencies_hash = generic.dependencies.borrow().1.generate();
+                generic.soonest_prediction.map(|(event_base_time, event)| {
+                  let extended = super::next_extended_time_of_predicted_event(predictor.predictor_id,
                                                                field_id.row_id,
                                                                dependencies_hash,
                                                                event_base_time,
@@ -230,15 +232,14 @@ impl<B: Basics> StewardImpl<B> {
                                                                     .expect("how can we be \
                                                                              calling a predictor \
                                                                              when there are no \
-                                                                             fields yet?"))
-                    .map(|event_time| (event_time, event))
+                                                                             fields yet?")).expect("this should only fail if the time was in the past, a case that was already ruled out");
+                  (extended, event)
                 })
           }
         )
-      }
-    );
+    });
     let events_iter = first_fiat_event_iter.chain(predicted_events_iter);
-    events_iter.min_by_key(|ev| ev.0.clone())
+    events_iter.min_by_key(|ev| ev.0.clone())*/
   }
 
   fn execute_event(&mut self, event_time: ExtendedTime<B>, event: Event<B>) {

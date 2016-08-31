@@ -1,5 +1,5 @@
 use inefficient_flat_time_steward as s;
-use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator, StewardRc,
+use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator, StewardRc,
      Accessor, MomentaryAccessor, PredictorAccessor};
 use rand::Rng;
 // use serde_json;
@@ -58,48 +58,67 @@ fn display_snapshot<S: ::Snapshot<Basics>>(snapshot: &S) {
 }
 
 pub fn testfunc() {
+  let mut settings = <Steward as TimeSteward>::Settings::new();
+  settings.insert_predictor (PredictorId(0x0e7f27c7643f8167), Philosopher::column_id(), {
+    #[derive (Serialize, Deserialize)]
+    struct Shaker {}
+    impl ::PredictorFn <Basics> for Shaker {
+      fn call <P: ::PredictorAccessor <Basics >> (&self, pa: &mut P, whodunnit: RowId) {
+        println!("Planning {}", whodunnit);
+        
+        let me = pa.get::<Philosopher>(whodunnit).unwrap().clone();
+        pa.predict_at_time(me.time_when_next_initiates_handshake, {
+          #[derive (Serialize, Deserialize)]
+          struct Shake {whodunnit: RowId}
+          impl ::EventFn <Basics> for Shake {
+            fn call <M: ::Mutator <Basics >> (&self, m: &mut M) {
+              let now = *m.now();
+              let friend_id = get_philosopher_id(m.gen_range(0, HOW_MANY_PHILOSOPHERS));
+              let awaken_time_1 = now + m.gen_range(-1, 4);
+              let awaken_time_2 = now + m.gen_range(-1, 7);
+              println!("SHAKE!!! @{}. {}={}; {}={}", now, self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
+              // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
+              // IN THE SECOND TIME APPARENTLY
+              m.set::<Philosopher>(friend_id,
+                                   Some(Philosopher {
+                                     time_when_next_initiates_handshake: awaken_time_1,
+                                   }));
+              m.set::<Philosopher>(self.whodunnit,
+                                   Some(Philosopher {
+                                     time_when_next_initiates_handshake: awaken_time_2,
+                                   }));
+            }
+          }
+          Shake {whodunnit:whodunnit}
+        });
+      }
+    }
+    Shaker {}
+  });
+  
   let mut stew: Steward =
-    ::TimeStewardStaticMethods::new_empty((),
-                                          Box::new([s::Predictor {
-                                                      predictor_id: PredictorId(0x0e7f27c7643f8167),
-                                                      column_id: Philosopher::column_id(),
-                                                      function: StewardRc::new(|pa, whodunnit| {
-                                                        println!("Planning {}", whodunnit);
-                                                        let me = pa.get::<Philosopher>(whodunnit)
-                                                                   .unwrap()
-                                                                   .clone();
-                                                        pa.predict_at_time(me.time_when_next_initiates_handshake,
-StewardRc::new(move |m| {
-        let now = *m.now();
-        let friend_id = get_philosopher_id(m.gen_range(0, HOW_MANY_PHILOSOPHERS));
-        let awaken_time_1 = now + m.gen_range(-1, 4);
-        let awaken_time_2 = now + m.gen_range(-1, 7);
-        println!("SHAKE!!! @{}. {}={}; {}={}", now, whodunnit, awaken_time_2, friend_id, awaken_time_1);
-        // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
-        // IN THE SECOND TIME APPARENTLY
-        m.set::<Philosopher>(friend_id,
-                             Some(Philosopher {
-                               time_when_next_initiates_handshake: awaken_time_1,
-                             }));
-        m.set::<Philosopher>(whodunnit,
-                             Some(Philosopher {
-                               time_when_next_initiates_handshake: awaken_time_2,
-                             }));
-      }));
-                                                      }),
-                                                    }]));
+    ::TimeSteward::new_empty((), settings);
 
   stew.insert_fiat_event(0,
                          DeterministicRandomId::new(&0x32e1570766e768a7u64),
-                         StewardRc::new(|m| {
-                           println!("FIAT!!!!!");
+        {
+          #[derive (Serialize, Deserialize)]
+          struct Initialize {}
+          impl ::EventFn <Basics> for Initialize {
+            fn call <M: ::Mutator <Basics >> (&self, m: &mut M) {
+println!("FIAT!!!!!");
                            for i in 0..HOW_MANY_PHILOSOPHERS {
                              m.set::<Philosopher>(get_philosopher_id(i),
-                           Some(Philosopher {
-                             time_when_next_initiates_handshake: (i + 1) as Time,
-                           }));
+                               Some(Philosopher {
+                                 time_when_next_initiates_handshake: (i + 1) as Time,
+                               }));
                            }
-                         }))
+                         
+            }
+          }
+          Initialize {}
+        }
+   )
       .unwrap();
 
   let mut snapshots = Vec::new();
