@@ -1,6 +1,6 @@
 extern crate nalgebra;
 
-use memoized_flat_time_steward as s;
+use crossverified_time_stewards as s;
 use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
      Accessor, MomentaryAccessor, PredictorAccessor, StewardRc};
 use collision_detection::simple_grid as collisions;
@@ -13,6 +13,8 @@ use std::time::{Instant, Duration};
 use glium;
 use glium::{DisplayBuild, Surface};
 use rounding_error_tolerant_math::right_shift_round_up;
+use inefficient_flat_time_steward;
+use memoized_flat_time_steward;
 
 use std::io::Write;
 macro_rules! printlnerr(
@@ -120,7 +122,7 @@ impl Column for Intersection {
   }
 }
 
-type Steward = s::Steward<Basics>;
+type Steward = s::Steward<Basics, inefficient_flat_time_steward::Steward<Basics>, memoized_flat_time_steward::Steward<Basics>>;
 
 fn get_circle_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x86ccbeb2c140cc51u64, index))

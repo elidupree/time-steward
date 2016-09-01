@@ -5,43 +5,42 @@
 //!
 
 
-use super::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, Column, ExtendedTime,
-            EventRng, Basics, FieldRc, TimeSteward, FiatEventOperationResult, ValidSince};
+use super::{DeterministicRandomId, SiphashIdGenerator, RowId, ColumnId, FieldId, PredictorId, Column, ExtendedTime, StewardRc,
+             Basics, FieldRc, TimeSteward, FiatEventOperationError, ValidSince, PredictorFn, TimeStewardSettings, Accessor};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::any::Any;
+use std::cmp::max;
 use std::borrow::Borrow;
 use std::rc::Rc;
 use std::marker::PhantomData;
 
 #[derive (Clone)]
-pub struct Steward<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (Steward0, Steward1, PhantomData <B::Constants>);
+pub struct Steward<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
+  Steward0,
+  Steward1,
+  PhantomData <B::Constants>
+);
 pub struct Snapshot<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
   <Steward0 as TimeSteward <B>>::Snapshot,
   <Steward1 as TimeSteward <B>>::Snapshot,
 );
-pub enum Mutator<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > where <Steward0 as TimeStewardLifetimedMethods <'a, B>>::Mutator: 'a, <Steward1 as TimeStewardLifetimedMethods <'a, B>>::Mutator: 'a {
-  Form0 (& 'a mut <Steward0 as TimeSteward <B>>::Mutator),
-  Form1 (& 'a mut <Steward1 as TimeSteward <B>>::Mutator),
-}
-pub enum PredictorAccessor<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > where <Steward0 as TimeStewardLifetimedMethods <'a, B>>::PredictorAccessor: 'a, <Steward1 as TimeStewardLifetimedMethods <'a, B>>::PredictorAccessor: 'a {
-  Form0 (& 'a mut <Steward0 as TimeSteward <B>>::PredictorAccessor),
-  Form1 (& 'a mut <Steward1 as TimeSteward <B>>::PredictorAccessor),
-}
-pub type EventFn <B, Steward0, Steward1> = for<'d, 'e> Fn(&'d mut Mutator<'e, B, Steward0, Steward1>);
-pub type Event<B, Steward0, Steward1> = Rc<EventFn <B, Steward0, Steward1>>;
-//pub type Predictor<B, Steward0, Steward1> = super::Predictor<PredictorFn<B, Steward0, Steward1>>;
-//pub type PredictorFn<B, Steward0, Steward1> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B, Steward0, Steward1>, RowId);
+pub struct Settings <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
+  <Steward0 as TimeSteward <B>>::Settings,
+  <Steward1 as TimeSteward <B>>::Settings,
+);
 
 
-
-impl<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Accessor<B> for Snapshot<'a, B, Steward0, Steward1> {
+impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Accessor<B> for Snapshot<B, Steward0, Steward1> {
   //macro_rules! forward_snapshot_method ($method: ident ($self, $($argument_name: ident: $argument_type:ty),*)->$return_type:ty
   // TODO: forward all the methods properly
   // and check equality by serialization
-  fn generic_data_and_extended_last_time (&self, id: FieldId)->Option <(& FieldRc, & ExtendedTime <B>)> {
-    match (self.0.generic_data_and_extended_last_time (id), self.1.generic_data_and_extended_last_time (id)) {
+  fn generic_data_and_extended_last_change (&self, id: FieldId)->Option <(& FieldRc, & ExtendedTime <B>)> {
+    match (
+      self.0.generic_data_and_extended_last_change (id), 
+      self.1.generic_data_and_extended_last_change (id)
+    ) {
       (None, None) => None,
       //we cannot actually check whether the values are the same, so just use one of them
       (Some (value_0), Some (value_1)) => Some (value_0),
@@ -50,129 +49,102 @@ impl<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::
     }
   }
   fn constants(&self) -> &B::Constants {
-    //constants are usually implemented trivially; we don't bother checking them
+    //constants methods are usually implemented trivially; we don't bother checking them.
+    //Since the user only gives you one set of constants, it's hard to return a wrong value
     self.0.constants()
   }
-}
-  macro_rules! forward_mutator_method {
-  ($method: ident [$($generic_parameters:tt)*]=[$($specific_parameters:ty),*] ([$($self_reference:tt)*] self, $($argument_name: ident: $argument_type:ty),*)->$return_type:ty) => {
-  fn $method <$($generic_parameters)*>($($self_reference)* self, $($argument_name: $argument_type)*) ->$return_type {
-    match self {
-      $($self_reference)* Mutator::Form0 (other) => other.$method::<$($specific_parameters)*> ($($argument_name)*),
-      $($self_reference)* Mutator::Form1 (other) => other.$method::<$($specific_parameters)*> ($($argument_name)*),
-    }
-  }
-}}
-
-impl<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Accessor<B> for Mutator<'a, B, Steward0, Steward1> {
-  forward_mutator_method! (generic_data_and_extended_last_change []=[] ([&] self, id: FieldId)->Option <(& FieldRc, & ExtendedTime <B>)>);
-  fn constants(&self) -> &B::Constants {
-    match self {
-      & Mutator::Form0 (other) => other.constants (),
-      & Mutator::Form1 (other) => other.constants (),
-    }
-  }
-}
-impl<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Accessor<B> for PredictorAccessor<'a, B, Steward0, Steward1> {
-  fn get<C: Column>(&mut self, id: RowId) -> Option<&C::FieldType> {
-    match self {
-      &mut PredictorAccessor::Form0 (other) => other.get::<C> (id),
-      &mut PredictorAccessor::Form1 (other) => other.get::<C> (id),
-    }
-  }
-  fn constants(&self) -> &B::Constants {
-    match self {
-      & PredictorAccessor::Form0 (other) => other.constants (),
-      & PredictorAccessor::Form1 (other) => other.constants (),
-    }
-  }
-}
-
-impl<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::MomentaryAccessor<B> for Snapshot<'a, B, Steward0, Steward1> {
-  fn now(&self) -> &B::Time {
-    let result = (self.0.now(), self.1.now());
+  fn unsafe_now(&self) -> &B::Time {
+    let result = (self.0.unsafe_now(), self.1.unsafe_now());
     assert! (result.0 == result.1, "Snapshots returned different times; this is an egregious bug!");
     result.0
   }
 }
-impl<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::MomentaryAccessor<B> for Mutator<'a, B, Steward0, Steward1> {
-  fn now(&self) -> &B::Time {
-    match self {
-      & Mutator::Form0 (other) => other.now(),
-      & Mutator::Form1 (other) => other.now(),
+
+impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::MomentaryAccessor<B> for Snapshot<B, Steward0, Steward1> {}
+
+impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Snapshot<B> for Snapshot<B, Steward0, Steward1> {
+  fn num_fields(&self) -> usize {
+    assert_eq!(self.0.num_fields(), self.1.num_fields());
+    self.0.num_fields()
+  }
+}/*
+use std::collections::hash_set;
+pub struct SnapshotIter <'a, B: Basics, Steward0: TimeSteward<B> + 'a, Steward1: TimeSteward<B> + 'a>
+where & 'a Steward0::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>>,
+& 'a Steward1::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>>
+{
+  set: hash_set::HashSet <FieldId>,
+  iter: hash_set::Iter <'a, FieldId>,
+  snapshot: & 'a Snapshot <B, Steward0, Steward1>,
+}
+impl <'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> Iterator for SnapshotIter<'a, B, Steward0, Steward1>
+where & 'a Steward0::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>>,
+& 'a Steward1::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>> {
+  type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
+  fn next (&mut self)->Option <Self::Item> {
+    (self. iter).next().map (| id | (id.clone(), (self. snapshot).generic_data_and_extended_last_change (id.clone()).expect ("the snapshot thinks a FieldId exists when it doesn't")))
+  }
+  fn size_hint (&self)->(usize, Option <usize>) {self. iter.size_hint()}
+}
+impl <'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> IntoIterator for & 'a Snapshot <B, Steward0, Steward1>
+where & 'a Steward0::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>>,
+& 'a Steward1::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>>,
+
+ {
+  type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
+  type IntoIter = SnapshotIter <'a, B, Steward0, Steward1>;
+  fn into_iter (self)->Self::IntoIter {
+    let mut field_ids = hash_set::HashSet::new();
+    for entry in (& self.0) {
+      field_ids.insert (entry.0.clone());
+    }
+    for entry in (& self.0) {
+      let redundant =!field_ids.insert (entry.0.clone());
+      assert!(redundant, "field existed in Steward1 snapshot but not Steward0 snapshot: {:?}", entry.0.clone());
+    }
+    unimplemented!()//SnapshotIter {set: field_ids, iter: field_ids.iter(), snapshot: self}
+  }
+}
+*/
+//TODO: implement snapshot iterating
+
+/*
+//TODO: should we just require PredictorFn to implement Clone?
+#[derive (Serialize, Deserialize)]
+struct ShareablePredictorFn <B: Basics, P: PredictorFn <B>> (StewardRc <P>, PhantomData <B>);
+impl <B: Basics, P: PredictorFn <B>> PredictorFn <B> for ShareablePredictorFn <B, P> {
+  fn call <PA: super::PredictorAccessor <B>> (&self, accessor: &mut PA, id: RowId) {
+    self.0.call (accessor, id);
+  }
+}
+// explicitly implement Clone to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
+impl<B: Basics> Clone for DynamicPredictor<B> {
+  fn clone(&self) -> Self {
+    DynamicPredictor {
+      predictor_id: self.predictor_id,
+      column_id: self.column_id,
+      function: self.function.clone(),
+      _marker: PhantomData,
     }
   }
 }
-impl<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::PredictorAccessor<B> for PredictorAccessor<'a, B, Steward0, Steward1> {
-  fn predict_immediately(&mut self, event: Event<B, Steward0, Steward1>) {
-    match self {
-      &mut PredictorAccessor::Form0 (other) => other.predict_immediately(convert_event_0 (event)),
-      &mut PredictorAccessor::Form1 (other) => other.predict_immediately(convert_event_1 (event)),
-    }
-  }
-  fn predict_at_time(&mut self, time: &B::Time, event: Event<B, Steward0, Steward1>) {
-    match self {
-      &mut PredictorAccessor::Form0 (other) => other.predict_at_time(time, convert_event_0 (event)),
-      &mut PredictorAccessor::Form1 (other) => other.predict_at_time(time, convert_event_1 (event)),
-    }
-  }
-}
-impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Snapshot<B> for Snapshot<B, Steward0, Steward1> {}
+*/
 
-impl<'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Mutator<B> for Mutator<'a, B, Steward0, Steward1> {
-  fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
-    match self {
-      &mut Mutator::Form0 (other) => other.set::<C>(id, data),
-      &mut Mutator::Form1 (other) => other.set::<C>(id, data),
-    }
+
+impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > TimeStewardSettings <B> for Settings <B, Steward0, Steward1> {
+  fn new()->Self {
+    Settings (<Steward0::Settings as TimeStewardSettings <B>>::new(), <Steward1::Settings as TimeStewardSettings <B>>::new())
   }
-  fn rng(&mut self) -> &mut EventRng {
-    match self {
-      &mut Mutator::Form0 (other) => other.rng (),
-      &mut Mutator::Form1 (other) => other.rng (),
-    }
-  }
-  fn random_id(&mut self) -> RowId {
-    match self {
-      &mut Mutator::Form0 (other) => other.random_id(),
-      &mut Mutator::Form1 (other) => other.random_id(),
-    }
+  fn insert_predictor <P: PredictorFn <B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: P) {
+    //let function = ShareablePredictorFn::<B, P> (StewardRc::new (function), PhantomData);
+    self.0.insert_predictor (predictor_id, column_id, function.clone());
+    self.1.insert_predictor (predictor_id, column_id, function);
   }
 }
 
-
-fn convert_event_0 <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> (event: Event <B, Steward0, Steward1>)->Rc<<Steward0 as TimeStewardStaticMethods <B>>::EventFn> {
-  Rc::new (| mutator | {event (&mut Mutator::Form0 (mutator))});
-}
-fn convert_event_1 <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> (event: Event <B, Steward0, Steward1>)->Rc<<Steward1 as TimeStewardStaticMethods <B>>::EventFn> {
-  Rc::new (| mutator | {event (&mut Mutator::Form1 (mutator))});
-}
-fn convert_predictor_0 <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> (predictor: Predictor <B, Steward0, Steward1>)
-  ->super::Predictor <<Steward0 as TimeStewardStaticMethods <B>>::PredictorFn> {
-  let inner_function =predictor.function .clone();
-  let function: Rc<<Steward0 as TimeStewardStaticMethods <B>>::PredictorFn> = 
-    Rc::new (move | access, row | {
-      inner_function (&mut PredictorAccessor::Form0 (access), row)
-    });
-}
-
-
-
-impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward0, Steward1> where B::Constants: Clone {}
 impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward0, Steward1> {
   type Snapshot = Snapshot<B, Steward0, Steward1>;
   type Settings = Settings<B, Steward0, Steward1>;
-  
-  fn snapshot_before(&mut self, time: &B::Time) -> Option<Self::Snapshot> {
-    match (
-      self.0.snapshot_before (time),
-      self.1.snapshot_before (time)
-    ) {
-      (None, None) => None,
-      (Some (snapshot_0), Some (snapshot_1)) => Some (Snapshot (snapshot_0, snapshot_1)),
-      _=> panic! ("One steward returned a snapshot and the other didn't; this could be an error in the stewards or a user error (calling at a time that is valid for one steward but not the other)")
-    }
-  }
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     max (self.0.valid_since(), self.1.valid_since())
@@ -190,8 +162,8 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
                                               -> Self
                                               where & 'a S: IntoIterator <Item = super::SnapshotEntry <'a, B>> {
     Steward (
-      TimeSteward::from_snapshot (snapshot, settings.0),
-      TimeSteward::from_snapshot (snapshot, settings.1),
+      Steward0::from_snapshot (snapshot, settings.0),
+      Steward1::from_snapshot (snapshot, settings.1),
       PhantomData,
     )
   }
@@ -204,33 +176,47 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
       return Err(FiatEventOperationError::InvalidTime);
     }
     match (
-      self.0.insert_fiat_event (time.clone(), id.clone(), event),
-      self.1.insert_fiat_event (time, id, event);
+      self.0.insert_fiat_event (time.clone(), id, event.clone()),
+      self.1.insert_fiat_event (time, id, event)
     ){
       (Ok (()), Ok (())) => Ok (()),
       (Err (FiatEventOperationError::InvalidTime),_) => panic!("Steward0 returned InvalidTime after its own ValidSince"),
       (_,Err (FiatEventOperationError::InvalidTime)) => panic!("Steward1 returned InvalidTime after its own ValidSince"),
       (Err (FiatEventOperationError::InvalidInput),Err (FiatEventOperationError::InvalidInput)) => Err (FiatEventOperationError::InvalidInput),
-      _=> panic!("stewards returned different results for insert_fiat_event; I believe this is ALWAYS a bug in one of the stewards (that is, it cannot be caused by invalid input)");
+      _=> panic!("stewards returned different results for insert_fiat_event; I believe this is ALWAYS a bug in one of the stewards (that is, it cannot be caused by invalid input)"),
     }
   }
   fn erase_fiat_event(&mut self,
                       time: &B::Time,
                       id: DeterministicRandomId)
-                      -> FiatEventOperationResult {
-    if self.valid_since() > time {
+                      -> Result<(), FiatEventOperationError> {
+    if self.valid_since() > *time {
       return Err(FiatEventOperationError::InvalidTime);
     }
     match (
-      self.0.erase_fiat_event (time.clone(), id.clone()),
-      self.1.erase_fiat_event (time, id);
+      self.0.erase_fiat_event (time, id),
+      self.1.erase_fiat_event (time, id)
     ){
       (Ok (()), Ok (())) => Ok (()),
       (Err (FiatEventOperationError::InvalidTime),_) => panic!("Steward0 returned InvalidTime after its own ValidSince"),
       (_,Err (FiatEventOperationError::InvalidTime)) => panic!("Steward1 returned InvalidTime after its own ValidSince"),
       (Err (FiatEventOperationError::InvalidInput),Err (FiatEventOperationError::InvalidInput)) => Err (FiatEventOperationError::InvalidInput),
-      _=> panic!("stewards returned different results for insert_fiat_event; I believe this is ALWAYS a bug in one of the stewards (that is, it cannot be caused by invalid input)");
+      _=> panic!("stewards returned different results for insert_fiat_event; I believe this is ALWAYS a bug in one of the stewards (that is, it cannot be caused by invalid input)"),
+    }
+  }
+
+  fn snapshot_before<'b>(&'b mut self, time: &'b B::Time) -> Option<Self::Snapshot> {
+    if self.valid_since() > *time {
+      return None;
+    }
+    match (
+      self.0.snapshot_before (time),
+      self.1.snapshot_before (time)
+    ) {
+      (Some (snapshot_0), Some (snapshot_1)) => Some (Snapshot (snapshot_0, snapshot_1)),
+      (None, _) => panic! ("Steward0 failed to return a snapshot at a time it claims to be valid"),
+      (_, None) => panic! ("Steward1 failed to return a snapshot at a time it claims to be valid"),
     }
   }
 }
-impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward0, Steward1> where B::Constants: Clone {}
+

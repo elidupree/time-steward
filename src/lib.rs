@@ -174,21 +174,24 @@ impl FieldId {
 // I'm not sure exactly what synchronization properties we will need for these callbacks,
 // so I'm requiring both Send and Sync for now to future-proof them.
 // Serialize is required for synchronization checking.
-// I don't have plans to use Deserialize, but it's possible that I might,
-// so I included it for more future-proofing.
+// Serialize + Deserialize is needed for fiat events in order to transmit them.
+// Clone makes things easier for crossverified time stewards, and
+//   shouldn't be too hard for a Serialize + Deserialize type.
+// I don't have plans to use Deserialize for other events/predictors,
+// but it's possible that I might, so I included it for more future-proofing.
 // I'm not sure if 'static is strictly necessary, but it makes things easier, and
 // wanting a non-'static callback (which still must live at least as long as the TimeSteward)
 // seems like a very strange situation.
-pub trait EventFn <B: Basics>: Send + Sync + Serialize + Deserialize + 'static {
+pub trait EventFn <B: Basics>: Send + Sync + Clone + Serialize + Deserialize + 'static {
   fn call <M: Mutator <B>> (&self, mutator: &mut M);
 }
-pub trait PredictorFn <B: Basics>: Send + Sync + Serialize + Deserialize + 'static {
-  fn call <M: PredictorAccessor <B>> (&self, mutator: &mut M, id: RowId);
+pub trait PredictorFn <B: Basics>: Send + Sync + Clone + Serialize + Deserialize + 'static {
+  fn call <PA: PredictorAccessor <B>> (&self, accessor: &mut PA, id: RowId);
 }
 
 macro_rules! time_steward_predictor {
   ($B: ty, struct $name: ident [$($generic_parameters:tt)*]=[$($specific_parameters:ty),*] {$($field_name: ident: $field_type: ty = $field_value: expr),*} , | &$self_name: ident, $accessor_name: ident, $row_name: ident | $contents: expr) => {{
-    #[derive (Serialize, Deserialize)]
+    #[derive (Clone, Serialize, Deserialize)]
     struct $name <$($generic_parameters)*> {$($field_name: $field_type),*}
     impl<$($generic_parameters)*> $crate::PredictorFn <$B> for $name<$($specific_parameters),*> {
       fn call <P: $crate::PredictorAccessor <$B>> (&$self_name, $accessor_name: &mut P, $row_name: RowId) {
@@ -204,7 +207,7 @@ macro_rules! time_steward_predictor {
 
 macro_rules! time_steward_event {
   ($B: ty, struct $name: ident [$($generic_parameters:tt)*]=[$($specific_parameters:ty),*] {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $mutator_name: ident | $contents: expr) => {{
-    #[derive (Serialize, Deserialize)]
+    #[derive (Clone, Serialize, Deserialize)]
     struct $name <$($generic_parameters)*> {$($field_name: $field_type),*}
     impl<$($generic_parameters)*> $crate::EventFn <$B> for $name<$($specific_parameters),*> {
       fn call <M: $crate::Mutator <$B>> (&$self_name, $mutator_name: &mut M) {
@@ -963,7 +966,7 @@ pub mod inefficient_flat_time_steward;
 pub mod memoized_flat_time_steward;
 // pub mod amortized_time_steward;
 
-// pub mod crossverified_time_stewards;
+pub mod crossverified_time_stewards;
 
 pub mod rounding_error_tolerant_math;
 pub mod time_functions;

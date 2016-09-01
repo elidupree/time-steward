@@ -1,9 +1,11 @@
-use memoized_flat_time_steward as s;
+use crossverified_time_stewards as s;
 use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, StewardRc};
 use rand::Rng;
 // use serde_json;
 use bincode::serde::{Serializer, Deserializer};
 use bincode;
+use inefficient_flat_time_steward;
+use memoized_flat_time_steward;
 
 use std::io::Write;
 
@@ -32,7 +34,7 @@ impl Column for Philosopher {
   }
 }
 
-type Steward = s::Steward<Basics>;
+type Steward = s::Steward<Basics, inefficient_flat_time_steward::Steward <Basics>, memoized_flat_time_steward::Steward <Basics>>;
 
 fn get_philosopher_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x2302c38efb47e0d0u64, index))
@@ -113,12 +115,12 @@ pub fn testfunc() {
     let mut writer: Vec<u8> = Vec::with_capacity(128);
     {
       let mut serializer = Serializer::new(&mut writer);
-      serialize_snapshot(snapshot, &mut serializer).unwrap();
+      //serialize_snapshot(snapshot, &mut serializer).unwrap();
     }
     // let serialized = String::from_utf8 (serializer.into_inner()).unwrap();
     println!("{:?}", writer);
-    let deserialized = deserialize_snapshot:: <Basics,_> (&mut Deserializer::new (&mut writer.as_slice(), bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/)).unwrap();
-    display_snapshot(&deserialized);
+    //let deserialized = deserialize_snapshot:: <Basics,_> (&mut Deserializer::new (&mut writer.as_slice(), bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/)).unwrap();
+    //display_snapshot(&deserialized);
   }
   // panic!("anyway")
 }

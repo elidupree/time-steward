@@ -344,10 +344,8 @@ impl<B: Basics> TimeSteward <B> for Steward<B> {
   }
 
   fn snapshot_before<'b>(&'b mut self, time: &'b B::Time) -> Option<Self::Snapshot> {
-    if let Some(ref change) = self.state.last_event {
-      if change.base >= *time {
-        return None;
-      }
+    if self.valid_since() > *time {
+      return None;
     }
     self.update_until_beginning_of(time);
     Some(Snapshot {
