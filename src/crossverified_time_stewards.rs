@@ -20,16 +20,38 @@ use std::marker::PhantomData;
 pub struct Steward<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
   Steward0,
   Steward1,
+  StewardRc <HashMap<ColumnId, fn (&FieldRc, &FieldRc)>>,
   PhantomData <B::Constants>
 );
 pub struct Snapshot<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
   <Steward0 as TimeSteward <B>>::Snapshot,
   <Steward1 as TimeSteward <B>>::Snapshot,
+  StewardRc <HashMap<ColumnId, fn (&FieldRc, &FieldRc)>>,
 );
 pub struct Settings <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
   <Steward0 as TimeSteward <B>>::Settings,
   <Steward1 as TimeSteward <B>>::Settings,
+  pub HashMap<ColumnId, fn (&FieldRc, &FieldRc)>,
 );
+
+pub fn check_equality <C: Column> (first: &FieldRc, second: &FieldRc) {
+  assert_eq!(::unwrap_field::<C>(first), ::unwrap_field::<C>(second), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
+}
+
+#[macro_export]
+macro_rules! __time_steward_insert_crossverification_function {
+  ($column: ty, $table: expr) => {
+    $table.insert (<$column as $crate::Column>::column_id(), $crate::crossverified_time_stewards::check_equality::<$column>);
+  }
+}
+
+#[macro_export]
+macro_rules! populate_crossverified_time_stewards_equality_table {
+($settings: ident) => {
+  for_all_columns! (__time_steward_insert_crossverification_function {Column, $settings.2});
+}
+}
+
 
 
 impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Accessor<B> for Snapshot<B, Steward0, Steward1> {
@@ -43,8 +65,8 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Acce
     ) {
       (None, None) => None,
       (Some (value_0), Some (value_1)) => {
-        assert!(value_0.1 == value_1.1, "Snapshots returned different last change times for the same field; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
-        //we cannot currently check whether the values are the same, so just use one of them
+        assert_eq!(value_0.1, value_1.1, "Snapshots returned different last change times for the same field; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
+        (self.2.get (& id.column_id).expect ("Column missing from crossverification table; did you forget to call populate_crossverified_time_stewards_equality_table!()? Or did you forget to list a column in for_all_columns!()?")) (value_0.0, value_1.0);
         Some (value_0)
       },
       //however, we CAN tell the difference between something and nothing
@@ -136,7 +158,7 @@ impl<B: Basics> Clone for DynamicPredictor<B> {
 
 impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > TimeStewardSettings <B> for Settings <B, Steward0, Steward1> {
   fn new()->Self {
-    Settings (<Steward0::Settings as TimeStewardSettings <B>>::new(), <Steward1::Settings as TimeStewardSettings <B>>::new())
+    Settings (<Steward0::Settings as TimeStewardSettings <B>>::new(), <Steward1::Settings as TimeStewardSettings <B>>::new(), HashMap::new())
   }
   fn insert_predictor <P: PredictorFn <B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: P) {
     //let function = ShareablePredictorFn::<B, P> (StewardRc::new (function), PhantomData);
@@ -156,6 +178,7 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
     Steward (
       TimeSteward::new_empty (constants.clone(), settings.0),
       TimeSteward::new_empty (constants, settings.1),
+      StewardRc::new (settings.2),
       PhantomData,
     )
   }
@@ -167,6 +190,7 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
     Steward (
       Steward0::from_snapshot (snapshot, settings.0),
       Steward1::from_snapshot (snapshot, settings.1),
+      StewardRc::new (settings.2),
       PhantomData,
     )
   }
@@ -216,7 +240,7 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
       self.0.snapshot_before (time),
       self.1.snapshot_before (time)
     ) {
-      (Some (snapshot_0), Some (snapshot_1)) => Some (Snapshot (snapshot_0, snapshot_1)),
+      (Some (snapshot_0), Some (snapshot_1)) => Some (Snapshot (snapshot_0, snapshot_1, self.2.clone())),
       (None, _) => panic! ("Steward0 failed to return a snapshot at a time it claims to be valid"),
       (_, None) => panic! ("Steward1 failed to return a snapshot at a time it claims to be valid"),
     }

@@ -130,6 +130,15 @@ impl Column for Intersection {
   }
 }
 
+
+
+macro_rules! for_all_columns {
+  ($macro_name: ident {Column, $($macro_arguments:tt)*}) => {{
+    for_these_columns! {$macro_name {Column, $($macro_arguments)*}, Circle, Intersection};
+    for_all_columns_from_time_steward_simple_grid_collision_detection! {CollisionBasics, $macro_name {Column, $($macro_arguments)*}};
+  }};
+}
+
 type Steward = s::Steward<Basics, inefficient_flat_time_steward::Steward<Basics>, memoized_flat_time_steward::Steward<Basics>>;
 
 fn get_circle_id(index: i32) -> RowId {
@@ -288,7 +297,7 @@ pub fn testfunc() {
     time_steward_predictor_from_generic_fn! (Basics, struct BoundaryPredictor, boundary_predictor)
   );
   collisions::insert_predictors::<CollisionBasics, _>(&mut settings);
-
+  populate_crossverified_time_stewards_equality_table!(settings);
   let mut stew: Steward = ::TimeSteward::new_empty((), settings);
 
   stew.insert_fiat_event(0,

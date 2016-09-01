@@ -88,6 +88,7 @@ pub fn testfunc() {
     })
   );
 
+  populate_crossverified_time_stewards_equality_table!(settings);
   let mut stew: Steward = ::TimeSteward::new_empty((), settings);
 
   stew.insert_fiat_event(0,

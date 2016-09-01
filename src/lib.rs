@@ -288,7 +288,7 @@ pub type FieldRc = StewardRc<Any>;
 //  }
 // }
 
-fn unwrap_field<'a, C: Column>(field: &'a FieldRc) -> &'a C::FieldType {
+pub fn unwrap_field<'a, C: Column>(field: &'a FieldRc) -> &'a C::FieldType {
   field.downcast_ref::<C::FieldType>().expect("a field had the wrong type for its column").borrow()
 }
 
@@ -438,9 +438,7 @@ pub fn deserialize_column<B: Basics, C: Column, M: de::MapVisitor>
 pub fn serialize_column<C: Column, S: Serializer>(field: &FieldRc,
                                                   serializer: &mut S)
                                                   -> Result<(), S::Error> {
-  try!(field.downcast_ref::<C::FieldType>()
-            .expect("a field had the wrong type for its column")
-            .serialize(serializer));
+  try!(unwrap_field::<C>(field).serialize(serializer));
   Ok(())
 }
 
@@ -460,9 +458,9 @@ macro_rules! __time_steward_insert_serialization_function {
 
 #[macro_export]
 macro_rules! for_these_columns {
-  ($macro_name: ident {Column, $($macro_arguments:tt)*}, $column: ty $(, $more_columns:tt)*) => {{
+  ($macro_name: ident {Column, $($macro_arguments:tt)*}, $column: ty $(, $more_columns:ty)*) => {{
     $macro_name! {$column, $($macro_arguments)*};
-    for_these_columns! {$macro_name {Column, $($macro_arguments)*}, $($more_columns:tt,)*}
+    for_these_columns! {$macro_name {Column, $($macro_arguments)*} $(, $more_columns)*}
   }};
   ($macro_name: ident {Column, $($macro_arguments:tt)*},) => {{}};
   ($macro_name: ident {Column, $($macro_arguments:tt)*}) => {{}};
@@ -1005,6 +1003,7 @@ pub mod inefficient_flat_time_steward;
 pub mod memoized_flat_time_steward;
 // pub mod amortized_time_steward;
 
+#[macro_use]
 pub mod crossverified_time_stewards;
 
 pub mod rounding_error_tolerant_math;
