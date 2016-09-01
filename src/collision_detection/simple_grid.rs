@@ -6,13 +6,13 @@ use std::marker::PhantomData;
 use serde::Serialize;
 use std::any::Any;
 
-#[derive (Copy, Clone, Hash, Serialize, Deserialize)]
+#[derive (Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Bounds {
   pub min: [i64; 2],
   pub max: [i64; 2],
 }
 
-pub trait Basics: super::Basics + Clone + Send + Sync + Any {
+pub trait Basics: super::Basics {
   fn get_bounds<A: MomentaryAccessor<<Self as super::Basics>::StewardBasics>>(accessor: &A,
                                                                               who: RowId, detector: <Self as super::Basics>::DetectorId)
                                                                               -> Bounds;
@@ -33,7 +33,7 @@ impl<B: Basics> Column for Cell<B> {
 
 ///TODO: this should not be public; it's only public so that it can be used in a macro expansion,
 ///which would be a generic function if rust had better polymorphism
-#[derive (Clone, Serialize, Deserialize)]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Member<B: Basics> {
   pub row: RowId,
   pub bounds: Bounds,

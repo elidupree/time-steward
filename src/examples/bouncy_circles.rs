@@ -37,7 +37,7 @@ const MAX_DISTANCE_TRAVELED_AT_ONCE: SpaceCoordinate = ARENA_SIZE << 4;
 const TIME_SHIFT: u32 = 20;
 const SECOND: Time = 1 << TIME_SHIFT;
 
-#[derive (Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive (Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct SerializableVector2<Coordinate> {
   x: Coordinate,
   y: Coordinate,
@@ -54,13 +54,13 @@ impl<Coordinate> SerializableVector2<Coordinate> {
   }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Basics;
 impl ::Basics for Basics {
   type Time = Time;
   type Constants = ();
 }
-#[derive(Clone, Serialize, Deserialize)]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct CollisionBasics {}
 impl ::collision_detection::Basics for CollisionBasics {
   type StewardBasics = Basics;
@@ -108,7 +108,7 @@ impl collisions::Basics for CollisionBasics {
 
 type Nearness = ::collision_detection::Nearness<CollisionBasics>;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Circle {
   position: QuadraticTrajectory,
   radius: SpaceCoordinate,
@@ -119,7 +119,7 @@ impl Column for Circle {
     ColumnId(0x6422505ce8c8ce8e)
   }
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Intersection {
   induced_acceleration: SerializableVector2<SpaceCoordinate>,
 }

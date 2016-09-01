@@ -14,14 +14,14 @@ type Time = i64;
 
 const HOW_MANY_PHILOSOPHERS: i32 = 7;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Basics;
 impl ::Basics for Basics {
   type Time = Time;
   type Constants = ();
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Philosopher {
   // This is sometimes in the future because
   // they muse philosophically about handshakes

@@ -143,7 +143,7 @@ pub struct PredictorId(u64);
 
 
 pub trait Column {
-  type FieldType: Any + Send + Sync + Serialize + Deserialize;// = Self;
+  type FieldType: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug;// = Self;
 
   /**
   Returns a constant identifier for the type, which must be 64 bits of random data.
@@ -202,19 +202,19 @@ impl FieldId {
 //   shouldn't be too hard for a Serialize + Deserialize type.
 // I don't have plans to use Deserialize for other events/predictors,
 // but it's possible that I might, so I included it for more future-proofing.
-// I'm not sure if 'static is strictly necessary, but it makes things easier, and
+// I'm not sure if 'static (from Any) is strictly necessary, but it makes things easier, and
 // wanting a non-'static callback (which still must live at least as long as the TimeSteward)
 // seems like a very strange situation.
-pub trait EventFn <B: Basics>: Send + Sync + Clone + Serialize + Deserialize + 'static {
+pub trait EventFn <B: Basics>: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
   fn call<M: Mutator<B>>(&self, mutator: &mut M);
 }
-pub trait PredictorFn <B: Basics>: Send + Sync + Clone + Serialize + Deserialize + 'static {
+pub trait PredictorFn <B: Basics>: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
   fn call<PA: PredictorAccessor<B>>(&self, accessor: &mut PA, id: RowId);
 }
 
 macro_rules! time_steward_predictor {
   ($B: ty, struct $name: ident [$($generic_parameters:tt)*]=[$($specific_parameters:ty),*] {$($field_name: ident: $field_type: ty = $field_value: expr),*} , | &$self_name: ident, $accessor_name: ident, $row_name: ident | $contents: expr) => {{
-    #[derive (Clone, Serialize, Deserialize)]
+    #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
     struct $name <$($generic_parameters)*> {$($field_name: $field_type),*}
     impl<$($generic_parameters)*> $crate::PredictorFn <$B> for $name<$($specific_parameters),*> {
       fn call <P: $crate::PredictorAccessor <$B>> (&$self_name, $accessor_name: &mut P, $row_name: RowId) {
@@ -230,7 +230,7 @@ macro_rules! time_steward_predictor {
 
 macro_rules! time_steward_event {
   ($B: ty, struct $name: ident [$($generic_parameters:tt)*]=[$($specific_parameters:ty),*] {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $mutator_name: ident | $contents: expr) => {{
-    #[derive (Clone, Serialize, Deserialize)]
+    #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
     struct $name <$($generic_parameters)*> {$($field_name: $field_type),*}
     impl<$($generic_parameters)*> $crate::EventFn <$B> for $name<$($specific_parameters),*> {
       fn call <M: $crate::Mutator <$B>> (&$self_name, $mutator_name: &mut M) {
@@ -256,9 +256,9 @@ macro_rules! time_steward_predictor_from_generic_fn {
 /**
 This is intended to be implemented on an empty struct. Requiring Clone etc. is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 */
-pub trait Basics: Clone + Send + Sync + Serialize + Deserialize + 'static {
-  type Time: Clone + Ord + Send + Sync + Serialize + Deserialize;
-  type Constants: Clone + Send + Sync + Serialize + Deserialize;
+pub trait Basics: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
+  type Time: Any + Send + Sync + Clone + Ord + Serialize + Deserialize + Debug;
+  type Constants: Any + Send + Sync + Clone + Serialize + Deserialize + Debug;
   fn allow_floats_unsafe()->bool {false}
 }
 pub type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
