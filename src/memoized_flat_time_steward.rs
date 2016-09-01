@@ -252,7 +252,7 @@ impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
   mutator_common_methods!(B);
 }
 impl<'a, B: Basics> Rng for Mutator<'a, B> {
-  mutator_rng_methods!();
+  mutator_rng_methods!(B);
 }
 
 

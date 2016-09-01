@@ -259,6 +259,7 @@ This is intended to be implemented on an empty struct. Requiring Clone etc. is a
 pub trait Basics: Clone + Send + Sync + Serialize + Deserialize + 'static {
   type Time: Clone + Ord + Send + Sync + Serialize + Deserialize;
   type Constants: Clone + Send + Sync + Serialize + Deserialize;
+  fn allow_floats_unsafe()->bool {false}
 }
 pub type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 
@@ -341,7 +342,6 @@ pub trait Mutator<B: Basics>: MomentaryAccessor<B> + Rng {
   fn extended_now(&self) -> &ExtendedTime<B>;
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>);
   fn gen_id(&mut self) -> RowId;
-  fn underlying_rng_unsafe(&mut self) -> &mut EventRng;
 }
 pub trait PredictorAccessor<B: Basics>: Accessor<B> {
   fn predict_at_time<E: EventFn<B>>(&mut self, time: B::Time, event: E);
@@ -928,15 +928,20 @@ macro_rules! mutator_common_methods {
   ($B: ty) => {
     fn extended_now(& self)->& ExtendedTime <$B> {& self.generic.now}
     fn gen_id(&mut self) -> RowId {RowId {data: [self.gen::<u64>(), self.gen::<u64>()]}}
-    fn underlying_rng_unsafe (&mut self) ->&mut EventRng{&mut self.generic.generator}
   }
 }
 macro_rules! mutator_rng_methods {
-  () => {
+  ($B: ty) => {
     fn next_u32(&mut self) -> u32 {self.generic.generator.next_u32()}
     
-    fn next_f32(&mut self) -> f32 {panic!("Using floating point numbers in TimeSteward events is forbidden by default because it is nondeterministic across platforms. If you know you don't need to be consistent between different computers, or you otherwise know EXACTLY what you're doing, you may explicitly call underlying_rng_unsafe() to get a generator that can produce floats.")}
-    fn next_f64(&mut self) -> f64 {panic!("Using floating point numbers in TimeSteward events is forbidden by default because it is nondeterministic across platforms. If you know you don't need to be consistent between different computers, or you otherwise know EXACTLY what you're doing, you may explicitly call underlying_rng_unsafe() to get a generator that can produce floats.")}
+    fn next_f32(&mut self) -> f32 {
+      assert!(<$B as $crate::Basics>::allow_floats_unsafe(), "Using floating point numbers in TimeSteward events is forbidden by default because it is nondeterministic across platforms. If you know you don't need to be consistent between different computers, or you otherwise know EXACTLY what you're doing, you may add fn allow_floats_unsafe() {true} to your Basics.");
+      self.generic.generator.next_f32()
+    }
+    fn next_f64(&mut self) -> f64 {
+      assert!(<$B as $crate::Basics>::allow_floats_unsafe(), "Using floating point numbers in TimeSteward events is forbidden by default because it is nondeterministic across platforms. If you know you don't need to be consistent between different computers, or you otherwise know EXACTLY what you're doing, you may add fn allow_floats_unsafe() {true} to your Basics.");
+      self.generic.generator.next_f64()
+    }
   }
 }
 
