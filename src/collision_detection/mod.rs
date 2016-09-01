@@ -7,9 +7,9 @@ pub mod inefficient;
 #[macro_use]
 pub mod simple_grid;
 
-pub trait Basics: Clone + Any {
+pub trait Basics: Clone + Send + Sync + Any + Serialize + Deserialize {
   type StewardBasics: ::Basics;
-  type DetectorId: Copy + Any + Hash + Serialize + Deserialize;//=()
+  type DetectorId: Copy + Any + Send + Sync + Hash + Serialize + Deserialize;//=()
   fn nearness_column_id() -> ColumnId;
 }
 

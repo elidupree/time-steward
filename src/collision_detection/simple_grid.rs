@@ -1,8 +1,9 @@
 use std::collections::HashSet;
 use super::Nearness;
-use {RowId, ColumnId, Column, Accessor, MomentaryAccessor, Mutator};
+use {RowId, ColumnId, PredictorId, Column, Accessor, MomentaryAccessor, Mutator, TimeStewardSettings};
 use std::marker::PhantomData;
 use std::hash::Hash;
+use std::any::Any;
 
 #[derive (Copy, Clone, Hash, Serialize, Deserialize)]
 pub struct Bounds {
@@ -10,7 +11,7 @@ pub struct Bounds {
   pub max: [i64; 2],
 }
 
-pub trait Basics: super::Basics {
+pub trait Basics: super::Basics + Clone + Send + Sync + Any {
   fn get_bounds<A: MomentaryAccessor<<Self as super::Basics>::StewardBasics>>(accessor: &A,
                                                                               who: RowId, detector: <Self as super::Basics>::DetectorId)
                                                                               -> Bounds;
@@ -111,26 +112,22 @@ pub fn erase<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
   }
 }
 
-#[macro_export]
-macro_rules! simple_grid_predictor {
-($module: ident, $basics: ident) => {{
-  $module::Predictor::<<$basics as $crate::collision_detection::Basics>::StewardBasics> {
-    predictor_id: PredictorId (<$basics as $crate::collision_detection::Basics>::nearness_column_id().0 ^ 0x3686689daa651bf3),
-    column_id: $crate::collision_detection::simple_grid::Member::<$basics>::column_id(),
-    function: StewardRc::new (| accessor, id | {
+pub fn insert_predictors <B: Basics, Settings: TimeStewardSettings <<B as super::Basics>::StewardBasics>> (settings: &mut Settings) {
+  /*settings.insert_predictor (PredictorId (<B as super::Basics>::nearness_column_id().0 ^ 0x3686689daa651bf3),
+    Member::<B>::column_id(),
+    time_steward_predictor! (<B as super::Basics>::StewardBasics, struct BoundsChangePredictor [B: Basics]=[B] {}, | &self, accessor, id | {
       let member;
       {
-        let member_reference = accessor.get ::<$crate::collision_detection::simple_grid::Member <$basics>> (id).expect ("row is missing the field the predictor triggered on");
+        let member_reference = accessor.get::<Member <B>> (id).expect ("row is missing the field the predictor triggered on");
         member = (*member_reference).clone();
       }
-      if let Some (time) = <$basics as $crate::collision_detection::simple_grid::Basics>::when_escapes (accessor, member.row, member.bounds, member.detector) {
-        accessor.predict_at_time (time, StewardRc::new (move | mutator | {
+      if let Some (time) = B::when_escapes (accessor, member.row, member.bounds, member.detector) {
+        accessor.predict_at_time (time, time_steward_event! (<B as super::Basics>::StewardBasics, struct BoundsChange [B: Basics]=[B] {id: RowId = id, member: Member <B> = member}, | &self, mutator | {
           //TODO: optimize erase-then-insert
-          $crate::collision_detection::simple_grid::erase::<$basics,_> (mutator, member.row, member.detector, id, member.bounds);
-          $crate::collision_detection::simple_grid::insert::<$basics,_> (mutator, member.row, member.detector);
+          erase::<B,_> (mutator, self.member.row, self.member.detector, self.id, self.member.bounds);
+          insert::<B,_> (mutator, self.member.row, self.member.detector);
         }));
       }
-    }),
-  }
-}}
+    })
+  )*/
 }

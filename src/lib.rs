@@ -120,7 +120,7 @@ pub struct PredictorId(u64);
 
 
 pub trait Column {
-  type FieldType: Any + Serialize + Deserialize;// = Self;
+  type FieldType: Any + Send + Sync + Serialize + Deserialize;// = Self;
 
   /**
   Returns a constant identifier for the type, which must be 64 bits of random data.
@@ -187,38 +187,52 @@ pub trait PredictorFn <B: Basics>: Send + Sync + Serialize + Deserialize + 'stat
 }
 
 macro_rules! time_steward_predictor {
-  ($B: ty, struct $name: ident {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $accessor_name: ident, $row_name: ident | $contents: expr) => {{
+  ($B: ty, struct $name: ident [$($generic_parameters:tt)*]=[$($specific_parameters:ty),*] {$($field_name: ident: $field_type: ty = $field_value: expr),*} , | &$self_name: ident, $accessor_name: ident, $row_name: ident | $contents: expr) => {{
     #[derive (Serialize, Deserialize)]
-    struct $name {$($field_name: $field_type),*}
-    impl $crate::PredictorFn <$B> for $name {
+    struct $name <$($generic_parameters)*> {$($field_name: $field_type),*}
+    impl<$($generic_parameters)*> $crate::PredictorFn <$B> for $name<$($specific_parameters),*> {
       fn call <P: $crate::PredictorAccessor <$B>> (&$self_name, $accessor_name: &mut P, $row_name: RowId) {
         $contents
       }
     }
-    $name {$($field_name: $field_value),*}
-  }}
+    $name::<$($specific_parameters),*> {$($field_name: $field_value),*}
+  }};
+  ($B: ty, struct $name: ident {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $accessor_name: ident, $row_name: ident | $contents: expr) => {
+    time_steward_predictor! ($B, struct $name []=[] {$($field_name :$field_type = $field_value)*}, | & $self_name, $accessor_name, $row_name | $contents)
+  };
 }
 
 macro_rules! time_steward_event {
-  ($B: ty, struct $name: ident {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $mutator_name: ident | $contents: expr) => {{
+  ($B: ty, struct $name: ident [$($generic_parameters:tt)*]=[$($specific_parameters:ty),*] {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $mutator_name: ident | $contents: expr) => {{
     #[derive (Serialize, Deserialize)]
-    struct $name {$($field_name: $field_type),*}
-    impl $crate::EventFn <$B> for $name {
+    struct $name <$($generic_parameters)*> {$($field_name: $field_type),*}
+    impl<$($generic_parameters)*> $crate::EventFn <$B> for $name<$($specific_parameters),*> {
       fn call <M: $crate::Mutator <$B>> (&$self_name, $mutator_name: &mut M) {
         $contents
       }
     }
-    $name {$($field_name: $field_value),*}
-  }}
+    $name::<$($specific_parameters),*> {$($field_name: $field_value),*}
+  }};
+  ($B: ty, struct $name: ident {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $mutator_name: ident | $contents: expr) => {
+    time_steward_event! ($B, struct $name []=[] {$($field_name :$field_type = $field_value)*}, | & $self_name, $mutator_name | $contents)
+  };
+
 }
 
+macro_rules! time_steward_predictor_from_generic_fn {
+  ($B: ty, struct $name: ident, $function_name: ident) => {
+    time_steward_predictor! ($B, struct $name {}, | &self, accessor, id | {
+      $function_name (accessor, id)
+    })
+  }
+}
 
 /**
-This is intended to be implemented on an empty struct. Requiring Clone is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
+This is intended to be implemented on an empty struct. Requiring Clone etc. is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 */
-pub trait Basics: Clone + 'static {
-  type Time: Clone + Ord + Serialize + Deserialize;
-  type Constants: Clone + Serialize + Deserialize;
+pub trait Basics: Clone + Send + Sync + Serialize + Deserialize + 'static {
+  type Time: Clone + Ord + Send + Sync + Serialize + Deserialize;
+  type Constants: Clone + Send + Sync + Serialize + Deserialize;
 }
 pub type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 
@@ -958,5 +972,5 @@ pub mod collision_detection;
 
 pub mod examples {
   pub mod handshakes;
-  //pub mod bouncy_circles;
+  pub mod bouncy_circles;
 }

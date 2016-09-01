@@ -211,7 +211,8 @@ impl<B: Basics> StewardImpl<B> {
                                     .map(|ev| (ev.0.clone(), ev.1.clone()));
     let empty = Vec::new();
     let predicted_events_iter = self.state.field_states.keys().flat_map(|field_id| {
-      let column = field_id.column_id;      self.settings.settings.predictors_by_column.get(&column).unwrap_or(&empty).iter().filter_map (move | predictor | {
+      let column = field_id.column_id;
+      self.settings.settings.predictors_by_column.get(&column).unwrap_or(&empty).iter().filter_map (move | predictor | {
         let generic;
         {
           let mut pa = PredictorAccessor {

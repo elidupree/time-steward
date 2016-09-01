@@ -1,7 +1,7 @@
 extern crate nalgebra;
 
-use memoized_flat_time_steward as s;
-use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
+use inefficient_flat_time_steward as s;
+use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
      Accessor, MomentaryAccessor, PredictorAccessor, StewardRc};
 use collision_detection::simple_grid as collisions;
 
@@ -44,13 +44,13 @@ impl <Coordinate> SerializableVector2 <Coordinate> {
   fn get (self)->Vector2 <Coordinate> {Vector2::new (self.x, self.y)}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct Basics;
 impl ::Basics for Basics {
   type Time = Time;
   type Constants = ();
 }
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct CollisionBasics {}
 impl ::collision_detection::Basics for CollisionBasics {
   type StewardBasics = Basics;
@@ -126,7 +126,7 @@ fn get_circle_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x86ccbeb2c140cc51u64, index))
 }
 
-fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as TimeStewardStaticMethods < Basics>>::EventFn >> (accessor: &mut PA, id: RowId) {
+fn collision_predictor <PA: PredictorAccessor <Basics>> (accessor: &mut PA, id: RowId) {
   let ids = Nearness::get_ids(accessor, id).0;
   let time;
   {
@@ -157,11 +157,12 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
   if let Some(yes) = time {
     // printlnerr!(" planned for {}", &yes);
     accessor.predict_at_time(yes,
-                             StewardRc::new(move |mutator| {
+       time_steward_event! (Basics, struct Collision {id: RowId = id}, | &self, mutator | {
                                let new_relationship;
-                               let mut new;
+                               let mut new; 
+                               let ids = Nearness::get_ids(mutator, self.id).0;
                                {
-                                 let relationship = mutator.get::<Intersection>(id).clone();
+                                 let relationship = mutator.get::<Intersection>(self.id).clone();
                                  let us = (mutator.data_and_last_change::<Circle>(ids[0])
                                                   .expect("a nearness exists for a circle that \
                                                            doesn't (event)"),
@@ -179,7 +180,7 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
                                       .position
                                       .add_acceleration(intersection.induced_acceleration.get());
                                    new_relationship = None;
-                                   printlnerr!("Parted {} At {}", id, mutator.now());
+                                   printlnerr!("Parted {} At {}", self.id, mutator.now());
                                  } else {
                                    let acceleration = (new.0.position.evaluate() -
                                                        new.1.position.evaluate()) *
@@ -191,10 +192,10 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
                                      induced_acceleration: SerializableVector2 ::new (acceleration),
                                    });
 
-                                   printlnerr!("Joined {} At {}", id, mutator.now());
+                                   printlnerr!("Joined {} At {}", self.id, mutator.now());
                                  }
                                }
-                               mutator.set::<Intersection>(id, new_relationship);
+                               mutator.set::<Intersection>(self.id, new_relationship);
                                mutator.set::<Circle>(ids[0], Some(new.0));
                                mutator.set::<Circle>(ids[1], Some(new.1));
                              }));
@@ -202,7 +203,7 @@ fn collision_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as T
 }
 
 
-fn boundary_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as TimeStewardStaticMethods < Basics>>::EventFn >> (accessor: &mut PA, id: RowId) {
+fn boundary_predictor <PA: PredictorAccessor <Basics>> (accessor: &mut PA, id: RowId) {
   let time;
   {
     let arena_center = QuadraticTrajectory::new(TIME_SHIFT,
@@ -225,12 +226,12 @@ fn boundary_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as Ti
   if let Some(yes) = time {
     // printlnerr!(" planned for {}", &yes);
     accessor.predict_at_time(yes,
-                             StewardRc::new(move |mutator| {
+       time_steward_event! (Basics, struct Collision {id: RowId = id}, | &self, mutator | {
                                let new_relationship;
                                let mut new;
                                {
-                                 let relationship = mutator.get::<Intersection>(id).clone();
-                                 let me = mutator.data_and_last_change::<Circle>(id)
+                                 let relationship = mutator.get::<Intersection>(self.id).clone();
+                                 let me = mutator.data_and_last_change::<Circle>(self.id)
                                                  .expect("a an event was recorded for a circle \
                                                           that doesn't exist)");
                                  new = me.0.clone();
@@ -251,8 +252,8 @@ fn boundary_predictor <PA: PredictorAccessor <Basics, <s::Steward <Basics> as Ti
 
                                  }
                                }
-                               mutator.set::<Intersection>(id, new_relationship);
-                               mutator.set::<Circle>(id, Some(new));
+                               mutator.set::<Intersection>(self.id, new_relationship);
+                               mutator.set::<Circle>(self.id, Some(new));
                              }));
   }
 }
@@ -269,27 +270,20 @@ implement_vertex!(Vertex, direction, center, radius);
 
 pub fn testfunc() {
 
+  let mut settings = <Steward as TimeSteward>::Settings::new();
+  settings.insert_predictor (PredictorId(0x5375592f4da8682c), Nearness::column_id(),
+    time_steward_predictor_from_generic_fn! (Basics, struct CollisionPredictor, collision_predictor)
+  );
+  settings.insert_predictor (PredictorId(0x87d8a4a095350d30), Circle::column_id(),
+    time_steward_predictor_from_generic_fn! (Basics, struct BoundaryPredictor, boundary_predictor)
+  );
+  collisions::insert_predictors::<CollisionBasics,_> (&mut settings);
+  
   let mut stew: Steward =
-    ::TimeStewardStaticMethods::new_empty((),
-                                          Box::new([s::Predictor {
-                                                      predictor_id: PredictorId(0x5375592f4da8682c),
-                                                      column_id: Nearness::column_id(),
-                                                      function: StewardRc::new(|accessor, id| {
-                                                        collision_predictor(accessor, id)
-                                                      }),
-                                                    },
-                                                    s::Predictor {
-                                                      predictor_id: PredictorId(0x87d8a4a095350d30),
-                                                      column_id: Circle::column_id(),
-                                                      function: StewardRc::new(|accessor, id| {
-                                                        boundary_predictor(accessor, id)
-                                                      }),
-                                                    },
-                                                    simple_grid_predictor!(s, CollisionBasics)]));
+    ::TimeSteward::new_empty((), settings);
 
-  stew.insert_fiat_event(-1,
-                         DeterministicRandomId::new(&0),
-                         StewardRc::new(|mutator| {
+  stew.insert_fiat_event(0, DeterministicRandomId::new(&0),
+    time_steward_event! (Basics, struct Initialize {}, | &self, mutator | {
                            for i in 0..HOW_MANY_CIRCLES {
                              let thingy = ARENA_SIZE / 20;
                              let radius = mutator.gen_range(ARENA_SIZE / 30, ARENA_SIZE / 15);
@@ -311,8 +305,10 @@ pub fn testfunc() {
                                                    }));
                              collisions::insert::<CollisionBasics, _>(mutator, id, ());
                            }
-                         }))
-      .unwrap();
+    })
+  )
+  .unwrap();
+  
   let vertex_shader_source = r#"
 #version 140
 in vec2 direction;

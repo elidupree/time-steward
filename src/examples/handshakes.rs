@@ -11,7 +11,7 @@ type Time = i64;
 
 const HOW_MANY_PHILOSOPHERS: i32 = 7;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct Basics;
 impl ::Basics for Basics {
   type Time = Time;
