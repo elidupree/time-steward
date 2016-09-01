@@ -1,5 +1,6 @@
 use memoized_flat_time_steward as s;
-use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, StewardRc};
+use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId,
+     PredictorId, StewardRc};
 use rand::Rng;
 // use serde_json;
 use bincode::serde::{Serializer, Deserializer};
@@ -50,9 +51,9 @@ fn display_snapshot<S: ::Snapshot<Basics>>(snapshot: &S) {
   println!("snapshot for {}", snapshot.now());
   for index in 0..HOW_MANY_PHILOSOPHERS {
     println!("{}",
-                snapshot.get::<Philosopher>(get_philosopher_id(index))
-                        .expect("missing philosopher")
-                        .time_when_next_initiates_handshake);
+             snapshot.get::<Philosopher>(get_philosopher_id(index))
+                     .expect("missing philosopher")
+                     .time_when_next_initiates_handshake);
   }
 }
 
@@ -84,12 +85,12 @@ pub fn testfunc() {
       );
     })
   );
-  
-  let mut stew: Steward =
-    ::TimeSteward::new_empty((), settings);
 
-  stew.insert_fiat_event(0, DeterministicRandomId::new(&0x32e1570766e768a7u64),
-    time_steward_event! (Basics, struct Initialize {}, | &self, m | {
+  let mut stew: Steward = ::TimeSteward::new_empty((), settings);
+
+  stew.insert_fiat_event(0,
+                         DeterministicRandomId::new(&0x32e1570766e768a7u64),
+                         time_steward_event! (Basics, struct Initialize {}, | &self, m | {
       println!("FIAT!!!!!");
       for i in 0..HOW_MANY_PHILOSOPHERS {
         m.set::<Philosopher>(get_philosopher_id(i),
@@ -98,9 +99,8 @@ pub fn testfunc() {
           })
         );
       }
-    })
-  )
-  .unwrap();
+    }))
+      .unwrap();
 
   let mut snapshots = Vec::new();
   for increment in 1..21 {

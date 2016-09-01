@@ -23,7 +23,7 @@
 #![feature(unboxed_closures, fn_traits)]
 #![feature (plugin, custom_derive)]
 #![plugin (serde_macros)]
-//#![plugin (quickcheck_macros)]
+// #![plugin (quickcheck_macros)]
 
 extern crate rand;
 extern crate polynomial;
@@ -180,10 +180,10 @@ impl FieldId {
 // wanting a non-'static callback (which still must live at least as long as the TimeSteward)
 // seems like a very strange situation.
 pub trait EventFn <B: Basics>: Send + Sync + Serialize + Deserialize + 'static {
-  fn call <M: Mutator <B>> (&self, mutator: &mut M);
+  fn call<M: Mutator<B>>(&self, mutator: &mut M);
 }
 pub trait PredictorFn <B: Basics>: Send + Sync + Serialize + Deserialize + 'static {
-  fn call <M: PredictorAccessor <B>> (&self, mutator: &mut M, id: RowId);
+  fn call<M: PredictorAccessor<B>>(&self, mutator: &mut M, id: RowId);
 }
 
 macro_rules! time_steward_predictor {
@@ -318,21 +318,21 @@ pub trait Mutator<B: Basics>: MomentaryAccessor<B> + Rng {
   fn underlying_rng_unsafe(&mut self) -> &mut EventRng;
 }
 pub trait PredictorAccessor<B: Basics>: Accessor<B> {
-  fn predict_at_time <E: EventFn <B>> (&mut self, time: B::Time, event: E);
+  fn predict_at_time<E: EventFn<B>>(&mut self, time: B::Time, event: E);
 
   ///A specific use of unsafe_now() that is guaranteed to be safe
-  fn predict_immediately<E: EventFn <B>> (&mut self, event: E) {
+  fn predict_immediately<E: EventFn<B>>(&mut self, event: E) {
     let time = self.unsafe_now().clone();
     self.predict_at_time(time, event)
   }
 }
-pub type SnapshotEntry <'a, B: Basics> = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
+pub type SnapshotEntry<'a, B: Basics> = (FieldId, (&'a FieldRc, &'a ExtendedTime<B>));
 // where for <'a> & 'a Self: IntoIterator <Item = SnapshotEntry <'a, B>>
 pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {
   fn num_fields(&self) -> usize;
-  // with slightly better polymorphism we could do this more straightforwardly
-  // type Iter<'a>: Iterator<(FieldId, (&'a FieldRc, &'a ExtendedTime<B>))>;
-  // fn iter (&self)->Iter;
+// with slightly better polymorphism we could do this more straightforwardly
+// type Iter<'a>: Iterator<(FieldId, (&'a FieldRc, &'a ExtendedTime<B>))>;
+// fn iter (&self)->Iter;
 }
 
 pub struct FiatSnapshot<B: Basics> {
@@ -360,26 +360,30 @@ impl<B: Basics> Snapshot<B> for FiatSnapshot<B> {
   }
 }
 use std::collections::hash_map;
-pub struct FiatSnapshotIter <'a, B: Basics> (hash_map::Iter <'a, FieldId, (FieldRc, ExtendedTime <B>)>);
-impl <'a, B: Basics> Iterator for FiatSnapshotIter <'a, B> {
+pub struct FiatSnapshotIter<'a, B: Basics>(hash_map::Iter<'a, FieldId, (FieldRc, ExtendedTime<B>)>);
+impl<'a, B: Basics> Iterator for FiatSnapshotIter<'a, B> {
   type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
-  fn next (&mut self)->Option <Self::Item> {
-    (self.0).next().map (| (id, stuff) | (id.clone(), (& stuff.0, & stuff.1)))
+  fn next(&mut self) -> Option<Self::Item> {
+    (self.0).next().map(|(id, stuff)| (id.clone(), (&stuff.0, &stuff.1)))
   }
-  fn size_hint (&self)->(usize, Option <usize>) {self.0.size_hint()}
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    self.0.size_hint()
+  }
 }
-impl <'a, B: Basics> IntoIterator for & 'a FiatSnapshot <B> {
+impl<'a, B: Basics> IntoIterator for &'a FiatSnapshot<B> {
   type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
   type IntoIter = FiatSnapshotIter <'a, B>;
-  fn into_iter (self)->Self::IntoIter {FiatSnapshotIter (self.fields.iter())}
+  fn into_iter(self) -> Self::IntoIter {
+    FiatSnapshotIter(self.fields.iter())
+  }
 }
 
 
 pub struct SerializationTable<S: Serializer>(HashMap<ColumnId,
                                                      fn(&FieldRc, &mut S) -> Result<(), S::Error>>);
 pub struct SerializationField<'a, 'b, Hack: Serializer + 'b>(ColumnId,
-                                                         &'a FieldRc,
-                                                         &'b SerializationTable<Hack>);
+                                                             &'a FieldRc,
+                                                             &'b SerializationTable<Hack>);
 impl<'a, 'b, Hack: Serializer> Serialize for SerializationField<'a, 'b, Hack> {
   fn serialize<'c, S: Serializer + 'b>(&'c self, serializer: &mut S) -> Result<(), S::Error> {
     // assert!(TypeId::of::<S>() == TypeId::of::<Hack>(), "hack: this can only actually serialize for the serializer it has tables for");
@@ -619,8 +623,11 @@ impl<T: Ord> PartialOrd for ValidSince<T> {
 // }
 
 pub trait TimeStewardSettings <B: Basics> {
-  fn new()->Self;
-  fn insert_predictor <P: PredictorFn <B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: P);
+  fn new() -> Self;
+  fn insert_predictor<P: PredictorFn<B>>(&mut self,
+                                         predictor_id: PredictorId,
+                                         column_id: ColumnId,
+                                         function: P);
 }
 
 pub trait TimeSteward <B: Basics> {
@@ -650,9 +657,8 @@ pub trait TimeSteward <B: Basics> {
   from_snapshot().valid_since() must equal Before(snapshot.now()),
   and must never go lower than that.
   */
-  fn from_snapshot<'a, S: Snapshot<B>>(snapshot: & 'a S, settings: Self::Settings)
-                                   -> Self
-                                   where & 'a S: IntoIterator <Item = SnapshotEntry <'a, B>> ;
+  fn from_snapshot<'a, S: Snapshot<B>>(snapshot: &'a S, settings: Self::Settings) -> Self
+    where &'a S: IntoIterator<Item = SnapshotEntry<'a, B>>;
 
 
   /**
@@ -663,11 +669,11 @@ pub trait TimeSteward <B: Basics> {
   steward.insert_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
   steward.insert_fiat_event() may not change steward.valid_since().
   */
-  fn insert_fiat_event<E: EventFn <B>> (&mut self,
-                       time: B::Time,
-                       id: DeterministicRandomId,
-                       event: E)
-                       -> Result<(), FiatEventOperationError>;
+  fn insert_fiat_event<E: EventFn<B>>(&mut self,
+                                      time: B::Time,
+                                      id: DeterministicRandomId,
+                                      event: E)
+                                      -> Result<(), FiatEventOperationError>;
 
   /**
   Erases a fiat event that has been inserted previously.
@@ -829,11 +835,11 @@ struct GenericPredictorAccessor<B: Basics, E> {
   soonest_prediction: Option<(B::Time, E)>,
   dependencies: RefCell<(Vec<FieldId>, SiphashIdGenerator)>,
 }
-impl<B: Basics, E> GenericPredictorAccessor <B, E> {
+impl<B: Basics, E> GenericPredictorAccessor<B, E> {
   fn new() -> Self {
     GenericPredictorAccessor {
       soonest_prediction: None,
-      dependencies: RefCell::new ((Vec::new(), SiphashIdGenerator::new())),
+      dependencies: RefCell::new((Vec::new(), SiphashIdGenerator::new())),
     }
   }
 }
