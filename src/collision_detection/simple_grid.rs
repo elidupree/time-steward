@@ -3,7 +3,7 @@ use super::Nearness;
 use {RowId, ColumnId, PredictorId, Column, Accessor, MomentaryAccessor, Mutator,
      TimeStewardSettings};
 use std::marker::PhantomData;
-use std::hash::Hash;
+use serde::Serialize;
 use std::any::Any;
 
 #[derive (Copy, Clone, Hash, Serialize, Deserialize)]
@@ -48,7 +48,7 @@ impl<B: Basics> Column for Member<B> {
 }
 
 
-fn cell_row<DetectorId: Hash>(x: i64, y: i64, me: DetectorId) -> RowId {
+fn cell_row<DetectorId: Serialize>(x: i64, y: i64, me: DetectorId) -> RowId {
   RowId::new(&(x, y, me))
 }
 fn get_bounds<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,

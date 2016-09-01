@@ -43,20 +43,25 @@ use std::any::Any;
 use std::sync::Arc;
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::fmt;
+use std::fmt::{self, Debug};
 use std::borrow::Borrow;
 use std::marker::PhantomData;
+use std::io::{self, Write};
 use rand::{Rng, ChaChaRng, SeedableRng};
 use serde::{Serialize, Serializer, Deserialize};
 use serde::ser::Error;
 use serde::de;
 
 mod insert_only;
-
-// TODO check whether hashes in rust vary by CPU endianness?
-// Answer: they do, so maybe stop using Hash for this sometime
-// ( https://doc.rust-lang.org/std/hash/trait.Hasher.html
-// "represents the ability to hash an arbitrary stream of bytes").
+// We need to make sure that DeterministicRandomIds
+// do not vary with CPU endianness.
+// The trait Hasher "represents the ability to hash an arbitrary stream of bytes".
+// ( https://doc.rust-lang.org/std/hash/trait.Hasher.html )
+// but typical implementations of Hash submit the bytes in the order they appear
+// on the current system, not in a standardized order.
+// Therefore, instead of generating ids from Hash implementors,
+// we generate them from Serialize implementors,
+// because Serialize IS meant to be compatible between platforms.
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct DeterministicRandomId {
   data: [u64; 2],
@@ -64,15 +69,15 @@ pub struct DeterministicRandomId {
 pub struct SiphashIdGenerator {
   data: [SipHasher; 2],
 }
-impl Hasher for SiphashIdGenerator {
-  fn finish(&self) -> u64 {
-    panic!("Hack: this is actually for generating DeterministicRandomId, not 64-bit")
-  }
-  fn write(&mut self, bytes: &[u8]) {
+impl Write for SiphashIdGenerator {
+  fn write(&mut self, bytes: &[u8]) -> io::Result <usize> {
     self.data[0].write(bytes);
     self.data[1].write(bytes);
+    Ok (bytes.len())
   }
-  // TODO: should we implement the others for efficiency?
+  fn flush(&mut self) -> io::Result <()> {
+    Ok (())
+  }
 }
 impl SiphashIdGenerator {
   fn generate(&self) -> DeterministicRandomId {
@@ -86,16 +91,34 @@ impl SiphashIdGenerator {
   }
 }
 impl DeterministicRandomId {
-  pub fn new<T: Hash>(data: &T) -> DeterministicRandomId {
-    let mut s = SiphashIdGenerator::new();
-    data.hash(&mut s);
-    s.generate()
+  pub fn new<T: Serialize>(data: &T) -> DeterministicRandomId {
+    let mut writer = SiphashIdGenerator::new();
+    {
+      let mut serializer = bincode::serde::Serializer::new (&mut writer);
+      data.serialize (&mut serializer);
+    }
+    writer.generate()
   }
 }
 impl fmt::Display for DeterministicRandomId {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "id:{:016x}{:016x}", self.data[0], self.data[1])
   }
+}
+
+#[cfg (test)]
+fn test_id_endianness_impl <T: Serialize + Debug>(thing: T, confirm: DeterministicRandomId) {
+  println!("DeterministicRandomId::new({:?}) = {:?}", thing, DeterministicRandomId::new(& thing));
+  assert_eq! (DeterministicRandomId::new(& thing), confirm);
+}
+
+#[test]
+fn test_id_endianness() {
+  test_id_endianness_impl ((), DeterministicRandomId{data: [18033283813966546569, 10131395250899649866]});
+  test_id_endianness_impl (1337, DeterministicRandomId{data: [3453333590764588377, 1257515737963236726]});
+  let a : (Option <Option <i32>>,) = (Some (None),);
+  test_id_endianness_impl (a, DeterministicRandomId{data: [16808472249412258235, 2826611911447572457]});
+  test_id_endianness_impl (DeterministicRandomId::new (& 0x70f7b85b08ba4fd5), DeterministicRandomId{data: [14594174456291332436, 4679097764060434320]});
 }
 
 
@@ -855,7 +878,12 @@ macro_rules! predictor_accessor_common_accessor_methods {
       let dependencies: &mut (Vec<FieldId>, SiphashIdGenerator) = &mut*self.generic.dependencies.borrow_mut();
       dependencies.0.push(id);
       self.$get(id).map(|p| {
-        p.1.id.hash(&mut dependencies.1);
+        {
+          use bincode;
+          use serde::Serialize;
+          let mut serializer = bincode::serde::Serializer::new (&mut dependencies.1);
+          p.1.id.serialize (&mut serializer);
+        }
         p
       })
     }
