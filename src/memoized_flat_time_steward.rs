@@ -557,16 +557,17 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
     }
     self.update_until_beginning_of(time);
 
-    let result = Some(Snapshot {
-      now: time.clone(),
-      index: self.owned.next_snapshot,
-      field_states: self.shared
+    let field_states =  self.shared
                         .fields
                         .borrow_mut()
                         .changed_since_snapshots
                         .entry(self.owned.next_snapshot)
                         .or_insert(Rc::new(insert_only::HashMap::new()))
-                        .clone(),
+                        .clone();
+    let result = Some(Snapshot {
+      now: time.clone(),
+      index: self.owned.next_snapshot,
+      field_states: field_states,
       shared: self.shared.clone(),
       num_fields: self.shared.fields.borrow().field_states.len(),
       field_ids: self.owned.existent_fields.snapshot(),
