@@ -663,7 +663,7 @@ pub trait TimeSteward <B: Basics> {
   steward.insert_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
   steward.insert_fiat_event() may not change steward.valid_since().
   */
-  fn insert_fiat_event<E: EventFn <B> + Serialize + Deserialize> (&mut self,
+  fn insert_fiat_event<E: EventFn <B>> (&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
                        event: E)
@@ -960,7 +960,7 @@ fn next_extended_time_of_predicted_event<BaseTime: Ord>
 pub mod data_structures;
 
 pub mod inefficient_flat_time_steward;
-//pub mod memoized_flat_time_steward;
+pub mod memoized_flat_time_steward;
 // pub mod amortized_time_steward;
 
 // pub mod crossverified_time_stewards;

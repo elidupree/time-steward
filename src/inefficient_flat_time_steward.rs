@@ -316,7 +316,7 @@ impl<B: Basics> TimeSteward <B> for Steward<B> {
     result
   }
 
-  fn insert_fiat_event <E: super::EventFn <B> + Serialize + Deserialize> (&mut self,
+  fn insert_fiat_event <E: super::EventFn <B>> (&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
                        event: E)

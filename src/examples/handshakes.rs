@@ -1,4 +1,4 @@
-use inefficient_flat_time_steward as s;
+use memoized_flat_time_steward as s;
 use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, StewardRc};
 use rand::Rng;
 // use serde_json;

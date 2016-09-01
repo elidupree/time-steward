@@ -1,6 +1,6 @@
 extern crate nalgebra;
 
-use inefficient_flat_time_steward as s;
+use memoized_flat_time_steward as s;
 use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
      Accessor, MomentaryAccessor, PredictorAccessor, StewardRc};
 use collision_detection::simple_grid as collisions;
