@@ -42,8 +42,11 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Acce
       self.1.generic_data_and_extended_last_change (id)
     ) {
       (None, None) => None,
-      //we cannot actually check whether the values are the same, so just use one of them
-      (Some (value_0), Some (value_1)) => Some (value_0),
+      (Some (value_0), Some (value_1)) => {
+        assert!(value_0.1 == value_1.1, "Snapshots returned different last change times for the same field; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
+        //we cannot currently check whether the values are the same, so just use one of them
+        Some (value_0)
+      },
       //however, we CAN tell the difference between something and nothing
       _=> panic! ("One snapshot returned a value and the other didn't; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types")
     }
