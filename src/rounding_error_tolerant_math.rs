@@ -1156,82 +1156,82 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
 
 #[cfg (test)]
 mod tests {
-use super::*;
-use std::io::Write;
+  use super::*;
+  use std::io::Write;
 
-fn test_roots(given_roots: Vec<Range>) {
-  let mut polynomial = vec![Range::exactly(1)];
-  for root in given_roots.iter() {
-    polynomial = multiply_polynomials(polynomial.as_slice(), &[-root, Range::exactly(1)])
+  fn test_roots(given_roots: Vec<Range>) {
+    let mut polynomial = vec![Range::exactly(1)];
+    for root in given_roots.iter() {
+      polynomial = multiply_polynomials(polynomial.as_slice(), &[-root, Range::exactly(1)])
+    }
+    let computed = roots(polynomial.as_slice(), -i64::max_value(), i64::max_value());
+    println!("\nFor roots {:?}\n  Computed polynomial {:?}\n  And roots {:?}\n  Evaluated root \
+              minima: {:?}",
+             given_roots,
+             polynomial,
+             computed,
+             given_roots.iter()
+                        .map(|root| evaluate(polynomial.as_slice(), root.min))
+                        .collect::<Vec<Range>>());
   }
-  let computed = roots(polynomial.as_slice(), -i64::max_value(), i64::max_value());
-  println!("\nFor roots {:?}\n  Computed polynomial {:?}\n  And roots {:?}\n  Evaluated root \
-               minima: {:?}",
-              given_roots,
-              polynomial,
-              computed,
-              given_roots.iter()
-                         .map(|root| evaluate(polynomial.as_slice(), root.min))
-                         .collect::<Vec<Range>>());
-}
 
 
-#[test]
-fn tests() {
-  println!(" {:?}", Range::exactly(-47).squared());
-  assert!(Range::exactly(-47).squared() == Range::exactly(2209));
-  assert!(Range::exactly(-440) * Range::exactly(1) == Range::exactly(-440));
-  assert!(Range::exactly(-440) * Range::exactly(1) * 4 == Range::exactly(-1760));
+  #[test]
+  fn tests() {
+    println!(" {:?}", Range::exactly(-47).squared());
+    assert!(Range::exactly(-47).squared() == Range::exactly(2209));
+    assert!(Range::exactly(-440) * Range::exactly(1) == Range::exactly(-440));
+    assert!(Range::exactly(-440) * Range::exactly(1) * 4 == Range::exactly(-1760));
 
 
-  assert!(Range::exactly(99) / Range::exactly(2) == Range::new(49, 50));
-  assert!(Range::exactly(3) / Range::exactly(2) == Range::new(1, 2));
-  assert!(Range::exactly(100) / Range::exactly(2) == Range::exactly(50));
-  assert!(Range::exactly(4) / Range::exactly(2) == Range::exactly(2));
-  assert!(Range::exactly(0) / Range::exactly(5) == Range::exactly(0));
-  test_roots(vec![Range::exactly(0)]);
-  test_roots(vec![Range::exactly(55)]);
-  test_roots(vec![Range::exactly(0), Range::exactly(55)]);
-  test_roots(vec![Range::exactly(-8), Range::exactly(55)]);
-  test_roots(vec![Range::exactly(-8), Range::exactly(55), Range::exactly(999)]);
-  test_roots(vec![Range::exactly(-8),
-                  Range::exactly(55),
-                  Range::exactly(999),
-                  Range::exactly(-84)]);
-  test_roots(vec![Range::exactly(-8),
-                  Range::exactly(55),
-                  Range::exactly(999),
-                  Range::exactly(-84),
-                  Range::exactly(-1967)]);
+    assert!(Range::exactly(99) / Range::exactly(2) == Range::new(49, 50));
+    assert!(Range::exactly(3) / Range::exactly(2) == Range::new(1, 2));
+    assert!(Range::exactly(100) / Range::exactly(2) == Range::exactly(50));
+    assert!(Range::exactly(4) / Range::exactly(2) == Range::exactly(2));
+    assert!(Range::exactly(0) / Range::exactly(5) == Range::exactly(0));
+    test_roots(vec![Range::exactly(0)]);
+    test_roots(vec![Range::exactly(55)]);
+    test_roots(vec![Range::exactly(0), Range::exactly(55)]);
+    test_roots(vec![Range::exactly(-8), Range::exactly(55)]);
+    test_roots(vec![Range::exactly(-8), Range::exactly(55), Range::exactly(999)]);
+    test_roots(vec![Range::exactly(-8),
+                    Range::exactly(55),
+                    Range::exactly(999),
+                    Range::exactly(-84)]);
+    test_roots(vec![Range::exactly(-8),
+                    Range::exactly(55),
+                    Range::exactly(999),
+                    Range::exactly(-84),
+                    Range::exactly(-1967)]);
 
-  test_roots(vec![Range::new(-1, 1), Range::new(54, 56)]);
-  test_roots(vec![Range::new(-9, -7), Range::new(50, 60)]);
-  test_roots(vec![Range::new(-9, -7), Range::new(54, 56), Range::exactly(999)]);
-  test_roots(vec![Range::new(-9, -7),
-                  Range::new(54, 56),
-                  Range::new(950, 1050),
-                  Range::new(-90, -80)]);
-  test_roots(vec![Range::new(-9, -7),
-                  Range::new(54, 56),
-                  Range::new(950, 1050),
-                  Range::new(-90, -80),
-                  Range::new(-1967, -1940)]);
+    test_roots(vec![Range::new(-1, 1), Range::new(54, 56)]);
+    test_roots(vec![Range::new(-9, -7), Range::new(50, 60)]);
+    test_roots(vec![Range::new(-9, -7), Range::new(54, 56), Range::exactly(999)]);
+    test_roots(vec![Range::new(-9, -7),
+                    Range::new(54, 56),
+                    Range::new(950, 1050),
+                    Range::new(-90, -80)]);
+    test_roots(vec![Range::new(-9, -7),
+                    Range::new(54, 56),
+                    Range::new(950, 1050),
+                    Range::new(-90, -80),
+                    Range::new(-1967, -1940)]);
 
 
 
 
 
-  println!(" {:?}",
-              roots(&[Range::new(-900, -800), Range::new(500, 501), Range::exactly(50)],
-                    -i64::max_value(),
-                    i64::max_value()));
-  println!(" {:?}",
-              roots(&[Range::new(-900, -800),
-                      Range::new(500, 501),
-                      Range::exactly(50),
-                      Range::exactly(1)],
-                    -i64::max_value(),
-                    i64::max_value()));
-}
+    println!(" {:?}",
+             roots(&[Range::new(-900, -800), Range::new(500, 501), Range::exactly(50)],
+                   -i64::max_value(),
+                   i64::max_value()));
+    println!(" {:?}",
+             roots(&[Range::new(-900, -800),
+                     Range::new(500, 501),
+                     Range::exactly(50),
+                     Range::exactly(1)],
+                   -i64::max_value(),
+                   i64::max_value()));
+  }
 
 }

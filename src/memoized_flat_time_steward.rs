@@ -50,7 +50,7 @@ struct Prediction<B: Basics> {
 }
 
 struct StewardShared<B: Basics> {
-  settings: Settings <B>,
+  settings: Settings<B>,
   constants: B::Constants,
   fields: RefCell<Fields<B>>,
 }
@@ -60,7 +60,7 @@ struct StewardOwned<B: Basics> {
   invalid_before: ValidSince<B::Time>,
   fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
   next_snapshot: SnapshotIdx,
-  existent_fields: partially_persistent_nonindexed_set::Set <FieldId>,
+  existent_fields: partially_persistent_nonindexed_set::Set<FieldId>,
 
   predictions_by_time: BTreeMap<ExtendedTime<B>, Rc<Prediction<B>>>,
   predictions_by_id: HashMap<(RowId, PredictorId), Rc<Prediction<B>>>,
@@ -77,7 +77,7 @@ pub struct Snapshot<B: Basics> {
   field_states: Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>,
   shared: Rc<StewardShared<B>>,
   num_fields: usize,
-  field_ids: partially_persistent_nonindexed_set::Snapshot <FieldId>,
+  field_ids: partially_persistent_nonindexed_set::Snapshot<FieldId>,
 }
 pub struct Mutator<'a, B: Basics> {
   generic: GenericMutator<B>,
@@ -93,12 +93,12 @@ pub struct PredictorAccessor<'a, B: Basics> {
   steward: RefCell<&'a mut StewardOwned<B>>,
   shared: &'a StewardShared<B>,
   fields: &'a Fields<B>,
-  generic: super::GenericPredictorAccessor <B, Event <B>>,
+  generic: super::GenericPredictorAccessor<B, Event<B>>,
 }
 pub type EventFn<B> = for<'d, 'e> Fn(&'d mut Mutator<'e, B>);
 pub type Event<B> = StewardRc<EventFn<B>>;
-//pub type Predictor<B> = super::Predictor<PredictorFn<B>>;
-//pub type PredictorFn<B> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId);
+// pub type Predictor<B> = super::Predictor<PredictorFn<B>>;
+// pub type PredictorFn<B> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId);
 
 make_dynamic_callbacks! (Mutator, PredictorAccessor, DynamicEventFn, DynamicPredictorFn, DynamicPredictor, Settings);
 
@@ -149,7 +149,7 @@ impl<'a, B: Basics> super::Accessor<B> for Mutator<'a, B> {
   mutator_common_accessor_methods!(B);
 }
 impl<'a, B: Basics> PredictorAccessor<'a, B> {
-  fn get_impl (&self, id: FieldId) -> Option<(&FieldRc, &ExtendedTime<B>)> {
+  fn get_impl(&self, id: FieldId) -> Option<(&FieldRc, &ExtendedTime<B>)> {
     self.steward
         .borrow_mut()
         .prediction_dependencies
@@ -160,7 +160,7 @@ impl<'a, B: Basics> PredictorAccessor<'a, B> {
   }
 }
 impl<'a, B: Basics> super::Accessor<B> for PredictorAccessor<'a, B> {
-  predictor_accessor_common_accessor_methods! (B, get_impl);
+  predictor_accessor_common_accessor_methods!(B, get_impl);
   fn constants(&self) -> &B::Constants {
     &self.shared.constants
   }
@@ -180,18 +180,29 @@ impl<B: Basics> super::Snapshot<B> for Snapshot<B> {
   }
 }
 use std::collections::hash_map;
-pub struct SnapshotIter <'a, B: Basics> (partially_persistent_nonindexed_set::SnapshotIter <'a, FieldId>, & 'a Snapshot <B>);
-impl <'a, B: Basics> Iterator for SnapshotIter <'a, B> {
+pub struct SnapshotIter<'a, B: Basics>(partially_persistent_nonindexed_set::SnapshotIter<'a,
+                                                                                         FieldId>,
+                                       &'a Snapshot<B>);
+impl<'a, B: Basics> Iterator for SnapshotIter<'a, B> {
   type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
-  fn next (&mut self)->Option <Self::Item> {
-    (self.0).next().map (| id | (id, (self.1).generic_data_and_extended_last_change (id).expect ("the snapshot thinks a FieldId exists when it doesn't")))
+  fn next(&mut self) -> Option<Self::Item> {
+    (self.0).next().map(|id| {
+      (id,
+       (self.1)
+         .generic_data_and_extended_last_change(id)
+         .expect("the snapshot thinks a FieldId exists when it doesn't"))
+    })
   }
-  fn size_hint (&self)->(usize, Option <usize>) {(self.1.num_fields, Some (self.1.num_fields))}
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    (self.1.num_fields, Some(self.1.num_fields))
+  }
 }
-impl <'a, B: Basics> IntoIterator for & 'a Snapshot <B> {
+impl<'a, B: Basics> IntoIterator for &'a Snapshot<B> {
   type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
   type IntoIter = SnapshotIter <'a, B>;
-  fn into_iter (self)->Self::IntoIter {SnapshotIter (self.field_ids.iter(), self)}
+  fn into_iter(self) -> Self::IntoIter {
+    SnapshotIter(self.field_ids.iter(), self)
+  }
 }
 
 
@@ -225,10 +236,10 @@ impl<'a, B: Basics> super::Mutator<B> for Mutator<'a, B> {
       });
       if old_value.is_none() {
         let fields = &self.fields;
-        self.steward.existent_fields.insert (field_id, & | id | fields.field_states.contains_key (id));
+        self.steward.existent_fields.insert(field_id, &|id| fields.field_states.contains_key(id));
       } else {
         let fields = &self.fields;
-        self.steward.existent_fields.remove (field_id, & | id | fields.field_states.contains_key (id));
+        self.steward.existent_fields.remove(field_id, &|id| fields.field_states.contains_key(id));
       }
     }
     if let Entry::Occupied(entry) = self.steward.prediction_dependencies.entry(field_id) {
@@ -340,8 +351,9 @@ impl<B: Basics> Steward<B> {
     events_iter.min_by_key(|ev| ev.0.clone())
   }
 
-  fn get_predictor(&self, predictor_id: PredictorId) -> & DynamicPredictor <B> {
-    self.shared.settings
+  fn get_predictor(&self, predictor_id: PredictorId) -> &DynamicPredictor<B> {
+    self.shared
+        .settings
         .predictors_by_id
         .get(&predictor_id)
         .expect("somehow a PredictorId appeared with no associated predictor")
@@ -364,62 +376,62 @@ impl<B: Basics> Steward<B> {
       }
     }
   }
-  
-  fn make_prediction (&mut self, row_id: RowId, predictor_id: PredictorId) {
-      self.clear_prediction(row_id, predictor_id);
-      if self.shared
-             .fields
-             .borrow()
-             .field_states
-             .get(&FieldId::new(row_id, self.get_predictor(predictor_id).column_id))
-             .is_none() {
-        return;
-      }
 
-      let now = self.owned
-                    .last_event
-                    .clone()
-                    .expect("how can we be calling a predictor when there are no fields yet?");
-      let function = self.get_predictor(predictor_id).function.clone();
-      let generic;
-      {
-        let field_ref = &*self.shared.fields.borrow();
-        let mut pa = PredictorAccessor {
-          predictor_id: predictor_id,
-          about_row_id: row_id,
-          internal_now: now,
-          steward: RefCell::new(&mut self.owned),
-          shared: &self.shared,
-          fields: field_ref,
-          generic: super::GenericPredictorAccessor::new(),
-        };
-        (function)(&mut pa, row_id);
-        generic = pa.generic;
-      }
-      let (dependencies, hasher) = generic.dependencies.into_inner();
-      let dependencies_hash = hasher.generate();
-      let prediction = Rc::new(Prediction {
+  fn make_prediction(&mut self, row_id: RowId, predictor_id: PredictorId) {
+    self.clear_prediction(row_id, predictor_id);
+    if self.shared
+           .fields
+           .borrow()
+           .field_states
+           .get(&FieldId::new(row_id, self.get_predictor(predictor_id).column_id))
+           .is_none() {
+      return;
+    }
+
+    let now = self.owned
+                  .last_event
+                  .clone()
+                  .expect("how can we be calling a predictor when there are no fields yet?");
+    let function = self.get_predictor(predictor_id).function.clone();
+    let generic;
+    {
+      let field_ref = &*self.shared.fields.borrow();
+      let mut pa = PredictorAccessor {
         predictor_id: predictor_id,
-        prediction_is_about_row_id: row_id,
-        predictor_accessed: dependencies,
-        what_will_happen: generic.soonest_prediction.and_then(|(event_base_time, event)| {
-          super::next_extended_time_of_predicted_event(predictor_id,
-                                                       row_id,
-                                                       dependencies_hash,
-                                                       event_base_time,
-                                                       &self.owned
-                                                            .last_event
-                                                            .as_ref()
-                                                            .expect("how can we be calling a \
-                                                                     predictor when there are no \
-                                                                     fields yet?"))
-            .map(|event_time| (event_time, event))
-        }),
-      });
-      self.owned.predictions_by_id.insert((row_id, predictor_id), prediction.clone());
-      if let Some((ref time, _)) = prediction.what_will_happen {
-        self.owned.predictions_by_time.insert(time.clone(), prediction.clone());
-      }
+        about_row_id: row_id,
+        internal_now: now,
+        steward: RefCell::new(&mut self.owned),
+        shared: &self.shared,
+        fields: field_ref,
+        generic: super::GenericPredictorAccessor::new(),
+      };
+      (function)(&mut pa, row_id);
+      generic = pa.generic;
+    }
+    let (dependencies, hasher) = generic.dependencies.into_inner();
+    let dependencies_hash = hasher.generate();
+    let prediction = Rc::new(Prediction {
+      predictor_id: predictor_id,
+      prediction_is_about_row_id: row_id,
+      predictor_accessed: dependencies,
+      what_will_happen: generic.soonest_prediction.and_then(|(event_base_time, event)| {
+        super::next_extended_time_of_predicted_event(predictor_id,
+                                                     row_id,
+                                                     dependencies_hash,
+                                                     event_base_time,
+                                                     &self.owned
+                                                          .last_event
+                                                          .as_ref()
+                                                          .expect("how can we be calling a \
+                                                                   predictor when there are no \
+                                                                   fields yet?"))
+          .map(|event_time| (event_time, event))
+      }),
+    });
+    self.owned.predictions_by_id.insert((row_id, predictor_id), prediction.clone());
+    if let Some((ref time, _)) = prediction.what_will_happen {
+      self.owned.predictions_by_time.insert(time.clone(), prediction.clone());
+    }
   }
 
   fn execute_event(&mut self, event_time: ExtendedTime<B>, event: Event<B>) {
@@ -442,7 +454,7 @@ impl<B: Basics> Steward<B> {
     self.owned.last_event = Some(event_time);
 
     for (row_id, predictor_id) in predictions_needed {
-      self.make_prediction (row_id, predictor_id);
+      self.make_prediction(row_id, predictor_id);
     }
   }
 
@@ -467,9 +479,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
         })
   }
 
-  fn new_empty(constants: B::Constants,
-               settings: Self::Settings)
-               -> Self {
+  fn new_empty(constants: B::Constants, settings: Self::Settings) -> Self {
 
     Steward {
       owned: StewardOwned {
@@ -494,43 +504,53 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
   }
 
 
-  fn from_snapshot<'a, S: super::Snapshot<B>>(snapshot: & 'a S,
-                                              settings: Self::Settings)
-                                              -> Self
-                                              where & 'a S: IntoIterator <Item = super::SnapshotEntry <'a, B>> {
+  fn from_snapshot<'a, S: super::Snapshot<B>>(snapshot: &'a S, settings: Self::Settings) -> Self
+    where &'a S: IntoIterator<Item = super::SnapshotEntry<'a, B>>
+  {
     let mut result = Self::new_empty(snapshot.constants().clone(), settings);
-    result.owned.invalid_before = ValidSince::Before (snapshot.now().clone());
+    result.owned.invalid_before = ValidSince::Before(snapshot.now().clone());
     let mut predictions_needed = HashSet::new();
-    result.shared.fields.borrow_mut().field_states = snapshot.into_iter().map (| (id, stuff) | {
-      if match result.owned.last_event {
-        None => true,
-        Some (ref time) => stuff.1 > time,
-      } {result.owned.last_event = Some (stuff.1.clone());}
-      result.shared.settings.predictors_by_column.get(& id.column_id).map(|predictors| {
-        for predictor in predictors {
-          predictions_needed.insert((id.row_id, predictor.predictor_id));
-        }
-      });
-      (id, Field {data: stuff.0.clone(), last_change: stuff.1.clone(), first_snapshot_not_updated: 0})
-    }).collect();
+    result.shared.fields.borrow_mut().field_states =
+      snapshot.into_iter()
+              .map(|(id, stuff)| {
+                if match result.owned.last_event {
+                  None => true,
+                  Some(ref time) => stuff.1 > time,
+                } {
+                  result.owned.last_event = Some(stuff.1.clone());
+                }
+                result.shared.settings.predictors_by_column.get(&id.column_id).map(|predictors| {
+                  for predictor in predictors {
+                    predictions_needed.insert((id.row_id, predictor.predictor_id));
+                  }
+                });
+                (id,
+                 Field {
+                  data: stuff.0.clone(),
+                  last_change: stuff.1.clone(),
+                  first_snapshot_not_updated: 0,
+                })
+              })
+              .collect();
     for (row_id, predictor_id) in predictions_needed {
-      result.make_prediction (row_id, predictor_id);
+      result.make_prediction(row_id, predictor_id);
     }
-    
+
     result
   }
 
 
 
-  fn insert_fiat_event <E: super::EventFn <B>> (&mut self,
-                       time: B::Time,
-                       id: DeterministicRandomId,
-                       event: E)
-                       -> Result<(), FiatEventOperationError> {
+  fn insert_fiat_event<E: super::EventFn<B>>(&mut self,
+                                             time: B::Time,
+                                             id: DeterministicRandomId,
+                                             event: E)
+                                             -> Result<(), FiatEventOperationError> {
     if self.valid_since() > time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    match self.owned.fiat_events.insert(super::extended_time_of_fiat_event(time, id), StewardRc::new (DynamicEventFn::new (event))) {
+    match self.owned.fiat_events.insert(super::extended_time_of_fiat_event(time, id),
+                                        StewardRc::new(DynamicEventFn::new(event))) {
       None => Ok(()),
       Some(_) => Err(FiatEventOperationError::InvalidInput),
     }
@@ -555,13 +575,13 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
     }
     self.update_until_beginning_of(time);
 
-    let field_states =  self.shared
-                        .fields
-                        .borrow_mut()
-                        .changed_since_snapshots
-                        .entry(self.owned.next_snapshot)
-                        .or_insert(Rc::new(insert_only::HashMap::new()))
-                        .clone();
+    let field_states = self.shared
+                           .fields
+                           .borrow_mut()
+                           .changed_since_snapshots
+                           .entry(self.owned.next_snapshot)
+                           .or_insert(Rc::new(insert_only::HashMap::new()))
+                           .clone();
     let result = Some(Snapshot {
       now: time.clone(),
       index: self.owned.next_snapshot,

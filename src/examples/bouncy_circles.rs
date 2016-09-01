@@ -1,8 +1,8 @@
 extern crate nalgebra;
 
 use crossverified_time_stewards as s;
-use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, Mutator,
-     Accessor, MomentaryAccessor, PredictorAccessor, StewardRc};
+use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId,
+     PredictorId, Mutator, Accessor, MomentaryAccessor, PredictorAccessor, StewardRc};
 use collision_detection::simple_grid as collisions;
 
 use time_functions::QuadraticTrajectory;
@@ -38,12 +38,20 @@ const TIME_SHIFT: u32 = 20;
 const SECOND: Time = 1 << TIME_SHIFT;
 
 #[derive (Copy, Clone, Debug, Serialize, Deserialize)]
-struct SerializableVector2 <Coordinate> {
-  x: Coordinate, y: Coordinate
+struct SerializableVector2<Coordinate> {
+  x: Coordinate,
+  y: Coordinate,
 }
-impl <Coordinate> SerializableVector2 <Coordinate> {
-  fn new (source: Vector2 <Coordinate>)->Self {SerializableVector2 {x: source.x, y: source.y}}
-  fn get (self)->Vector2 <Coordinate> {Vector2::new (self.x, self.y)}
+impl<Coordinate> SerializableVector2<Coordinate> {
+  fn new(source: Vector2<Coordinate>) -> Self {
+    SerializableVector2 {
+      x: source.x,
+      y: source.y,
+    }
+  }
+  fn get(self) -> Vector2<Coordinate> {
+    Vector2::new(self.x, self.y)
+  }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -113,7 +121,7 @@ impl Column for Circle {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Intersection {
-  induced_acceleration: SerializableVector2 <SpaceCoordinate>,
+  induced_acceleration: SerializableVector2<SpaceCoordinate>,
 }
 impl Column for Intersection {
   type FieldType = Self;
@@ -128,7 +136,7 @@ fn get_circle_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x86ccbeb2c140cc51u64, index))
 }
 
-fn collision_predictor <PA: PredictorAccessor <Basics>> (accessor: &mut PA, id: RowId) {
+fn collision_predictor<PA: PredictorAccessor<Basics>>(accessor: &mut PA, id: RowId) {
   let ids = Nearness::get_ids(accessor, id).0;
   let time;
   {
@@ -205,7 +213,7 @@ fn collision_predictor <PA: PredictorAccessor <Basics>> (accessor: &mut PA, id: 
 }
 
 
-fn boundary_predictor <PA: PredictorAccessor <Basics>> (accessor: &mut PA, id: RowId) {
+fn boundary_predictor<PA: PredictorAccessor<Basics>>(accessor: &mut PA, id: RowId) {
   let time;
   {
     let arena_center = QuadraticTrajectory::new(TIME_SHIFT,
@@ -279,13 +287,13 @@ pub fn testfunc() {
   settings.insert_predictor (PredictorId(0x87d8a4a095350d30), Circle::column_id(),
     time_steward_predictor_from_generic_fn! (Basics, struct BoundaryPredictor, boundary_predictor)
   );
-  collisions::insert_predictors::<CollisionBasics,_> (&mut settings);
-  
-  let mut stew: Steward =
-    ::TimeSteward::new_empty((), settings);
+  collisions::insert_predictors::<CollisionBasics, _>(&mut settings);
 
-  stew.insert_fiat_event(0, DeterministicRandomId::new(&0),
-    time_steward_event! (Basics, struct Initialize {}, | &self, mutator | {
+  let mut stew: Steward = ::TimeSteward::new_empty((), settings);
+
+  stew.insert_fiat_event(0,
+                         DeterministicRandomId::new(&0),
+                         time_steward_event! (Basics, struct Initialize {}, | &self, mutator | {
                            for i in 0..HOW_MANY_CIRCLES {
                              let thingy = ARENA_SIZE / 20;
                              let radius = mutator.gen_range(ARENA_SIZE / 30, ARENA_SIZE / 15);
@@ -307,10 +315,9 @@ pub fn testfunc() {
                                                    }));
                              collisions::insert::<CollisionBasics, _>(mutator, id, ());
                            }
-    })
-  )
-  .unwrap();
-  
+    }))
+      .unwrap();
+
   let vertex_shader_source = r#"
 #version 140
 in vec2 direction;
@@ -450,7 +457,7 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
   // panic!("anyway")
 }
 
-//#[test]
-//fn actuallytest() {
+// #[test]
+// fn actuallytest() {
 //  testfunc();
-//}
+// }
