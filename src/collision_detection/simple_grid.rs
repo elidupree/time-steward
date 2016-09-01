@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use super::Nearness;
-use {RowId, ColumnId, PredictorId, Column, Accessor, MomentaryAccessor, Mutator, TimeStewardSettings};
+use {RowId, ColumnId, PredictorId, Column, Accessor, MomentaryAccessor, Mutator,
+     TimeStewardSettings};
 use std::marker::PhantomData;
 use std::hash::Hash;
 use std::any::Any;
@@ -113,9 +114,9 @@ pub fn erase<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
 }
 
 pub fn insert_predictors <B: Basics, Settings: TimeStewardSettings <<B as super::Basics>::StewardBasics>> (settings: &mut Settings) {
-  /*settings.insert_predictor (PredictorId (<B as super::Basics>::nearness_column_id().0 ^ 0x3686689daa651bf3),
+  settings.insert_predictor (PredictorId (<B as super::Basics>::nearness_column_id().0 ^ 0x3686689daa651bf3),
     Member::<B>::column_id(),
-    time_steward_predictor! (<B as super::Basics>::StewardBasics, struct BoundsChangePredictor [B: Basics]=[B] {}, | &self, accessor, id | {
+    time_steward_predictor! (<B as super::Basics>::StewardBasics, struct BoundsChangePredictor [B: Basics]=[B] {p: PhantomData<B> = PhantomData}, | &self, accessor, id | {
       let member;
       {
         let member_reference = accessor.get::<Member <B>> (id).expect ("row is missing the field the predictor triggered on");
@@ -129,5 +130,5 @@ pub fn insert_predictors <B: Basics, Settings: TimeStewardSettings <<B as super:
         }));
       }
     })
-  )*/
+  )
 }

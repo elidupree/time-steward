@@ -254,7 +254,7 @@ impl<B: Basics> StewardImpl<B> {
             })
           })
     });
-    let events_iter = first_fiat_event_iter;//.chain(predicted_events_iter);
+    let events_iter = first_fiat_event_iter.chain(predicted_events_iter);
     events_iter.min_by_key(|ev| ev.0.clone())
   }
 

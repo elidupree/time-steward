@@ -224,17 +224,17 @@ pub mod partially_persistent_nonindexed_set {
       };
       let live_data = unsafe { self.live_buffer.data.get().as_ref().unwrap() };
       let next_data = unsafe { self.next_buffer.data.get().as_mut().unwrap() };
-      println!("starting {:?} \n LIFE: {:?}\n NEXT: {:?}\n CAPACITIES: {} {} DELETIONS: {}/{} \
-                {}/{} ",
-               self,
-               live_data,
-               next_data,
-               live_data.data.capacity(),
-               next_data.data.capacity(),
-               self.live_buffer.deletions,
-               live_data.data.len(),
-               self.next_buffer.deletions,
-               next_data.data.len());
+      // println!("starting {:?} \n LIFE: {:?}\n NEXT: {:?}\n CAPACITIES: {} {} DELETIONS: {}/{} \
+      // {}/{} ",
+      // self,
+      // live_data,
+      // next_data,
+      // live_data.data.capacity(),
+      // next_data.data.capacity(),
+      // self.live_buffer.deletions,
+      // live_data.data.len(),
+      // self.next_buffer.deletions,
+      // next_data.data.len());
       let buffer_pushes_before_reset_needed = min(live_data.data.capacity() - live_data.data.len(),
                                                   next_data.data.capacity() / 2 -
                                                   self.potential_next_buffer_usage);
@@ -250,12 +250,12 @@ pub mod partially_persistent_nonindexed_set {
       let transfer_steps_needed_before_reset_possible = live_data.data.len() +
                                                         operations_before_reset_possibly_needed -
                                                         self.next_transfer_index;
-      println!("NEEDED {:?} \n OPERATIONS: {:?}\n (buffer pushes): {:?}\n (deletions): {} {} ",
-               transfer_steps_needed_before_reset_possible,
-               operations_before_reset_possibly_needed,
-               buffer_pushes_before_reset_needed,
-               deletions_before_reset_needed,
-               "something");
+      // println!("NEEDED {:?} \n OPERATIONS: {:?}\n (buffer pushes): {:?}\n (deletions): {} {} ",
+      // transfer_steps_needed_before_reset_possible,
+      // operations_before_reset_possibly_needed,
+      // buffer_pushes_before_reset_needed,
+      // deletions_before_reset_needed,
+      // "something");
       assert!(transfer_steps_needed_before_reset_possible <=
               (operations_before_reset_possibly_needed + 1) * MAX_TRANSFER_SPEED);
       if transfer_steps_needed_before_reset_possible >
@@ -271,12 +271,12 @@ pub mod partially_persistent_nonindexed_set {
           }
         }
       }
-      println!("ending {:?} \n LIFE: {:?}\n NEXT: {:?}\n CAPACITIES: {} {} ",
-               self,
-               live_data,
-               next_data,
-               live_data.data.capacity(),
-               next_data.data.capacity());
+      // println!("ending {:?} \n LIFE: {:?}\n NEXT: {:?}\n CAPACITIES: {} {} ",
+      // self,
+      // live_data,
+      // next_data,
+      // live_data.data.capacity(),
+      // next_data.data.capacity());
       if operations_before_reset_possibly_needed == 0 {
         self.next_transfer_index = 0;
         self.potential_next_buffer_usage = next_data.data.len() - self.next_buffer.deletions;
