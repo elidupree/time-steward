@@ -26,13 +26,10 @@
 // #![plugin (quickcheck_macros)]
 
 extern crate rand;
-extern crate polynomial;
 extern crate nalgebra;
-extern crate roots;
 #[macro_use]
 extern crate glium;
 extern crate serde;
-extern crate serde_json;
 extern crate bincode;
 #[cfg (test)]
 #[macro_use]
