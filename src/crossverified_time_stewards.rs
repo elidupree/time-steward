@@ -15,6 +15,7 @@ use std::cmp::max;
 use std::borrow::Borrow;
 use std::rc::Rc;
 use std::marker::PhantomData;
+use Snapshot as SuperSnapshot;
 
 #[derive (Clone)]
 pub struct Steward<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
@@ -92,14 +93,13 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Snap
     assert_eq!(self.0.num_fields(), self.1.num_fields());
     self.0.num_fields()
   }
-}/*
+}
 use std::collections::hash_set;
 pub struct SnapshotIter <'a, B: Basics, Steward0: TimeSteward<B> + 'a, Steward1: TimeSteward<B> + 'a>
 where & 'a Steward0::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>>,
 & 'a Steward1::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>>
 {
-  set: hash_set::HashSet <FieldId>,
-  iter: hash_set::Iter <'a, FieldId>,
+  iter: <& 'a Steward0::Snapshot as IntoIterator>::IntoIter,
   snapshot: & 'a Snapshot <B, Steward0, Steward1>,
 }
 impl <'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> Iterator for SnapshotIter<'a, B, Steward0, Steward1>
@@ -107,7 +107,7 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>
 & 'a Steward1::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>> {
   type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
   fn next (&mut self)->Option <Self::Item> {
-    (self. iter).next().map (| id | (id.clone(), (self. snapshot).generic_data_and_extended_last_change (id.clone()).expect ("the snapshot thinks a FieldId exists when it doesn't")))
+    self. iter.next()
   }
   fn size_hint (&self)->(usize, Option <usize>) {self. iter.size_hint()}
 }
@@ -119,18 +119,21 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>
   type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
   type IntoIter = SnapshotIter <'a, B, Steward0, Steward1>;
   fn into_iter (self)->Self::IntoIter {
-    let mut field_ids = hash_set::HashSet::new();
-    for entry in (& self.0) {
-      field_ids.insert (entry.0.clone());
+    assert_eq! (self.0.num_fields(), self.1.num_fields());
+    let mut fields = HashMap::new();
+    for (id, data) in & self.0 {
+      fields.insert (id, (data.0.clone(), data.1.clone()));
     }
-    for entry in (& self.0) {
-      let redundant =!field_ids.insert (entry.0.clone());
-      assert!(redundant, "field existed in Steward1 snapshot but not Steward0 snapshot: {:?}", entry.0.clone());
+    for (id, data) in & self.1 {
+      let other_data = fields.get (& id).expect ("field existed in Steward1 snapshot but not Steward0 snapshot");
+      assert_eq!(*data .1, other_data .1, "Snapshots returned different last change times for the same field; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
+      (self.2.get (& id.column_id).expect ("Column missing from crossverification table; did you forget to call populate_crossverified_time_stewards_equality_table!()? Or did you forget to list a column in for_all_columns!()?")) (data .0, & other_data .0);
     }
-    unimplemented!()//SnapshotIter {set: field_ids, iter: field_ids.iter(), snapshot: self}
+    let mut result = SnapshotIter:: <'a, B, Steward0, Steward1> {iter: (& self.0).into_iter(), snapshot: self};
+    result
   }
 }
-*/
+
 //TODO: implement snapshot iterating
 
 /*
@@ -188,8 +191,8 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
                                               -> Self
                                               where & 'a S: IntoIterator <Item = super::SnapshotEntry <'a, B>> {
     Steward (
-      Steward0::from_snapshot (snapshot, settings.0),
-      Steward1::from_snapshot (snapshot, settings.1),
+      Steward0::from_snapshot::<'a, S>(snapshot, settings.0),
+      Steward1::from_snapshot::<'a, S>(snapshot, settings.1),
       StewardRc::new (settings.2),
       PhantomData,
     )

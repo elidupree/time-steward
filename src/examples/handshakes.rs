@@ -116,12 +116,12 @@ pub fn testfunc() {
     let mut writer: Vec<u8> = Vec::with_capacity(128);
     {
       let mut serializer = Serializer::new(&mut writer);
-      //serialize_snapshot(snapshot, &mut serializer).unwrap();
+      serialize_snapshot:: <Basics, <Steward as TimeSteward <Basics>>::Snapshot,_> (snapshot, &mut serializer).unwrap();
     }
     // let serialized = String::from_utf8 (serializer.into_inner()).unwrap();
     println!("{:?}", writer);
-    //let deserialized = deserialize_snapshot:: <Basics,_> (&mut Deserializer::new (&mut writer.as_slice(), bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/)).unwrap();
-    //display_snapshot(&deserialized);
+    let deserialized = deserialize_snapshot:: <Basics,_> (&mut Deserializer::new (&mut writer.as_slice(), bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/)).unwrap();
+    display_snapshot(&deserialized);
   }
   // panic!("anyway")
 }
