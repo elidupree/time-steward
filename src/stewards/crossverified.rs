@@ -1,6 +1,5 @@
-//! The simplest possible implementation of the TimeSteward API.
+//! A wrapper around two different TimeSteward types, to verify that they behave consistently.
 //!
-//! This implementation is unusably slow on large simulations. Its main use is to cross-check with other TimeSteward implementations to make sure they are implementing the API correctly.
 //!
 //!
 
