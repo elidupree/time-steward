@@ -177,24 +177,30 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
     max (self.0.valid_since(), self.1.valid_since())
   }
   fn new_empty(constants: B::Constants, settings: Self::Settings) -> Self {
-    Steward (
+    let result = Steward::<B, Steward0, Steward1> (
       TimeSteward::new_empty (constants.clone(), settings.0),
       TimeSteward::new_empty (constants, settings.1),
       StewardRc::new (settings.2),
       PhantomData,
-    )
+    );
+    assert!(result.0.valid_since() == ValidSince::TheBeginning, "Steward0 broke the ValidSince rules");
+    assert!(result.1.valid_since() == ValidSince::TheBeginning, "Steward1 broke the ValidSince rules");
+    result
   }
 
   fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: & 'a S,
                                               settings: Self::Settings)
                                               -> Self
                                               where & 'a S: IntoIterator <Item = ::SnapshotEntry <'a, B>> {
-    Steward (
+    let result = Steward (
       Steward0::from_snapshot::<'a, S>(snapshot, settings.0),
       Steward1::from_snapshot::<'a, S>(snapshot, settings.1),
       StewardRc::new (settings.2),
       PhantomData,
-    )
+    );
+    assert!(result.0.valid_since() == ValidSince::Before (snapshot.now().clone()), "Steward0 broke the ValidSince rules");
+    assert!(result.1.valid_since() == ValidSince::Before (snapshot.now().clone()), "Steward1 broke the ValidSince rules");
+    result
   }
   fn insert_fiat_event <E: ::EventFn <B>> (&mut self,
                        time: B::Time,
@@ -204,7 +210,8 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
     if self.valid_since() > time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    match (
+    let old_valid_since = (self.0.valid_since(), self.1.valid_since());
+    let result = match (
       self.0.insert_fiat_event (time.clone(), id, event.clone()),
       self.1.insert_fiat_event (time, id, event)
     ){
@@ -213,7 +220,10 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
       (_,Err (FiatEventOperationError::InvalidTime)) => panic!("Steward1 returned InvalidTime after its own ValidSince"),
       (Err (FiatEventOperationError::InvalidInput),Err (FiatEventOperationError::InvalidInput)) => Err (FiatEventOperationError::InvalidInput),
       _=> panic!("stewards returned different results for insert_fiat_event; I believe this is ALWAYS a bug in one of the stewards (that is, it cannot be caused by invalid input)"),
-    }
+    };
+    assert!(self .0.valid_since() == old_valid_since.0, "Steward0 broke the ValidSince rules");
+    assert!(self .1.valid_since() == old_valid_since.1, "Steward1 broke the ValidSince rules");
+    result
   }
   fn erase_fiat_event(&mut self,
                       time: &B::Time,
@@ -222,7 +232,8 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
     if self.valid_since() > *time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    match (
+    let old_valid_since = (self.0.valid_since(), self.1.valid_since());
+    let result = match (
       self.0.erase_fiat_event (time, id),
       self.1.erase_fiat_event (time, id)
     ){
@@ -231,21 +242,27 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
       (_,Err (FiatEventOperationError::InvalidTime)) => panic!("Steward1 returned InvalidTime after its own ValidSince"),
       (Err (FiatEventOperationError::InvalidInput),Err (FiatEventOperationError::InvalidInput)) => Err (FiatEventOperationError::InvalidInput),
       _=> panic!("stewards returned different results for insert_fiat_event; I believe this is ALWAYS a bug in one of the stewards (that is, it cannot be caused by invalid input)"),
-    }
+    };
+    assert!(self .0.valid_since() == old_valid_since.0, "Steward0 broke the ValidSince rules");
+    assert!(self .1.valid_since() == old_valid_since.1, "Steward1 broke the ValidSince rules");
+    result
   }
 
   fn snapshot_before<'b>(&'b mut self, time: &'b B::Time) -> Option<Self::Snapshot> {
     if self.valid_since() > *time {
       return None;
     }
-    match (
+    let result = match (
       self.0.snapshot_before (time),
       self.1.snapshot_before (time)
     ) {
       (Some (snapshot_0), Some (snapshot_1)) => Some (Snapshot (snapshot_0, snapshot_1, self.2.clone())),
       (None, _) => panic! ("Steward0 failed to return a snapshot at a time it claims to be valid"),
       (_, None) => panic! ("Steward1 failed to return a snapshot at a time it claims to be valid"),
-    }
+    };
+    assert!(self .0.valid_since() <*time, "Steward0 broke the ValidSince rules");
+    assert!(self .1.valid_since() <*time, "Steward1 broke the ValidSince rules");
+    result
   }
 }
 
