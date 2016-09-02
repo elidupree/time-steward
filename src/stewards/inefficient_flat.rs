@@ -10,7 +10,6 @@ use::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, Column, Extende
             FieldRc, Accessor};
 use stewards::common;
 use std::collections::{HashMap, BTreeMap};
-use std::hash::Hash;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::cell::RefCell;
 use rand::Rng;

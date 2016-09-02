@@ -1,14 +1,11 @@
 use stewards::crossverified as s;
 use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId,
-     PredictorId, StewardRc};
-use rand::Rng;
+     PredictorId};
 // use serde_json;
 use bincode::serde::{Serializer, Deserializer};
 use bincode;
 use stewards::inefficient_flat;
 use stewards::memoized_flat;
-
-use std::io::Write;
 
 type Time = i64;
 

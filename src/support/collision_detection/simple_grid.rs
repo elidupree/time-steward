@@ -4,7 +4,6 @@ use {RowId, ColumnId, PredictorId, Column, Accessor, MomentaryAccessor, Mutator,
      TimeStewardSettings};
 use std::marker::PhantomData;
 use serde::Serialize;
-use std::any::Any;
 
 #[derive (Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Bounds {

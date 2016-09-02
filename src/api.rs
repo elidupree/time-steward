@@ -21,16 +21,14 @@
  * */
 
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher, SipHasher};
+use std::hash::{Hasher, SipHasher};
 use std::any::Any;
 use std::sync::Arc;
-use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::fmt::{self, Debug};
 use std::borrow::Borrow;
-use std::marker::PhantomData;
 use std::io::{self, Write};
-use rand::{Rng, ChaChaRng, SeedableRng};
+use rand::{Rng};
 use serde::{Serialize, Serializer, Deserialize};
 use serde::ser::Error;
 use serde::de;
@@ -76,10 +74,7 @@ impl SiphashIdGenerator {
 impl DeterministicRandomId {
   pub fn new<T: Serialize>(data: &T) -> DeterministicRandomId {
     let mut writer = SiphashIdGenerator::new();
-    {
-      let mut serializer = bincode::serde::Serializer::new (&mut writer);
-      data.serialize (&mut serializer);
-    }
+    bincode::serde::serialize_into (&mut writer, data, bincode::SizeLimit::Infinite).unwrap();
     writer.generate()
   }
 }
@@ -495,6 +490,7 @@ fn __time_steward_make_snapshot_serde_functions_impl_populate_table <B: $crate::
 
 fn $deserialize_snapshot_name <B: $crate::Basics, D: __time_steward_make_snapshot_serde_functions_impl_serde::Deserializer> (deserializer: &mut D)->Result <$crate::FiatSnapshot <B>, D::Error> {
   use serde::{Deserialize};
+  use $crate::StewardRc;
   Ok ($crate::FiatSnapshot {
     now: try! (B::Time::deserialize (deserializer)),
     constants: StewardRc::new (try! (B::Constants::deserialize (deserializer))),
@@ -687,6 +683,6 @@ fn test_id_endianness() {
   test_id_endianness_impl (1337, DeterministicRandomId{data: [3453333590764588377, 1257515737963236726]});
   let a : (Option <Option <i32>>,) = (Some (None),);
   test_id_endianness_impl (a, DeterministicRandomId{data: [16808472249412258235, 2826611911447572457]});
-  test_id_endianness_impl (DeterministicRandomId::new (& 0x70f7b85b08ba4fd5), DeterministicRandomId{data: [14594174456291332436, 4679097764060434320]});
+  test_id_endianness_impl (DeterministicRandomId::new (& 0x70f7b85b08ba4fd5u64), DeterministicRandomId{data: [12393903562314107346, 11644372085838480024]});
 }
 }

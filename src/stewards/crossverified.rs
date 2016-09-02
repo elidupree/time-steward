@@ -5,15 +5,11 @@
 //!
 
 
-use {DeterministicRandomId, SiphashIdGenerator, RowId, ColumnId, FieldId, PredictorId, Column, ExtendedTime, StewardRc,
-             Basics, FieldRc, TimeSteward, FiatEventOperationError, ValidSince, PredictorFn, TimeStewardSettings, Accessor};
-use std::collections::{HashMap, BTreeMap};
-use std::hash::Hash;
+use {DeterministicRandomId, ColumnId, FieldId, PredictorId, Column, ExtendedTime, StewardRc,
+             Basics, FieldRc, TimeSteward, FiatEventOperationError, ValidSince, PredictorFn, TimeStewardSettings};
+use std::collections::{HashMap};
 // use std::collections::Bound::{Included, Excluded, Unbounded};
-use std::any::Any;
 use std::cmp::max;
-use std::borrow::Borrow;
-use std::rc::Rc;
 use std::marker::PhantomData;
 use Snapshot as SuperSnapshot;
 
@@ -94,7 +90,7 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::Snapshot<
     self.0.num_fields()
   }
 }
-use std::collections::hash_set;
+
 pub struct SnapshotIter <'a, B: Basics, Steward0: TimeSteward<B> + 'a, Steward1: TimeSteward<B> + 'a>
 where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
 & 'a Steward1::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>
@@ -129,8 +125,10 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
       assert_eq!(*data .1, other_data .1, "Snapshots returned different last change times for the same field; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
       (self.2.get (& id.column_id).expect ("Column missing from crossverification table; did you forget to call populate_crossverified_time_stewards_equality_table!()? Or did you forget to list a column in for_all_columns!()?")) (data .0, & other_data .0);
     }
-    let mut result = SnapshotIter:: <'a, B, Steward0, Steward1> {iter: (& self.0).into_iter(), snapshot: self};
-    result
+    SnapshotIter:: <'a, B, Steward0, Steward1> {
+      iter: (& self.0).into_iter(),
+      snapshot: self
+    }
   }
 }
 

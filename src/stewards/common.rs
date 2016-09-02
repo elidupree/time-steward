@@ -1,18 +1,8 @@
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher, SipHasher};
-use std::any::Any;
-use std::sync::Arc;
+
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::fmt::{self, Debug};
-use std::borrow::Borrow;
-use std::marker::PhantomData;
-use std::io::{self, Write};
 use rand::{Rng, ChaChaRng, SeedableRng};
-use serde::{Serialize, Serializer, Deserialize};
-use serde::ser::Error;
-use serde::de;
-use {DeterministicRandomId, PredictorId, ColumnId, TimeId, RowId, FieldId, SiphashIdGenerator, IterationType, Basics, ExtendedTime, GenericExtendedTime};
+use {DeterministicRandomId, PredictorId,  TimeId, RowId, FieldId, SiphashIdGenerator, IterationType, Basics, ExtendedTime, GenericExtendedTime};
 
 // #[derive (Clone)]
 // enum Prediction<B: Basics, E> {
@@ -167,7 +157,7 @@ macro_rules! predictor_accessor_common_accessor_methods {
           use bincode;
           use serde::Serialize;
           let mut serializer = bincode::serde::Serializer::new (&mut dependencies.1);
-          p.1.id.serialize (&mut serializer);
+          p.1.id.serialize (&mut serializer).unwrap();
         }
         p
       })

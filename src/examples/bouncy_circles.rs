@@ -2,12 +2,11 @@ extern crate nalgebra;
 
 use stewards::crossverified as s;
 use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId,
-     PredictorId, Mutator, Accessor, MomentaryAccessor, PredictorAccessor, StewardRc};
+     PredictorId, Accessor, MomentaryAccessor, PredictorAccessor};
 use support::collision_detection::simple_grid as collisions;
 
 use support;
 use support::time_functions::QuadraticTrajectory;
-use rand::Rng;
 use nalgebra::Vector2;
 use std::thread::sleep;
 use std::time::{Instant, Duration};

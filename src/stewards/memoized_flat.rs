@@ -5,13 +5,12 @@
 //!
 
 
-use::{DeterministicRandomId, SiphashIdGenerator, RowId, ColumnId, FieldId, PredictorId,
+use::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId,
             StewardRc, FieldRc, Accessor, Column, ExtendedTime, Basics,
             TimeSteward, FiatEventOperationError, ValidSince};
 use stewards::common;
 use std::collections::{HashMap, BTreeMap, HashSet};
 use std::collections::hash_map::Entry;
-use std::hash::Hash;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -179,7 +178,7 @@ impl<B: Basics>::Snapshot<B> for Snapshot<B> {
     self.num_fields
   }
 }
-use std::collections::hash_map;
+
 pub struct SnapshotIter<'a, B: Basics>(partially_persistent_nonindexed_set::SnapshotIter<'a,
                                                                                          FieldId>,
                                        &'a Snapshot<B>);

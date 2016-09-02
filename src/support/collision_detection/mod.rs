@@ -1,6 +1,5 @@
 use {RowId, ColumnId, Column, Accessor};
 use std::any::Any;
-use std::hash::Hash;
 use std::fmt::Debug;
 use serde::{Serialize, Deserialize};
 
