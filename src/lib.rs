@@ -35,6 +35,7 @@ extern crate serde;
 extern crate serde_json;
 extern crate bincode;
 #[cfg (test)]
+#[macro_use]
 extern crate quickcheck;
 
 #[macro_use]
