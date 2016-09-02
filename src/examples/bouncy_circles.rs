@@ -61,7 +61,7 @@ impl ::Basics for Basics {
   type Constants = ();
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-struct CollisionBasics {}
+struct CollisionBasics;
 impl support::collision_detection::Basics for CollisionBasics {
   type StewardBasics = Basics;
   type DetectorId =();
@@ -446,9 +446,8 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
             .expect("failed target.draw");
 
       target.finish().expect("failed to finish drawing");
-
+      sleep(Duration::from_millis(10));
     }
-    sleep(Duration::from_millis(10));
   }
 
 

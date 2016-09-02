@@ -96,6 +96,7 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
 & 'a Steward1::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>
 {
   iter: <& 'a Steward0::Snapshot as IntoIterator>::IntoIter,
+  #[allow (dead_code)]
   snapshot: & 'a Snapshot <B, Steward0, Steward1>,
 }
 impl <'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> Iterator for SnapshotIter<'a, B, Steward0, Steward1>

@@ -6,10 +6,9 @@ pub mod partially_persistent_nonindexed_set {
   use std::mem;
   use std::cell::UnsafeCell;
   use std::fmt::Debug;
-
-  use std::io::Write;
+  
   macro_rules! printlnerr(
-    ($($arg:tt)*) => { {
+    ($($arg:tt)*) => { {use std::io::Write;
         let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
         r.expect("failed printing to stderr");
     } }
@@ -344,9 +343,9 @@ pub mod partially_persistent_nonindexed_set {
       true
     }
     // #[quickcheck]
-    fn operation_sequences_work(operations: Vec<(Key, bool)>) -> bool {
-      test_operation_sequence(operations)
-    }
+    // fn operation_sequences_work(operations: Vec<(Key, bool)>) -> bool {
+    //   test_operation_sequence(operations)
+    // }
     #[test]
     fn many_insertions() {
       test_operation_sequence((0..255).map(|number| (number, true)).collect());

@@ -1,7 +1,6 @@
-
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use rand::{Rng, ChaChaRng, SeedableRng};
+use rand::{ChaChaRng, SeedableRng};
 use {DeterministicRandomId, PredictorId,  TimeId, RowId, FieldId, SiphashIdGenerator, IterationType, Basics, ExtendedTime, GenericExtendedTime};
 
 // #[derive (Clone)]
@@ -125,8 +124,11 @@ impl<B: Basics> TimeStewardSettings <B> for StandardSettings <B> {
 
 }
 
+#[allow (unused_imports)]
 use self::__time_steward_make_dynamic_callbacks_impl::DynamicEventFn as $DynamicEventFn;
+#[allow (unused_imports)]
 use self::__time_steward_make_dynamic_callbacks_impl::DynamicPredictor as $DynamicPredictor;
+#[allow (unused_imports)]
 use self::__time_steward_make_dynamic_callbacks_impl::DynamicPredictorFn as $DynamicPredictorFn;
 pub use self::__time_steward_make_dynamic_callbacks_impl::StandardSettings as $StandardSettings;
 

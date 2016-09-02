@@ -4,9 +4,9 @@ use std::iter::Sum;
 
 use std::fmt;
 
-use std::io::Write;
+
 macro_rules! printlnerr(
-    ($($arg:tt)*) => { {
+    ($($arg:tt)*) => { {use std::io::Write;
         let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
         r.expect("failed printing to stderr");
     } }
@@ -1157,7 +1157,6 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
 #[cfg (test)]
 mod tests {
   use super::*;
-  use std::io::Write;
 
   fn test_roots(given_roots: Vec<Range>) {
     let mut polynomial = vec![Range::exactly(1)];
