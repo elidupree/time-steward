@@ -5,7 +5,7 @@
 //!
 
 
-use super::{DeterministicRandomId, SiphashIdGenerator, RowId, ColumnId, FieldId, PredictorId, Column, ExtendedTime, StewardRc,
+use {DeterministicRandomId, SiphashIdGenerator, RowId, ColumnId, FieldId, PredictorId, Column, ExtendedTime, StewardRc,
              Basics, FieldRc, TimeSteward, FiatEventOperationError, ValidSince, PredictorFn, TimeStewardSettings, Accessor};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
@@ -42,7 +42,7 @@ pub fn check_equality <C: Column> (first: &FieldRc, second: &FieldRc) {
 #[macro_export]
 macro_rules! __time_steward_insert_crossverification_function {
   ($column: ty, $table: expr) => {
-    $table.insert (<$column as $crate::Column>::column_id(), $crate::crossverified_time_stewards::check_equality::<$column>);
+    $table.insert (<$column as $crate::Column>::column_id(), $crate::stewards::crossverified::check_equality::<$column>);
   }
 }
 
@@ -55,7 +55,7 @@ macro_rules! populate_crossverified_time_stewards_equality_table {
 
 
 
-impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Accessor<B> for Snapshot<B, Steward0, Steward1> {
+impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::Accessor<B> for Snapshot<B, Steward0, Steward1> {
   //macro_rules! forward_snapshot_method ($method: ident ($self, $($argument_name: ident: $argument_type:ty),*)->$return_type:ty
   // TODO: forward all the methods properly
   // and check equality by serialization
@@ -86,9 +86,9 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Acce
   }
 }
 
-impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::MomentaryAccessor<B> for Snapshot<B, Steward0, Steward1> {}
+impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::MomentaryAccessor<B> for Snapshot<B, Steward0, Steward1> {}
 
-impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Snapshot<B> for Snapshot<B, Steward0, Steward1> {
+impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::Snapshot<B> for Snapshot<B, Steward0, Steward1> {
   fn num_fields(&self) -> usize {
     assert_eq!(self.0.num_fields(), self.1.num_fields());
     self.0.num_fields()
@@ -96,15 +96,15 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > super::Snap
 }
 use std::collections::hash_set;
 pub struct SnapshotIter <'a, B: Basics, Steward0: TimeSteward<B> + 'a, Steward1: TimeSteward<B> + 'a>
-where & 'a Steward0::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>>,
-& 'a Steward1::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>>
+where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
+& 'a Steward1::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>
 {
   iter: <& 'a Steward0::Snapshot as IntoIterator>::IntoIter,
   snapshot: & 'a Snapshot <B, Steward0, Steward1>,
 }
 impl <'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> Iterator for SnapshotIter<'a, B, Steward0, Steward1>
-where & 'a Steward0::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>>,
-& 'a Steward1::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>> {
+where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
+& 'a Steward1::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>> {
   type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
   fn next (&mut self)->Option <Self::Item> {
     self. iter.next()
@@ -112,8 +112,8 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>
   fn size_hint (&self)->(usize, Option <usize>) {self. iter.size_hint()}
 }
 impl <'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> IntoIterator for & 'a Snapshot <B, Steward0, Steward1>
-where & 'a Steward0::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>>,
-& 'a Steward1::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>>,
+where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
+& 'a Steward1::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
 
  {
   type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
@@ -141,7 +141,7 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = super::SnapshotEntry <'a, B>
 #[derive (Serialize, Deserialize)]
 struct ShareablePredictorFn <B: Basics, P: PredictorFn <B>> (StewardRc <P>, PhantomData <B>);
 impl <B: Basics, P: PredictorFn <B>> PredictorFn <B> for ShareablePredictorFn <B, P> {
-  fn call <PA: super::PredictorAccessor <B>> (&self, accessor: &mut PA, id: RowId) {
+  fn call <PA: ::PredictorAccessor <B>> (&self, accessor: &mut PA, id: RowId) {
     self.0.call (accessor, id);
   }
 }
@@ -186,10 +186,10 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
     )
   }
 
-  fn from_snapshot<'a, S: super::Snapshot<B>>(snapshot: & 'a S,
+  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: & 'a S,
                                               settings: Self::Settings)
                                               -> Self
-                                              where & 'a S: IntoIterator <Item = super::SnapshotEntry <'a, B>> {
+                                              where & 'a S: IntoIterator <Item = ::SnapshotEntry <'a, B>> {
     Steward (
       Steward0::from_snapshot::<'a, S>(snapshot, settings.0),
       Steward1::from_snapshot::<'a, S>(snapshot, settings.1),
@@ -197,7 +197,7 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
       PhantomData,
     )
   }
-  fn insert_fiat_event <E: super::EventFn <B>> (&mut self,
+  fn insert_fiat_event <E: ::EventFn <B>> (&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
                        event: E)

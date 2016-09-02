@@ -1,12 +1,12 @@
-use crossverified_time_stewards as s;
+use stewards::crossverified as s;
 use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId,
      PredictorId, StewardRc};
 use rand::Rng;
 // use serde_json;
 use bincode::serde::{Serializer, Deserializer};
 use bincode;
-use inefficient_flat_time_steward;
-use memoized_flat_time_steward;
+use stewards::inefficient_flat;
+use stewards::memoized_flat;
 
 use std::io::Write;
 
@@ -35,7 +35,7 @@ impl Column for Philosopher {
   }
 }
 
-type Steward = s::Steward<Basics, inefficient_flat_time_steward::Steward <Basics>, memoized_flat_time_steward::Steward <Basics>>;
+type Steward = s::Steward<Basics, inefficient_flat::Steward <Basics>, memoized_flat::Steward <Basics>>;
 
 fn get_philosopher_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x2302c38efb47e0d0u64, index))

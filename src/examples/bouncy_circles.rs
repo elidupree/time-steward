@@ -1,20 +1,21 @@
 extern crate nalgebra;
 
-use crossverified_time_stewards as s;
+use stewards::crossverified as s;
 use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId,
      PredictorId, Mutator, Accessor, MomentaryAccessor, PredictorAccessor, StewardRc};
-use collision_detection::simple_grid as collisions;
+use support::collision_detection::simple_grid as collisions;
 
-use time_functions::QuadraticTrajectory;
+use support;
+use support::time_functions::QuadraticTrajectory;
 use rand::Rng;
 use nalgebra::Vector2;
 use std::thread::sleep;
 use std::time::{Instant, Duration};
 use glium;
 use glium::{DisplayBuild, Surface};
-use rounding_error_tolerant_math::right_shift_round_up;
-use inefficient_flat_time_steward;
-use memoized_flat_time_steward;
+use support::rounding_error_tolerant_math::right_shift_round_up;
+use stewards::inefficient_flat;
+use stewards::memoized_flat;
 
 use std::io::Write;
 macro_rules! printlnerr(
@@ -62,7 +63,7 @@ impl ::Basics for Basics {
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct CollisionBasics {}
-impl ::collision_detection::Basics for CollisionBasics {
+impl support::collision_detection::Basics for CollisionBasics {
   type StewardBasics = Basics;
   type DetectorId =();
   fn nearness_column_id() -> ColumnId {
@@ -106,7 +107,7 @@ impl collisions::Basics for CollisionBasics {
   }
 }
 
-type Nearness = ::collision_detection::Nearness<CollisionBasics>;
+type Nearness = support::collision_detection::Nearness<CollisionBasics>;
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Circle {
@@ -139,7 +140,7 @@ macro_rules! for_all_columns {
   }};
 }
 
-type Steward = s::Steward<Basics, inefficient_flat_time_steward::Steward<Basics>, memoized_flat_time_steward::Steward<Basics>>;
+type Steward = s::Steward<Basics, inefficient_flat::Steward<Basics>, memoized_flat::Steward<Basics>>;
 
 fn get_circle_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x86ccbeb2c140cc51u64, index))

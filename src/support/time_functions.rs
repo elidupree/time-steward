@@ -1,6 +1,6 @@
 use nalgebra::{Vector2, Dot};
 use std::cmp::max;
-use ::rounding_error_tolerant_math::*;
+use super::rounding_error_tolerant_math::*;
 
 
 use std::io::Write;

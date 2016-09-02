@@ -116,7 +116,7 @@ pub fn erase<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
 #[macro_export]
 macro_rules! for_all_columns_from_time_steward_simple_grid_collision_detection {
   ($B: ty, $macro_name: ident {Column, $($macro_arguments:tt)*}) => {{
-    for_these_columns! {$macro_name {Column, $($macro_arguments)*}, $crate::collision_detection::simple_grid::Member <$B>};
+    for_these_columns! {$macro_name {Column, $($macro_arguments)*}, $crate::support::collision_detection::simple_grid::Member <$B>};
   }};
 }
 
