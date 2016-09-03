@@ -24,7 +24,7 @@ fn generator_for_event(id: TimeId) -> EventRng {
 }
 
 #[macro_export]
-macro_rules! make_dynamic_callbacks {
+macro_rules! time_steward_common_dynamic_callback_structs {
 
 ($M: ident, $PA: ident, $DynamicEventFn: ident, $DynamicPredictorFn: ident, $DynamicPredictor: ident, $StandardSettings: ident) => {
 
@@ -147,7 +147,7 @@ impl<B: Basics, E> GenericPredictorAccessor<B, E> {
   }
 }
 #[macro_export]
-macro_rules! predictor_accessor_common_accessor_methods {
+macro_rules! time_steward_common_accessor_methods_for_predictor_accessor {
   ($B: ty, $get: ident) => {
     fn generic_data_and_extended_last_change(&self,
                                              id: FieldId)
@@ -167,7 +167,7 @@ macro_rules! predictor_accessor_common_accessor_methods {
   }
 }
 #[macro_export]
-macro_rules! predictor_accessor_common_methods {
+macro_rules! time_steward_common_predictor_accessor_methods_for_predictor_accessor {
   ($B: ty, $DynamicEventFn: ident) => {
     fn predict_at_time <E: $crate::EventFn <$B>> (&mut self, time: <$B as $crate::Basics>::Time, event: E) {
       if time < *self.unsafe_now() {
@@ -198,20 +198,20 @@ impl<B: Basics> GenericMutator<B> {
   }
 }
 #[macro_export]
-macro_rules! mutator_common_accessor_methods {
+macro_rules! time_steward_common_accessor_methods_for_mutator {
   ($B: ty) => {
     fn unsafe_now(& self)->& <$B as $crate::Basics>::Time {& self.generic.now.base}
   }
 }
 #[macro_export]
-macro_rules! mutator_common_methods {
+macro_rules! time_steward_common_mutator_methods_for_mutator {
   ($B: ty) => {
     fn extended_now(& self)->& ExtendedTime <$B> {& self.generic.now}
     fn gen_id(&mut self) -> RowId {RowId::from_rng (&mut self.generic.generator)}
   }
 }
 #[macro_export]
-macro_rules! mutator_rng_methods {
+macro_rules! time_steward_common_rng_methods_for_mutator {
   ($B: ty) => {
     fn next_u32(&mut self) -> u32 {self.generic.generator.next_u32()}
     

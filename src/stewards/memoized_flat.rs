@@ -99,7 +99,7 @@ pub type Event<B> = StewardRc<EventFn<B>>;
 // pub type Predictor<B> = ::Predictor<PredictorFn<B>>;
 // pub type PredictorFn<B> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId);
 
-make_dynamic_callbacks! (Mutator, PredictorAccessor, DynamicEventFn, DynamicPredictorFn, DynamicPredictor, Settings);
+time_steward_common_dynamic_callback_structs! (Mutator, PredictorAccessor, DynamicEventFn, DynamicPredictorFn, DynamicPredictor, Settings);
 
 impl<B: Basics> Drop for Snapshot<B> {
   fn drop(&mut self) {
@@ -145,7 +145,7 @@ impl<'a, B: Basics> ::Accessor<B> for Mutator<'a, B> {
   fn constants(&self) -> &B::Constants {
     &self.shared.constants
   }
-  mutator_common_accessor_methods!(B);
+  time_steward_common_accessor_methods_for_mutator!(B);
 }
 impl<'a, B: Basics> PredictorAccessor<'a, B> {
   fn get_impl(&self, id: FieldId) -> Option<(&FieldRc, &ExtendedTime<B>)> {
@@ -159,7 +159,7 @@ impl<'a, B: Basics> PredictorAccessor<'a, B> {
   }
 }
 impl<'a, B: Basics> ::Accessor<B> for PredictorAccessor<'a, B> {
-  predictor_accessor_common_accessor_methods!(B, get_impl);
+  time_steward_common_accessor_methods_for_predictor_accessor!(B, get_impl);
   fn constants(&self) -> &B::Constants {
     &self.shared.constants
   }
@@ -171,7 +171,7 @@ impl<'a, B: Basics> ::Accessor<B> for PredictorAccessor<'a, B> {
 impl<B: Basics> ::MomentaryAccessor<B> for Snapshot<B> {}
 impl<'a, B: Basics> ::MomentaryAccessor<B> for Mutator<'a, B> {}
 impl<'a, B: Basics> ::PredictorAccessor<B> for PredictorAccessor<'a, B> {
-  predictor_accessor_common_methods!(B, DynamicEventFn);
+  time_steward_common_predictor_accessor_methods_for_predictor_accessor!(B, DynamicEventFn);
 }
 impl<B: Basics>::Snapshot<B> for Snapshot<B> {
   fn num_fields(&self) -> usize {
@@ -248,10 +248,10 @@ impl<'a, B: Basics> ::Mutator<B> for Mutator<'a, B> {
       entry.remove();
     }
   }
-  mutator_common_methods!(B);
+  time_steward_common_mutator_methods_for_mutator!(B);
 }
 impl<'a, B: Basics> Rng for Mutator<'a, B> {
-  mutator_rng_methods!(B);
+  time_steward_common_rng_methods_for_mutator!(B);
 }
 
 
