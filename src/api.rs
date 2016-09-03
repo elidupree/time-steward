@@ -496,7 +496,6 @@ fn __time_steward_make_snapshot_serde_functions_impl_populate_table <B: $crate::
 
 fn $deserialize_snapshot_name <B: $crate::Basics, D: __time_steward_make_snapshot_serde_functions_impl_serde::Deserializer> (deserializer: &mut D)->Result <$crate::FiatSnapshot <B>, D::Error> {
   use serde::{Deserialize};
-  use $crate::StewardRc;
   Ok ($crate::FiatSnapshot {
     now: try! (B::Time::deserialize (deserializer)),
     constants: try! (B::Constants::deserialize (deserializer)),
