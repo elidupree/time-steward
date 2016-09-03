@@ -305,6 +305,7 @@ pub mod partially_persistent_nonindexed_set {
     use std::collections::HashSet;
     use std::thread;
     use std::sync::mpsc::channel;
+    
     type Key = u8;
     fn test_operation_sequence(operations: Vec<(Key, bool)>) -> bool {
       let mut existences: HashSet<Key> = HashSet::new();
@@ -342,15 +343,18 @@ pub mod partially_persistent_nonindexed_set {
       check_thread.join().unwrap();
       true
     }
+    
     quickcheck! {
       fn operation_sequences_work(operations: Vec<(Key, bool)>) -> bool {
         test_operation_sequence(operations)
       }
     }
+    
     #[test]
     fn many_insertions() {
       test_operation_sequence((0..255).map(|number| (number, true)).collect());
     }
+    
     #[test]
     fn many_insertions_and_deletions() {
       test_operation_sequence((0..100)

@@ -46,11 +46,11 @@ pub mod data_structures;
 pub mod stewards {
   #[macro_use]
   pub mod common;
+  
   pub mod inefficient_flat;
   pub mod memoized_flat;
   // pub mod amortized;
 
-  #[macro_use]
   pub mod crossverified;
 }
 

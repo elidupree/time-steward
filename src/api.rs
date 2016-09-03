@@ -307,10 +307,9 @@ pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {
 }
 
 pub struct FiatSnapshot<B: Basics> {
-  //we don't really want these fields to be public, but it is forced by the macros. TODO: can we do anything about this?
-  pub now: B::Time,
-  pub constants: B::Constants,
-  pub fields: HashMap<FieldId, (FieldRc, ExtendedTime<B>)>,
+  now: B::Time,
+  constants: B::Constants,
+  fields: HashMap<FieldId, (FieldRc, ExtendedTime<B>)>,
 }
 impl<B: Basics> Accessor<B> for FiatSnapshot<B> {
   fn generic_data_and_extended_last_change(&self,
@@ -394,13 +393,6 @@ use serde::{self, de, Serialize, Serializer, Deserialize, Deserializer};
 use serde::ser::Error;
 use std::marker::PhantomData;
 
-fn deserialize_column<B: Basics, C: Column, M: de::MapVisitor>
-  (visitor: &mut M)
-   -> Result<(FieldRc, ExtendedTime<B>), M::Error> {
-  let (data, time) = try!(visitor.visit_value::<(C::FieldType, ExtendedTime<B>)>());
-  Ok((StewardRc::new(data), time))
-}
-
 fn serialize_column<C: Column, S: Serializer>(field: &FieldRc,
                                                   serializer: &mut S)
                                                   -> Result<(), S::Error> {
@@ -408,11 +400,24 @@ fn serialize_column<C: Column, S: Serializer>(field: &FieldRc,
   Ok(())
 }
 
-pub struct SerializationTable<S: Serializer>(pub HashMap<ColumnId,
-                                                     fn(&FieldRc, &mut S) -> Result<(), S::Error>>);
+fn deserialize_column<B: Basics, C: Column, M: de::MapVisitor>
+  (visitor: &mut M)
+   -> Result<(FieldRc, ExtendedTime<B>), M::Error> {
+  let (data, time) = try!(visitor.visit_value::<(C::FieldType, ExtendedTime<B>)>());
+  Ok((StewardRc::new(data), time))
+}
+
+pub struct SerializationTable<S: Serializer>(pub HashMap<ColumnId, fn(&FieldRc, &mut S) -> Result<(), S::Error>>);
+pub struct DeserializationTable <B: Basics, M: serde::de::MapVisitor> (HashMap<ColumnId, fn (&mut M)->Result <(FieldRc, ExtendedTime <B>), M::Error>>);
+
 impl<S: Serializer> ColumnListUser for SerializationTable <S> {
   fn apply <C: Column> (&mut self) {
     self.0.insert (C::column_id(), serialize_column::<C, S>);
+  }
+}
+impl<B: Basics, M: de::MapVisitor> ColumnListUser for DeserializationTable <B, M> {
+  fn apply <C: Column> (&mut self) {
+    self.0.insert (C::column_id(), deserialize_column::<B, C, M>);
   }
 }
 pub struct SerializationField<'a, 'b, Hack: Serializer + 'b>(pub ColumnId,
@@ -420,6 +425,7 @@ pub struct SerializationField<'a, 'b, Hack: Serializer + 'b>(pub ColumnId,
                                                              pub &'b SerializationTable<Hack>);
 impl<'a, 'b, Hack: Serializer> Serialize for SerializationField<'a, 'b, Hack> {
   fn serialize<'c, S: Serializer + 'b>(&'c self, serializer: &mut S) -> Result<(), S::Error> {
+    // use std::any::TypeId;
     // assert!(TypeId::of::<S>() == TypeId::of::<Hack>(), "hack: this can only actually serialize for the serializer it has tables for");
     let table = unsafe {
       use std::mem;
@@ -438,14 +444,8 @@ impl<'a, 'b, Hack: Serializer> Serialize for SerializationField<'a, 'b, Hack> {
 }
 
 
-pub struct DeserializationTable <B: Basics, M: serde::de::MapVisitor> (HashMap<ColumnId, fn (&mut M)->Result <(FieldRc, ExtendedTime <B>), M::Error>>);
-impl<B: Basics, M: de::MapVisitor> ColumnListUser for DeserializationTable <B, M> {
-  fn apply <C: Column> (&mut self) {
-    self.0.insert (C::column_id(), deserialize_column::<B, C, M>);
-  }
-}
 pub struct SerdeMapVisitor <B: Basics, C: ColumnList> {
-  marker: PhantomData<(FiatSnapshot <B >, C)>
+  pub marker: PhantomData<(FiatSnapshot <B >, C)>
 }
 pub struct DeserializedMap <B: Basics> {
   pub data: HashMap<FieldId, (FieldRc, ExtendedTime<B>)>,
@@ -456,14 +456,6 @@ impl<B: Basics> Deserialize for DeserializedMap <B> {
   }
 }
 
-
-impl<B: Basics, C: ColumnList> SerdeMapVisitor<B, C> {
-  pub fn new() -> Self {
-    SerdeMapVisitor {
-      marker: PhantomData
-    }
-  }
-}
 impl<B: Basics, C: ColumnList>  serde::de::Visitor for SerdeMapVisitor<B, C>
 {
   type Value = DeserializedMap <B>;
@@ -492,7 +484,6 @@ impl<B: Basics, C: ColumnList>  serde::de::Visitor for SerdeMapVisitor<B, C>
 
 
 pub fn serialize_snapshot <'a, B: Basics, C: ColumnList, Shot: Snapshot <B>, S: Serializer> (snapshot: & 'a Shot, serializer: &mut S)->Result <(), S::Error> where & 'a Shot: IntoIterator <Item = SnapshotEntry <'a, B>>  {
-  use std::collections::HashMap;
   let mut table = snapshot_serde_functions_impl::SerializationTable::<S> (HashMap::new());
   C::apply (&mut table);
   
@@ -511,7 +502,7 @@ pub fn deserialize_snapshot <B: Basics, C: ColumnList, D: Deserializer> (deseria
   Ok (FiatSnapshot {
     now: try! (B::Time::deserialize (deserializer)),
     constants: try! (B::Constants::deserialize (deserializer)),
-    fields: try! (deserializer.deserialize_map(snapshot_serde_functions_impl::SerdeMapVisitor::<B, C>::new())).data,
+    fields: try! (deserializer.deserialize_map(snapshot_serde_functions_impl::SerdeMapVisitor::<B, C>{ marker: PhantomData })).data,
   })
 }
 
@@ -683,20 +674,21 @@ pub trait TimeSteward <B: Basics> {
 
 #[cfg (test)]
 mod tests {
-use super::*;
-use serde::Serialize;
-use std::fmt::Debug;
-fn test_id_endianness_impl <T: Serialize + Debug>(thing: T, confirm: DeterministicRandomId) {
-  println!("DeterministicRandomId::new({:?}) = {:?}", thing, DeterministicRandomId::new(& thing));
-  assert_eq! (DeterministicRandomId::new(& thing), confirm);
-}
+  use super::*;
+  use serde::Serialize;
+  use std::fmt::Debug;
+  
+  fn test_id_endianness_impl <T: Serialize + Debug>(thing: T, confirm: DeterministicRandomId) {
+    println!("DeterministicRandomId::new({:?}) = {:?}", thing, DeterministicRandomId::new(& thing));
+    assert_eq! (DeterministicRandomId::new(& thing), confirm);
+  }
 
-#[test]
-fn test_id_endianness() {
-  test_id_endianness_impl ((), DeterministicRandomId{data: [18033283813966546569, 10131395250899649866]});
-  test_id_endianness_impl (1337, DeterministicRandomId{data: [3453333590764588377, 1257515737963236726]});
-  let a : (Option <Option <i32>>,) = (Some (None),);
-  test_id_endianness_impl (a, DeterministicRandomId{data: [16808472249412258235, 2826611911447572457]});
-  test_id_endianness_impl (DeterministicRandomId::new (& 0x70f7b85b08ba4fd5u64), DeterministicRandomId{data: [12393903562314107346, 11644372085838480024]});
-}
+  #[test]
+  fn test_id_endianness() {
+    test_id_endianness_impl ((), DeterministicRandomId{data: [18033283813966546569, 10131395250899649866]});
+    test_id_endianness_impl (1337, DeterministicRandomId{data: [3453333590764588377, 1257515737963236726]});
+    let a : (Option <Option <i32>>,) = (Some (None),);
+    test_id_endianness_impl (a, DeterministicRandomId{data: [16808472249412258235, 2826611911447572457]});
+    test_id_endianness_impl (DeterministicRandomId::new (& 0x70f7b85b08ba4fd5u64), DeterministicRandomId{data: [12393903562314107346, 11644372085838480024]});
+  }
 }
