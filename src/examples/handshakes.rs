@@ -6,6 +6,7 @@ use bincode::serde::{Serializer, Deserializer};
 use bincode;
 use stewards::inefficient_flat;
 use stewards::memoized_flat;
+use std::marker::PhantomData;
 
 type Time = i64;
 
@@ -38,13 +39,7 @@ fn get_philosopher_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x2302c38efb47e0d0u64, index))
 }
 
-
-macro_rules! for_all_columns {
-  ($macro_name: ident {Column, $($macro_arguments:tt)*}) => {{
-    for_these_columns! {$macro_name {Column, $($macro_arguments)*}, Philosopher}
-  }};
-}
-make_snapshot_serde_functions! (serialize_snapshot, deserialize_snapshot);
+type Columns = PhantomData <Philosopher>;
 
 fn display_snapshot<S: ::Snapshot<Basics>>(snapshot: &S) {
   println!("snapshot for {}", snapshot.now());
@@ -85,7 +80,7 @@ pub fn testfunc() {
     })
   );
 
-  populate_crossverified_time_stewards_equality_table!(settings);
+  settings.populate_equality_table::<Columns>();
   let mut stew: Steward = ::TimeSteward::new_empty((), settings);
 
   stew.insert_fiat_event(0,
@@ -113,11 +108,11 @@ pub fn testfunc() {
     let mut writer: Vec<u8> = Vec::with_capacity(128);
     {
       let mut serializer = Serializer::new(&mut writer);
-      serialize_snapshot:: <Basics, <Steward as TimeSteward <Basics>>::Snapshot,_> (snapshot, &mut serializer).unwrap();
+      ::serialize_snapshot:: <Basics, Columns, <Steward as TimeSteward <Basics>>::Snapshot,_> (snapshot, &mut serializer).unwrap();
     }
     // let serialized = String::from_utf8 (serializer.into_inner()).unwrap();
     println!("{:?}", writer);
-    let deserialized = deserialize_snapshot:: <Basics,_> (&mut Deserializer::new (&mut writer.as_slice(), bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/)).unwrap();
+    let deserialized = ::deserialize_snapshot:: <Basics, Columns,_> (&mut Deserializer::new (&mut writer.as_slice(), bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/)).unwrap();
     display_snapshot(&deserialized);
   }
   // panic!("anyway")

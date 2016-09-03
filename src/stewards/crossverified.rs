@@ -5,7 +5,7 @@
 
 
 use {DeterministicRandomId, ColumnId, FieldId, PredictorId, Column, ExtendedTime, StewardRc,
-             Basics, FieldRc, TimeSteward, FiatEventOperationError, ValidSince, PredictorFn, TimeStewardSettings};
+             Basics, FieldRc, TimeSteward, FiatEventOperationError, ValidSince, PredictorFn, TimeStewardSettings,ColumnList, ColumnListUser};
 use std::collections::{HashMap};
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::cmp::max;
@@ -30,24 +30,9 @@ pub struct Settings <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<
   pub HashMap<ColumnId, fn (&FieldRc, &FieldRc)>,
 );
 
-pub fn check_equality <C: Column> (first: &FieldRc, second: &FieldRc) {
+fn check_equality <C: Column> (first: &FieldRc, second: &FieldRc) {
   assert_eq!(::unwrap_field::<C>(first), ::unwrap_field::<C>(second), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
 }
-
-#[macro_export]
-macro_rules! __time_steward_insert_crossverification_function {
-  ($column: ty, $table: expr) => {
-    $table.insert (<$column as $crate::Column>::column_id(), $crate::stewards::crossverified::check_equality::<$column>);
-  }
-}
-
-#[macro_export]
-macro_rules! populate_crossverified_time_stewards_equality_table {
-($settings: ident) => {
-  for_all_columns! (__time_steward_insert_crossverification_function {Column, $settings.2});
-}
-}
-
 
 
 impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::Accessor<B> for Snapshot<B, Steward0, Steward1> {
@@ -132,29 +117,12 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
   }
 }
 
-//TODO: implement snapshot iterating
-
-/*
-//TODO: should we just require PredictorFn to implement Clone?
-#[derive (Serialize, Deserialize)]
-struct ShareablePredictorFn <B: Basics, P: PredictorFn <B>> (StewardRc <P>, PhantomData <B>);
-impl <B: Basics, P: PredictorFn <B>> PredictorFn <B> for ShareablePredictorFn <B, P> {
-  fn call <PA: ::PredictorAccessor <B>> (&self, accessor: &mut PA, id: RowId) {
-    self.0.call (accessor, id);
-  }
+impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > Settings <B, Steward0, Steward1> {
+  pub fn populate_equality_table <C: ColumnList> (&mut self) {C::apply (self);}
 }
-// explicitly implement Clone to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
-impl<B: Basics> Clone for DynamicPredictor<B> {
-  fn clone(&self) -> Self {
-    DynamicPredictor {
-      predictor_id: self.predictor_id,
-      column_id: self.column_id,
-      function: self.function.clone(),
-      _marker: PhantomData,
-    }
-  }
+impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ColumnListUser for Settings <B, Steward0, Steward1> {
+  fn apply <C: Column> (&mut self) {self.2.insert (C::column_id(), check_equality::<C>);}
 }
-*/
 
 
 impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > TimeStewardSettings <B> for Settings <B, Steward0, Steward1> {

@@ -28,9 +28,9 @@ use std::cmp::Ordering;
 use std::fmt::{self, Debug};
 use std::borrow::Borrow;
 use std::io::{self, Write};
+use std::marker::PhantomData;
 use rand::{Rng, ChaChaRng};
-use serde::{Serialize, Serializer, Deserialize};
-use serde::de;
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use bincode;
 
 // We need to make sure that DeterministicRandomIds
@@ -350,59 +350,62 @@ impl<'a, B: Basics> IntoIterator for &'a FiatSnapshot<B> {
   }
 }
 
-pub fn deserialize_column<B: Basics, C: Column, M: de::MapVisitor>
+pub trait ColumnListUser {
+  fn apply <C: Column> (&mut self);
+}
+pub trait ColumnList {
+  fn apply <U: ColumnListUser> (user: &mut U);
+}
+impl <C: Column> ColumnList for PhantomData <C> {
+  #[inline]
+  fn apply <U: ColumnListUser> (user: &mut U) {user.apply::<C>();}
+}
+macro_rules! tuple_impls {
+  ($TL: ident $(, $T: ident)*) => {
+    impl<$($T,)* $TL> ColumnList for ($($T,)* $TL,)
+      where $($T: ColumnList,)* $TL: ColumnList
+    {
+      #[inline]
+      fn apply <U: ColumnListUser> (user: &mut U) {
+        $($T::apply(user);)*
+        $TL::apply(user);
+      }
+    }
+    tuple_impls! ($($T),*);
+  };
+  () => {};
+}
+tuple_impls! (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15);
+
+
+mod snapshot_serde_functions_impl {
+use super::*;
+use std::collections::HashMap;
+use serde::{self, de, Serialize, Serializer, Deserialize, Deserializer};
+use serde::ser::Error;
+use std::marker::PhantomData;
+
+fn deserialize_column<B: Basics, C: Column, M: de::MapVisitor>
   (visitor: &mut M)
    -> Result<(FieldRc, ExtendedTime<B>), M::Error> {
   let (data, time) = try!(visitor.visit_value::<(C::FieldType, ExtendedTime<B>)>());
   Ok((StewardRc::new(data), time))
 }
 
-pub fn serialize_column<C: Column, S: Serializer>(field: &FieldRc,
+fn serialize_column<C: Column, S: Serializer>(field: &FieldRc,
                                                   serializer: &mut S)
                                                   -> Result<(), S::Error> {
   try!(unwrap_field::<C>(field).serialize(serializer));
   Ok(())
 }
 
-#[macro_export]
-macro_rules! __time_steward_insert_deserialization_function {
-  ($column: ty, $B: ty, $M: ty, $table: ident) => {
-    $table.insert (<$column as $crate::Column>::column_id(), $crate::deserialize_column::<$B, $column, $M>);
-  }
-}
-
-#[macro_export]
-macro_rules! __time_steward_insert_serialization_function {
-  ($column: ty, $S: ty, $table: ident) => {
-    $table.0.insert (<$column as $crate::Column>::column_id(), $crate::serialize_column::<$column, $S>);
-  }
-}
-
-#[macro_export]
-macro_rules! for_these_columns {
-  ($macro_name: ident {Column, $($macro_arguments:tt)*}, $column: ty $(, $more_columns:ty)*) => {{
-    $macro_name! {$column, $($macro_arguments)*};
-    for_these_columns! {$macro_name {Column, $($macro_arguments)*} $(, $more_columns)*}
-  }};
-  ($macro_name: ident {Column, $($macro_arguments:tt)*},) => {{}};
-  ($macro_name: ident {Column, $($macro_arguments:tt)*}) => {{}};
-}
-
-#[macro_export]
-macro_rules! make_snapshot_serde_functions {
-($serialize_snapshot_name: ident, $deserialize_snapshot_name: ident) => {
-
-use serde as __time_steward_make_snapshot_serde_functions_impl_serde;
-
-mod __time_steward_make_snapshot_serde_functions_impl {
-use $crate::{ColumnId, FieldRc, Basics, FieldId, ExtendedTime, FiatSnapshot};
-use std::collections::HashMap;
-use serde::{self, Serialize, Serializer, Deserialize, Deserializer};
-use serde::ser::Error;
-use std::marker::PhantomData;
-
 pub struct SerializationTable<S: Serializer>(pub HashMap<ColumnId,
                                                      fn(&FieldRc, &mut S) -> Result<(), S::Error>>);
+impl<S: Serializer> ColumnListUser for SerializationTable <S> {
+  fn apply <C: Column> (&mut self) {
+    self.0.insert (C::column_id(), serialize_column::<C, S>);
+  }
+}
 pub struct SerializationField<'a, 'b, Hack: Serializer + 'b>(pub ColumnId,
                                                              pub &'a FieldRc,
                                                              pub &'b SerializationTable<Hack>);
@@ -426,9 +429,14 @@ impl<'a, 'b, Hack: Serializer> Serialize for SerializationField<'a, 'b, Hack> {
 }
 
 
-pub type DeserializationTable <B: Basics, M: serde::de::MapVisitor> = HashMap<ColumnId, fn (&mut M)->Result <(FieldRc, ExtendedTime <B>), M::Error>>;
-pub struct SerdeMapVisitor <B: Basics> {
-  marker: PhantomData<FiatSnapshot <B >>
+pub struct DeserializationTable <B: Basics, M: serde::de::MapVisitor> (HashMap<ColumnId, fn (&mut M)->Result <(FieldRc, ExtendedTime <B>), M::Error>>);
+impl<B: Basics, M: de::MapVisitor> ColumnListUser for DeserializationTable <B, M> {
+  fn apply <C: Column> (&mut self) {
+    self.0.insert (C::column_id(), deserialize_column::<B, C, M>);
+  }
+}
+pub struct SerdeMapVisitor <B: Basics, C: ColumnList> {
+  marker: PhantomData<(FiatSnapshot <B >, C)>
 }
 pub struct DeserializedMap <B: Basics> {
   pub data: HashMap<FieldId, (FieldRc, ExtendedTime<B>)>,
@@ -440,27 +448,27 @@ impl<B: Basics> Deserialize for DeserializedMap <B> {
 }
 
 
-impl<B: Basics> SerdeMapVisitor<B> {
+impl<B: Basics, C: ColumnList> SerdeMapVisitor<B, C> {
   pub fn new() -> Self {
     SerdeMapVisitor {
       marker: PhantomData
     }
   }
 }
-impl<B: Basics>  serde::de::Visitor for SerdeMapVisitor<B>
+impl<B: Basics, C: ColumnList>  serde::de::Visitor for SerdeMapVisitor<B, C>
 {
   type Value = DeserializedMap <B>;
   fn visit_map<M>(&mut self, mut visitor: M) -> Result<Self::Value, M::Error>
     where M: serde::de::MapVisitor
   {
-    let mut table: DeserializationTable <B, M> = DeserializationTable::<B, M>::new();
-    super::__time_steward_make_snapshot_serde_functions_impl_populate_table:: <B, M> (&mut table);
+    let mut table = DeserializationTable::<B, M> (HashMap::new());
+    C::apply(&mut table);
     
     let mut fields = HashMap::with_capacity(visitor.size_hint().0); 
     
     use serde::Error;
     while let Some (key) = try!(visitor.visit_key::<FieldId>()) {
-      fields.insert (key, match table.get(& key.column_id) {
+      fields.insert (key, match table.0.get(& key.column_id) {
         None => return Err (M::Error::custom (format! ("Attempt to deserialize field from uninitialized column {:?}; Maybe you're trying to load a snapshot from a different version of your program? Or did you forget to initialize all the columns from your own code and/or the libraries you're using?", key. column_id))),
         Some (function) => try! (function (&mut visitor)),
       });
@@ -474,39 +482,29 @@ impl<B: Basics>  serde::de::Visitor for SerdeMapVisitor<B>
 }
 
 
-fn $serialize_snapshot_name <'a, B: $crate::Basics, Shot: $crate::Snapshot <B>, S: __time_steward_make_snapshot_serde_functions_impl_serde::Serializer> (snapshot: & 'a Shot, serializer: &mut S)->Result <(), S::Error> where B::Time: __time_steward_make_snapshot_serde_functions_impl_serde::Serialize, & 'a Shot: IntoIterator <Item = $crate::SnapshotEntry <'a, B>>  {
+pub fn serialize_snapshot <'a, B: Basics, C: ColumnList, Shot: Snapshot <B>, S: Serializer> (snapshot: & 'a Shot, serializer: &mut S)->Result <(), S::Error> where & 'a Shot: IntoIterator <Item = SnapshotEntry <'a, B>>  {
   use std::collections::HashMap;
-  use serde::Serialize;
-  let mut table = __time_steward_make_snapshot_serde_functions_impl::SerializationTable (HashMap::new());
-  for_all_columns! (__time_steward_insert_serialization_function {Column, S, table});
+  let mut table = snapshot_serde_functions_impl::SerializationTable::<S> (HashMap::new());
+  C::apply (&mut table);
   
   try! (snapshot.now().serialize (serializer));
   try! (snapshot.constants().serialize (serializer));
   let mut state = try!(serializer.serialize_map(Some (snapshot.num_fields())));
   for (id, (data, changed)) in snapshot {
     try! (serializer.serialize_map_key (&mut state, id));
-    try! (serializer.serialize_map_value (&mut state, (& __time_steward_make_snapshot_serde_functions_impl::SerializationField (id.column_id, & data, & table), changed)));
+    try! (serializer.serialize_map_value (&mut state, (& snapshot_serde_functions_impl::SerializationField (id.column_id, & data, & table), changed)));
   };
   serializer.serialize_map_end (state)
 }
 
 
-fn __time_steward_make_snapshot_serde_functions_impl_populate_table <B: $crate::Basics, M: __time_steward_make_snapshot_serde_functions_impl_serde::de::MapVisitor> (table: &mut __time_steward_make_snapshot_serde_functions_impl::DeserializationTable <B, M>) {
-    for_all_columns! (__time_steward_insert_deserialization_function {Column, B, M, table});
-
-}
-
-fn $deserialize_snapshot_name <B: $crate::Basics, D: __time_steward_make_snapshot_serde_functions_impl_serde::Deserializer> (deserializer: &mut D)->Result <$crate::FiatSnapshot <B>, D::Error> {
-  use serde::{Deserialize};
-  Ok ($crate::FiatSnapshot {
+pub fn deserialize_snapshot <B: Basics, C: ColumnList, D: Deserializer> (deserializer: &mut D)->Result <FiatSnapshot <B>, D::Error> {
+  Ok (FiatSnapshot {
     now: try! (B::Time::deserialize (deserializer)),
     constants: try! (B::Constants::deserialize (deserializer)),
-    fields: try! (deserializer.deserialize_map(__time_steward_make_snapshot_serde_functions_impl ::SerdeMapVisitor::<B>::new())). data,
+    fields: try! (deserializer.deserialize_map(snapshot_serde_functions_impl::SerdeMapVisitor::<B, C>::new())).data,
   })
 }
-
-}}
-
 
 
 

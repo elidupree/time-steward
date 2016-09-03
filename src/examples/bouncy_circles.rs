@@ -10,6 +10,7 @@ use support::time_functions::QuadraticTrajectory;
 use nalgebra::Vector2;
 use std::thread::sleep;
 use std::time::{Instant, Duration};
+use std::marker::PhantomData;
 use glium;
 use glium::{DisplayBuild, Surface};
 use support::rounding_error_tolerant_math::right_shift_round_up;
@@ -131,13 +132,7 @@ impl Column for Intersection {
 }
 
 
-
-macro_rules! for_all_columns {
-  ($macro_name: ident {Column, $($macro_arguments:tt)*}) => {{
-    for_these_columns! {$macro_name {Column, $($macro_arguments)*}, Circle, Intersection};
-    for_all_columns_from_time_steward_simple_grid_collision_detection! {CollisionBasics, $macro_name {Column, $($macro_arguments)*}};
-  }};
-}
+type Columns = (PhantomData <Circle>, PhantomData <Intersection>, collisions::Columns <CollisionBasics>);
 
 type Steward = s::Steward<Basics, inefficient_flat::Steward<Basics>, memoized_flat::Steward<Basics>>;
 
@@ -297,7 +292,7 @@ pub fn testfunc() {
     time_steward_predictor_from_generic_fn! (Basics, struct BoundaryPredictor, boundary_predictor)
   );
   collisions::insert_predictors::<CollisionBasics, _>(&mut settings);
-  populate_crossverified_time_stewards_equality_table!(settings);
+  settings.populate_equality_table::<Columns>();
   let mut stew: Steward = ::TimeSteward::new_empty((), settings);
 
   stew.insert_fiat_event(0,
