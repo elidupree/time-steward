@@ -8,10 +8,9 @@
 use::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId,
             StewardRc, FieldRc, Accessor, Column, ExtendedTime, Basics,
             TimeSteward, FiatEventOperationError, ValidSince};
-use stewards::common;
+use stewards::common::{self, Filter};
 use std::collections::{HashMap, BTreeMap, HashSet};
 use std::collections::hash_map::Entry;
-// use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::ops::Drop;
@@ -96,8 +95,6 @@ pub struct PredictorAccessor<'a, B: Basics> {
 }
 pub type EventFn<B> = for<'d, 'e> Fn(&'d mut Mutator<'e, B>);
 pub type Event<B> = StewardRc<EventFn<B>>;
-// pub type Predictor<B> = ::Predictor<PredictorFn<B>>;
-// pub type PredictorFn<B> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId);
 
 time_steward_common_dynamic_callback_structs! (Mutator, PredictorAccessor, DynamicEventFn, DynamicPredictorFn, DynamicPredictor, Settings);
 
@@ -255,22 +252,6 @@ impl<'a, B: Basics> Rng for Mutator<'a, B> {
 }
 
 
-// https://github.com/rust-lang/rfcs/issues/1485
-trait Filter<T> {
-  fn filter<P: FnOnce(&T) -> bool>(self, predicate: P) -> Self;
-}
-impl<T> Filter<T> for Option<T> {
-  fn filter<P: FnOnce(&T) -> bool>(self, predicate: P) -> Self {
-    self.and_then(|x| {
-      if predicate(&x) {
-        Some(x)
-      } else {
-        None
-      }
-    })
-  }
-}
-
 impl<B: Basics> Fields<B> {
   fn get(&self, id: FieldId) -> Option<(&FieldRc, &ExtendedTime<B>)> {
     self.field_states.get(&id).map(|field| (&field.data, &field.last_change))
@@ -288,10 +269,7 @@ impl<B: Basics> Fields<B> {
       first_snapshot_not_updated: next_snapshot,
     };
     match self.field_states
-              .entry(FieldId {
-                row_id: id,
-                column_id: C::column_id(),
-              }) {
+              .entry(FieldId::new(id, C::column_id())) {
       Entry::Occupied(mut entry) => {
         entry.insert(field);
         false
@@ -305,10 +283,7 @@ impl<B: Basics> Fields<B> {
   // returns true if the field changed from existing to nonexistent or vice versa
   fn remove<C: Column>(&mut self, id: RowId) -> bool {
     self.field_states
-        .remove(&FieldId {
-          row_id: id,
-          column_id: C::column_id(),
-        })
+        .remove(&FieldId::new(id, C::column_id()))
         .is_some()
   }
   // returns true if the field changed from existing to nonexistent or vice versa

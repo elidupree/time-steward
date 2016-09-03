@@ -4,7 +4,6 @@ use std::fmt::Debug;
 use serde::{Serialize, Deserialize};
 
 pub mod inefficient;
-#[macro_use]
 pub mod simple_grid;
 
 pub trait Basics: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {

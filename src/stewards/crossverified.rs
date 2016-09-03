@@ -7,7 +7,6 @@
 use {DeterministicRandomId, ColumnId, FieldId, PredictorId, Column, ExtendedTime, StewardRc,
              Basics, FieldRc, TimeSteward, FiatEventOperationError, ValidSince, PredictorFn, TimeStewardSettings,ColumnList, ColumnListUser};
 use std::collections::{HashMap};
-// use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::cmp::max;
 use std::marker::PhantomData;
 use Snapshot as SuperSnapshot;
@@ -50,7 +49,6 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::Accessor<
         (self.2.get (& id.column_id).expect ("Column missing from crossverification table; did you forget to call populate_crossverified_time_stewards_equality_table!()? Or did you forget to list a column in for_all_columns!()?")) (value_0.0, value_1.0);
         Some (value_0)
       },
-      //however, we CAN tell the difference between something and nothing
       _=> panic! ("One snapshot returned a value and the other didn't; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types")
     }
   }
@@ -130,7 +128,6 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > TimeSteward
     Settings (<Steward0::Settings as TimeStewardSettings <B>>::new(), <Steward1::Settings as TimeStewardSettings <B>>::new(), HashMap::new())
   }
   fn insert_predictor <P: PredictorFn <B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: P) {
-    //let function = ShareablePredictorFn::<B, P> (StewardRc::new (function), PhantomData);
     self.0.insert_predictor (predictor_id, column_id, function.clone());
     self.1.insert_predictor (predictor_id, column_id, function);
   }

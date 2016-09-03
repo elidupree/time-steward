@@ -3,17 +3,21 @@ use std::cmp::Ordering;
 use rand::{ChaChaRng, SeedableRng};
 use {DeterministicRandomId, PredictorId,  TimeId, RowId, FieldId, SiphashIdGenerator, IterationType, Basics, ExtendedTime, GenericExtendedTime};
 
-// #[derive (Clone)]
-// enum Prediction<B: Basics, E> {
-//   Nothing,
-//   Immediately(E),
-//   At(B::Time, E),
-// }
-
-// type Event<M> = StewardRc<for<'d> Fn(&'d mut M)>;
-// type PredictorFn<B: Basics, M: Mutator<B>, PA: PredictorAccessor<B>> =
-//  StewardRc<for<'b, 'c> Fn(&'b mut PA, RowId) -> Prediction<B, Event<M>>>;
-
+// https://github.com/rust-lang/rfcs/issues/1485
+pub trait Filter<T> {
+  fn filter<P: FnOnce(&T) -> bool>(self, predicate: P) -> Self;
+}
+impl<T> Filter<T> for Option<T> {
+  fn filter<P: FnOnce(&T) -> bool>(self, predicate: P) -> Self {
+    self.and_then(|x| {
+      if predicate(&x) {
+        Some(x)
+      } else {
+        None
+      }
+    })
+  }
+}
 
 type EventRng = ChaChaRng;
 fn generator_for_event(id: TimeId) -> EventRng {

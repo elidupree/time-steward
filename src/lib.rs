@@ -58,7 +58,6 @@ pub mod stewards {
 pub mod support {
   pub mod rounding_error_tolerant_math;
   pub mod time_functions;
-  #[macro_use]
   pub mod collision_detection;
 }
 

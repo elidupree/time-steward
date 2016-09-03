@@ -30,14 +30,12 @@ impl<B: Basics> Column for Cell<B> {
   }
 }
 
-///TODO: this should not be public; it's only public so that it can be used in a macro expansion,
-///which would be a generic function if rust had better polymorphism
+// It might be nicer for this not to be public – the user isn't expected to interact with it in any way. However, it has to be public because Columns has to be.
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Member<B: Basics> {
-  pub row: RowId,
-  pub bounds: Bounds,
-  pub detector: B::DetectorId,
-  _marker: PhantomData<B>,
+  row: RowId,
+  bounds: Bounds,
+  detector: B::DetectorId,
 }
 impl<B: Basics> Column for Member<B> {
   type FieldType = Member <B>;
@@ -65,7 +63,6 @@ pub fn insert<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
                              row: who,
                              bounds: bounds,
                              detector: me,
-                             _marker: PhantomData,
                            }));
   for next in bounds.min[0]..bounds.max[0] + 1 {
     for what in bounds.min[1]..bounds.max[1] + 1 {

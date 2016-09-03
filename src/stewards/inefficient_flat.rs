@@ -8,9 +8,8 @@
 use::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, Column, ExtendedTime,
             Basics, TimeSteward, FiatEventOperationError, ValidSince, StewardRc,
             FieldRc, Accessor};
-use stewards::common;
+use stewards::common::{self, Filter};
 use std::collections::{HashMap, BTreeMap};
-// use std::collections::Bound::{Included, Excluded, Unbounded};
 use rand::Rng;
 use std::cmp::max;
 
@@ -55,8 +54,6 @@ pub struct PredictorAccessor<'a, B: Basics> {
 }
 pub type EventFn<B> = for<'d, 'e> Fn(&'d mut Mutator<'e, B>);
 pub type Event<B> = StewardRc<EventFn<B>>;
-// pub type Predictor<B> = ::Predictor<PredictorFn<B>>;
-// pub type PredictorFn<B> = for<'b, 'c> Fn(&'b mut PredictorAccessor<'c, B>, RowId);
 
 time_steward_common_dynamic_callback_structs! (Mutator, PredictorAccessor, DynamicEventFn, DynamicPredictorFn, DynamicPredictor, Settings);
 
@@ -150,24 +147,6 @@ impl<'a, B: Basics> Rng for Mutator<'a, B> {
 }
 
 
-
-// https://github.com/rust-lang/rfcs/issues/1485
-trait Filter<T> {
-  fn filter<P: FnOnce(&T) -> bool>(self, predicate: P) -> Self;
-}
-impl<T> Filter<T> for Option<T> {
-  fn filter<P: FnOnce(&T) -> bool>(self, predicate: P) -> Self {
-    self.and_then(|x| {
-      if predicate(&x) {
-        Some(x)
-      } else {
-        None
-      }
-    })
-  }
-}
-
-
 impl<B: Basics> StewardState<B> {
   fn get(&self, id: FieldId) -> Option<(&FieldRc, &ExtendedTime<B>)> {
     self.field_states
@@ -176,10 +155,7 @@ impl<B: Basics> StewardState<B> {
   }
   fn set<C: Column>(&mut self, id: RowId, value: C::FieldType, time: &ExtendedTime<B>) {
     self.field_states
-        .insert(FieldId {
-                  row_id: id,
-                  column_id: C::column_id(),
-                },
+        .insert(FieldId::new(id, C::column_id()),
                 Field {
                   data: StewardRc::new(value),
                   last_change: time.clone(),
@@ -187,10 +163,7 @@ impl<B: Basics> StewardState<B> {
   }
   fn remove<C: Column>(&mut self, id: RowId) {
     self.field_states
-        .remove(&FieldId {
-          row_id: id,
-          column_id: C::column_id(),
-        });
+        .remove(&FieldId::new(id, C::column_id()));
   }
   fn set_opt<C: Column>(&mut self,
                         id: RowId,
