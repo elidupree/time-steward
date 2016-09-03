@@ -310,7 +310,7 @@ pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {
 pub struct FiatSnapshot<B: Basics> {
   //we don't really want these fields to be public, but it is forced by the macros. TODO: can we do anything about this?
   pub now: B::Time,
-  pub constants: StewardRc<B::Constants>,
+  pub constants: B::Constants,
   pub fields: HashMap<FieldId, (FieldRc, ExtendedTime<B>)>,
 }
 impl<B: Basics> Accessor<B> for FiatSnapshot<B> {
@@ -320,7 +320,7 @@ impl<B: Basics> Accessor<B> for FiatSnapshot<B> {
     self.fields.get(&id).map(|pair| (&pair.0, &pair.1))
   }
   fn constants(&self) -> &B::Constants {
-    self.constants.borrow()
+    & self.constants
   }
   fn unsafe_now(&self) -> &B::Time {
     &self.now
@@ -499,7 +499,7 @@ fn $deserialize_snapshot_name <B: $crate::Basics, D: __time_steward_make_snapsho
   use $crate::StewardRc;
   Ok ($crate::FiatSnapshot {
     now: try! (B::Time::deserialize (deserializer)),
-    constants: StewardRc::new (try! (B::Constants::deserialize (deserializer))),
+    constants: try! (B::Constants::deserialize (deserializer)),
     fields: try! (deserializer.deserialize_map(__time_steward_make_snapshot_serde_functions_impl ::SerdeMapVisitor::<B>::new())). data,
   })
 }
