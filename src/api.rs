@@ -30,7 +30,6 @@ use std::borrow::Borrow;
 use std::io::{self, Write};
 use rand::{Rng, ChaChaRng};
 use serde::{Serialize, Serializer, Deserialize};
-use serde::ser::Error;
 use serde::de;
 use bincode;
 
@@ -351,31 +350,6 @@ impl<'a, B: Basics> IntoIterator for &'a FiatSnapshot<B> {
   }
 }
 
-
-pub struct SerializationTable<S: Serializer>(pub HashMap<ColumnId,
-                                                     fn(&FieldRc, &mut S) -> Result<(), S::Error>>);
-pub struct SerializationField<'a, 'b, Hack: Serializer + 'b>(pub ColumnId,
-                                                             pub &'a FieldRc,
-                                                             pub &'b SerializationTable<Hack>);
-impl<'a, 'b, Hack: Serializer> Serialize for SerializationField<'a, 'b, Hack> {
-  fn serialize<'c, S: Serializer + 'b>(&'c self, serializer: &mut S) -> Result<(), S::Error> {
-    // assert!(TypeId::of::<S>() == TypeId::of::<Hack>(), "hack: this can only actually serialize for the serializer it has tables for");
-    let table = unsafe {
-      use std::mem;
-      mem::transmute::<&'b SerializationTable<Hack>, &'b SerializationTable<S>>(self.2)
-    };
-    match (table.0).get(&self.0) {
-      None => {
-        Err(S::Error::custom(format!("Attempt to serialize field from uninitialized column \
-                                      {:?}; did you forget to initialize all the columns from \
-                                      your own code and/or the libraries you're using?",
-                                     self.0)))
-      }
-      Some(function) => function(self.1, serializer),
-    }
-  }
-}
-
 pub fn deserialize_column<B: Basics, C: Column, M: de::MapVisitor>
   (visitor: &mut M)
    -> Result<(FieldRc, ExtendedTime<B>), M::Error> {
@@ -420,49 +394,60 @@ macro_rules! make_snapshot_serde_functions {
 
 use serde as __time_steward_make_snapshot_serde_functions_impl_serde;
 
-pub fn $serialize_snapshot_name <'a, B: $crate::Basics, Shot: $crate::Snapshot <B>, S: __time_steward_make_snapshot_serde_functions_impl_serde::Serializer> (snapshot: & 'a Shot, serializer: &mut S)->Result <(), S::Error> where B::Time: __time_steward_make_snapshot_serde_functions_impl_serde::Serialize, & 'a Shot: IntoIterator <Item = $crate::SnapshotEntry <'a, B>>  {
-  use std::collections::HashMap;
-  use serde::Serialize;
-  let mut table = $crate::SerializationTable (HashMap::new());
-  for_all_columns! (__time_steward_insert_serialization_function {Column, S, table});
-  
-  try! (snapshot.now().serialize (serializer));
-  try! (snapshot.constants().serialize (serializer));
-  let mut state = try!(serializer.serialize_map(Some (snapshot.num_fields())));
-  for (id, (data, changed)) in snapshot {
-    try! (serializer.serialize_map_key (&mut state, id));
-    try! (serializer.serialize_map_value (&mut state, (& $crate::SerializationField (id.column_id, & data, & table), changed)));
-  };
-  serializer.serialize_map_end (state)
-}
-
 mod __time_steward_make_snapshot_serde_functions_impl {
+use $crate::{ColumnId, FieldRc, Basics, FieldId, ExtendedTime, FiatSnapshot};
 use std::collections::HashMap;
-use serde;
+use serde::{self, Serialize, Serializer, Deserialize, Deserializer};
+use serde::ser::Error;
 use std::marker::PhantomData;
 
-pub type DeserializationTable <B: $crate::Basics, M: serde::de::MapVisitor> = HashMap<$crate::ColumnId, fn (&mut M)->Result <($crate::FieldRc, $crate::ExtendedTime <B>), M::Error>>;
-pub struct SerdeMapVisitor <B: $crate::Basics> {
-  marker: PhantomData<$crate::FiatSnapshot <B >>
+pub struct SerializationTable<S: Serializer>(pub HashMap<ColumnId,
+                                                     fn(&FieldRc, &mut S) -> Result<(), S::Error>>);
+pub struct SerializationField<'a, 'b, Hack: Serializer + 'b>(pub ColumnId,
+                                                             pub &'a FieldRc,
+                                                             pub &'b SerializationTable<Hack>);
+impl<'a, 'b, Hack: Serializer> Serialize for SerializationField<'a, 'b, Hack> {
+  fn serialize<'c, S: Serializer + 'b>(&'c self, serializer: &mut S) -> Result<(), S::Error> {
+    // assert!(TypeId::of::<S>() == TypeId::of::<Hack>(), "hack: this can only actually serialize for the serializer it has tables for");
+    let table = unsafe {
+      use std::mem;
+      mem::transmute::<&'b SerializationTable<Hack>, &'b SerializationTable<S>>(self.2)
+    };
+    match (table.0).get(&self.0) {
+      None => {
+        Err(S::Error::custom(format!("Attempt to serialize field from uninitialized column \
+                                      {:?}; did you forget to initialize all the columns from \
+                                      your own code and/or the libraries you're using?",
+                                     self.0)))
+      }
+      Some(function) => function(self.1, serializer),
+    }
+  }
 }
-pub struct DeserializedMap <B: $crate::Basics> {
-  pub data: HashMap<$crate::FieldId, ($crate::FieldRc, $crate::ExtendedTime<B>)>,
+
+
+pub type DeserializationTable <B: Basics, M: serde::de::MapVisitor> = HashMap<ColumnId, fn (&mut M)->Result <(FieldRc, ExtendedTime <B>), M::Error>>;
+pub struct SerdeMapVisitor <B: Basics> {
+  marker: PhantomData<FiatSnapshot <B >>
 }
-impl<B: $crate::Basics> serde::Deserialize for DeserializedMap <B> {
-  fn deserialize <D> (_: &mut D)->Result <Self, D::Error> where D: serde::Deserializer {
+pub struct DeserializedMap <B: Basics> {
+  pub data: HashMap<FieldId, (FieldRc, ExtendedTime<B>)>,
+}
+impl<B: Basics> Deserialize for DeserializedMap <B> {
+  fn deserialize <D> (_: &mut D)->Result <Self, D::Error> where D: Deserializer {
     panic!("I believe that Visitor::Value requiring Deserialize is bogus, so this panic will never occur.")
   }
 }
 
 
-impl<B: $crate::Basics> SerdeMapVisitor<B> {
+impl<B: Basics> SerdeMapVisitor<B> {
   pub fn new() -> Self {
     SerdeMapVisitor {
       marker: PhantomData
     }
   }
 }
-impl<B: $crate::Basics>  serde::de::Visitor for SerdeMapVisitor<B>
+impl<B: Basics>  serde::de::Visitor for SerdeMapVisitor<B>
 {
   type Value = DeserializedMap <B>;
   fn visit_map<M>(&mut self, mut visitor: M) -> Result<Self::Value, M::Error>
@@ -474,7 +459,7 @@ impl<B: $crate::Basics>  serde::de::Visitor for SerdeMapVisitor<B>
     let mut fields = HashMap::with_capacity(visitor.size_hint().0); 
     
     use serde::Error;
-    while let Some (key) = try!(visitor.visit_key::<$crate::FieldId>()) {
+    while let Some (key) = try!(visitor.visit_key::<FieldId>()) {
       fields.insert (key, match table.get(& key.column_id) {
         None => return Err (M::Error::custom (format! ("Attempt to deserialize field from uninitialized column {:?}; Maybe you're trying to load a snapshot from a different version of your program? Or did you forget to initialize all the columns from your own code and/or the libraries you're using?", key. column_id))),
         Some (function) => try! (function (&mut visitor)),
@@ -486,6 +471,23 @@ impl<B: $crate::Basics>  serde::de::Visitor for SerdeMapVisitor<B>
   }
 }
 
+}
+
+
+fn $serialize_snapshot_name <'a, B: $crate::Basics, Shot: $crate::Snapshot <B>, S: __time_steward_make_snapshot_serde_functions_impl_serde::Serializer> (snapshot: & 'a Shot, serializer: &mut S)->Result <(), S::Error> where B::Time: __time_steward_make_snapshot_serde_functions_impl_serde::Serialize, & 'a Shot: IntoIterator <Item = $crate::SnapshotEntry <'a, B>>  {
+  use std::collections::HashMap;
+  use serde::Serialize;
+  let mut table = __time_steward_make_snapshot_serde_functions_impl::SerializationTable (HashMap::new());
+  for_all_columns! (__time_steward_insert_serialization_function {Column, S, table});
+  
+  try! (snapshot.now().serialize (serializer));
+  try! (snapshot.constants().serialize (serializer));
+  let mut state = try!(serializer.serialize_map(Some (snapshot.num_fields())));
+  for (id, (data, changed)) in snapshot {
+    try! (serializer.serialize_map_key (&mut state, id));
+    try! (serializer.serialize_map_value (&mut state, (& __time_steward_make_snapshot_serde_functions_impl::SerializationField (id.column_id, & data, & table), changed)));
+  };
+  serializer.serialize_map_end (state)
 }
 
 
