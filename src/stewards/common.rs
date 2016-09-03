@@ -17,10 +17,10 @@ use {DeterministicRandomId, PredictorId,  TimeId, RowId, FieldId, SiphashIdGener
 
 type EventRng = ChaChaRng;
 fn generator_for_event(id: TimeId) -> EventRng {
-  EventRng::from_seed(&[(id.data[0] >> 32) as u32,
-                        (id.data[0] & 0xffffffff) as u32,
-                        (id.data[1] >> 32) as u32,
-                        (id.data[1] & 0xffffffff) as u32])
+  EventRng::from_seed(&[(id.data() [0] >> 32) as u32,
+                        (id.data() [0] & 0xffffffff) as u32,
+                        (id.data() [1] >> 32) as u32,
+                        (id.data() [1] & 0xffffffff) as u32])
 }
 
 #[macro_export]
@@ -207,7 +207,7 @@ macro_rules! mutator_common_accessor_methods {
 macro_rules! mutator_common_methods {
   ($B: ty) => {
     fn extended_now(& self)->& ExtendedTime <$B> {& self.generic.now}
-    fn gen_id(&mut self) -> RowId {RowId {data: [self.gen::<u64>(), self.gen::<u64>()]}}
+    fn gen_id(&mut self) -> RowId {RowId::from_rng (&mut self.generic.generator)}
   }
 }
 #[macro_export]

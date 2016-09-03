@@ -28,7 +28,7 @@ use std::cmp::Ordering;
 use std::fmt::{self, Debug};
 use std::borrow::Borrow;
 use std::io::{self, Write};
-use rand::{Rng};
+use rand::{Rng, ChaChaRng};
 use serde::{Serialize, Serializer, Deserialize};
 use serde::ser::Error;
 use serde::de;
@@ -45,7 +45,7 @@ use bincode;
 // because Serialize IS meant to be compatible between platforms.
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct DeterministicRandomId {
-  pub data: [u64; 2],
+  data: [u64; 2],
 }
 pub struct SiphashIdGenerator {
   data: [SipHasher; 2],
@@ -77,6 +77,12 @@ impl DeterministicRandomId {
     bincode::serde::serialize_into (&mut writer, data, bincode::SizeLimit::Infinite).unwrap();
     writer.generate()
   }
+  /// Rather than implement Rand for this type, we make sure that it can
+  /// ONLY be generated from specific RNGs known to be cryptographically secure.
+  pub fn from_rng (rng: &mut ChaChaRng)->DeterministicRandomId {
+    DeterministicRandomId {data: [rng.gen::<u64>(), rng.gen::<u64>()]}
+  }
+  pub fn data (&self)->& [u64; 2] {& self.data}
 }
 impl fmt::Display for DeterministicRandomId {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
