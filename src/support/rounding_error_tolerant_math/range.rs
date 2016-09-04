@@ -26,9 +26,9 @@ Range is also a partially floating-point type: it handles overflow by increasing
 */
 #[derive (Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Range {
-  pub min: i64,
-  pub max: i64,
-  pub exponent: u32,
+  min: i64,
+  max: i64,
+  exponent: u32,
 }
 
 impl fmt::Display for Range {
@@ -66,6 +66,7 @@ pub fn average_round_towards_neginf(input_1: i64, input_2: i64) -> i64 {
 }
 
 pub fn overflow_checked_shift_left (value: i64, shift: u32)->Option <i64> {
+  if value == 0 {return Some (0)}
   if shift > 63 {return None;}
   if (value.abs() & !((1i64 << (63 - shift)).wrapping_sub(1))) != 0 {return None;}
  Some ( value << shift)
@@ -183,6 +184,14 @@ impl Range {
     assert!(self.exponent == 0);
     self.max
   }
+  pub fn internal_min(&self) -> i64 {
+    self.min
+  }
+  pub fn internal_max(&self) -> i64 {
+    self.max
+  }
+  pub fn exponent (& self)->u32 {self.exponent}
+
   pub fn clamp_to_0_exponent(&self) -> Option<Range> {
     let mut result = self.clone();
     if self.exponent >= 63 {
@@ -573,11 +582,11 @@ impl PartialOrd for Range {
     if let Some (bound) = overflow_checked_shift_left(self.min, self.exponent - other.exponent) {
       if bound > other.max {return Some (Ordering::Greater);}
     }
-    else {return Some (Ordering::Greater);}
+    else if self.min > 0 {return Some (Ordering::Greater);}
     if let Some (bound) = overflow_checked_shift_left(self.max, self.exponent - other.exponent) {
       if bound < other.min {return Some (Ordering::Less);}
     }
-    else {return Some (Ordering::Less);}
+    else if self.max < 0 {return Some (Ordering::Less);}
     None
   }
   // TODO: implement the others for efficiency
@@ -588,11 +597,11 @@ impl PartialOrd <i64> for Range {
     if let Some (bound) = overflow_checked_shift_left(self.min, self.exponent) {
       if bound > *other {return Some (Ordering::Greater);}
     }
-    else {return Some (Ordering::Greater);}
+    else if self.min > 0 {return Some (Ordering::Greater);}
     if let Some (bound) = overflow_checked_shift_left(self.max, self.exponent) {
       if bound < *other {return Some (Ordering::Less);}
     }
-    else {return Some (Ordering::Less);}
+    else if self.max < 0 {return Some (Ordering::Less);}
     None
   }
   // TODO: implement the others for efficiency
@@ -712,6 +721,13 @@ mod tests {
       }
       TestResult::from_bool (!(first < second && second < first))
     }
+    fn divide_generalizes_i64 (first: i64, second: i64)->TestResult {
+      if second == 0 {
+        return TestResult::discard()
+      }
+      TestResult::from_bool ((Range::exactly (first)/Range::exactly (second)).includes (& Range::exactly (first/second)))
+    }
+
   }
 
   #[test]

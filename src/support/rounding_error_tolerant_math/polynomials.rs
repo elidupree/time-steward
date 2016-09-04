@@ -21,17 +21,16 @@ TODO: instead of Vec<Range>, these should return a stack-allocated type.
 */
 
 pub fn roots_linear(coefficients: [Range; 2], min_input: i64, max_input: i64) -> Vec<Range> {
-  if coefficients[1].min == 0 && coefficients[1].max == 0 &&
-     (coefficients[0].min > 0 || coefficients[0].max < 0) {
+  if coefficients[1].min() == 0 && coefficients[1].max() == 0 &&
+     !coefficients[0].includes_0() {
     return Vec::new();
   }
   if let Some(result) = ((-coefficients[0]) / coefficients[1]).clamp_to_0_exponent() {
-    if result.max >= min_input && result.min <= max_input {
+    if result.max() >= min_input && result.min() <= max_input {
       return vec![result];
     }
   }
   Vec::new()
-
 }
 pub fn roots_quadratic(terms: [Range; 3], min_input: i64, max_input: i64) -> Vec<Range> {
   let a = terms[2];
@@ -41,7 +40,7 @@ pub fn roots_quadratic(terms: [Range; 3], min_input: i64, max_input: i64) -> Vec
   // printlnerr!(" discriminant {:?}", discriminant);
   // printlnerr!("confirm results: {:?}", roots_derivative_based (& terms));
 
-  if discriminant.max < 0 {
+  if discriminant < 0 {
     return Vec::new();
   }
   let sqrt = discriminant.sqrt()
@@ -54,13 +53,13 @@ pub fn roots_quadratic(terms: [Range; 3], min_input: i64, max_input: i64) -> Vec
   // printlnerr!(" result 1 {:?}", result_1);
   let mut results = Vec::new();
   if let Some(result) = result_0.clamp_to_0_exponent() {
-    if result.max >= min_input && result.min <= max_input {
+    if result.max() >= min_input && result.min() <= max_input {
       results.push(result);
     }
   }
   if let Some(result) = result_1.clamp_to_0_exponent() {
-    if result.max >= min_input && result.min <= max_input {
-      if results.last().map_or(false, |whatever| result.min < whatever.min) {
+    if result.max() >= min_input && result.min() <= max_input {
+      if results.last().map_or(false, |whatever| result.min() < whatever.min()) {
         results.insert(0, result);
       } else {
         results.push(result);
@@ -93,10 +92,10 @@ fn find_root_search(terms: &[Range],
                     -> (i64, i64) {
   assert!(!(value_1.includes_0() && value_2.includes_0()));
   if !min_only {
-    assert!((value_1.max < 0) != (value_2.max < 0));
+    assert!((value_1 < 0) != (value_2 < 0));
   }
   if !max_only {
-    assert!((value_1.min > 0) != (value_2.min > 0));
+    assert!((value_1 > 0) != (value_2 > 0));
   }
 
   let mut input_1: i64 = input_1;
@@ -109,14 +108,14 @@ fn find_root_search(terms: &[Range],
   loop {
     let mut input;
     let denominator = (value_2 - adjusted_value_1).rounded_to_middle_towards_neginf();
-    if denominator.min == 0 {
+    if denominator.includes_0() {
       input = average_round_towards_neginf(input_1, input_2);
     } else {
       input = (Range::exactly(input_2) -
                value_2 * (Range::exactly(input_2) - Range::exactly(input_1)) / denominator)
                 .clamp_to_0_exponent()
                 .unwrap()
-                .min;
+                .min();
       if input.cmp(&input_2) != input.cmp(&input_1).reverse() {
         input = average_round_towards_neginf(input_1, input_2);
       }
@@ -129,12 +128,12 @@ fn find_root_search(terms: &[Range],
 
     let closer_to_1;
     if min_only {
-      closer_to_1 = (value.min > 0) != (value_2.min > 0);
+      closer_to_1 = (value > 0) != (value_2 > 0);
     } else if max_only {
-      closer_to_1 = (value.max < 0) != (value_2.max < 0);
+      closer_to_1 = (value < 0) != (value_2 < 0);
     } else {
-      closer_to_1 = (value.min > 0) != (value_2.min > 0);
-      let other_closer_to_1 = (value.max < 0) != (value_2.max < 0);
+      closer_to_1 = (value > 0) != (value_2 > 0);
+      let other_closer_to_1 = (value < 0) != (value_2 < 0);
 
       if closer_to_1 != other_closer_to_1 {
         min_only = true;
@@ -174,16 +173,16 @@ fn find_root_search(terms: &[Range],
     value_2 = value;
   }
   if max_only {
-    assert!((value_1.max < 0) != (value_2.max < 0));
-    (if value_1.max < 0 {
+    assert!((value_1 < 0) != (value_2 < 0));
+    (if value_1 < 0 {
       input_1
     } else {
       input_2
     },
      result_for_other)
   } else {
-    assert!((value_1.min > 0) != (value_2.min > 0));
-    (if value_1.min > 0 {
+    assert!((value_1 > 0) != (value_2 > 0));
+    (if value_1 > 0 {
       input_1
     } else {
       input_2
@@ -206,7 +205,7 @@ fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
     if max_value.includes_0() {
       Some(Range::new(min, max))
     } else {
-      let search_by_min = max_value.min > 0;
+      let search_by_min = max_value > 0;
       Some(Range::new(min,
                       find_root_search(terms,
                                        search_by_min,
@@ -219,7 +218,7 @@ fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
                         .0))
     }
   } else if max_value.includes_0() {
-    let search_by_min = min_value.min > 0;
+    let search_by_min = min_value > 0;
     Some(Range::new(find_root_search(terms,
                                      search_by_min,
                                      !search_by_min,
@@ -230,7 +229,7 @@ fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
                                      max_value)
                       .0,
                     max))
-  } else if max_value.min.signum() == min_value.min.signum() {
+  } else if max_value.internal_min().signum() == min_value.internal_min().signum() {
     None
   } else {
     let (result_for_min, result_for_max) = find_root_search(terms,
@@ -282,22 +281,19 @@ fn roots_derivative_based(terms: &[Range], min_input: i64, max_input: i64) -> Ve
   // printlnerr!(" Derivative {:?}", derivative);
   let extrema = roots(derivative.as_slice(), min_input, max_input);
   // printlnerr!("extrema {:?}", extrema);
-  if extrema.iter().any(|range| range.exponent > 0) {
-    panic!();
-  }
   let mut bucket = Vec::new();
   let mut results = Vec::new();
   if extrema.is_empty() {
     collect_root(terms, min_input, max_input, &mut bucket);
   } else {
-    collect_root(terms, min_input, extrema[0].min, &mut bucket);
+    collect_root(terms, min_input, extrema[0].min(), &mut bucket);
     for which in 0..(extrema.len() - 1) {
       collect_root(terms,
-                   max(extrema[which].max, min_input),
-                   min(extrema[which + 1].min, max_input),
+                   max(extrema[which].max(), min_input),
+                   min(extrema[which + 1].min(), max_input),
                    &mut bucket);
     }
-    collect_root(terms, extrema.last().unwrap().max, max_input, &mut bucket);
+    collect_root(terms, extrema.last().unwrap().max(), max_input, &mut bucket);
   }
   // if we found a root on both sides of a derivative-root, we know that the derivative-root is bounded away from 0
   for which in 0..extrema.len() {
@@ -305,7 +301,7 @@ fn roots_derivative_based(terms: &[Range], min_input: i64, max_input: i64) -> Ve
     if let Some(lower) = bucket[which] {
       results.push(lower);
       if let Some(higher) = bucket[which + 1] {
-        if me.min > lower.max && me.max < higher.min {
+        if lower < me && me < higher {
           continue;
         }
       }
@@ -327,7 +323,7 @@ pub fn roots(terms: &[Range], min: i64, max: i64) -> Vec<Range> {
   match terms.len() {
     0 => vec![Range::everywhere()],
     1 => {
-      if terms[0].min <= 0 && terms[0].max >= 0 {
+      if terms[0].min() <= 0 && terms[0].max() >= 0 {
         vec![Range::everywhere()]
       } else {
         Vec::new()
@@ -391,7 +387,7 @@ pub fn quadratic_move_origin_rounding_change_towards_0(terms: &mut [i64],
   let distance_traveled = ((Range::exactly(terms[1]) * origin) >> input_scale_shift) +
                           ((Range::exactly(terms[2]) * origin * origin) >> (input_scale_shift * 2));
 
-  if distance_traveled.max - distance_traveled.min > max_error * 2 {
+  if distance_traveled.max() - distance_traveled.min() > max_error * 2 {
     printlnerr!("overflow-ish in quadratic_move_origin_rounding_change_towards_0; error size \
                  exceeded the given max error");
     return false;
@@ -450,18 +446,18 @@ pub fn time_until_which_quadratic_trajectory_may_remain_in_bounds(start_time: i6
     if let Some((this_min, this_max)) = if possible_overlap_times.is_empty() {
       None
     } else if possible_overlap_times.len() == 2 &&
-                                           possible_overlap_times[0].max >=
-                                           possible_overlap_times[1].min - 1 {
-      if possible_overlap_times[0].min <= start_time &&
-         possible_overlap_times[1].max >= start_time {
-        Some((possible_overlap_times[0].min, possible_overlap_times[1].max))
+                                           possible_overlap_times[0].max() >=
+                                           possible_overlap_times[1].min() - 1 {
+      if possible_overlap_times[0].min() <= start_time &&
+         possible_overlap_times[1].max() >= start_time {
+        Some((possible_overlap_times[0].min(), possible_overlap_times[1].max()))
       } else {
         None
       }
     } else {
       possible_overlap_times.iter()
-                            .find(|root| root.min <= start_time && root.max >= start_time)
-                            .map(|root| (root.min, root.max))
+                            .find(|root| root.min() <= start_time && root.max() >= start_time)
+                            .map(|root| (root.min(), root.max()))
     } {
       min_input = max(min_input, this_min);
       max_input = min(max_input, this_max);
@@ -516,8 +512,8 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
 
       return Vec::new();
     } else {
-      min_input = max(min_input, possible_overlap_times[0].min);
-      max_input = min(max_input, possible_overlap_times.last().unwrap().max);
+      min_input = max(min_input, possible_overlap_times[0].min());
+      max_input = min(max_input, possible_overlap_times.last().unwrap().max());
       if min_input > max_input {
         return Vec::new();
       }
@@ -591,9 +587,9 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
                                        rand::thread_rng().gen_range(start, stop),
                                        rand::thread_rng().gen_range(start, stop)];
     let sample_values: Vec<Range> = sample_points.iter().map(|input| test(input.clone())).collect();
-    let signum = sample_values[0].min.signum();
+    let signum = sample_values[0].min().signum();
     for value in sample_values.iter() {
-      if value.includes_0_strictly() || value.min.signum() == -signum {
+      if value.includes_0_strictly() || value.min().signum() == -signum {
         printlnerr!(" Proxy: {:?}", proxy);
         printlnerr!("fail points: {:?}\n values: {:?}",
                     sample_points,
@@ -613,21 +609,20 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
     test(1000);
     test(base);
     for (which, root) in result.iter().enumerate() {
-      test((root.max - root.min) / 2);
+      test((root.max() - root.min()) / 2);
       if which == 0 {
-        test_empty_interval(min_input, root.min - 1);
+        test_empty_interval(min_input, root.min() - 1);
       }
       if which < result.len() - 1 {
-        test_empty_interval(root.max + 1, result[which + 1].min - 1);
+        test_empty_interval(root.max() + 1, result[which + 1].min() - 1);
       } else {
-        test_empty_interval(root.max + 1, max_input);
+        test_empty_interval(root.max() + 1, max_input);
       }
-      // printlnerr!("root check: {}: {} and then {} and then {}", root, evaluate (& proxy, root.max - 1),  evaluate (& proxy, root.max), evaluate (& proxy, root.max + 1));
+      // printlnerr!("root check: {}: {} and then {} and then {}", root, evaluate (& proxy, root.max - 1),  evaluate (& proxy, root.max()), evaluate (& proxy, root.max() + 1));
     }
   }
   for root in result.iter_mut() {
-    root.min = root.min.saturating_add(base);
-    root.max = root.max.saturating_add(base);
+    *root = *root + Range::exactly (base);
   }
   result
 }
@@ -648,13 +643,16 @@ mod tests {
              polynomial,
              computed,
              given_roots.iter()
-                        .map(|root| evaluate(polynomial.as_slice(), root.min))
+                        .map(|root| evaluate(polynomial.as_slice(), root.min()))
                         .collect::<Vec<Range>>());
   }
 
+  /*quickcheck! {
+    fn automatic_roots(given_roots: Vec<Range>)
+  }*/
 
   #[test]
-  fn tests() {
+  fn explicit_roots() {
     test_roots(vec![Range::exactly(0)]);
     test_roots(vec![Range::exactly(55)]);
     test_roots(vec![Range::exactly(0), Range::exactly(55)]);
