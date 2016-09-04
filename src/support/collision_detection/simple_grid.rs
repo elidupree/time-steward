@@ -30,13 +30,20 @@ impl<B: Basics> Column for Cell<B> {
   }
 }
 
-// It might be nicer for this not to be public – the user isn't expected to interact with it in any way. However, it has to be public because Columns has to be.
-#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-pub struct Member<B: Basics> {
-  row: RowId,
-  bounds: Bounds,
-  detector: B::DetectorId,
+// Work around private-in-public rules so that our column types
+// (which are implementation details) are not visible elsewhere.
+mod hack {
+  use super::*;
+  use {RowId};
+  #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+  pub struct Member<B: Basics> {
+    pub row: RowId,
+    pub bounds: Bounds,
+    pub detector: B::DetectorId,
+  }
 }
+use self::hack::Member;
+
 impl<B: Basics> Column for Member<B> {
   type FieldType = Member <B>;
   fn column_id() -> ColumnId {
