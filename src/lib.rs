@@ -31,7 +31,6 @@ extern crate nalgebra;
 extern crate glium;
 extern crate serde;
 extern crate bincode;
-#[cfg (test)]
 #[macro_use]
 extern crate quickcheck;
 

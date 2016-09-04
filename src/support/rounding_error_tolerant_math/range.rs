@@ -1,8 +1,8 @@
 use std::ops::{Add, Sub, Mul, Div, Neg, Shr, Shl};
 use std::cmp::{max, min, Ordering};
 use std::iter::Sum;
-
 use std::fmt;
+use quickcheck::{Arbitrary, Gen};
 
 
 macro_rules! printlnerr(
@@ -65,6 +65,13 @@ pub fn average_round_towards_neginf(input_1: i64, input_2: i64) -> i64 {
   (input_1 >> 1) + (input_2 >> 1) + (input_1 & input_2 & 1)
 }
 
+pub fn overflow_checked_shift_left (value: i64, shift: u32)->Option <i64> {
+  if shift > 63 {return None;}
+  if (value.abs() & !((1i64 << (63 - shift)).wrapping_sub(1))) != 0 {return None;}
+ Some ( value << shift)
+}
+
+
 
 
 impl Range {
@@ -111,29 +118,31 @@ impl Range {
     self.increase_exponent_by(increase);
   }
   fn increase_exponent_by(&mut self, increase: u32) {
-    let confirm = self.clone();
+    //let confirm = self.clone();
     if increase >= 63 {
       self.min = self.min.signum();
       self.max = self.max.signum();
     } else {
       self.min >>= increase;
       self.max = right_shift_round_up(self.max, increase);
-      let mut confirm_2 = self.clone();
+      /*let mut confirm_2 = self.clone();
       confirm_2.min <<= increase;
       confirm_2.max <<= increase;
       // printlnerr!("{}, {}", confirm, confirm_2);
-      assert!(confirm_2.includes(&confirm) || confirm_2.max < 0);
+      assert!(confirm_2.includes(&confirm) || confirm_2.max < 0);*/
     }
     self.exponent += increase;
   }
   fn minimize_exponent(&mut self) {
     let confirm = self.clone();
+    if self.min == 0 && self.max == 0 {self.exponent = 0; return;}
     let leeway = min(self.min.abs().leading_zeros(),
                      self.max.abs().leading_zeros()) - 1;
     let change = min(leeway, self.exponent);
     self.min <<= change;
     self.max <<= change;
     self.exponent -= change;
+    assert! (self.exponent == 0 || self.min.checked_mul(2).map_or(true, | result | result == i64::min_value()) || self.max.checked_mul(2).map_or(true, | result | result == i64::min_value()));
     let mut confirm_2 = self.clone();
     confirm_2.increase_exponent_to(confirm.exponent);
     assert!(confirm == confirm_2);
@@ -148,10 +157,10 @@ impl Range {
     if self.exponent < other.exponent {
       return false;
     }
-    if let Some (bound) = self.min.checked_shl (self.exponent - other.exponent) {
+    if let Some (bound) = overflow_checked_shift_left(self.min, self.exponent - other.exponent) {
       if bound > other.min {return false;}
     }
-    if let Some (bound) = self.max.checked_shl (self.exponent - other.exponent) {
+    if let Some (bound) = overflow_checked_shift_left(self.max, self.exponent - other.exponent) {
       if bound < other.max {return false;}
     }
     true
@@ -328,10 +337,14 @@ impl<'a> Mul for &'a Range {
                     result.min * other.max,
                     result.max * other.min];
     result = Range {
-      min: extremes.iter().min().unwrap().clone(),
-      max: max(extremes[1], extremes[0]),
+      min: extremes[0],
+      max: extremes[0],
       exponent: result.exponent + other.exponent,
     };
+    for extreme in extremes [1..].iter() {
+      if *extreme < result.min {result.min = *extreme;}
+      if *extreme > result.max {result.max = *extreme;}
+    }
     result.minimize_exponent();
     result
   }
@@ -392,10 +405,10 @@ impl<'a> Div for &'a Range {
     }
 
     // intuitively, to minimize rounding error, denominator should have about half as many bits as numerator does when we do the actual division operation.
-    // TODO: what if denominator is a VERY wide range (like -1, i64::max_value())? Then we will have big rounding problems either way
+    // But what if denominator is a VERY wide range (like 1, i64::max_value())?
+    // Handle dividing by denominator.min first. Sometimes, denominator.max isn't even used.
     if result.exponent > other.exponent {
-      let leeway = min(other.min.abs().leading_zeros(),
-                       other.max.abs().leading_zeros());
+      let leeway = other.min.abs().leading_zeros();
       if leeway < 32 {
         let shift = min(32 - leeway, result.exponent - other.exponent);
         other.increase_exponent_by(shift);
@@ -407,23 +420,23 @@ impl<'a> Div for &'a Range {
     }
     result.exponent -= other.exponent;
 
-    if result.min.checked_sub(other.min).is_none() || result.max.checked_add(other.min).is_none() {
-      result.increase_exponent_by(1);
-      other.increase_exponent_by(1);
-    }
-
-
     if result.min < 0 {
-      result.min = (result.min + 1 - other.min) / other.min;
-    } else {
-      result.min = (result.min) / other.max;
+      result.min = (result.min + 1) / other.min - 1;
     }
-    if result.max < 0 {
-      result.max = (result.max) / other.max;
-    } else {
-      result.max = (result.max - 1 + other.min) / other.min;
+    if result.max > 0 {
+      result.max = (result.max - 1) / other.min + 1;
     }
     result.minimize_exponent();
+    
+    // TODO: we might still be able to reduce the rounding error further in these cases:
+    if result.min > 0 {
+      result.min = result.min / other.max;
+      result.minimize_exponent();
+    }
+    if result.max < 0 {
+      result.max = result.max / other.max;
+      result.minimize_exponent();
+    }
     result
   }
 }
@@ -475,6 +488,16 @@ impl Sum for Range {
 
 
 impl Range {
+  pub fn abs (&self) -> Range {
+    // this could be made more efficient
+    Range {
+      min: if self.includes_0() {0}
+      else {min (self.min.abs(), self.max.abs())},
+      max: max (self.min.abs(), self.max.abs()),
+      exponent: self.exponent
+    }
+  }
+
   ///Squaring is a slightly narrower operation than self*self, because it never invokes (for instance) self.min*self.max.
   pub fn squared(&self) -> Range {
     let mut result = self.clone();
@@ -547,11 +570,11 @@ impl PartialOrd for Range {
     if self.exponent < other.exponent {
       return other.partial_cmp (self).map (| order | order.reverse());
     }
-    if let Some (bound) = self.min.checked_shl (self.exponent - other.exponent) {
+    if let Some (bound) = overflow_checked_shift_left(self.min, self.exponent - other.exponent) {
       if bound > other.max {return Some (Ordering::Greater);}
     }
     else {return Some (Ordering::Greater);}
-    if let Some (bound) = self.max.checked_shl (self.exponent - other.exponent) {
+    if let Some (bound) = overflow_checked_shift_left(self.max, self.exponent - other.exponent) {
       if bound < other.min {return Some (Ordering::Less);}
     }
     else {return Some (Ordering::Less);}
@@ -562,11 +585,11 @@ impl PartialOrd for Range {
 
 impl PartialOrd <i64> for Range {
   fn partial_cmp (&self, other: & i64)->Option <Ordering> {
-    if let Some (bound) = self.min.checked_shl (self.exponent) {
+    if let Some (bound) = overflow_checked_shift_left(self.min, self.exponent) {
       if bound > *other {return Some (Ordering::Greater);}
     }
     else {return Some (Ordering::Greater);}
-    if let Some (bound) = self.max.checked_shl (self.exponent) {
+    if let Some (bound) = overflow_checked_shift_left(self.max, self.exponent) {
       if bound < *other {return Some (Ordering::Less);}
     }
     else {return Some (Ordering::Less);}
@@ -595,6 +618,31 @@ impl PartialEq <Range> for i64 {
   }
 }
 
+impl Arbitrary for Range {
+  fn arbitrary <G: Gen> (generator: &mut G)->Range {
+    let mut result = Range::new_either_order (generator.gen(), generator.gen());
+    result.exponent = generator.gen();
+    result.minimize_exponent();
+    result
+  }
+  //TODO: implement shrink
+  fn shrink (&self)->Box <Iterator <Item = Range>> {
+    struct Shrinker {
+      value: Range,
+    }
+    impl Iterator for Shrinker {
+      type Item = Range;
+      fn next (&mut self)->Option <Range> {
+        if self.value.exponent > 0 {self.value.exponent >>= 1;}
+        else {self.value.min /= 2; self.value.max /= 2;}
+        if self.value == Range::exactly (0) {None}
+        else {Some (self.value)}
+      }
+    }
+    Box::new (Shrinker {value: self.clone()})
+  }
+}
+
 
 
 
@@ -602,6 +650,69 @@ impl PartialEq <Range> for i64 {
 #[cfg (test)]
 mod tests {
   use super::*;
+  use quickcheck::TestResult;
+  use std::cmp::max;
+
+  quickcheck! {
+    fn shift_left (range: Range, shift: u32)->TestResult {
+      if range.exponent.checked_add (shift).is_none() {
+        return TestResult::discard()
+      }
+      TestResult::from_bool (((range << shift) >> shift).includes (&range))
+    }
+    fn shift_right (range: Range, shift: u32)->TestResult {
+      if range.exponent.checked_sub (shift).is_none() {
+        return TestResult::discard()
+      }
+      TestResult::from_bool (((range >> shift) << shift).includes (&range))
+    }
+    fn multiply (first: Range, second: Range)->TestResult {
+      if first.exponent.checked_add (second.exponent).and_then (| total | total.checked_add (64)).is_none() {
+        return TestResult::discard()
+      }
+      TestResult::from_bool (((first*second)/second).includes (&first))
+    }
+    fn divide (first: Range, second: Range)->TestResult {
+      if second.includes_0() {
+        return TestResult::discard()
+      }
+      TestResult::from_bool (((first/second)*second).includes (&first))
+    }
+    fn add (first: Range, second: Range)->TestResult {
+      if max (first.exponent, second.exponent).checked_add (1).is_none() {
+        return TestResult::discard()
+      }
+      TestResult::from_bool (((first + second) - second).includes (&first))
+    }
+    fn square (range: Range)->TestResult {
+      if range.exponent.checked_add (range.exponent).and_then (| total | total.checked_add (64)).is_none() {
+        return TestResult::discard()
+      }
+      TestResult::from_bool (((range.squared()).sqrt().unwrap()).includes (&range.abs()))
+    }
+    fn sqrt (range: Range)->TestResult {
+      TestResult::from_bool (((range.abs().sqrt().unwrap()).squared()).includes (&range.abs()))
+    }
+    fn square_more_restrictive (range: Range)->TestResult {
+      if range.exponent.checked_add (range.exponent).and_then (| total | total.checked_add (64)).is_none() {
+        return TestResult::discard()
+      }
+      TestResult::from_bool ((range*range).includes (&range.squared()))
+    }
+
+    fn compare_transitive (first: Range, second: Range, third: Range)->TestResult {
+      if !(first < second && second < third) {
+        return TestResult::discard()
+      }
+      TestResult::from_bool (first < third)
+    }
+    fn compare_antisymmetric (first: Range, second: Range)->TestResult {
+      if !(first < second || second < first) {
+        return TestResult::discard()
+      }
+      TestResult::from_bool (!(first < second && second < first))
+    }
+  }
 
   #[test]
   fn tests() {
