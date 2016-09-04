@@ -157,6 +157,7 @@ pub trait PredictorFn <B: Basics>: Any + Send + Sync + Clone + Eq + Serialize + 
   fn call<PA: PredictorAccessor<B>>(&self, accessor: &mut PA, id: RowId);
 }
 
+#[macro_export]
 macro_rules! time_steward_predictor {
   ($B: ty, struct $name: ident [$($generic_parameters:tt)*]=[$($specific_parameters:ty),*] {$($field_name: ident: $field_type: ty = $field_value: expr),*} , | &$self_name: ident, $accessor_name: ident, $row_name: ident | $contents: expr) => {#[allow (unused_mut)] {
     #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -173,6 +174,7 @@ macro_rules! time_steward_predictor {
   };
 }
 
+#[macro_export]
 macro_rules! time_steward_event {
   ($B: ty, struct $name: ident [$($generic_parameters:tt)*]=[$($specific_parameters:ty),*] {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $mutator_name: ident | $contents: expr) => {#[allow (unused_mut)] {
     #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
