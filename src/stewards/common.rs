@@ -103,6 +103,7 @@ impl<B: Basics> Clone for DynamicPredictor<B> {
   }
 }
 
+#[derive (Clone)]
 pub struct StandardSettings <B: Basics> {
   pub predictors_by_column: HashMap<ColumnId, Vec<DynamicPredictor <B>>>,
   pub predictors_by_id: HashMap<PredictorId, DynamicPredictor <B>>,
