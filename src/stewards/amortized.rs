@@ -33,7 +33,7 @@ use insert_only;
 
 type SnapshotIdx = u64;
 
-This is an error
+
 /*
 
 An ExtendedTime may be in one of several states
@@ -238,14 +238,15 @@ impl <B: Basics> StewardOwned <B> {
   }
 }
 
-fn change_needed_prediction_time (time: ExtendedTime <B>, history: &mut PredictionHistory, predictions_missing_by_time: &mut BTreeMap<ExtendedTime <B>, HashSet <(RowId, PredictorId)>>) {
+fn change_needed_prediction_time (time: Option <ExtendedTime <B>>, history: &mut PredictionHistory, predictions_missing_by_time: &mut BTreeMap<ExtendedTime <B>, HashSet <(RowId, PredictorId)>>) {
                 if let Some (previous) = history.next_needed {
                   let entry = match self.owned.predictions_missing_by_time.entry (previous) {Entry::Vacant (_) => panic!("prediction needed records are inconsistent"), Entry::Occupied (entry) => entry};
                   entry.get_mut().remove((row_id, predictor_id));
                   if entry.get().is_empty() {entry.remove();}
                 }
-                predictions_missing_by_time.entry (time.clone()).or_insert (Default::default()).insert ((row_id, predictor_id));
-                history.next_needed = Some (time);
+                if let Some (new) = time {
+                predictions_missing_by_time.entry (new.clone()).or_insert (Default::default()).insert ((row_id, predictor_id));}
+                history.next_needed = time;
 
 }
 
@@ -386,8 +387,9 @@ impl <B: Basics> Steward <B> {
   }
   fn make_prediction (&mut self, time: ExtendedTime <B>, row_id: RowId, predictor_id: PredictorId) {
     let history = self.predictions_by_id.get ((row_id, predictor_id)).expect (" prediction needed records are inconsistent");
-    let function = self.get_predictor(predictor_id).function.clone();
+    let predictor = self.get_predictor(predictor_id).clone();
     let results;
+    let generic;
     {
       let field_ref = &*self.shared.fields.borrow();
       let mut pa = PredictorAccessor {
@@ -396,23 +398,43 @@ impl <B: Basics> Steward <B> {
         internal_now: time,
         shared: &self.shared,
         fields: field_ref,
+        generic: common::GenericPredictorAccessor::new(),
         results: RefCell::new(PredictorAccessorResults {
-          soonest_prediction: None,
-          dependencies: Vec::new(),
-          dependencies_hasher: SiphashIdGenerator::new(),
           valid_until: None,
         }),
       };
-      (function)(&mut pa, row_id);
+      (predictor.function)(&mut pa, row_id);
       results = pa.results.into_inner();
+      generic = pa.generic;
     }
-    let dependencies_hash = results.dependencies_hasher.generate();
-    do stuff with next prediction time, including capping valid_until based on field existence
-    change_needed_prediction_time (, &mut history, &mut self.owned.predictions_missing_by_time);
+    let (dependencies, hasher) = generic.dependencies.into_inner();
+    let dependencies_hash = hasher.generate();
+    
+    let field = self.shared.fields.borrow().field_states.get (FieldId::new (row_id, predictor.column_id)).expect ("why are we making a prediction if the field never exists");
+    let next_change_index = match field.changes.binary_search_by_key (time, | change | change.last_change) {
+      Ok (index) => index + 1, Err (index) => index + 1};
+    let next_needed =
+    if let Some (next_change) = field.changes.get (next_change_index) {
+      if next_change.data.is_none() { 
+        if next_change.last_change < & results.valid_until {
+          results.valid_until = next_creation.last_change.clone();
+        }
+        if let Some (next_creation) = field.changes.get (next_change_index + 1) {
+          assert!(next_creation.data.is_some(), "there is no need to store multiple deletions in a row");
+
+          Some (next_creation. last_change.clone()) 
+        }
+        else {None}
+      }
+      else {Some (results.valid_until.clone())}
+    }
+    else {Some (results.valid_until.clone())};
+    
+    change_needed_prediction_time (next_needed, &mut history, &mut self.owned.predictions_missing_by_time);
     
     
     let prediction = Rc::new(Prediction {
-      predictor_accessed: results.dependencies,
+      predictor_accessed: dependencies,
       what_will_happen: results.soonest_prediction.and_then(|(event_base_time, event)| {
           super::next_extended_time_of_predicted_event(predictor_id,
                                                        row_id,
@@ -460,9 +482,8 @@ struct Field<B: Basics> {
   last_change: ExtendedTime<B>,
   data: Option <Rc<Any>>,
 }
-struct SnapshotField<B: Basics> {
-  data: Option<Field<B>>,
-}
+type SnapshotField<B: Basics> = (FieldRc, ExtendedTime <B>);
+
 enum AccessInfo {
   EventAccess,
   PredictionAccess (RowId, PredictorId),
@@ -495,8 +516,7 @@ struct PredictionHistory <B: Basics> {
 }
 
 struct StewardShared<B: Basics> {
-  predictors_by_column: HashMap<ColumnId, Vec<Predictor<B>>>,
-  predictors_by_id: HashMap<PredictorId, Predictor<B>>,
+  settings: Settings <B>,
   constants: B::Constants,
   fields: RefCell<Fields<B>>,
 }
