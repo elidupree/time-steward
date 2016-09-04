@@ -587,9 +587,9 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
                                        rand::thread_rng().gen_range(start, stop),
                                        rand::thread_rng().gen_range(start, stop)];
     let sample_values: Vec<Range> = sample_points.iter().map(|input| test(input.clone())).collect();
-    let signum = sample_values[0].min().signum();
+    let signum = sample_values[0].internal_min().signum();
     for value in sample_values.iter() {
-      if value.includes_0_strictly() || value.min().signum() == -signum {
+      if value.includes_0_strictly() || value.internal_min().signum() == -signum {
         printlnerr!(" Proxy: {:?}", proxy);
         printlnerr!("fail points: {:?}\n values: {:?}",
                     sample_points,
