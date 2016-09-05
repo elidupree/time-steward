@@ -21,7 +21,7 @@
  * */
 
 use std::collections::HashMap;
-use std::hash::{Hasher, SipHasher};
+use std::hash::{Hash, Hasher, SipHasher};
 use std::any::Any;
 use std::sync::Arc;
 use std::cmp::Ordering;
@@ -204,7 +204,7 @@ macro_rules! time_steward_predictor_from_generic_fn {
 This is intended to be implemented on an empty struct. Requiring Clone etc. is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 */
 pub trait Basics: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
-  type Time: Any + Send + Sync + Clone + Ord + Serialize + Deserialize + Debug;
+  type Time: Any + Send + Sync + Clone + Ord + Hash + Serialize + Deserialize + Debug;
   type Constants: Any + Send + Sync + Clone + Serialize + Deserialize + Debug;
   fn allow_floats_unsafe()->bool {false}
 }
