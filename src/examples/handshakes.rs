@@ -4,7 +4,7 @@ use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, 
 // use serde_json;
 use bincode::serde::{Serializer, Deserializer};
 use bincode;
-use stewards::inefficient_flat;
+use stewards::amortized;
 use stewards::memoized_flat;
 use std::marker::PhantomData;
 
@@ -33,7 +33,7 @@ impl Column for Philosopher {
   }
 }
 
-type Steward = s::Steward<Basics, inefficient_flat::Steward <Basics>, memoized_flat::Steward <Basics>>;
+type Steward = s::Steward<Basics, amortized::Steward <Basics>, memoized_flat::Steward <Basics>>;
 
 fn get_philosopher_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x2302c38efb47e0d0u64, index))

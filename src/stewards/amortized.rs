@@ -157,7 +157,7 @@ struct EventState <B: Basics> {
   execution_state: Option <EventExecutionState>,
 }
 
-impl <B: Basics> StewardOwned <B> {
+impl <B: Basics> StewardEventsInfo <B> {
   fn schedule_event (&mut self, time: ExtendedTime <B>, event: Event <B>)->Result <(),()> {
     match self.event_states.entry (time.clone()) {
       Entry::Vacant (entry) => {
@@ -183,7 +183,7 @@ impl <B: Basics> StewardOwned <B> {
         if entry.get_mut().schedule.is_none() { return Err (());}
         entry.get_mut().schedule = None;
         if let Some (ref mut execution_state) = entry.get_mut().execution_state {
-          Self::invalidate_execution (time, execution_state, &mut self.events_needing_attention, &mut self.dependencies);
+          invalidate_execution::<B> (time, execution_state, &mut self.events_needing_attention, &mut self.dependencies);
         }
         if entry.get().execution_state.is_none() {
           self.events_needing_attention.remove (time);
@@ -193,8 +193,8 @@ impl <B: Basics> StewardOwned <B> {
     };
     Ok (())
   }
-  
-  fn invalidate_execution (time: & ExtendedTime <B>, execution: &mut EventExecutionState, events_needing_attention: &mut BTreeSet<ExtendedTime<B>>, steward_dependencies: &mut DependenciesMap <B>) {
+}
+  fn invalidate_execution <B: Basics> (time: & ExtendedTime <B>, execution: &mut EventExecutionState, events_needing_attention: &mut BTreeSet<ExtendedTime<B>>, steward_dependencies: &mut DependenciesMap <B>) {
     if let EventValidity::ValidWithDependencies (dependencies) = mem::replace (&mut execution.validity, EventValidity::Invalid) {
       events_needing_attention.insert (time.clone());
       for dependency in dependencies {
@@ -209,8 +209,9 @@ impl <B: Basics> StewardOwned <B> {
     }
   }
   
+impl <B: Basics> StewardOwned <B> {
   fn invalidate_dependencies (&mut self, id: FieldId, time: & ExtendedTime <B>) {
-    let invalid_dependencies_option = if let Entry::Occupied (mut my_dependencies) = self.dependencies.entry (id) {
+    let invalid_dependencies_option = if let Entry::Occupied (mut my_dependencies) = self.events.dependencies.entry (id) {
       // BTreeMap::split_off() DOES remove this splitting key, while we want to NOT include that key.
       // TODO: will Rust eventually make this easier?
       let mut result = my_dependencies.get_mut().split_off (time);
@@ -222,7 +223,7 @@ impl <B: Basics> StewardOwned <B> {
       for (access_time, access_info) in invalid_dependencies {
         if access_time <= *time {break;}
         match access_info {
-          AccessInfo::EventAccess => Self::invalidate_execution (&access_time, &mut self.event_states.get_mut (&access_time).expect ("event that accessed this field was missing").execution_state.as_mut().expect ("event that accessed this field not marked executed"), &mut self.events_needing_attention, &mut self.dependencies),
+          AccessInfo::EventAccess => invalidate_execution::<B> (&access_time, &mut self.events.event_states.get_mut (&access_time).expect ("event that accessed this field was missing").execution_state.as_mut().expect ("event that accessed this field not marked executed"), &mut self.events.events_needing_attention, &mut self.events.dependencies),
           AccessInfo::PredictionAccess (row_id, predictor_id) => {
             let mut remove = false;
             {
@@ -230,7 +231,7 @@ impl <B: Basics> StewardOwned <B> {
             while let Some (mut prediction) = history.predictions.pop() {
               if let Some (ref limit) = prediction.valid_until {if limit <= time {break;}}
               if let Some ((ref event_time,_)) = prediction.what_will_happen {
-                if event_time >time {self.unschedule_event (event_time);}
+                if event_time >time {self.events.unschedule_event (event_time).unwrap();}
               }
               
               if prediction.made_at <= *time {
@@ -253,12 +254,13 @@ impl <B: Basics> StewardOwned <B> {
   }
   
   fn discard_changes (&mut self, id: FieldId, history: &mut FieldHistory <B>, index: usize, during_processing_of_event_responsible_for_first_discarded: bool, snapshots: &SnapshotsData <B>) {
+    if index == history.changes.len() {return;}
     history.update_snapshots (id, snapshots);
     self.invalidate_dependencies (id, &history.changes [index].last_change);
     let mut discard_iter = history.changes.split_off (index).into_iter();
     if during_processing_of_event_responsible_for_first_discarded {discard_iter.next();}
     for discarded in discard_iter {
-      StewardOwned::<B>::invalidate_execution (& discarded.last_change, &mut self.event_states.get_mut (& discarded.last_change).expect ("event that created this change was missing").execution_state.as_mut().expect ("event that created this change not marked executed"), &mut self.events_needing_attention, &mut self.dependencies);
+      invalidate_execution::<B> (& discarded.last_change, &mut self.events.event_states.get_mut (& discarded.last_change).expect ("event that created this change was missing").execution_state.as_mut().expect ("event that created this change not marked executed"), &mut self.events.events_needing_attention, &mut self.events.dependencies);
     }
   }
  
@@ -313,7 +315,7 @@ impl <B: Basics> Steward <B> {
         new_fields_changed.insert (id);
         let mut history = field_states.entry(id).or_insert (FieldHistory {changes: Vec:: new(), first_snapshot_not_updated: self.owned.next_snapshot});
         match history.changes.binary_search_by_key (&time, | change | &change.last_change) {
-          Ok (index) => panic!("there shouldn't be a change at this time is no event has been executed then"),
+          Ok (_) => panic!("there shouldn't be a change at this time is no event has been executed then"),
           Err (index) => {
             self.owned.discard_changes (id, &mut history, index, false, changed_since_snapshots);
             self.owned.add_change (id, &mut history, field, changed_since_snapshots, & self.shared);
@@ -382,14 +384,14 @@ impl <B: Basics> Steward <B> {
   }
   
   fn do_event (&mut self, time: & ExtendedTime <B>) {
-    self.owned.events_needing_attention.remove(time);
-    let mut state = self.owned.event_states.remove (time).expect ("You can't do an event that wasn't scheduled");
+    self.owned.events.events_needing_attention.remove(time);
+    let mut state = self.owned.events.event_states.remove (time).expect ("You can't do an event that wasn't scheduled");
     if let Some (event) = state.schedule {
       let results;
       {
         let field_ref = &*self.shared.fields.borrow();
         let mut mutator = Mutator {
-          steward: &mut self.owned,
+          //steward: &mut self.owned,
           shared: &self.shared,
           fields: field_ref,
         generic: common::GenericMutator::new(time.clone()),
@@ -405,7 +407,7 @@ impl <B: Basics> Steward <B> {
       else {
         state.execution_state = Some (self.create_execution (time, results));
       }
-      self.owned.event_states.insert (time.clone(), state);
+      self.owned.events.event_states.insert (time.clone(), state);
     } else {
       self.remove_execution (time, state.execution_state.expect("a null event state was left lying around"));
     }
@@ -421,8 +423,8 @@ let fields = self.shared.fields.borrow();
     {
       let field_ref = &*fields;
       let mut pa = PredictorAccessor {
-        predictor_id: predictor_id,
-        about_row_id: row_id,
+        //predictor_id: predictor_id,
+        //about_row_id: row_id,
         internal_now: time.clone(),
         shared: &self.shared,
         fields: field_ref,
@@ -479,12 +481,13 @@ let fields = self.shared.fields.borrow();
     };
     }
     if let Some((ref time, ref event)) = prediction.what_will_happen {
-      self.owned.schedule_event (time.clone(), event.clone());
+      self.owned.events.schedule_event (time.clone(), event.clone()).unwrap();
     }
     self.owned.predictions_by_id.entry((row_id, predictor_id)).or_insert(Default::default()).predictions.push (prediction);
   }
+  
   fn do_next (&mut self)->Option <ExtendedTime <B>> {
-    let next_event = self.owned.events_needing_attention.iter().next().cloned();
+    let next_event = self.owned.events.events_needing_attention.iter().next().cloned();
     let next_prediction = self.owned.predictions_missing_by_time.iter().next(). map (| (time, set) | {
       let &(row_id, predictor_id) = set.iter().next().expect ("empty set of predictions should have been cleaned up");
       (time.clone(), row_id, predictor_id)
@@ -518,7 +521,7 @@ impl <B: Basics> FieldHistory <B> {
       if *index <self.first_snapshot_not_updated {break;}
       snapshot_map.get_default(my_id, || {
         use std::cmp::Ordering;
-        let index = match self.changes.binary_search_by (| change | if change.last_change.base < *time {Ordering::Less} else {Ordering::Greater}) { Ok (index) => unreachable!(), Err (index) => index - 1};
+        let index = match self.changes.binary_search_by (| change | if change.last_change.base < *time {Ordering::Less} else {Ordering::Greater}) { Ok (_) => unreachable!(), Err (index) => index - 1};
         self.changes.get (index).and_then  (| change | change.data.as_ref().map (| data | (data.clone(), change.last_change.clone())))
       });
       self.first_snapshot_not_updated = index + 1;
@@ -575,9 +578,14 @@ struct StewardShared<B: Basics> {
   fields: RefCell<Fields<B>>,
 }
 
-struct StewardOwned<B: Basics> {
+struct StewardEventsInfo <B: Basics> {
   event_states: HashMap <ExtendedTime<B>, EventState <B>>,
   events_needing_attention: BTreeSet<ExtendedTime<B>>,
+  dependencies: DependenciesMap <B>,
+}
+
+struct StewardOwned<B: Basics> {
+  events: StewardEventsInfo <B>,
   
   invalid_before: ValidSince <B::Time>,
   next_snapshot: SnapshotIdx,
@@ -585,7 +593,6 @@ struct StewardOwned<B: Basics> {
   
   predictions_by_id: HashMap<(RowId, PredictorId), PredictionHistory <B>>,
   predictions_missing_by_time: BTreeMap<ExtendedTime <B>, HashSet <(RowId, PredictorId)>>,
-  dependencies: DependenciesMap <B>,
 }
 
 pub struct Steward<B: Basics> {
@@ -605,7 +612,7 @@ pub struct MutatorResults <B: Basics> {
 
 }
 pub struct Mutator<'a, B: Basics> {
-  steward: &'a mut StewardOwned<B>,
+  //steward: &'a mut StewardOwned<B>,
   shared: &'a StewardShared<B>,
   fields: &'a Fields<B>,
   generic: common::GenericMutator<B>,
@@ -615,8 +622,8 @@ struct PredictorAccessorResults<B: Basics> {
   valid_until: Option <ExtendedTime <B>>,
 }
 pub struct PredictorAccessor<'a, B: Basics> {
-  predictor_id: PredictorId,
-  about_row_id: RowId,
+  //predictor_id: PredictorId,
+  //about_row_id: RowId,
   internal_now: ExtendedTime<B>,
   shared: &'a StewardShared<B>,
   fields: &'a Fields<B>,
@@ -742,7 +749,7 @@ impl<B: Basics> Fields<B> {
     use std::cmp::Ordering;
     self.field_states.get (& id).and_then (| history | {
       if history.first_snapshot_not_updated > index {return None}
-      let index = match history.changes.binary_search_by (| change | if change.last_change.base < *time {Ordering::Less} else {Ordering::Greater}) { Ok (index) => unreachable!(), Err (index) => index - 1};
+      let index = match history.changes.binary_search_by (| change | if change.last_change.base < *time {Ordering::Less} else {Ordering::Greater}) { Ok (_) => unreachable!(), Err (index) => index - 1};
       history.changes.get (index).and_then (| change | change.data.as_ref().map (| data | (data.clone(), change.last_change.clone())))
     })
   }
@@ -751,7 +758,7 @@ impl<B: Basics> Fields<B> {
 impl<B: Basics> Steward<B> {
   fn update_until_beginning_of(&mut self, target_time: &B::Time) {
     //TODO: this goes one step too far. Is that a problem?
-    while let Some(time) = self.do_next().filter(| time | time.base < *target_time) {}
+    while let Some(_) = self.do_next().filter(| time | time.base < *target_time) {}
   }
 }
 
@@ -768,14 +775,17 @@ impl<B: Basics> TimeSteward <B> for Steward<B> {
 
     Steward {
       owned: StewardOwned {
-        invalid_before: ValidSince::TheBeginning,
+        events: StewardEventsInfo {
+        
         events_needing_attention: BTreeSet::new(),
         event_states: HashMap::new(),
-        next_snapshot: 0,
+        dependencies: HashMap::new(),
+        },
+        invalid_before: ValidSince::TheBeginning,        next_snapshot: 0,
         existent_fields: partially_persistent_nonindexed_set::Set::new(),
         predictions_missing_by_time: BTreeMap::new(),
         predictions_by_id: HashMap::new(),
-        dependencies: HashMap::new(),
+
       },
       shared: Rc::new(StewardShared {
         settings: settings,
@@ -831,7 +841,7 @@ impl<B: Basics> TimeSteward <B> for Steward<B> {
     if self.valid_since() > time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    match self.owned.schedule_event (common::extended_time_of_fiat_event(time, id),
+    match self.owned.events.schedule_event (common::extended_time_of_fiat_event(time, id),
                                         StewardRc::new(DynamicEventFn::new(event))) {
       Err (_) => Err(FiatEventOperationError::InvalidInput),
       Ok (_) => Ok(()),
@@ -845,7 +855,7 @@ impl<B: Basics> TimeSteward <B> for Steward<B> {
     if self.valid_since() > *time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    match self.owned. unschedule_event (& common::extended_time_of_fiat_event(time.clone(), id)) {
+    match self.owned.events.unschedule_event (& common::extended_time_of_fiat_event(time.clone(), id)) {
       Err (_) => Err(FiatEventOperationError::InvalidInput),
       Ok (_) => Ok(()),
     }
