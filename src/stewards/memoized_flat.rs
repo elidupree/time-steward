@@ -231,10 +231,8 @@ impl<'a, B: Basics> ::Mutator<B> for Mutator<'a, B> {
         }
       });
       if old_value.is_none() {
-        let fields = &self.fields;
         self.steward.existent_fields.insert(field_id);
       } else {
-        let fields = &self.fields;
         self.steward.existent_fields.remove(field_id);
       }
     }
