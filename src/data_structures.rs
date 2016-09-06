@@ -306,7 +306,6 @@ pub mod partially_persistent_nonindexed_set {
         }
       });
       for operation in operations {
-        if existences.contains(&operation.0) != operation.1 {
           if operation.1 {
             existences.insert(operation.0);
             set.insert(operation.0);
@@ -323,7 +322,6 @@ pub mod partially_persistent_nonindexed_set {
             check_thread.join().unwrap();
             return false;
           }
-        }
       }
       send_snapshot.send(None).unwrap();
       check_thread.join().unwrap();
