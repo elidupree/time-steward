@@ -324,14 +324,13 @@ impl <B: Basics> Steward <B> {
     let changed_since_snapshots = &mut fields.changed_since_snapshots;
     let mut new_fields_changed = HashSet::new();
     let mut new_dependencies = HashSet::with_capacity(new_results.fields.len());
-    let mut added_fields = Vec::with_capacity (new_results.fields.len());
     for (id, field) in new_results.fields {
       new_dependencies.insert (id);
       self.owned.events.dependencies.entry (id).or_insert (Default::default()).bounded.insert (time.clone(), AccessInfo::EventAccess);
       if field.last_change == *time {
         new_fields_changed.insert (id);
         let mut history = field_states.entry(id).or_insert (FieldHistory {changes: Vec:: new(), first_snapshot_not_updated: self.owned.next_snapshot});
-        if history.changes.is_empty() {added_fields.push (id);}
+        if history.changes.is_empty() {self.owned.existent_fields.insert (id);}
         match history.changes.binary_search_by_key (&time, | change | &change.last_change) {
           Ok (_) => panic!("there shouldn't be a change at this time is no event has been executed then"),
           Err (index) => {
@@ -341,7 +340,6 @@ impl <B: Basics> Steward <B> {
         }
       }
     }
-    for id in added_fields {self.owned.existent_fields.insert (id, & | key | field_states.contains_key (key));}
     EventExecutionState {fields_changed: new_fields_changed, validity: EventValidity::ValidWithDependencies (new_dependencies)}
   }
   fn remove_execution (&mut self, time: & ExtendedTime <B>, execution: EventExecutionState) {
@@ -349,18 +347,16 @@ impl <B: Basics> Steward <B> {
     let fields = &mut*fields_guard;
     let field_states = &mut fields.field_states;
     let changed_since_snapshots = &mut fields.changed_since_snapshots;
-    let mut removed_fields = Vec::with_capacity (execution.fields_changed.len());
     for id in execution.fields_changed {
       if let Entry::Occupied (mut entry) = field_states.entry(id) {
         //some of these could have ALREADY been deleted –
         //in fact, perhaps that's how the event was invalidated in the first place
         if let Ok (index) = entry.get().changes.binary_search_by_key (&time, | change | &change.last_change) {
           self.owned.discard_changes (id, entry.get_mut(), index, true, changed_since_snapshots);
-          if entry.get().changes.is_empty() {removed_fields.push (id); entry.remove();}
+          if entry.get().changes.is_empty() {self.owned.existent_fields.remove (id); entry.remove();}
         }
       }
     }
-    for id in removed_fields {self.owned.existent_fields.remove (id, & | key | field_states.contains_key (key));}
   }
   fn replace_execution (&mut self, time: & ExtendedTime <B>, execution: &mut EventExecutionState, new_results: MutatorResults <B>) {
     let mut fields_guard = self.shared.fields.borrow_mut();
@@ -369,8 +365,6 @@ impl <B: Basics> Steward <B> {
     let changed_since_snapshots = &mut fields.changed_since_snapshots;
     let mut new_fields_changed = HashSet::new();
     let mut new_dependencies = HashSet::with_capacity(new_results.fields.len());
-    let mut removed_fields = Vec::with_capacity (execution.fields_changed.len());
-    let mut added_fields = Vec::with_capacity (new_results.fields.len());
     for (id, field) in new_results.fields {
       new_dependencies.insert (id);
       self.owned.events.dependencies.entry (id).or_insert (Default::default()).bounded.insert (time.clone(), AccessInfo::EventAccess);
@@ -378,7 +372,7 @@ impl <B: Basics> Steward <B> {
         new_fields_changed.insert (id);
         //TODO: handle erasing a non-existent field properly
         let mut history = field_states.entry(id).or_insert (FieldHistory {changes: Vec:: new(), first_snapshot_not_updated: self.owned.next_snapshot});
-        if history.changes.is_empty() {added_fields.push (id);}
+        if history.changes.is_empty() {self.owned.existent_fields.insert (id);}
         match history.changes.binary_search_by_key (&time, | change | &change.last_change) {
           Ok (index) => {
             //TODO: be able to check field equality in general
@@ -401,14 +395,12 @@ impl <B: Basics> Steward <B> {
           //in fact, perhaps that's how the event was invalidated in the first place
           if let Ok (index) = entry.get().changes.binary_search_by_key (&time, | change | &change.last_change) {
             self.owned.discard_changes (id, entry.get_mut(), index, true, changed_since_snapshots);
-            if entry.get().changes.is_empty() {removed_fields.push (id); entry.remove();}
+            if entry.get().changes.is_empty() {self.owned.existent_fields.remove (id); entry.remove();}
           }
         }
       }
     }
     execution.validity = EventValidity::ValidWithDependencies (new_dependencies);
-    for id in added_fields {self.owned.existent_fields.insert (id, & | key | field_states.contains_key (key));}
-    for id in removed_fields {self.owned.existent_fields.remove (id, & | key | field_states.contains_key (key));}
   }
   
   fn do_event (&mut self, time: & ExtendedTime <B>) {

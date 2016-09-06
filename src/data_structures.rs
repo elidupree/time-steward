@@ -47,12 +47,13 @@ pub mod partially_persistent_nonindexed_set {
   }
 
   #[derive (Debug)]
-  pub struct Set<K: Clone + Eq> {
+  pub struct Set<K: Clone + Eq + Hash> {
     live_buffer: Buffer<K>,
     next_buffer: Buffer<K>,
+    live_members: HashSet <K>,
+    next_members: HashSet <K>,
     next_transfer_index: usize,
     potential_next_buffer_usage: usize,
-    operating: bool,
   }
   unsafe impl<K: Clone + Eq + Sync> Send for Snapshot<K> {}
   unsafe impl<K: Clone + Eq + Sync> Sync for Snapshot<K> {}
@@ -92,7 +93,7 @@ pub mod partially_persistent_nonindexed_set {
       }
     }
   }
-  impl<K: Clone + Eq + Debug> Set<K> {
+  impl<K: Clone + Eq + Hash + Debug> Set<K> {
     pub fn new() -> Set<K> {
       Set {
         live_buffer: Buffer {
@@ -103,71 +104,52 @@ pub mod partially_persistent_nonindexed_set {
           data: Arc::new(UnsafeCell::new(BufferInner { data: Vec::with_capacity(2) })),
           deletions: 0,
         },
+        live_members: HashSet::new(),
+        next_members: HashSet::with_capacity(2),
+        
         next_transfer_index: 0,
         potential_next_buffer_usage: 0,
-        operating: false,
       }
     }
 
     /// Adds a value to the set.
     ///
-    /// Complexity: O(1) worst-case if K does not implement Drop, O(1) amortized otherwise.
-    pub fn insert<F: Fn(&K) -> bool>(&mut self, key: K, currently_existent: &F) {
-      assert!(!self.operating,
-              "Attempt to call PartiallyPersistentNonindexedSet::insert() from inside its own \
-               existence checker callback; what ghastly code led to this situation?");
-      self.operating = true;
-
-      self.make_room(currently_existent);
-      let live_data = unsafe { self.live_buffer.data.get().as_mut().unwrap() };
-      live_data.data.push(Entry {
-        key: key,
-        insertion: true,
-      });
-      self.potential_next_buffer_usage += 1;
-
-      self.operating = false;
+    /// Complexity: O(1) expected worst-case if K does not implement Drop, O(1) expected amortized otherwise.
+    pub fn insert(&mut self, key: K) {
+      self.make_room();
+      if self.live_members.insert (key.clone()) {
+        let live_data = unsafe { self.live_buffer.data.get().as_mut().unwrap() };
+        live_data.data.push(Entry {
+          key: key,
+          insertion: true,
+        });
+        self.potential_next_buffer_usage += 1;
+      }
     }
 
     /// Removes a value from the set.
     ///
-    /// Complexity: O(1) worst-case if K does not implement Drop, O(1) amortized otherwise.
-    pub fn remove<F: Fn(&K) -> bool>(&mut self, key: K, currently_existent: &F) {
-      assert!(!self.operating,
-              "Attempt to call PartiallyPersistentNonindexedSet::insert() from inside its own \
-               existence checker callback; what ghastly code led to this situation?");
-      self.operating = true;
+    /// Complexity: O(1) expected worst-case if K does not implement Drop, O(1) expected amortized otherwise.
+    pub fn remove(&mut self, key: K) {
+      self.make_room();
 
-      self.make_room(currently_existent);
-      let live_data = unsafe { self.live_buffer.data.get().as_mut().unwrap() };
-      let next_data = unsafe { self.next_buffer.data.get().as_mut().unwrap() };
-
-      // Usually insert the deletion, but sometimes
-      // we just swapped the buffers and the insertion is already gone.
-      // If there are NO insertions and a buffer,
-      // we know we don't need to insert a deletion.
-      // (These checks are currently necessary to avoid underflow in make_room())
-      if live_data.data.len() != self.live_buffer.deletions {
+      if self.live_members.remove (&key) {
+        let live_data = unsafe { self.live_buffer.data.get().as_mut().unwrap() };
         self.live_buffer.deletions += 1;
         live_data.data.push(Entry {
           key: key.clone(),
           insertion: false,
         });
+        if self.next_members.remove (&key) {
+          let next_data = unsafe { self.next_buffer.data.get().as_mut().unwrap() };
+          self.next_buffer.deletions += 1;
+          next_data.data.push(Entry {
+            key: key,
+            insertion: false,
+          });
+          self.potential_next_buffer_usage += 1;
+        }
       }
-      // the next buffer doesn't necessarily have an insertion
-      // corresponding to this deletion, so this could be wasteful. However,
-      // it would also be wasteful to look up whether the insertion is there
-      // (we currently get away with not even being ABLE to do so)
-      if next_data.data.len() != self.next_buffer.deletions {
-        self.next_buffer.deletions += 1;
-        next_data.data.push(Entry {
-          key: key,
-          insertion: false,
-        });
-        self.potential_next_buffer_usage += 1;
-      }
-
-      self.operating = false;
     }
 
     /// Takes out a snapshot to the current state of the set.
@@ -212,7 +194,7 @@ pub mod partially_persistent_nonindexed_set {
     // X >= (Z*(51/7) - 7)/(5*Z/7)
     // X >= (Z*(51) - 49)/(5*Z)
     // X >= 51/5 >10
-    fn make_room<F: Fn(&K) -> bool>(&mut self, currently_existent: F) {
+    fn make_room(&mut self) {
 
       // MAX_TRANSFER_SPEED could safely be 11 as per the above calculation,
       // but cache efficiency is probably better with a higher value.
@@ -261,8 +243,9 @@ pub mod partially_persistent_nonindexed_set {
          operations_before_reset_possibly_needed * MAX_TRANSFER_SPEED {
         for _ in 0..MAX_TRANSFER_SPEED {
           if let Some(entry) = live_data.data.get(self.next_transfer_index) {
-            if entry.insertion && currently_existent(&entry.key) {
+            if entry.insertion && self.live_members.contains(&entry.key) {
               next_data.data.push((*entry).clone());
+              self.next_members.insert (entry.key.clone());
             }
             self.next_transfer_index += 1;
           } else {
@@ -280,14 +263,17 @@ pub mod partially_persistent_nonindexed_set {
         self.next_transfer_index = 0;
         self.potential_next_buffer_usage = next_data.data.len() - self.next_buffer.deletions;
         mem::swap(&mut self.live_buffer, &mut self.next_buffer);
+        mem::swap (&mut self.live_members, &mut self.next_members);
+        let next_capacity = (self.potential_next_buffer_usage + 1) * 4;
         // danger: after we overwrite self.next_buffer, we may have deallocated
         // the memory for live_data
         self.next_buffer = Buffer {
           data: Arc::new(UnsafeCell::new(BufferInner {
-            data: Vec::with_capacity((self.potential_next_buffer_usage + 1) * 4),
+            data: Vec::with_capacity(next_capacity),
           })),
           deletions: 0,
         };
+        self.next_members = HashSet::with_capacity(next_capacity);
       }
 
       unsafe {
@@ -323,10 +309,10 @@ pub mod partially_persistent_nonindexed_set {
         if existences.contains(&operation.0) != operation.1 {
           if operation.1 {
             existences.insert(operation.0);
-            set.insert(operation.0, &|value| existences.contains(value));
+            set.insert(operation.0);
           } else {
             existences.remove(&operation.0);
-            set.remove(operation.0, &|value| existences.contains(value));
+            set.remove(operation.0);
           }
           let checker = existences.clone();
           let snapshot = set.snapshot();

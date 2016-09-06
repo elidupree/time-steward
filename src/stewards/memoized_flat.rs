@@ -232,10 +232,10 @@ impl<'a, B: Basics> ::Mutator<B> for Mutator<'a, B> {
       });
       if old_value.is_none() {
         let fields = &self.fields;
-        self.steward.existent_fields.insert(field_id, &|id| fields.field_states.contains_key(id));
+        self.steward.existent_fields.insert(field_id);
       } else {
         let fields = &self.fields;
-        self.steward.existent_fields.remove(field_id, &|id| fields.field_states.contains_key(id));
+        self.steward.existent_fields.remove(field_id);
       }
     }
     if let Entry::Occupied(entry) = self.steward.prediction_dependencies.entry(field_id) {
