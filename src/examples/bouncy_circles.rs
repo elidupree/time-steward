@@ -55,7 +55,7 @@ impl<Coordinate> SerializableVector2<Coordinate> {
   }
 }
 
-#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug, Default)]
 struct Basics;
 impl ::Basics for Basics {
   type Time = Time;

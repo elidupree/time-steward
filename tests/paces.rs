@@ -9,7 +9,7 @@ extern crate serde;
 use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, Column, TimeStewardSettings};
 use rand::{Rng, SeedableRng, ChaChaRng};
 
-#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug, Default)]
 struct Basics;
 impl steward::Basics for Basics {
   type Time = DeterministicRandomId;

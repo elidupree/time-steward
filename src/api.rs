@@ -203,7 +203,7 @@ macro_rules! time_steward_predictor_from_generic_fn {
 /**
 This is intended to be implemented on an empty struct. Requiring Clone etc. is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 */
-pub trait Basics: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
+pub trait Basics: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug + Default {
   type Time: Any + Send + Sync + Clone + Ord + Hash + Serialize + Deserialize + Debug;
   type Constants: Any + Send + Sync + Clone + Serialize + Deserialize + Debug;
   fn allow_floats_unsafe()->bool {false}
