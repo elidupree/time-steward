@@ -33,7 +33,7 @@ impl Column for Philosopher {
   }
 }
 
-type Steward = s::Steward<Basics, amortized::Steward <Basics>, memoized_flat::Steward <Basics>>;
+type Steward = s::Steward<Basics, Columns, amortized::Steward <Basics>, memoized_flat::Steward <Basics>>;
 
 fn get_philosopher_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x2302c38efb47e0d0u64, index))
@@ -80,7 +80,6 @@ pub fn testfunc() {
     })
   );
 
-  settings.populate_equality_table::<Columns>();
   let mut stew: Steward = ::TimeSteward::new_empty((), settings);
 
   stew.insert_fiat_event(0,

@@ -596,7 +596,7 @@ impl<T: Ord> PartialOrd for ValidSince<T> {
 //  }
 // }
 
-pub trait TimeStewardSettings <B: Basics> {
+pub trait TimeStewardSettings <B: Basics>: Clone {
   fn new() -> Self;
   fn insert_predictor<P: PredictorFn<B>>(&mut self,
                                          predictor_id: PredictorId,

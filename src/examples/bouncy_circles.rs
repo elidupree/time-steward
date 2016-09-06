@@ -134,7 +134,7 @@ impl Column for Intersection {
 
 type Columns = (PhantomData <Circle>, PhantomData <Intersection>, collisions::Columns <CollisionBasics>);
 
-type Steward = s::Steward<Basics, inefficient_flat::Steward<Basics>, memoized_flat::Steward<Basics>>;
+type Steward = s::Steward<Basics, Columns, inefficient_flat::Steward<Basics>, memoized_flat::Steward<Basics>>;
 
 fn get_circle_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x86ccbeb2c140cc51u64, index))
@@ -292,7 +292,6 @@ pub fn testfunc() {
     time_steward_predictor_from_generic_fn! (Basics, struct BoundaryPredictor, boundary_predictor)
   );
   collisions::insert_predictors::<CollisionBasics, _>(&mut settings);
-  settings.populate_equality_table::<Columns>();
   let mut stew: Steward = ::TimeSteward::new_empty((), settings);
 
   stew.insert_fiat_event(0,

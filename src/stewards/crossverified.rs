@@ -11,12 +11,12 @@ use std::cmp::max;
 use std::marker::PhantomData;
 use Snapshot as SuperSnapshot;
 
-#[derive (Clone)]
-pub struct Steward<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
+pub struct Steward<B: Basics, C: ColumnList, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
   Steward0,
   Steward1,
   StewardRc <HashMap<ColumnId, fn (&FieldRc, &FieldRc)>>,
-  PhantomData <B::Constants>
+  PhantomData <B::Constants>,
+  PhantomData <C>,
 );
 pub struct Snapshot<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
   <Steward0 as TimeSteward <B>>::Snapshot,
@@ -26,8 +26,10 @@ pub struct Snapshot<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B
 pub struct Settings <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
   <Steward0 as TimeSteward <B>>::Settings,
   <Steward1 as TimeSteward <B>>::Settings,
-  pub HashMap<ColumnId, fn (&FieldRc, &FieldRc)>,
 );
+impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > Clone for Settings <B, Steward0, Steward1> {
+  fn clone (&self)->Self {Settings (self.0.clone(), self.1.clone())}
+}
 
 fn check_equality <C: Column> (first: &FieldRc, second: &FieldRc) {
   assert_eq!(::unwrap_field::<C>(first), ::unwrap_field::<C>(second), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
@@ -115,17 +117,14 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
   }
 }
 
-impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > Settings <B, Steward0, Steward1> {
-  pub fn populate_equality_table <C: ColumnList> (&mut self) {C::apply (self);}
-}
-impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ColumnListUser for Settings <B, Steward0, Steward1> {
-  fn apply <C: Column> (&mut self) {self.2.insert (C::column_id(), check_equality::<C>);}
+impl ColumnListUser for HashMap<ColumnId, fn (&FieldRc, &FieldRc)> {
+  fn apply <C: Column> (&mut self) {self.insert (C::column_id(), check_equality::<C>);}
 }
 
 
 impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > TimeStewardSettings <B> for Settings <B, Steward0, Steward1> {
   fn new()->Self {
-    Settings (<Steward0::Settings as TimeStewardSettings <B>>::new(), <Steward1::Settings as TimeStewardSettings <B>>::new(), HashMap::new())
+    Settings (<Steward0::Settings as TimeStewardSettings <B>>::new(), <Steward1::Settings as TimeStewardSettings <B>>::new())
   }
   fn insert_predictor <P: PredictorFn <B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: P) {
     self.0.insert_predictor (predictor_id, column_id, function.clone());
@@ -133,7 +132,7 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > TimeSteward
   }
 }
 
-impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward0, Steward1> {
+impl<B: Basics, C: ColumnList, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeSteward<B> for Steward<B, C, Steward0, Steward1> {
   type Snapshot = Snapshot<B, Steward0, Steward1>;
   type Settings = Settings<B, Steward0, Steward1>;
 
@@ -141,11 +140,13 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
     max (self.0.valid_since(), self.1.valid_since())
   }
   fn new_empty(constants: B::Constants, settings: Self::Settings) -> Self {
-    let result = Steward::<B, Steward0, Steward1> (
+    let mut equality_table = HashMap::new();
+    C::apply (&mut equality_table);
+    let result = Steward::<B, C, Steward0, Steward1> (
       TimeSteward::new_empty (constants.clone(), settings.0),
       TimeSteward::new_empty (constants, settings.1),
-      StewardRc::new (settings.2),
-      PhantomData,
+      StewardRc::new (equality_table),
+      PhantomData, PhantomData,
     );
     assert!(result.0.valid_since() == ValidSince::TheBeginning, "Steward0 broke the ValidSince rules");
     assert!(result.1.valid_since() == ValidSince::TheBeginning, "Steward1 broke the ValidSince rules");
@@ -156,11 +157,13 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
                                               settings: Self::Settings)
                                               -> Self
                                               where & 'a S: IntoIterator <Item = ::SnapshotEntry <'a, B>> {
+    let mut equality_table = HashMap::new();
+    C::apply (&mut equality_table);
     let result = Steward (
       Steward0::from_snapshot::<'a, S>(snapshot, settings.0),
       Steward1::from_snapshot::<'a, S>(snapshot, settings.1),
-      StewardRc::new (settings.2),
-      PhantomData,
+      StewardRc::new (equality_table),
+      PhantomData, PhantomData,
     );
     assert!(result.0.valid_since() == ValidSince::Before (snapshot.now().clone()), "Steward0 broke the ValidSince rules");
     assert!(result.1.valid_since() == ValidSince::Before (snapshot.now().clone()), "Steward1 broke the ValidSince rules");
