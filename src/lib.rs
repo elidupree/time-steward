@@ -50,6 +50,7 @@ pub mod stewards {
   pub mod memoized_flat;
   pub mod amortized;
 
+  pub mod flat_to_inefficient_full;
   pub mod crossverified;
 }
 

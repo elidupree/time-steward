@@ -4,24 +4,22 @@
 //!
 
 
-use {DeterministicRandomId, ColumnId, FieldId, PredictorId, Column, ExtendedTime, StewardRc,
-             Basics, FieldRc, TimeSteward, FiatEventOperationError, ValidSince, PredictorFn, TimeStewardSettings,ColumnList, ColumnListUser};
-use std::collections::{HashMap, BTreeMap};
-use std::cmp::max;
-use std::marker::PhantomData;
-use Snapshot as SuperSnapshot;
+use {DeterministicRandomId,
+             Basics,  TimeSteward, FiatEventOperationError, ValidSince, Accessor, MomentaryAccessor};
+use std::collections::HashMap;
 
 pub struct Steward<B: Basics, Steward0: TimeSteward<B> > {
   steward: Steward0,
   invalid_before: ValidSince <B::Time>,
   constants: B::Constants,
   settings: Steward0::Settings,
-  fiat_events: BTreeMap<B::Time, i32>,
+  fiat_events: HashMap <DeterministicRandomId, (B::Time, Box <Fn (&mut Steward0, B::Time, DeterministicRandomId)>)>,
   snapshots: Vec<Steward0::Snapshot>,
 }
 
 
-impl<B: Basics, Steward0: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward0> {
+impl<B: Basics, Steward0: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward0> 
+where for <'a> & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>{
   type Snapshot = Steward0::Snapshot;
   type Settings = Steward0::Settings;
 
@@ -34,7 +32,7 @@ impl<B: Basics, Steward0: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward
       invalid_before: ValidSince::TheBeginning,
       constants: constants,
       settings: settings,
-      fiat_events: BTreeMap::new(),
+      fiat_events: HashMap::new(),
       snapshots: Vec::new(),
     }
   }
@@ -43,14 +41,15 @@ impl<B: Basics, Steward0: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward
                                               settings: Self::Settings)
                                               -> Self
                                               where & 'a S: IntoIterator <Item = ::SnapshotEntry <'a, B>> {
-    let steward = TimeSteward::from_snapshot::<'a, S> (snapshot, settings.clone());
+    let mut steward: Steward0 = TimeSteward::from_snapshot::<'a, S> (snapshot, settings.clone());
+    let snapshot =steward.snapshot_before (snapshot.now()).unwrap();
     Steward::<B, Steward0> {
       steward: steward,
       invalid_before: ValidSince::Before (snapshot.now().clone()),
       constants: snapshot.constants().clone(),
       settings: settings,
-      fiat_events: BTreeMap::new(),
-      snapshots: vec![steward.snapshot_before (snapshot.now())],
+      fiat_events: HashMap::new(),
+      snapshots: vec![snapshot],
     }
   }
   fn insert_fiat_event <E: ::EventFn <B>> (&mut self,
@@ -61,7 +60,10 @@ impl<B: Basics, Steward0: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward
     if self.valid_since() > time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    
+    if self.fiat_events.contains_key (& id) {return Err (FiatEventOperationError::InvalidInput);}
+    let _ = self.steward.insert_fiat_event (time.clone(), id, event.clone());
+    self.fiat_events.insert (id, (time, Box::new (move | steward, time, id | {let _ = steward.insert_fiat_event (time, id, event.clone());})));
+    Ok (())
   }
   fn erase_fiat_event(&mut self,
                       time: &B::Time,
@@ -70,7 +72,9 @@ impl<B: Basics, Steward0: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward
     if self.valid_since() > *time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    
+    if self.fiat_events.remove (& id).is_none() {return Err (FiatEventOperationError::InvalidInput);}
+    let _ = self.steward.erase_fiat_event (time, id);
+    Ok (())
   }
 
   fn snapshot_before<'b>(&'b mut self, time: &'b B::Time) -> Option<Self::Snapshot> {
@@ -84,9 +88,12 @@ impl<B: Basics, Steward0: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward
       self.steward = match self.snapshots.last() {
         None => TimeSteward::new_empty (self.constants.clone(), self.settings.clone()),
         Some (snapshot) => TimeSteward::from_snapshot::<Self::Snapshot> (snapshot, self.settings.clone()),
+      };
+      for (id, & (ref time, ref insert_event)) in self.fiat_events.iter() {
+        insert_event (&mut self.steward, time.clone(), id.clone());
       }
     }
-    self.snapshots.push (self.steward.snapshot_before (time));
+    self.snapshots.push (self.steward.snapshot_before (time).expect ("reloading from an earlier snapshot was supposed to make this work!"));
     self.steward.snapshot_before (time)
   }
 }
