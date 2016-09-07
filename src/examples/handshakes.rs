@@ -80,7 +80,7 @@ pub fn testfunc() {
     })
   );
 
-  let mut stew: Steward = ::TimeSteward::new_empty((), settings);
+  let mut stew: Steward = ::TimeSteward::new_empty((), settings.clone());
 
   stew.insert_fiat_event(0,
                          DeterministicRandomId::new(&0x32e1570766e768a7u64),
@@ -113,8 +113,10 @@ pub fn testfunc() {
     println!("{:?}", writer);
     let deserialized = ::deserialize_snapshot:: <Basics, Columns,_> (&mut Deserializer::new (&mut writer.as_slice(), bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/)).unwrap();
     display_snapshot(&deserialized);
+    use MomentaryAccessor;
+    display_snapshot(&<Steward as ::TimeSteward<Basics>>::from_snapshot::<::FiatSnapshot<Basics>>(&deserialized, settings.clone()).snapshot_before(deserialized.now()).unwrap());
   }
-  // panic!("anyway")
+  panic!("anyway")
 }
 
 #[test]
