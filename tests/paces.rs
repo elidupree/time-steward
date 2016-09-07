@@ -7,6 +7,7 @@ extern crate rand;
 extern crate serde;
 
 use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, Column, TimeStewardSettings};
+use std::marker::PhantomData;
 use rand::{Rng, SeedableRng, ChaChaRng};
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug, Default)]
@@ -15,18 +16,18 @@ impl steward::Basics for Basics {
   type Time = DeterministicRandomId;
   type Constants = DeterministicRandomId;
 }
-
+  struct ColumnHack;
+  impl Column for ColumnHack {
+    type FieldType = DeterministicRandomId;
+    fn column_id()->ColumnId {ColumnId (0x8e07f5045b91d636)}
+  }
 // As in, "putting it through its paces"
 #[allow (unused_must_use)]
 fn paces <Steward: steward::TimeSteward <Basics>, G: Rng> (generator: &mut G)
 where Steward::Settings: Clone,
 for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a, Basics>>
 {
-  struct ColumnHack;
-  impl Column for ColumnHack {
-    type FieldType = DeterministicRandomId;
-    fn column_id()->ColumnId {ColumnId (0x8e07f5045b91d636)}
-  }
+
 
   let mut settings = Steward::Settings::new();
   settings.insert_predictor (PredictorId (0x59c5a4cce2789300), ColumnHack::column_id(),
@@ -77,9 +78,13 @@ for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a
 }
 
 #[test]
-#[ignore]
+//#[ignore]
 fn main() {
   let mut generator = ChaChaRng::from_seed(& [1337]);
-  use steward::stewards::memoized_flat;
-  paces:: <memoized_flat::Steward <Basics>,_> (&mut generator);
+  use steward::stewards::{amortized, memoized_flat, flat_to_inefficient_full, crossverified};
+  paces:: <crossverified::Steward <Basics, 
+    PhantomData <ColumnHack>,
+    amortized::Steward <Basics>,
+    /*flat_to_inefficient_full::Steward <Basics, */memoized_flat::Steward <Basics>/*>*/
+  >,_> (&mut generator);
 }

@@ -332,8 +332,10 @@ impl <B: Basics> Steward <B> {
         match history.changes.binary_search_by_key (&time, | change | &change.last_change) {
           Ok (_) => panic!("there shouldn't be a change at this time is no event has been executed then"),
           Err (index) => {
-            self.owned.discard_changes (id, &mut history, index, false, changed_since_snapshots);
-            self.owned.add_change (id, &mut history, field, changed_since_snapshots, & self.shared);
+            if !(field.data.is_none() && history.changes.get (index.wrapping_sub (1)).map_or (true, | previous | previous.data.is_none())) {
+              self.owned.discard_changes (id, &mut history, index, false, changed_since_snapshots);
+              self.owned.add_change (id, &mut history, field, changed_since_snapshots, & self.shared);
+            }
           }
         }
       }
@@ -380,8 +382,10 @@ impl <B: Basics> Steward <B> {
             //}
           }
           Err (index) => {
-            self.owned.discard_changes (id, &mut history, index, false, changed_since_snapshots);
-            self.owned.add_change (id, &mut history, field, changed_since_snapshots, & self.shared);
+            if !(field.data.is_none() && history.changes.get (index.wrapping_sub (1)).map_or (true, | previous | previous.data.is_none())) {
+              self.owned.discard_changes (id, &mut history, index, false, changed_since_snapshots);
+              self.owned.add_change (id, &mut history, field, changed_since_snapshots, & self.shared);
+            }
           }
         }
       }
@@ -730,7 +734,8 @@ impl<'a, B: Basics> ::PredictorAccessor<B> for PredictorAccessor<'a, B> {
 
 impl<B: Basics> ::Snapshot<B> for Snapshot<B> {
   fn num_fields(&self) -> usize {
-    self.num_fields
+    //TODO: optimize
+    self.into_iter().count()
   }
 }
 
@@ -740,15 +745,19 @@ pub struct SnapshotIter<'a, B: Basics>(partially_persistent_nonindexed_set::Snap
 impl<'a, B: Basics> Iterator for SnapshotIter<'a, B> {
   type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
   fn next(&mut self) -> Option<Self::Item> {
-    (self.0).next().map(|id| {
+    loop {
+      match (self.0).next().map(|id|
       (id,
        (self.1)
-         .generic_data_and_extended_last_change(id)
-         .expect("the snapshot thinks a FieldId exists when it doesn't"))
-    })
+         .generic_data_and_extended_last_change(id))){
+        None => return None,
+        Some ((id, Some (value))) => return Some ((id, value)),
+        _=>()
+      }
+    }
   }
   fn size_hint(&self) -> (usize, Option<usize>) {
-    (self.1.num_fields, Some(self.1.num_fields))
+    (0, Some(self.1.num_fields))
   }
 }
 impl<'a, B: Basics> IntoIterator for &'a Snapshot<B> {
