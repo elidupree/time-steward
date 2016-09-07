@@ -10,6 +10,14 @@ use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, Column, TimeS
 use std::marker::PhantomData;
 use rand::{Rng, SeedableRng, ChaChaRng};
 
+
+macro_rules! printlnerr(
+    ($($arg:tt)*) => { {use std::io::Write;
+        let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
+        r.expect("failed printing to stderr");
+    } }
+);
+
 /*Tried to hunt an ICE, but failed
 trait Hack <B> {type Whatever;}
 use std::iter::{self, Empty};
@@ -69,7 +77,7 @@ for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a
   for index in 0..1000 {
     let time = RowId::new (& generator.gen::<u64>());
     match generator.gen_range::<u64> (0, 16) {
-      0 => { stew.insert_fiat_event (time, RowId::new (& index),
+      0 => { printlnerr!("inserting fiat event"); stew.insert_fiat_event (time, RowId::new (& index),
       
       time_steward_event! (Basics, struct Event {}, | &self, mutator | {
         let who =RowId::new (& mutator.gen::<u8>());
@@ -82,9 +90,9 @@ for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a
 
       
       );},
-      1 => if let Some (snapshot) = stew.snapshot_before (& time) {snapshots.push (snapshot);},
-      2 => if !snapshots.is_empty() {let who = generator.gen_range (0, snapshots.len()); snapshots.remove (who);},
-      3 => if let Some (snapshot) = generator.choose (snapshots.as_slice()) { stew = Steward::from_snapshot::<Steward::Snapshot> (snapshot, settings.clone());},
+      1 => if let Some (snapshot) = stew.snapshot_before (& time) {printlnerr!("recorded snapshot"); snapshots.push (snapshot);},
+      2 => if !snapshots.is_empty() {printlnerr!("deleting_snapshot"); let who = generator.gen_range (0, snapshots.len()); snapshots.remove (who);},
+      3 => if let Some (snapshot) = generator.choose (snapshots.as_slice()) { printlnerr!("reloading from snapshot"); stew = Steward::from_snapshot::<Steward::Snapshot> (snapshot, settings.clone());},
       _ =>(),
     }
   }
