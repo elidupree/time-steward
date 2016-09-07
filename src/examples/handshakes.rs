@@ -116,7 +116,7 @@ pub fn testfunc() {
     use MomentaryAccessor;
     display_snapshot(&<Steward as ::TimeSteward<Basics>>::from_snapshot::<::FiatSnapshot<Basics>>(&deserialized, settings.clone()).snapshot_before(deserialized.now()).unwrap());
   }
-  panic!("anyway")
+  //panic!("anyway")
 }
 
 #[test]

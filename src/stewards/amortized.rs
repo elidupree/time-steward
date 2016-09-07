@@ -464,7 +464,7 @@ let fields = self.shared.fields.borrow();
     
     let field = fields.field_states.get (&FieldId::new (row_id, predictor.column_id)).expect ("why are we making a prediction if the field never exists");
     let next_change_index = match field.changes.binary_search_by_key (&time, | change | &change.last_change) {
-      Ok (index) => index + 1, Err (index) => index + 1};
+      Ok (index) => index + 1, Err (index) => index};
     let next_needed =
     if let Some (next_change) = field.changes.get (next_change_index) {
       if next_change.data.is_none() { 
