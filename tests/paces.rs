@@ -10,6 +10,19 @@ use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, Column, TimeS
 use std::marker::PhantomData;
 use rand::{Rng, SeedableRng, ChaChaRng};
 
+/*Tried to hunt an ICE, but failed
+trait Hack <B> {type Whatever;}
+use std::iter::{self, Empty};
+struct IntoIter; impl <'a> IntoIterator for & 'a IntoIter {type Item = i32; type IntoIter = Empty <i32>; fn into_iter(self)->Self::IntoIter {iter::empty()}}
+struct Original <B> {field: PhantomData <B>}
+impl <B> Hack <B> for Original <B> {type Whatever = IntoIter;}
+struct Wrapper <B, Inner: Hack <B>> {field: PhantomData <(B, Inner)>,}
+impl <B, Inner: Hack <B>> Hack <B> for Wrapper <B, Inner> {type Whatever = Inner::Whatever;}
+fn thingy <B, H: Hack <B>>() where for <'a> & 'a H::Whatever: IntoIterator <Item = i32> {}
+#[test]
+fn chunk() {thingy::<i32, Wrapper <i32, Wrapper <i32, Original<i32>>>>();}
+*/
+
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug, Default)]
 struct Basics;
 impl steward::Basics for Basics {
