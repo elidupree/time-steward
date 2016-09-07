@@ -868,6 +868,10 @@ impl<B: Basics> TimeSteward <B> for Steward<B> {
                 }], first_snapshot_not_updated: 0})
               })
               .collect();
+    for &(row_id, predictor_id) in predictions_needed.iter() {
+      result.owned.predictions_by_id.insert ((row_id, predictor_id), PredictionHistory {next_needed: last_event.clone(), predictions: Vec::new()});
+      result.owned.predictions_missing_by_time.entry (last_event.clone().unwrap()).or_insert (Default::default()).insert ((row_id, predictor_id));
+    }
     for (row_id, predictor_id) in predictions_needed {
       result.make_prediction(row_id, predictor_id, last_event.as_ref().unwrap());
     }
