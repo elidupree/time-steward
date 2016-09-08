@@ -209,7 +209,7 @@ impl <B: Basics> StewardEventsInfo <B> {
   }
   
 impl <B: Basics> StewardOwned <B> {
-  fn invalidate_prediction_dependency (&mut self, row_id: RowId, predictor_id: PredictorId, time: & ExtendedTime <B>) {
+  fn invalidate_prediction_dependency (&mut self, row_id: RowId, predictor_id: PredictorId, time: & ExtendedTime <B>, field_is_none_now: bool) {
 
             let mut remove = false;
             {
@@ -220,7 +220,7 @@ impl <B: Basics> StewardOwned <B> {
                 if event_time >time {self.events.unschedule_event (event_time).unwrap();}
               }
               
-              if prediction.made_at <= *time {
+              if prediction.made_at <= *time &&!field_is_none_now {
                 change_needed_prediction_time (row_id, predictor_id, &mut history, Some (time.clone()), &mut self.predictions_missing_by_time);
               }
               
@@ -243,7 +243,9 @@ impl <B: Basics> StewardOwned <B> {
                 history.predictions.push (prediction);
               }
             }
-            if let Some (next) = history.next_needed.clone() {if next >*time {history.next_needed = None;}}
+            if let Some (next) = history.next_needed.clone() {if next >*time || (field_is_none_now && next >=*time) {
+              change_needed_prediction_time (row_id, predictor_id, &mut history, None, &mut self.predictions_missing_by_time);
+            }}
             if history.predictions.is_empty() && history.next_needed.is_none() { remove = true; }
             }
             if remove {self.predictions_by_id.remove (& (row_id, predictor_id));}
@@ -261,11 +263,11 @@ impl <B: Basics> StewardOwned <B> {
       for (access_time, access_info) in bounded {
         match access_info {
           AccessInfo::EventAccess => invalidate_execution::<B> (&access_time, &mut self.events.event_states.get_mut (&access_time).expect ("event that accessed this field was missing").execution_state.as_mut().expect ("event that accessed this field not marked executed"), &mut self.events.events_needing_attention, &mut self.events.dependencies),
-          AccessInfo::PredictionAccess (row_id, predictor_id) => self.invalidate_prediction_dependency (row_id, predictor_id, time),
+          AccessInfo::PredictionAccess (row_id, predictor_id) => self.invalidate_prediction_dependency (row_id, predictor_id, time, false),
         }
       }
       for (row_id, predictor_id) in unbounded {
-        self.invalidate_prediction_dependency (row_id, predictor_id, time);
+        self.invalidate_prediction_dependency (row_id, predictor_id, time, false);
       }
     }
   }
@@ -274,6 +276,7 @@ impl <B: Basics> StewardOwned <B> {
     if index == history.changes.len() {return;}
     history.update_snapshots (id, snapshots);
     self.invalidate_dependencies (id, &history.changes [index].last_change);
+    let is_none_previously = history.changes.get (index.wrapping_sub (1)).map_or (true, | previous | previous.data.is_none());
     let mut discard_iter = history.changes.split_off (index).into_iter();
     if during_processing_of_event_responsible_for_first_discarded {discard_iter.next();}
     for discarded in discard_iter {
@@ -283,7 +286,7 @@ impl <B: Basics> StewardOwned <B> {
         if let Some (predictors) = shared.settings.predictors_by_column.get (&id.column_id) { 
           for predictor in predictors {
             if self.predictions_by_id. contains_key (&(id.row_id, predictor.predictor_id)) {
-              self.invalidate_prediction_dependency (id.row_id, predictor.predictor_id, & discarded.last_change);
+              self.invalidate_prediction_dependency (id.row_id, predictor.predictor_id, & discarded.last_change, is_none_previously);
             }
           }
         }
@@ -305,6 +308,15 @@ impl <B: Basics> StewardOwned <B> {
             } else {
               self.predictions_missing_by_time.entry (change.last_change.clone()).or_insert (Default::default()).insert ((id.row_id, predictor.predictor_id));
               prediction_history.next_needed = Some (change.last_change.clone());
+            }
+          }
+        }
+    }
+    if change.data.is_none() {
+        if let Some (predictors) = shared.settings.predictors_by_column.get (&id.column_id) { 
+          for predictor in predictors {
+            if self.predictions_by_id. contains_key (&(id.row_id, predictor.predictor_id)) {
+              self.invalidate_prediction_dependency (id.row_id, predictor.predictor_id, & change.last_change, true);
             }
           }
         }
@@ -575,7 +587,7 @@ impl <B: Basics> FieldHistory <B> {
       if *index <self.first_snapshot_not_updated {break;}
       snapshot_map.get_default(my_id, || {
         use std::cmp::Ordering;
-        let index = match self.changes.binary_search_by (| change | if change.last_change.base < *time {Ordering::Less} else {Ordering::Greater}) { Ok (_) => unreachable!(), Err (index) => index - 1};
+        let index = match self.changes.binary_search_by (| change | if change.last_change.base < *time {Ordering::Less} else {Ordering::Greater}) { Ok (_) => unreachable!(), Err (index) => index.wrapping_sub (1)};
         self.changes.get (index).and_then  (| change | change.data.as_ref().map (| data | (data.clone(), change.last_change.clone())))
       });
       self.first_snapshot_not_updated = index + 1;
