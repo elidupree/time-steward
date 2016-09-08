@@ -642,11 +642,11 @@ impl<B: Basics> Steward<B> {
   }
   fn make_prediction(&mut self, row_id: RowId, predictor_id: PredictorId, time: &ExtendedTime<B>) {
     let prediction;
-    {
-      let mut history = self.owned
+    let mut history = self.owned
         .predictions_by_id
         .get_mut(&(row_id, predictor_id))
         .expect(" prediction needed records are inconsistent");
+    {
       assert_eq!(history.next_needed, Some (time.clone()));
       let predictor = self.shared.settings.predictors_by_id.get(&predictor_id).unwrap().clone();
       let fields = self.shared.fields.borrow();
@@ -692,27 +692,12 @@ impl<B: Basics> Steward<B> {
         Ok(index) => index + 1,
         Err(index) => index,
       };
-      let next_needed = if let Some(next_change) = field.changes.get(next_change_index) {
-        if next_change.data.is_none() {
-          if let Some(current_end) = results.valid_until {
-            if next_change.last_change < current_end {
-              results.valid_until = Some(next_change.last_change.clone());
-            } else {
-              results.valid_until = Some(current_end);
-            }
-          } else {
-            results.valid_until = Some(next_change.last_change.clone());
-          }
-          if let Some(next_creation) = field.changes.get(next_change_index + 1) {
+      let next_needed = if let Some(&Field {data: None, last_change: ref next_change_time}) = field.changes.get(next_change_index) {
+          limit_option_by_value_with_none_representing_positive_infinity (&mut results.valid_until, &next_change_time);
+          field.changes.get(next_change_index + 1).map(|next_creation| {
             assert!(next_creation.data.is_some(), "there is no need to store multiple deletions in a row");
-
-            Some(next_creation.last_change.clone())
-          } else {
-            None
-          }
-        } else {
-          results.valid_until.clone()
-        }
+            next_creation.last_change.clone()
+          })
       } else {
         results.valid_until.clone()
       };
@@ -736,13 +721,7 @@ impl<B: Basics> Steward<B> {
         self.owned.events.schedule_event(event_time.clone(), event.clone()).unwrap();
       }
     }
-    self.owned
-      .predictions_by_id
-      .entry((row_id, predictor_id))
-      .or_insert(Default::default())
-      .predictions
-      .push(prediction);
-
+    history.predictions.push(prediction);
   }
 
   fn next_stuff(&self) -> (Option<ExtendedTime<B>>, Option<(ExtendedTime<B>, RowId, PredictorId)>) {
@@ -780,12 +759,7 @@ impl<B: Basics> Steward<B> {
 }
 
 impl<B: Basics> FieldHistory<B> {
-  fn update_snapshots(&mut self, my_id: FieldId, snapshots: &SnapshotsData<B>) {
-    for (index, &(ref time, ref snapshot_map)) in snapshots.iter().rev() {
-      if *index < self.first_snapshot_not_updated {
-        break;
-      }
-      snapshot_map.get_default(my_id, || {
+  fn previous_change_for_snapshot (&self, time: &B::Time)->Option <(FieldRc, ExtendedTime <B>)> {
         use std::cmp::Ordering;
         let index = match self.changes
           .binary_search_by(|change| if change.last_change.base < *time {
@@ -799,7 +773,15 @@ impl<B: Basics> FieldHistory<B> {
         self.changes.get(index).and_then(|change| {
           change.data.as_ref().map(|data| (data.clone(), change.last_change.clone()))
         })
-      });
+  }
+  fn update_snapshots(&mut self, my_id: FieldId, snapshots: &SnapshotsData<B>) {
+    for (index, &(ref time, ref snapshot_map)) in snapshots.iter().rev() {
+      if *index < self.first_snapshot_not_updated {
+        break;
+      }
+      snapshot_map.get_default(my_id, || self.previous_change_for_snapshot (time));
+    }
+    if let Some ((index,_)) = snapshots.iter().rev().next() {
       self.first_snapshot_not_updated = index + 1;
     }
   }
@@ -897,7 +879,6 @@ pub struct MutatorResults<B: Basics> {
   fields: insert_only::HashMap<FieldId, Field<B>>,
 }
 pub struct Mutator<'a, B: Basics> {
-  // steward: &'a mut StewardOwned<B>,
   shared: &'a StewardShared<B>,
   fields: &'a Fields<B>,
   generic: common::GenericMutator<B>,
@@ -1086,23 +1067,11 @@ impl<B: Basics> Fields<B> {
                       time: &B::Time,
                       index: SnapshotIdx)
                       -> Option<(FieldRc, ExtendedTime<B>)> {
-    use std::cmp::Ordering;
     self.field_states.get(&id).and_then(|history| {
       if history.first_snapshot_not_updated > index {
         return None;
       }
-      let index = match history.changes
-        .binary_search_by(|change| if change.last_change.base < *time {
-          Ordering::Less
-        } else {
-          Ordering::Greater
-        }) {
-        Ok(_) => unreachable!(),
-        Err(index) => index.wrapping_sub(1),
-      };
-      history.changes.get(index).and_then(|change| {
-        change.data.as_ref().map(|data| (data.clone(), change.last_change.clone()))
-      })
+      history.previous_change_for_snapshot (time)
     })
   }
 }
