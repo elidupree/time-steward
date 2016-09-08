@@ -99,6 +99,7 @@ pub fn testfunc() {
   let mut snapshots = Vec::new();
   for increment in 1..21 {
     snapshots.push(stew.snapshot_before(&(increment * 100i64)));
+    stew = ::TimeSteward::from_snapshot::<<Steward as ::TimeSteward<Basics>>::Snapshot> (snapshots.last().unwrap().as_ref().unwrap(), settings.clone());
   }
   for snapshot in snapshots.iter_mut().map(|option| {
     option.as_mut().expect("all these snapshots should have been valid")

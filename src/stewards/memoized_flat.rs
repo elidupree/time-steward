@@ -567,3 +567,15 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
     result
   }
 }
+
+impl<B: Basics> ::IncrementalTimeSteward<B> for Steward<B> {
+  fn step(&mut self) {
+    if let Some(ev) = self.next_event() {
+      let (event_time, event) = ev;
+      self.execute_event(event_time, event);
+    }
+  }
+  fn updated_until_before (&self)->Option <B::Time> {
+    self.next_event().map (| (time,_) | time.base)
+  }
+}

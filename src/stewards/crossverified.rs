@@ -5,7 +5,7 @@
 
 
 use {DeterministicRandomId, ColumnId, FieldId, PredictorId, Column, ExtendedTime, StewardRc,
-             Basics, FieldRc, TimeSteward, FiatEventOperationError, ValidSince, PredictorFn, TimeStewardSettings,ColumnList, ColumnListUser};
+             Basics, FieldRc, TimeSteward, IncrementalTimeSteward, FiatEventOperationError, ValidSince, PredictorFn, TimeStewardSettings,ColumnList, ColumnListUser};
 use std::collections::{HashMap};
 use std::cmp::max;
 use std::marker::PhantomData;
@@ -232,4 +232,34 @@ impl<B: Basics, C: ColumnList, Steward0: TimeSteward<B> , Steward1: TimeSteward<
     result
   }
 }
+
+
+impl<B: Basics, C: ColumnList, Steward0: IncrementalTimeSteward <B>, Steward1: IncrementalTimeSteward <B>> ::IncrementalTimeSteward<B> for Steward<B, C, Steward0, Steward1> {
+  fn step(&mut self) {
+    if self.0.updated_until_before() <self.1.updated_until_before() {
+      self.0.step();
+    } else {
+      self.1.step();
+    }
+  }
+  fn updated_until_before (&self)->Option <B::Time> {
+    match (self.0.updated_until_before(), self.1.updated_until_before()) {
+      (None, None) => None,
+      (Some (time_0), None) => {
+        Some (time_0)
+      },
+      (None, Some (time_1)) => {
+        Some (time_1)
+      },
+      (Some (time_0), Some (time_1)) => {
+        if time_0 <= time_1 {
+          Some (time_0)
+        } else {
+          Some (time_1)
+        }
+      },
+    }
+  }
+}
+
 

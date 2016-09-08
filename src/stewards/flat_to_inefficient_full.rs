@@ -98,3 +98,14 @@ where for <'a> & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a
   }
 }
 
+
+impl<B: Basics, Steward0: ::IncrementalTimeSteward <B>> ::IncrementalTimeSteward<B> for Steward<B, Steward0>
+where for <'a> & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>{
+  fn step(&mut self) {
+    self. steward.step();
+  }
+  fn updated_until_before (&self)->Option <B::Time> {
+    self. steward.updated_until_before()
+  }
+}
+

@@ -81,6 +81,14 @@ impl DeterministicRandomId {
   pub fn from_rng (rng: &mut ChaChaRng)->DeterministicRandomId {
     DeterministicRandomId {data: [rng.gen::<u64>(), rng.gen::<u64>()]}
   }
+  /// We XOR fiat event ids with unique random data so that TimeSteward impls
+  /// can trust them not to collide with other ids.
+  pub fn for_fiat_event_internal (&self)->DeterministicRandomId {
+    DeterministicRandomId {data: [
+      self.data [0] ^0xc1d40daaee67461d,
+      self.data [1] ^0xb23ce1f459edefff
+    ]}
+  }
   pub fn data (&self)->& [u64; 2] {& self.data}
 }
 impl fmt::Display for DeterministicRandomId {
@@ -170,7 +178,7 @@ macro_rules! time_steward_predictor {
     $name::<$($specific_parameters),*> {$($field_name: $field_value),*}
   }};
   ($B: ty, struct $name: ident {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $accessor_name: ident, $row_name: ident | $contents: expr) => {
-    time_steward_predictor! ($B, struct $name []=[] {$($field_name :$field_type = $field_value)*}, | & $self_name, $accessor_name, $row_name | $contents)
+    time_steward_predictor! ($B, struct $name []=[] {$($field_name :$field_type = $field_value),*}, | & $self_name, $accessor_name, $row_name | $contents)
   };
 }
 
@@ -187,7 +195,7 @@ macro_rules! time_steward_event {
     $name::<$($specific_parameters),*> {$($field_name: $field_value),*}
   }};
   ($B: ty, struct $name: ident {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $mutator_name: ident | $contents: expr) => {
-    time_steward_event! ($B, struct $name []=[] {$($field_name :$field_type = $field_value)*}, | & $self_name, $mutator_name | $contents)
+    time_steward_event! ($B, struct $name []=[] {$($field_name :$field_type = $field_value),*}, | & $self_name, $mutator_name | $contents)
   };
 
 }
@@ -522,11 +530,20 @@ pub enum FiatEventOperationError {
 // It is an acceptable peculiarity that even for integer times,
 // After(2) < Before(3).
 // #[derive (Copy, Clone, PartialEq, Eq, Hash)]
-#[derive (Clone, PartialEq, Eq)]
+#[derive (Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 pub enum ValidSince<BaseTime> {
   TheBeginning,
   Before(BaseTime),
   After(BaseTime),
+}
+impl <B: fmt::Display> fmt::Display for ValidSince <B> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    match self {
+      &ValidSince::TheBeginning => write!(f, "TheBeginning"),
+      &ValidSince::Before(ref something) => write!(f, "Before({})", something),
+      &ValidSince::After(ref something) => write!(f, "After({})", something),
+    }
+  }
 }
 
 impl<T: Ord> Ord for ValidSince<T> {
@@ -672,6 +689,11 @@ pub trait TimeSteward <B: Basics> {
   steward.snapshot_before(time) may not increase steward.valid_since() beyond Before(time).
   */
   fn snapshot_before(&mut self, time: &B::Time) -> Option<Self::Snapshot>;
+}
+
+pub trait IncrementalTimeSteward <B: Basics>: TimeSteward <B> {
+  fn step(&mut self);
+  fn updated_until_before (&self)->Option <B::Time>;
 }
 
 #[cfg (test)]

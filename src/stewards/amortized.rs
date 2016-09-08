@@ -26,6 +26,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::ops::Drop;
 use std::mem;
+use std::cmp::min;
 use rand::Rng;
 use insert_only;
 use data_structures::partially_persistent_nonindexed_set;
@@ -462,6 +463,18 @@ let fields = self.shared.fields.borrow();
     let (dependencies, hasher) = generic.dependencies.into_inner();
     let dependencies_hash = hasher.generate();
     
+    let what_will_happen =generic.soonest_prediction.and_then(|(event_base_time, event)| {
+          common::next_extended_time_of_predicted_event(predictor_id,
+                                                       row_id,
+                                                       dependencies_hash,
+                                                       event_base_time,
+                                                       time)
+            .map(|event_time| (event_time, event))});
+
+    if let Some((ref event_time, _)) = what_will_happen {
+      results.valid_until = results.valid_until.map_or (Some (event_time.clone()), | limit | Some (min (event_time.clone(), limit)));
+    }
+    
     let field = fields.field_states.get (&FieldId::new (row_id, predictor.column_id)).expect ("why are we making a prediction if the field never exists");
     let next_change_index = match field.changes.binary_search_by_key (&time, | change | &change.last_change) {
       Ok (index) => index + 1, Err (index) => index};
@@ -488,38 +501,39 @@ let fields = self.shared.fields.borrow();
     
     change_needed_prediction_time (row_id, predictor_id, &mut history, next_needed, &mut self.owned.predictions_missing_by_time);
     
-    
     prediction = Prediction {
       predictor_accessed: dependencies,
-      what_will_happen: generic.soonest_prediction.and_then(|(event_base_time, event)| {
-          common::next_extended_time_of_predicted_event(predictor_id,
-                                                       row_id,
-                                                       dependencies_hash,
-                                                       event_base_time,
-                                                       time)
-            .map(|event_time| (event_time, event))
-      }),
+      what_will_happen: what_will_happen,
       made_at: time.clone(), valid_until: results.valid_until,
     };
     }
     for dependency in prediction.predictor_accessed.iter() {
       let dependencies = self.owned.events.dependencies.entry (dependency.clone()).or_insert (Default::default());
-      match prediction.valid_until {Some (ref limit) => {dependencies.bounded.insert (limit.clone(),AccessInfo::PredictionAccess(row_id, predictor_id));}, None => {dependencies.unbounded.insert ((row_id, predictor_id));}};
+      match prediction.valid_until {
+        Some (ref limit) => {dependencies.bounded.insert (limit.clone(),AccessInfo::PredictionAccess(row_id, predictor_id));},
+        None => {dependencies.unbounded.insert ((row_id, predictor_id));},
+      };
     }
-    if let Some((ref time, ref event)) = prediction.what_will_happen {
-      self.owned.events.schedule_event (time.clone(), event.clone()).unwrap();
+    if let Some((ref event_time, ref event)) = prediction.what_will_happen {
+      if prediction.valid_until.as_ref().map_or (true, | limit | event_time <= limit) {
+        self.owned.events.schedule_event (event_time.clone(), event.clone()).unwrap();
+      }
     }
     self.owned.predictions_by_id.entry((row_id, predictor_id)).or_insert(Default::default()).predictions.push (prediction);
     
   }
   
-  fn do_next (&mut self)->Option <ExtendedTime <B>> {
+  fn next_stuff (&self)->(Option <ExtendedTime <B>>, Option <(ExtendedTime <B>, RowId, PredictorId)>) {
     let next_event = self.owned.events.events_needing_attention.iter().next().cloned();
     let next_prediction = self.owned.predictions_missing_by_time.iter().next(). map (| (time, set) | {
       let &(row_id, predictor_id) = set.iter().next().expect ("empty set of predictions should have been cleaned up");
       (time.clone(), row_id, predictor_id)
     });
-    match (next_event, next_prediction) {
+    (next_event, next_prediction)
+  }
+  
+  fn do_next (&mut self)->Option <ExtendedTime <B>> {
+    match self.next_stuff() {
       (None, None) => None,
       (Some (event_time), None) => {
         self.do_event (& event_time);
@@ -856,6 +870,7 @@ impl<B: Basics> TimeSteward <B> for Steward<B> {
                 } {
                   last_event = Some(stuff.1.clone());
                 }
+                result.owned.existent_fields.insert (id);
                 result.shared.settings.predictors_by_column.get(&id.column_id).map(|predictors| {
                   for predictor in predictors {
                     predictions_needed.insert((id.row_id, predictor.predictor_id));
@@ -930,5 +945,29 @@ impl<B: Basics> TimeSteward <B> for Steward<B> {
 
     self.owned.next_snapshot += 1;
     result
+  }
+}
+
+impl<B: Basics> ::IncrementalTimeSteward<B> for Steward<B> {
+  fn step(&mut self) {
+    self.do_next();
+  }
+  fn updated_until_before (&self)->Option <B::Time> {
+    match self.next_stuff() {
+      (None, None) => None,
+      (Some (event_time), None) => {
+        Some (event_time.base)
+      },
+      (None, Some ((prediction_time, _, _))) => {
+        Some (prediction_time.base)
+      },
+      (Some (event_time), Some ((prediction_time, _, _))) => {
+        if event_time <= prediction_time {
+          Some (event_time.base)
+        } else {
+          Some (prediction_time.base)
+        }
+      },
+    }
   }
 }

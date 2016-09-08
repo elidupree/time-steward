@@ -241,7 +241,7 @@ pub fn extended_time_of_fiat_event<BaseTime: Ord>(time: BaseTime,
   GenericExtendedTime {
     base: time,
     iteration: 0,
-    id: id,
+    id: id.for_fiat_event_internal(),
   }
 }
 
