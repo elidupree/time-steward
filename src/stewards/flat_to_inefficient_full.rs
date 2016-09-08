@@ -11,7 +11,7 @@ use std::collections::HashMap;
 pub struct Steward<B: Basics, Steward0: TimeSteward<B>> {
   steward: Steward0,
   invalid_before: ValidSince<B::Time>,
-  settings: Steward0::Settings,
+  #[allow (dead_code)] settings: Steward0::Settings,
   fiat_events: HashMap<DeterministicRandomId,
                        (B::Time, Box<Fn(&mut Steward0, B::Time, DeterministicRandomId)>)>,
   reset_to_original: Box <Fn ()->Steward0>,
@@ -94,7 +94,7 @@ impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0
     if self.fiat_events.contains_key(&id) {
       return Err(FiatEventOperationError::InvalidInput);
     }
-    let _ = self.steward.insert_fiat_event(time.clone(), id, event.clone());
+    self.steward.insert_fiat_event(time.clone(), id, event.clone()).unwrap();
     self.fiat_events.insert(id,
                             (time,
                              Box::new(move |steward, time, id| {
@@ -113,7 +113,7 @@ impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0
     if self.fiat_events.remove(&id).is_none() {
       return Err(FiatEventOperationError::InvalidInput);
     }
-    let _ = self.steward.erase_fiat_event(time, id);
+    self.steward.erase_fiat_event(time, id).unwrap();
     Ok(())
   }
 
