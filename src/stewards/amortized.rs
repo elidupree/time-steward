@@ -243,6 +243,7 @@ impl <B: Basics> StewardOwned <B> {
                 history.predictions.push (prediction);
               }
             }
+            if let Some (next) = history.next_needed.clone() {if next >*time {history.next_needed = None;}}
             if history.predictions.is_empty() && history.next_needed.is_none() { remove = true; }
             }
             if remove {self.predictions_by_id.remove (& (row_id, predictor_id));}
@@ -269,7 +270,7 @@ impl <B: Basics> StewardOwned <B> {
     }
   }
   
-  fn discard_changes (&mut self, id: FieldId, history: &mut FieldHistory <B>, index: usize, during_processing_of_event_responsible_for_first_discarded: bool, snapshots: &SnapshotsData <B>) {
+  fn discard_changes (&mut self, id: FieldId, history: &mut FieldHistory <B>, index: usize, during_processing_of_event_responsible_for_first_discarded: bool, snapshots: &SnapshotsData <B>, shared: & StewardShared <B>)   {
     if index == history.changes.len() {return;}
     history.update_snapshots (id, snapshots);
     self.invalidate_dependencies (id, &history.changes [index].last_change);
@@ -277,6 +278,16 @@ impl <B: Basics> StewardOwned <B> {
     if during_processing_of_event_responsible_for_first_discarded {discard_iter.next();}
     for discarded in discard_iter {
       invalidate_execution::<B> (& discarded.last_change, &mut self.events.event_states.get_mut (& discarded.last_change).expect ("event that created this change was missing").execution_state.as_mut().expect ("event that created this change not marked executed"), &mut self.events.events_needing_attention, &mut self.events.dependencies);
+      
+        // This check could be a bit less aggressive, but this is just the simplest
+        if let Some (predictors) = shared.settings.predictors_by_column.get (&id.column_id) { 
+          for predictor in predictors {
+            if self.predictions_by_id. contains_key (&(id.row_id, predictor.predictor_id)) {
+              self.invalidate_prediction_dependency (id.row_id, predictor.predictor_id, & discarded.last_change);
+            }
+          }
+        }
+
     }
   }
  
@@ -334,7 +345,7 @@ impl <B: Basics> Steward <B> {
           Ok (_) => panic!("there shouldn't be a change at this time is no event has been executed then"),
           Err (index) => {
             if !(field.data.is_none() && history.changes.get (index.wrapping_sub (1)).map_or (true, | previous | previous.data.is_none())) {
-              self.owned.discard_changes (id, &mut history, index, false, changed_since_snapshots);
+              self.owned.discard_changes (id, &mut history, index, false, changed_since_snapshots, & self.shared);
               self.owned.add_change (id, &mut history, field, changed_since_snapshots, & self.shared);
             }
           }
@@ -353,7 +364,7 @@ impl <B: Basics> Steward <B> {
         //some of these could have ALREADY been deleted –
         //in fact, perhaps that's how the event was invalidated in the first place
         if let Ok (index) = entry.get().changes.binary_search_by_key (&time, | change | &change.last_change) {
-          self.owned.discard_changes (id, entry.get_mut(), index, true, changed_since_snapshots);
+          self.owned.discard_changes (id, entry.get_mut(), index, true, changed_since_snapshots, & self.shared);
           if entry.get().changes.is_empty() {self.owned.existent_fields.remove (id); entry.remove();}
         }
       }
@@ -378,13 +389,13 @@ impl <B: Basics> Steward <B> {
           Ok (index) => {
             //TODO: be able to check field equality in general
             //if history.changes [index].data != field.data {
-              self.owned.discard_changes (id, &mut history, index, true, changed_since_snapshots);
+              self.owned.discard_changes (id, &mut history, index, true, changed_since_snapshots, & self.shared);
               self.owned.add_change (id, &mut history, field, changed_since_snapshots, & self.shared);
             //}
           }
           Err (index) => {
             if !(field.data.is_none() && history.changes.get (index.wrapping_sub (1)).map_or (true, | previous | previous.data.is_none())) {
-              self.owned.discard_changes (id, &mut history, index, false, changed_since_snapshots);
+              self.owned.discard_changes (id, &mut history, index, false, changed_since_snapshots, & self.shared);
               self.owned.add_change (id, &mut history, field, changed_since_snapshots, & self.shared);
             }
           }
@@ -397,7 +408,7 @@ impl <B: Basics> Steward <B> {
           //some of these could have ALREADY been deleted –
           //in fact, perhaps that's how the event was invalidated in the first place
           if let Ok (index) = entry.get().changes.binary_search_by_key (&time, | change | &change.last_change) {
-            self.owned.discard_changes (id, entry.get_mut(), index, true, changed_since_snapshots);
+            self.owned.discard_changes (id, entry.get_mut(), index, true, changed_since_snapshots, & self.shared);
             if entry.get().changes.is_empty() {self.owned.existent_fields.remove (id); entry.remove();}
           }
         }
@@ -439,8 +450,10 @@ impl <B: Basics> Steward <B> {
     let prediction;
     {
     let mut history = self.owned.predictions_by_id.get_mut (&(row_id, predictor_id)).expect (" prediction needed records are inconsistent");
+    assert_eq!(history.next_needed, Some (time.clone()));
     let predictor = self.shared.settings.predictors_by_id.get (&predictor_id).unwrap().clone();
-let fields = self.shared.fields.borrow();
+    let fields = self.shared.fields.borrow();
+    assert! ( fields.get (FieldId::new (row_id, predictor.column_id), time, true).is_some());
     let mut results;
     let generic;
     {
@@ -728,7 +741,15 @@ impl<'a, B: Basics> ::Accessor<B> for Mutator<'a, B> {
 }
 impl<'a, B: Basics> PredictorAccessor<'a, B> {
   fn get_impl(&self, id: FieldId) -> Option<(&FieldRc, &ExtendedTime<B>)> {
-    self.fields.get(id, & self.internal_now, true)
+    self.fields.get_and_next (id, & self.internal_now, true).map (| (result, next) | {
+      assert! (*result.1 <= self.internal_now);
+      if let Some(limit) = next {
+        assert!(*limit >self.internal_now);
+        let mut results = self.results.borrow_mut();
+        results.valid_until = results.valid_until.clone().map_or (Some (limit.clone()), | previous_limit | Some (min (limit.clone(), previous_limit.clone())));
+      }
+      result
+    })
   }
 }
 impl<'a, B: Basics> ::Accessor<B> for PredictorAccessor<'a, B> {
@@ -795,9 +816,12 @@ impl<'a, B: Basics> Rng for Mutator<'a, B> {
 
 impl<B: Basics> Fields<B> {
   fn get (& self, id: FieldId, time: & ExtendedTime <B>, after: bool) -> Option<(& FieldRc, &ExtendedTime<B>)> {
+    self.get_and_next(id, time, after).map (| whatever | whatever.0)
+  }
+  fn get_and_next (& self, id: FieldId, time: & ExtendedTime <B>, after: bool) -> Option<((& FieldRc, &ExtendedTime<B>),Option <& ExtendedTime <B>>)> {
     self.field_states.get (& id).and_then (| history | {
       let index = match history.changes.binary_search_by_key (&time, | change | &change.last_change) { Ok (index) => if after {index} else {index.wrapping_sub (1)}, Err (index) => index.wrapping_sub (1), };
-      history.changes.get (index).and_then (| change | change.data.as_ref().map (| data | (data, & change.last_change)))
+      history.changes.get (index).and_then (| change | change.data.as_ref().map (| data | ((data, & change.last_change), history.changes.get (index + 1).map (| result | &result.last_change))))
     })
   }
   fn get_for_snapshot (& self, id: FieldId, time: &B::Time, index: SnapshotIdx) -> Option<(FieldRc, ExtendedTime<B>)> {
