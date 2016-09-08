@@ -81,11 +81,13 @@ impl DeterministicRandomId {
   pub fn from_rng(rng: &mut ChaChaRng) -> DeterministicRandomId {
     DeterministicRandomId { data: [rng.gen::<u64>(), rng.gen::<u64>()] }
   }
-  /// We XOR fiat event ids with unique random data so that TimeSteward impls
+  /// We combine fiat event ids with unique random data so that TimeSteward impls
   /// can trust them not to collide with other ids.
+  /// We use + instead of XOR so that this won't fail if the user accidentally
+  /// or maliciously calls this BEFORE passing the ids in, too.
   pub fn for_fiat_event_internal(&self) -> DeterministicRandomId {
     DeterministicRandomId {
-      data: [self.data[0] ^ 0xc1d40daaee67461d, self.data[1] ^ 0xb23ce1f459edefff],
+      data: [self.data[0].wrapping_add (0xc1d40daaee67461d), self.data[1].wrapping_add (0xb23ce1f459edefff)],
     }
   }
   pub fn data(&self) -> &[u64; 2] {

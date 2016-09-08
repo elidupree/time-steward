@@ -14,7 +14,7 @@
 //!
 
 use {DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, Column, StewardRc,
-     FieldRc, ExtendedTime, Basics, Accessor, FiatEventOperationError, ValidSince, TimeSteward};
+     FieldRc, ExtendedTime, Basics, Accessor, FiatEventOperationError, ValidSince, TimeSteward, IncrementalTimeSteward};
 use stewards::common::{self, Filter};
 use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet, btree_map};
 use std::collections::hash_map::Entry;
@@ -1129,8 +1129,9 @@ impl<B: Basics> Fields<B> {
 }
 impl<B: Basics> Steward<B> {
   fn update_until_beginning_of(&mut self, target_time: &B::Time) {
-    // TODO: this goes one step too far. Is that a problem?
-    while let Some(_) = self.do_next().filter(|time| time.base < *target_time) {}
+    while self.updated_until_before().map_or (false, | time | time < *target_time) {
+      self.do_next();
+    }
   }
 }
 
@@ -1277,7 +1278,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
   }
 }
 
-impl<B: Basics> ::IncrementalTimeSteward<B> for Steward<B> {
+impl<B: Basics> IncrementalTimeSteward<B> for Steward<B> {
   fn step(&mut self) {
     self.do_next();
   }

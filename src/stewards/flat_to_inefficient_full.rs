@@ -18,6 +18,27 @@ pub struct Steward<B: Basics, Steward0: TimeSteward<B>> {
   snapshots: Vec<Steward0::Snapshot>,
 }
 
+impl<B: Basics, Steward0: TimeSteward <B>> Steward<B, Steward0> {
+  fn reset_if_needed (&mut self, time: & B::Time) {
+    if self.steward.valid_since() > *time {
+      //println!("whoops");
+      while self.snapshots.last().map_or(false, |snapshot| snapshot.now() > time) {
+        self.snapshots.pop();
+      }
+      self.steward = //match self.snapshots.last() {
+        //None =>
+          (self.reset_to_original) ()
+        //,
+        //Some (snapshot) => TimeSteward::from_snapshot::<Self::Snapshot> (snapshot, self.settings.clone()),
+      //}
+      ;
+      for (id, &(ref time, ref insert_event)) in self.fiat_events.iter() {
+        insert_event(&mut self.steward, time.clone(), id.clone());
+      }
+    }
+  }
+}
+
 
 impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0> {
   type Snapshot = Steward0::Snapshot;
@@ -69,6 +90,7 @@ impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0
     if self.valid_since() > time {
       return Err(FiatEventOperationError::InvalidTime);
     }
+    self.reset_if_needed(& time);
     if self.fiat_events.contains_key(&id) {
       return Err(FiatEventOperationError::InvalidInput);
     }
@@ -87,6 +109,7 @@ impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0
     if self.valid_since() > *time {
       return Err(FiatEventOperationError::InvalidTime);
     }
+    self.reset_if_needed(time);
     if self.fiat_events.remove(&id).is_none() {
       return Err(FiatEventOperationError::InvalidInput);
     }
@@ -98,23 +121,8 @@ impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0
     if self.valid_since() > *time {
       return None;
     }
-    //printlnerr!("snapshot?");
-    if self.steward.valid_since() > *time {
-      //printlnerr!("whoops");
-      while self.snapshots.last().map_or(false, |snapshot| snapshot.now() > time) {
-        self.snapshots.pop();
-      }
-      self.steward = //match self.snapshots.last() {
-        //None =>
-          (self.reset_to_original) ()
-        //,
-        //Some (snapshot) => TimeSteward::from_snapshot::<Self::Snapshot> (snapshot, self.settings.clone()),
-      //}
-      ;
-      for (id, &(ref time, ref insert_event)) in self.fiat_events.iter() {
-        insert_event(&mut self.steward, time.clone(), id.clone());
-      }
-    }
+    //println!("snapshot?");
+    self.reset_if_needed(time);
     self.snapshots.push(self.steward
       .snapshot_before(time)
       .expect("reloading from an earlier snapshot was supposed to make this work!"));
@@ -126,9 +134,9 @@ impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0
 impl<B: Basics, Steward0: ::IncrementalTimeSteward <B>> ::IncrementalTimeSteward<B> for Steward<B, Steward0>
 where for <'a> & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>{
   fn step(&mut self) {
-    self. steward.step();
+    self.steward.step();
   }
   fn updated_until_before (&self)->Option <B::Time> {
-    self. steward.updated_until_before()
+    self.steward.updated_until_before()
   }
 }

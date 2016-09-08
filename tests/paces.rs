@@ -115,7 +115,7 @@ for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a
         println!("stepping"); 
         stew.step();
         //println!(" ValidSince: {:?}\n    Present: {:?} ", stew.valid_since(), stew.updated_until_before ());
-        //if let Some (limit) = stew.updated_until_before () {if let Some (snapshot) = stew.snapshot_before (& limit) {println!("checking snapshot at {:?}", snapshot.now()); (&snapshot).into_iter().count();}}
+        //use steward::MomentaryAccessor; if let Some (limit) = stew.updated_until_before () {if let Some (snapshot) = stew.snapshot_before (& limit) {println!("checking snapshot at {:?}", snapshot.now()); (&snapshot).into_iter().count();}}
         
       },
       //_ => ()
