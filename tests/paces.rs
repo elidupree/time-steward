@@ -6,7 +6,7 @@ extern crate time_steward as steward;
 extern crate rand;
 extern crate serde;
 
-use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, Column, TimeStewardSettings, MomentaryAccessor};
+use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, Column, TimeStewardSettings};
 use std::marker::PhantomData;
 use rand::{Rng, SeedableRng, ChaChaRng};
 
@@ -59,7 +59,7 @@ for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a
         let data_1 = DeterministicRandomId::new (& (index, whatever, id, "something different"));
         accessor.predict_at_time (data_0, time_steward_event! (Basics, struct Event {id: RowId = id, data: DeterministicRandomId = data_1}, | &self, mutator | {
           if mutator.extended_now().iteration >10 {
-            printlnerr!("Help! Loop!");
+            println!("Help! Loop!");
             mutator.set:: <ColumnHack> (self.id, None);
             return;
           }
@@ -82,10 +82,10 @@ for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a
   
   fn display_snapshot <S: steward::Snapshot <Basics>> (snapshot: & S)->(usize, DeterministicRandomId) {(snapshot.num_fields(), snapshot.now().clone())}
   
-  for index in 0..1000000 {
+  for index in 0..10000 {
     let time = RowId::new (& generator.gen::<u64>());
     let choice = generator.gen_range::<u64> (0, 16);
-    //printlnerr!(" Index: {:?}\n Time: {:?}\n ValidSince: {:?}\n    Present: {:?}\n Choice: {:?}\n\n ", index, time, stew.valid_since(), stew.updated_until_before (), choice);
+    //println!(" Index: {:?}\n Time: {:?}\n ValidSince: {:?}\n    Present: {:?}\n Choice: {:?}\n\n ", index, time, stew.valid_since(), stew.updated_until_before (), choice);
     /*for snapshot in snapshots.iter() {
       snapshot.into_iter().count();
       if let Some (snapshot2) = Steward::from_snapshot::<Steward::Snapshot> (snapshot, settings.clone()).snapshot_before (& snapshot.now()) {
@@ -93,7 +93,7 @@ for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a
       }
     }*/
     match choice {
-      0 => { printlnerr!("inserting fiat event"); stew.insert_fiat_event (time, RowId::new (& index),
+      0 => { println!("inserting fiat event"); stew.insert_fiat_event (time, RowId::new (& index),
       
       time_steward_event! (Basics, struct Event {}, | &self, mutator | {
         let who =RowId::new (& mutator.gen::<u8>());
@@ -106,14 +106,16 @@ for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a
 
       
       );},
-      1 => if let Some (limit) = stew.updated_until_before () {if let Some (snapshot) = stew.snapshot_before (& limit) {printlnerr!("recording snapshot {:?}", display_snapshot::<Steward::Snapshot> (&snapshot)); (&snapshot).into_iter().count(); snapshots.push (snapshot);}},
-      2 => if snapshots.len() >30 {printlnerr!("deleting snapshot"); let who = generator.gen_range (0, snapshots.len()); snapshots.remove (who);},
-      3 => if let Some (snapshot) = generator.choose (snapshots.as_slice()) { printlnerr!("reloading from snapshot {:?}", display_snapshot::<Steward::Snapshot> (&snapshot)); stew = Steward::from_snapshot::<Steward::Snapshot> (snapshot, settings.clone());},
+      1 => if let Some (limit) = stew.updated_until_before () {if let Some (snapshot) = stew.snapshot_before (& limit) {println!("recording snapshot {:?}", display_snapshot::<Steward::Snapshot> (&snapshot)); 
+      //(&snapshot).into_iter().count();
+      snapshots.push (snapshot);}},
+      //2 => if snapshots.len() >30 {println!("deleting snapshot"); let who = generator.gen_range (0, snapshots.len()); snapshots.remove (who);},
+      3 => if let Some (snapshot) = generator.choose (snapshots.as_slice()) { println!("reloading from snapshot {:?}", display_snapshot::<Steward::Snapshot> (&snapshot)); stew = Steward::from_snapshot::<Steward::Snapshot> (snapshot, settings.clone());},
       _ => {
-        printlnerr!("stepping"); 
+        println!("stepping"); 
         stew.step();
-        //printlnerr!(" ValidSince: {:?}\n    Present: {:?} ", stew.valid_since(), stew.updated_until_before ());
-        if let Some (limit) = stew.updated_until_before () {if let Some (snapshot) = stew.snapshot_before (& limit) {printlnerr!("checking snapshot at {:?}", snapshot.now()); (&snapshot).into_iter().count();}}
+        //println!(" ValidSince: {:?}\n    Present: {:?} ", stew.valid_since(), stew.updated_until_before ());
+        //if let Some (limit) = stew.updated_until_before () {if let Some (snapshot) = stew.snapshot_before (& limit) {println!("checking snapshot at {:?}", snapshot.now()); (&snapshot).into_iter().count();}}
         
       },
       //_ => ()

@@ -161,6 +161,26 @@ fn limit_option_by_value_with_none_representing_positive_infinity <B: Ord + Clon
   }
 }
 
+fn split_off_greater <K: Ord + Clone, V> (input: &mut BTreeMap<K, V>, split: & K)->BTreeMap<K, V> {
+      // BTreeMap::split_off() DOES remove this splitting key, while we want to NOT include that key.
+      // TODO: will Rust eventually make this easier?
+      let mut result = input.split_off(split);
+      if let Some(whoops) = result.remove(split) {
+        input.insert(split.clone(), whoops);
+      }
+      result
+}
+
+fn split_off_greater_set <K: Ord + Clone> (input: &mut BTreeSet <K>, split: & K)->BTreeSet <K> {
+      // BTreeMap::split_off() DOES remove this splitting key, while we want to NOT include that key.
+      // TODO: will Rust eventually make this easier?
+      let mut result = input.split_off(split);
+      if result.remove(split) {
+        input.insert(split.clone());
+      }
+      result
+}
+
 fn invalidate_execution<B: Basics>(time: &ExtendedTime<B>,
                                    execution: &mut EventExecutionState,
                                    events_needing_attention: &mut BTreeSet<ExtendedTime<B>>,
@@ -172,7 +192,7 @@ fn invalidate_execution<B: Basics>(time: &ExtendedTime<B>,
       match steward_dependencies.entry(dependency) {
         Entry::Vacant(_) => panic!("dependency records are inconsistent"),
         Entry::Occupied(mut entry) => {
-          entry.get_mut().bounded.remove(time);
+          entry.get_mut().events.remove(time);
           if entry.get().is_empty() {
             entry.remove();
           }
@@ -237,11 +257,10 @@ impl<B: Basics> StewardEventsInfo<B> {
       let dependencies = self.dependencies.entry(dependency.clone()).or_insert(Default::default());
       match prediction.valid_until {
         Some(ref limit) => {
-          dependencies.bounded.insert(limit.clone(),
-                                      AccessInfo::PredictionAccess(row_id, predictor_id));
+          assert!(dependencies.bounded_predictions.entry (limit.clone()).or_insert (Default::default()).insert((row_id, predictor_id)), "duplicate bounded dependency");
         }
         None => {
-          dependencies.unbounded.insert((row_id, predictor_id));
+          assert!(dependencies.unbounded_predictions.insert((row_id, predictor_id)), "duplicate unbounded dependency");
         }
       };
     }
@@ -250,17 +269,27 @@ impl<B: Basics> StewardEventsInfo<B> {
   fn unrecord_prediction_dependencies(&mut self,
                                       row_id: RowId,
                                       predictor_id: PredictorId,
+                                      already_dealt_with: Option <FieldId>,
                                       prediction: &Prediction<B>) {
     for dependency in prediction.predictor_accessed.iter() {
+      if Some (*dependency) == already_dealt_with {continue;}
       match self.dependencies.entry(dependency.clone()) {
         Entry::Vacant(_) => panic!("dependency records are inconsistent"),
         Entry::Occupied(mut entry) => {
           match prediction.valid_until {
             Some(ref limit) => {
-              entry.get_mut().bounded.remove(limit);
+              match entry.get_mut().bounded_predictions.entry (limit.clone()){
+                btree_map::Entry::Vacant(_) => panic!("missing bounded dependency set"),
+                btree_map::Entry::Occupied(mut inner_entry) => {
+                  assert!(inner_entry.get_mut().remove (& (row_id, predictor_id)), "missing bounded dependency");
+                  if inner_entry.get().is_empty() {
+                    inner_entry.remove();
+                  }
+                }
+              }
             }
             None => {
-              entry.get_mut().unbounded.remove(&(row_id, predictor_id));
+              assert!(entry.get_mut().unbounded_predictions.remove(&(row_id, predictor_id)), "missing unbounded dependency");
             }
           };
           if entry.get().is_empty() {
@@ -278,15 +307,15 @@ fn change_needed_prediction_time <B: Basics> (row_id: RowId, predictor_id: Predi
       btree_map::Entry::Vacant(_) => panic!("prediction needed records are inconsistent"),
       btree_map::Entry::Occupied(entry) => entry,
     };
-    entry.get_mut().remove(&(row_id, predictor_id));
+    assert!(entry.get_mut().remove(&(row_id, predictor_id)), "missing record in predictions_missing by time");
     if entry.get().is_empty() {
       entry.remove();
     }
   }
   if let Some(new) = history.next_needed.clone() {
-    predictions_missing_by_time.entry(new)
+    assert!(predictions_missing_by_time.entry(new)
       .or_insert(Default::default())
-      .insert((row_id, predictor_id));
+      .insert((row_id, predictor_id)), "attempting to make duplicate record in predictions missing by time");
   }
 }
 
@@ -294,6 +323,7 @@ impl<B: Basics> StewardOwned<B> {
   fn invalidate_prediction_dependency(&mut self,
                                       row_id: RowId,
                                       predictor_id: PredictorId,
+                                      already_dealt_with: Option <FieldId>,
                                       time: &ExtendedTime<B>,
                                       field_is_none_now: bool) {
 
@@ -303,10 +333,9 @@ impl<B: Basics> StewardOwned<B> {
         .get_mut(&(row_id, predictor_id))
         .expect("access records are inconsistent");
       while let Some(mut prediction) = history.predictions.pop() {
-        if let Some(ref limit) = prediction.valid_until {
-          if limit <= time {
-            break;
-          }
+        if prediction.valid_until.as_ref().map_or (false, | limit | limit <= time) {
+          history.predictions.push(prediction);
+          break;
         }
         if let Some((ref event_time, _)) = prediction.what_will_happen {
           if event_time > time {
@@ -322,7 +351,7 @@ impl<B: Basics> StewardOwned<B> {
                                         &mut self.predictions_missing_by_time);
         }
 
-        self.events.unrecord_prediction_dependencies(row_id, predictor_id, &prediction);
+        self.events.unrecord_prediction_dependencies(row_id, predictor_id, already_dealt_with, &prediction);
 
         if prediction.made_at < *time {
           prediction.valid_until = Some(time.clone());
@@ -351,25 +380,19 @@ impl<B: Basics> StewardOwned<B> {
     let invalid_dependencies_option = if let Entry::Occupied(mut my_dependencies) = self.events
       .dependencies
       .entry(id) {
-      // BTreeMap::split_off() DOES remove this splitting key, while we want to NOT include that key.
-      // TODO: will Rust eventually make this easier?
-      let mut result = (my_dependencies.get_mut().bounded.split_off(time),
-                        mem::replace(&mut my_dependencies.get_mut().unbounded, Default::default()));
-      if let Some(whoops) = result.0.remove(time) {
-        my_dependencies.get_mut().bounded.insert(time.clone(), whoops);
-      }
+      let result = Some ((split_off_greater_set (&mut my_dependencies.get_mut().events, time),
+                        split_off_greater (&mut my_dependencies.get_mut().bounded_predictions, time),
+                        mem::replace(&mut my_dependencies.get_mut().unbounded_predictions, Default::default())));
       if my_dependencies.get().is_empty() {
         my_dependencies.remove();
       }
-      Some(result)
+      result
     } else {
       None
     };
-    if let Some((bounded, unbounded)) = invalid_dependencies_option {
-      for (access_time, access_info) in bounded {
-        match access_info {
-          AccessInfo::EventAccess => {
-            invalidate_execution::<B>(&access_time,
+    if let Some((events, bounded, unbounded)) = invalid_dependencies_option {
+      for access_time in events {
+        invalidate_execution::<B>(&access_time,
                                       &mut self.events
                                         .event_states
                                         .get_mut(&access_time)
@@ -380,14 +403,14 @@ impl<B: Basics> StewardOwned<B> {
                                                  executed"),
                                       &mut self.events.events_needing_attention,
                                       &mut self.events.dependencies)
-          }
-          AccessInfo::PredictionAccess(row_id, predictor_id) => {
-            self.invalidate_prediction_dependency(row_id, predictor_id, time, false)
-          }
+      }
+      for (_, list) in bounded {
+        for (row_id, predictor_id) in list {
+          self.invalidate_prediction_dependency(row_id, predictor_id, Some (id), time, false);
         }
       }
       for (row_id, predictor_id) in unbounded {
-        self.invalidate_prediction_dependency(row_id, predictor_id, time, false);
+        self.invalidate_prediction_dependency(row_id, predictor_id, Some (id), time, false);
       }
     }
   }
@@ -406,6 +429,22 @@ impl<B: Basics> StewardOwned<B> {
     self.invalidate_dependencies(id, &history.changes[index].last_change);
     let is_none_previously =
       history.changes.get(index.wrapping_sub(1)).map_or(true, |previous| previous.data.is_none());
+      
+      
+
+      // This check could be a bit less aggressive, but this is just the simplest
+      if let Some(predictors) = shared.settings.predictors_by_column.get(&id.column_id) {
+        for predictor in predictors {
+          if self.predictions_by_id.contains_key(&(id.row_id, predictor.predictor_id)) {
+            self.invalidate_prediction_dependency(id.row_id,
+                                                  predictor.predictor_id,
+                                                  None,
+                                                  &history.changes[index].last_change,
+                                                  is_none_previously);
+          }
+        }
+      }
+
     let mut discard_iter = history.changes.split_off(index).into_iter();
     if during_processing_of_event_responsible_for_first_discarded {
       discard_iter.next();
@@ -421,19 +460,6 @@ impl<B: Basics> StewardOwned<B> {
                                   .expect("event that created this change not marked executed"),
                                 &mut self.events.events_needing_attention,
                                 &mut self.events.dependencies);
-
-      // This check could be a bit less aggressive, but this is just the simplest
-      if let Some(predictors) = shared.settings.predictors_by_column.get(&id.column_id) {
-        for predictor in predictors {
-          if self.predictions_by_id.contains_key(&(id.row_id, predictor.predictor_id)) {
-            self.invalidate_prediction_dependency(id.row_id,
-                                                  predictor.predictor_id,
-                                                  &discarded.last_change,
-                                                  is_none_previously);
-          }
-        }
-      }
-
     }
   }
 
@@ -471,6 +497,7 @@ impl<B: Basics> StewardOwned<B> {
           if self.predictions_by_id.contains_key(&(id.row_id, predictor.predictor_id)) {
             self.invalidate_prediction_dependency(id.row_id,
                                                   predictor.predictor_id,
+                                                  None,
                                                   &change.last_change,
                                                   true);
           }
@@ -516,8 +543,8 @@ impl<B: Basics> StewardOwned<B> {
       .dependencies
       .entry(id)
       .or_insert(Default::default())
-      .bounded
-      .insert(time.clone(), AccessInfo::EventAccess);
+      .events
+      .insert(time.clone());
     if field.last_change == *time {
       new_fields_changed.insert(id);
       // TODO: handle erasing a non-existent field properly
@@ -816,11 +843,11 @@ struct Field<B: Basics> {
 }
 type SnapshotField<B: Basics> = (FieldRc, ExtendedTime<B>);
 
-#[derive (Clone)]
-enum AccessInfo {
-  EventAccess,
-  PredictionAccess(RowId, PredictorId),
-}
+//#[derive (Clone)]
+//enum AccessInfo {
+//  EventAccess,
+//  PredictionAccess(RowId, PredictorId),
+//}
 struct FieldHistory<B: Basics> {
   changes: Vec<Field<B>>,
   first_snapshot_not_updated: SnapshotIdx,
@@ -837,12 +864,13 @@ struct Fields<B: Basics> {
 
 #[derive (Default)]
 struct Dependencies<B: Basics> {
-  bounded: BTreeMap<ExtendedTime<B>, AccessInfo>,
-  unbounded: HashSet<(RowId, PredictorId)>,
+  events: BTreeSet <ExtendedTime<B>>,
+  bounded_predictions: BTreeMap<ExtendedTime<B>, HashSet<(RowId, PredictorId)>>,
+  unbounded_predictions: HashSet<(RowId, PredictorId)>,
 }
 impl<B: Basics> Dependencies<B> {
   fn is_empty(&self) -> bool {
-    self.bounded.is_empty() && self.unbounded.is_empty()
+    self.events.is_empty() && self.bounded_predictions.is_empty() && self.unbounded_predictions.is_empty()
   }
 }
 type DependenciesMap<B: Basics> = HashMap<FieldId, Dependencies<B>>;

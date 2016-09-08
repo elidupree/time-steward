@@ -4,7 +4,7 @@
 //!
 
 
-use {DeterministicRandomId, Basics, TimeSteward, FiatEventOperationError, ValidSince, Accessor,
+use {DeterministicRandomId, Basics, TimeSteward, FiatEventOperationError, ValidSince,
      MomentaryAccessor, FiatSnapshot};
 use std::collections::HashMap;
 
