@@ -6,7 +6,7 @@ pub mod partially_persistent_nonindexed_set {
   use std::mem;
   use std::cell::UnsafeCell;
   use std::fmt::Debug;
-  
+
   macro_rules! printlnerr(
     ($($arg:tt)*) => { {use std::io::Write;
         let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
@@ -50,8 +50,8 @@ pub mod partially_persistent_nonindexed_set {
   pub struct Set<K: Clone + Eq + Hash> {
     live_buffer: Buffer<K>,
     next_buffer: Buffer<K>,
-    live_members: HashSet <K>,
-    next_members: HashSet <K>,
+    live_members: HashSet<K>,
+    next_members: HashSet<K>,
     next_transfer_index: usize,
     potential_next_buffer_usage: usize,
   }
@@ -106,7 +106,7 @@ pub mod partially_persistent_nonindexed_set {
         },
         live_members: HashSet::new(),
         next_members: HashSet::with_capacity(2),
-        
+
         next_transfer_index: 0,
         potential_next_buffer_usage: 0,
       }
@@ -117,7 +117,7 @@ pub mod partially_persistent_nonindexed_set {
     /// Complexity: O(1) expected worst-case if K does not implement Drop, O(1) expected amortized otherwise.
     pub fn insert(&mut self, key: K) {
       self.make_room();
-      if self.live_members.insert (key.clone()) {
+      if self.live_members.insert(key.clone()) {
         let live_data = unsafe { self.live_buffer.data.get().as_mut().unwrap() };
         live_data.data.push(Entry {
           key: key,
@@ -133,14 +133,14 @@ pub mod partially_persistent_nonindexed_set {
     pub fn remove(&mut self, key: K) {
       self.make_room();
 
-      if self.live_members.remove (&key) {
+      if self.live_members.remove(&key) {
         let live_data = unsafe { self.live_buffer.data.get().as_mut().unwrap() };
         self.live_buffer.deletions += 1;
         live_data.data.push(Entry {
           key: key.clone(),
           insertion: false,
         });
-        if self.next_members.remove (&key) {
+        if self.next_members.remove(&key) {
           let next_data = unsafe { self.next_buffer.data.get().as_mut().unwrap() };
           self.next_buffer.deletions += 1;
           next_data.data.push(Entry {
@@ -222,15 +222,13 @@ pub mod partially_persistent_nonindexed_set {
       let current_insertions = live_data.data.len() - self.live_buffer.deletions;
       // let tolerable_deletions = (current_insertions*5)/12;
       // let deletions_before_reset_needed = tolerable_deletions - self.live_buffer.deletions;
-      let deletions_before_reset_needed = (current_insertions + 7 - self.live_buffer.deletions -
-                                           6 * self.next_buffer.deletions) /
-                                          7;
+      let deletions_before_reset_needed =
+        (current_insertions + 7 - self.live_buffer.deletions - 6 * self.next_buffer.deletions) / 7;
       let operations_before_reset_possibly_needed = min(buffer_pushes_before_reset_needed,
                                                         deletions_before_reset_needed);
       assert!(self.next_transfer_index <= live_data.data.len());
-      let transfer_steps_needed_before_reset_possible = live_data.data.len() +
-                                                        operations_before_reset_possibly_needed -
-                                                        self.next_transfer_index;
+      let transfer_steps_needed_before_reset_possible =
+        live_data.data.len() + operations_before_reset_possibly_needed - self.next_transfer_index;
       // println!("NEEDED {:?} \n OPERATIONS: {:?}\n (buffer pushes): {:?}\n (deletions): {} {} ",
       // transfer_steps_needed_before_reset_possible,
       // operations_before_reset_possibly_needed,
@@ -245,7 +243,7 @@ pub mod partially_persistent_nonindexed_set {
           if let Some(entry) = live_data.data.get(self.next_transfer_index) {
             if entry.insertion && self.live_members.contains(&entry.key) {
               next_data.data.push((*entry).clone());
-              self.next_members.insert (entry.key.clone());
+              self.next_members.insert(entry.key.clone());
             }
             self.next_transfer_index += 1;
           } else {
@@ -263,14 +261,12 @@ pub mod partially_persistent_nonindexed_set {
         self.next_transfer_index = 0;
         self.potential_next_buffer_usage = next_data.data.len() - self.next_buffer.deletions;
         mem::swap(&mut self.live_buffer, &mut self.next_buffer);
-        mem::swap (&mut self.live_members, &mut self.next_members);
+        mem::swap(&mut self.live_members, &mut self.next_members);
         let next_capacity = (self.potential_next_buffer_usage + 1) * 4;
         // danger: after we overwrite self.next_buffer, we may have deallocated
         // the memory for live_data
         self.next_buffer = Buffer {
-          data: Arc::new(UnsafeCell::new(BufferInner {
-            data: Vec::with_capacity(next_capacity),
-          })),
+          data: Arc::new(UnsafeCell::new(BufferInner { data: Vec::with_capacity(next_capacity) })),
           deletions: 0,
         };
         self.next_members = HashSet::with_capacity(next_capacity);
@@ -285,13 +281,13 @@ pub mod partially_persistent_nonindexed_set {
       }
     }
   }
-#[cfg (test)]
+  #[cfg (test)]
   mod tests {
     use super::*;
     use std::collections::HashSet;
     use std::thread;
     use std::sync::mpsc::channel;
-    
+
     type Key = u8;
     fn test_operation_sequence(operations: Vec<(Key, bool)>) -> bool {
       let mut existences: HashSet<Key> = HashSet::new();
@@ -306,47 +302,47 @@ pub mod partially_persistent_nonindexed_set {
         }
       });
       for operation in operations {
-          if operation.1 {
-            existences.insert(operation.0);
-            set.insert(operation.0);
-          } else {
-            existences.remove(&operation.0);
-            set.remove(operation.0);
-          }
-          let checker = existences.clone();
-          let snapshot = set.snapshot();
+        if operation.1 {
+          existences.insert(operation.0);
+          set.insert(operation.0);
+        } else {
+          existences.remove(&operation.0);
+          set.remove(operation.0);
+        }
+        let checker = existences.clone();
+        let snapshot = set.snapshot();
 
-          send_snapshot.send(Some((snapshot, checker))).unwrap();
-          if !receive_results.recv().unwrap() {
-            send_snapshot.send(None).unwrap();
-            check_thread.join().unwrap();
-            return false;
-          }
+        send_snapshot.send(Some((snapshot, checker))).unwrap();
+        if !receive_results.recv().unwrap() {
+          send_snapshot.send(None).unwrap();
+          check_thread.join().unwrap();
+          return false;
+        }
       }
       send_snapshot.send(None).unwrap();
       check_thread.join().unwrap();
       true
     }
-    
+
     quickcheck! {
       fn operation_sequences_work(operations: Vec<(Key, bool)>) -> bool {
         test_operation_sequence(operations)
       }
     }
-    
+
     #[test]
     fn many_insertions() {
       test_operation_sequence((0..255).map(|number| (number, true)).collect());
     }
-    
+
     #[test]
     fn many_insertions_and_deletions() {
       test_operation_sequence((0..100)
-                                .map(|number| (number, true))
-                                .chain((0..100).map(|number| (number, false)))
-                                .chain((0..100).map(|number| (number, true)))
-                                .chain((0..100).map(|number| (99 - number, false)))
-                                .collect());
+        .map(|number| (number, true))
+        .chain((0..100).map(|number| (number, false)))
+        .chain((0..100).map(|number| (number, true)))
+        .chain((0..100).map(|number| (99 - number, false)))
+        .collect());
     }
   }
 }

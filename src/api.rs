@@ -1,24 +1,24 @@
-/* Future TimeSteward API goals:
- *
- * – groups
- * I made up API functions for this before, but I'm not sure they were perfect.
- * We can use RowId's for group ids, but what kinds of things can be stored IN a group? Previously I said only RowId's could, which doesn't seem ideal. I think it would work to allow anything hashable. That would basically make a group behave like a HashSet. But then, why not make it behave like a HashMap instead? But accessor itself already behaves like a HashMap over RowId's – the essential thing groups do is to allow iterating particular subsets of that HashMap.
- *
- * – conveniences for serializing snapshots (not sure what)
- *
- * – be able to construct a new TimeSteward from any snapshot
- * Issues: should snapshots expose the predictors? Also, the predictors can't be serialized. So you'd probably actually have to construct a TimeSteward from snapshot + predictors. This requires a way to iterate all fields (and group data if we add groups) in a snapshot, which is similar to the previous 2 items (iterating the whole set, which is a special case of iterating a subset; and serializing requires you to iterate everything as well)
- *
- * – parallelism support for predictors and events
- * When an event or predictor gets invalidated while it is still running, it would be nice for it to save time by exiting early.
- * Moreover, it would probably be more efficient to discard invalidated fields than to preserve them for predictors/events that are in process. The natural way for the accessors to handle this is to have get() return None, which would mean that you can never safely unwrap() the result. We could provide a "unwrap or return" macro.
- *
- * – Optimization features
- * one possibility: user can provide a function FieldId->[(PredictorId, RowId)] that lists predictors you KNOW will be invalidated by a change to that field, then have that predictor run its get() calls with an input called "promise_inferred" or something so that we don't spend time and memory recording the dependency
- * another: a predictor might have a costly computation to find the exact time of a future event, which it won't need to do if it gets invalidated long before that time comes. For that, we can provide a defer_until(time) method
- *
- *
- * */
+// Future TimeSteward API goals:
+//
+// – groups
+// I made up API functions for this before, but I'm not sure they were perfect.
+// We can use RowId's for group ids, but what kinds of things can be stored IN a group? Previously I said only RowId's could, which doesn't seem ideal. I think it would work to allow anything hashable. That would basically make a group behave like a HashSet. But then, why not make it behave like a HashMap instead? But accessor itself already behaves like a HashMap over RowId's – the essential thing groups do is to allow iterating particular subsets of that HashMap.
+//
+// – conveniences for serializing snapshots (not sure what)
+//
+// – be able to construct a new TimeSteward from any snapshot
+// Issues: should snapshots expose the predictors? Also, the predictors can't be serialized. So you'd probably actually have to construct a TimeSteward from snapshot + predictors. This requires a way to iterate all fields (and group data if we add groups) in a snapshot, which is similar to the previous 2 items (iterating the whole set, which is a special case of iterating a subset; and serializing requires you to iterate everything as well)
+//
+// – parallelism support for predictors and events
+// When an event or predictor gets invalidated while it is still running, it would be nice for it to save time by exiting early.
+// Moreover, it would probably be more efficient to discard invalidated fields than to preserve them for predictors/events that are in process. The natural way for the accessors to handle this is to have get() return None, which would mean that you can never safely unwrap() the result. We could provide a "unwrap or return" macro.
+//
+// – Optimization features
+// one possibility: user can provide a function FieldId->[(PredictorId, RowId)] that lists predictors you KNOW will be invalidated by a change to that field, then have that predictor run its get() calls with an input called "promise_inferred" or something so that we don't spend time and memory recording the dependency
+// another: a predictor might have a costly computation to find the exact time of a future event, which it won't need to do if it gets invalidated long before that time comes. For that, we can provide a defer_until(time) method
+//
+//
+//
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher, SipHasher};
@@ -50,13 +50,13 @@ pub struct SiphashIdGenerator {
   data: [SipHasher; 2],
 }
 impl Write for SiphashIdGenerator {
-  fn write(&mut self, bytes: &[u8]) -> io::Result <usize> {
+  fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
     self.data[0].write(bytes);
     self.data[1].write(bytes);
-    Ok (bytes.len())
+    Ok(bytes.len())
   }
-  fn flush(&mut self) -> io::Result <()> {
-    Ok (())
+  fn flush(&mut self) -> io::Result<()> {
+    Ok(())
   }
 }
 impl SiphashIdGenerator {
@@ -73,23 +73,24 @@ impl SiphashIdGenerator {
 impl DeterministicRandomId {
   pub fn new<T: Serialize>(data: &T) -> DeterministicRandomId {
     let mut writer = SiphashIdGenerator::new();
-    bincode::serde::serialize_into (&mut writer, data, bincode::SizeLimit::Infinite).unwrap();
+    bincode::serde::serialize_into(&mut writer, data, bincode::SizeLimit::Infinite).unwrap();
     writer.generate()
   }
   /// Rather than implement Rand for this type, we make sure that it can
   /// ONLY be generated from specific RNGs known to be cryptographically secure.
-  pub fn from_rng (rng: &mut ChaChaRng)->DeterministicRandomId {
-    DeterministicRandomId {data: [rng.gen::<u64>(), rng.gen::<u64>()]}
+  pub fn from_rng(rng: &mut ChaChaRng) -> DeterministicRandomId {
+    DeterministicRandomId { data: [rng.gen::<u64>(), rng.gen::<u64>()] }
   }
   /// We XOR fiat event ids with unique random data so that TimeSteward impls
   /// can trust them not to collide with other ids.
-  pub fn for_fiat_event_internal (&self)->DeterministicRandomId {
-    DeterministicRandomId {data: [
-      self.data [0] ^0xc1d40daaee67461d,
-      self.data [1] ^0xb23ce1f459edefff
-    ]}
+  pub fn for_fiat_event_internal(&self) -> DeterministicRandomId {
+    DeterministicRandomId {
+      data: [self.data[0] ^ 0xc1d40daaee67461d, self.data[1] ^ 0xb23ce1f459edefff],
+    }
   }
-  pub fn data (&self)->& [u64; 2] {& self.data}
+  pub fn data(&self) -> &[u64; 2] {
+    &self.data
+  }
 }
 impl fmt::Display for DeterministicRandomId {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -158,10 +159,12 @@ impl FieldId {
 // I'm not sure if 'static (from Any) is strictly necessary, but it makes things easier, and
 // wanting a non-'static callback (which still must live at least as long as the TimeSteward)
 // seems like a very strange situation.
-pub trait EventFn <B: Basics>: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
+pub trait EventFn<B: Basics>
+  : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
   fn call<M: Mutator<B>>(&self, mutator: &mut M);
 }
-pub trait PredictorFn <B: Basics>: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
+pub trait PredictorFn<B: Basics>
+  : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
   fn call<PA: PredictorAccessor<B>>(&self, accessor: &mut PA, id: RowId);
 }
 
@@ -211,10 +214,13 @@ macro_rules! time_steward_predictor_from_generic_fn {
 /**
 This is intended to be implemented on an empty struct. Requiring Clone etc. is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 */
-pub trait Basics: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug + Default {
+pub trait Basics
+  : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug + Default {
   type Time: Any + Send + Sync + Clone + Ord + Hash + Serialize + Deserialize + Debug;
   type Constants: Any + Send + Sync + Clone + Serialize + Deserialize + Debug;
-  fn allow_floats_unsafe()->bool {false}
+  fn allow_floats_unsafe() -> bool {
+    false
+  }
 }
 pub type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 
@@ -255,15 +261,15 @@ pub trait Accessor<B: Basics> {
                                               id: RowId)
                                               -> Option<(&C::FieldType, &ExtendedTime<B>)> {
     self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id()))
-        .map(|pair| (unwrap_field::<C>(pair.0), pair.1))
+      .map(|pair| (unwrap_field::<C>(pair.0), pair.1))
   }
   fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
     self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id()))
-        .map(|pair| (unwrap_field::<C>(pair.0), &pair.1.base))
+      .map(|pair| (unwrap_field::<C>(pair.0), &pair.1.base))
   }
   fn get<C: Column>(&self, id: RowId) -> Option<&C::FieldType> {
     self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id()))
-        .map(|p| unwrap_field::<C>(p.0))
+      .map(|p| unwrap_field::<C>(p.0))
   }
   fn last_change<C: Column>(&self, id: RowId) -> Option<&B::Time> {
     self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id())).map(|p| &p.1.base)
@@ -301,7 +307,7 @@ pub trait Mutator<B: Basics>: MomentaryAccessor<B> + Rng {
 pub trait PredictorAccessor<B: Basics>: Accessor<B> {
   fn predict_at_time<E: EventFn<B>>(&mut self, time: B::Time, event: E);
 
-  ///A specific use of unsafe_now() that is guaranteed to be safe
+  /// A specific use of unsafe_now() that is guaranteed to be safe
   fn predict_immediately<E: EventFn<B>>(&mut self, event: E) {
     let time = self.unsafe_now().clone();
     self.predict_at_time(time, event)
@@ -311,9 +317,9 @@ pub type SnapshotEntry<'a, B: Basics> = (FieldId, (&'a FieldRc, &'a ExtendedTime
 // where for <'a> & 'a Self: IntoIterator <Item = SnapshotEntry <'a, B>>
 pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {
   fn num_fields(&self) -> usize;
-// with slightly better polymorphism we could do this more straightforwardly
-// type Iter<'a>: Iterator<(FieldId, (&'a FieldRc, &'a ExtendedTime<B>))>;
-// fn iter (&self)->Iter;
+  // with slightly better polymorphism we could do this more straightforwardly
+  // type Iter<'a>: Iterator<(FieldId, (&'a FieldRc, &'a ExtendedTime<B>))>;
+  // fn iter (&self)->Iter;
 }
 
 pub struct FiatSnapshot<B: Basics> {
@@ -328,7 +334,7 @@ impl<B: Basics> Accessor<B> for FiatSnapshot<B> {
     self.fields.get(&id).map(|pair| (&pair.0, &pair.1))
   }
   fn constants(&self) -> &B::Constants {
-    & self.constants
+    &self.constants
   }
   fn unsafe_now(&self) -> &B::Time {
     &self.now
@@ -343,7 +349,7 @@ impl<B: Basics> Snapshot<B> for FiatSnapshot<B> {
 use std::collections::hash_map;
 pub struct FiatSnapshotIter<'a, B: Basics>(hash_map::Iter<'a, FieldId, (FieldRc, ExtendedTime<B>)>);
 impl<'a, B: Basics> Iterator for FiatSnapshotIter<'a, B> {
-  type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
+  type Item = (FieldId, (&'a FieldRc, &'a ExtendedTime<B>));
   fn next(&mut self) -> Option<Self::Item> {
     (self.0).next().map(|(id, stuff)| (id.clone(), (&stuff.0, &stuff.1)))
   }
@@ -352,22 +358,24 @@ impl<'a, B: Basics> Iterator for FiatSnapshotIter<'a, B> {
   }
 }
 impl<'a, B: Basics> IntoIterator for &'a FiatSnapshot<B> {
-  type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
-  type IntoIter = FiatSnapshotIter <'a, B>;
+  type Item = (FieldId, (&'a FieldRc, &'a ExtendedTime<B>));
+  type IntoIter = FiatSnapshotIter<'a, B>;
   fn into_iter(self) -> Self::IntoIter {
     FiatSnapshotIter(self.fields.iter())
   }
 }
 
 pub trait ColumnListUser {
-  fn apply <C: Column> (&mut self);
+  fn apply<C: Column>(&mut self);
 }
 pub trait ColumnList {
-  fn apply <U: ColumnListUser> (user: &mut U);
+  fn apply<U: ColumnListUser>(user: &mut U);
 }
-impl <C: Column> ColumnList for PhantomData <C> {
+impl<C: Column> ColumnList for PhantomData<C> {
   #[inline]
-  fn apply <U: ColumnListUser> (user: &mut U) {user.apply::<C>();}
+  fn apply<U: ColumnListUser>(user: &mut U) {
+    user.apply::<C>();
+  }
 }
 macro_rules! tuple_impls {
   ($TL: ident $(, $T: ident)*) => {
@@ -385,130 +393,139 @@ macro_rules! tuple_impls {
   () => {};
 }
 tuple_impls! (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
-/*
-Today I Learned that macro hygiene is not applied to type parameter lists
-
-macro_rules! escalate {
-  ([$first:tt $($whatever:tt)*] $($T: ident)*) => {escalate! ([$($whatever)*] foo $($T)*);};
-  ([] $($T: ident)*) => {tuple_impls! ($($T),*);};
-}
-escalate! ([!!!!!!!! !!!!!!!! !!!!!!!! !!!!!!!!]);
-*/
+// Today I Learned that macro hygiene is not applied to type parameter lists
+//
+// macro_rules! escalate {
+// ([$first:tt $($whatever:tt)*] $($T: ident)*) => {escalate! ([$($whatever)*] foo $($T)*);};
+// ([] $($T: ident)*) => {tuple_impls! ($($T),*);};
+// }
+// escalate! ([!!!!!!!! !!!!!!!! !!!!!!!! !!!!!!!!]);
+//
 
 
 mod snapshot_serde_functions_impl {
-use super::*;
-use std::collections::HashMap;
-use serde::{self, de, Serialize, Serializer, Deserialize, Deserializer};
-use serde::ser::Error;
-use std::marker::PhantomData;
+  use super::*;
+  use std::collections::HashMap;
+  use serde::{self, de, Serialize, Serializer, Deserialize, Deserializer};
+  use serde::ser::Error;
+  use std::marker::PhantomData;
 
-fn serialize_column<C: Column, S: Serializer>(field: &FieldRc,
-                                                  serializer: &mut S)
-                                                  -> Result<(), S::Error> {
-  try!(unwrap_field::<C>(field).serialize(serializer));
-  Ok(())
-}
-
-fn deserialize_column<B: Basics, C: Column, M: de::MapVisitor>
-  (visitor: &mut M)
-   -> Result<(FieldRc, ExtendedTime<B>), M::Error> {
-  let (data, time) = try!(visitor.visit_value::<(C::FieldType, ExtendedTime<B>)>());
-  Ok((StewardRc::new(data), time))
-}
-
-pub struct SerializationTable<S: Serializer>(pub HashMap<ColumnId, fn(&FieldRc, &mut S) -> Result<(), S::Error>>);
-pub struct DeserializationTable <B: Basics, M: serde::de::MapVisitor> (HashMap<ColumnId, fn (&mut M)->Result <(FieldRc, ExtendedTime <B>), M::Error>>);
-
-impl<S: Serializer> ColumnListUser for SerializationTable <S> {
-  fn apply <C: Column> (&mut self) {
-    self.0.insert (C::column_id(), serialize_column::<C, S>);
+  fn serialize_column<C: Column, S: Serializer>(field: &FieldRc,
+                                                serializer: &mut S)
+                                                -> Result<(), S::Error> {
+    try!(unwrap_field::<C>(field).serialize(serializer));
+    Ok(())
   }
-}
-impl<B: Basics, M: de::MapVisitor> ColumnListUser for DeserializationTable <B, M> {
-  fn apply <C: Column> (&mut self) {
-    self.0.insert (C::column_id(), deserialize_column::<B, C, M>);
+
+  fn deserialize_column<B: Basics, C: Column, M: de::MapVisitor>
+    (visitor: &mut M)
+     -> Result<(FieldRc, ExtendedTime<B>), M::Error> {
+    let (data, time) = try!(visitor.visit_value::<(C::FieldType, ExtendedTime<B>)>());
+    Ok((StewardRc::new(data), time))
   }
-}
-pub struct SerializationField<'a, 'b, Hack: Serializer + 'b>(pub ColumnId,
-                                                             pub &'a FieldRc,
-                                                             pub &'b SerializationTable<Hack>);
-impl<'a, 'b, Hack: Serializer> Serialize for SerializationField<'a, 'b, Hack> {
-  fn serialize<'c, S: Serializer + 'b>(&'c self, serializer: &mut S) -> Result<(), S::Error> {
-    // use std::any::TypeId;
-    // assert!(TypeId::of::<S>() == TypeId::of::<Hack>(), "hack: this can only actually serialize for the serializer it has tables for");
-    let table = unsafe {
-      use std::mem;
-      mem::transmute::<&'b SerializationTable<Hack>, &'b SerializationTable<S>>(self.2)
-    };
-    match (table.0).get(&self.0) {
-      None => {
-        Err(S::Error::custom(format!("Attempt to serialize field from uninitialized column \
+
+  pub struct SerializationTable<S: Serializer>(pub HashMap<ColumnId,
+                                                           fn(&FieldRc, &mut S)
+                                                              -> Result<(), S::Error>>);
+  pub struct DeserializationTable <B: Basics, M: serde::de::MapVisitor> (HashMap<ColumnId, fn (&mut M)->Result <(FieldRc, ExtendedTime <B>), M::Error>>);
+
+  impl<S: Serializer> ColumnListUser for SerializationTable<S> {
+    fn apply<C: Column>(&mut self) {
+      self.0.insert(C::column_id(), serialize_column::<C, S>);
+    }
+  }
+  impl<B: Basics, M: de::MapVisitor> ColumnListUser for DeserializationTable<B, M> {
+    fn apply<C: Column>(&mut self) {
+      self.0.insert(C::column_id(), deserialize_column::<B, C, M>);
+    }
+  }
+  pub struct SerializationField<'a, 'b, Hack: Serializer + 'b>(pub ColumnId,
+                                                               pub &'a FieldRc,
+                                                               pub &'b SerializationTable<Hack>);
+  impl<'a, 'b, Hack: Serializer> Serialize for SerializationField<'a, 'b, Hack> {
+    fn serialize<'c, S: Serializer + 'b>(&'c self, serializer: &mut S) -> Result<(), S::Error> {
+      // use std::any::TypeId;
+      // assert!(TypeId::of::<S>() == TypeId::of::<Hack>(), "hack: this can only actually serialize for the serializer it has tables for");
+      let table = unsafe {
+        use std::mem;
+        mem::transmute::<&'b SerializationTable<Hack>, &'b SerializationTable<S>>(self.2)
+      };
+      match (table.0).get(&self.0) {
+        None => {
+          Err(S::Error::custom(format!("Attempt to serialize field from uninitialized column \
                                       {:?}; did you forget to initialize all the columns from \
                                       your own code and/or the libraries you're using?",
                                      self.0)))
+        }
+        Some(function) => function(self.1, serializer),
       }
-      Some(function) => function(self.1, serializer),
     }
   }
-}
 
 
-pub struct SerdeMapVisitor <B: Basics, C: ColumnList> {
-  pub marker: PhantomData<(FiatSnapshot <B >, C)>
-}
-pub struct DeserializedMap <B: Basics> {
-  pub data: HashMap<FieldId, (FieldRc, ExtendedTime<B>)>,
-}
-impl<B: Basics> Deserialize for DeserializedMap <B> {
-  fn deserialize <D> (_: &mut D)->Result <Self, D::Error> where D: Deserializer {
-    panic!("I believe that Visitor::Value requiring Deserialize is bogus, so this panic will never occur.")
+  pub struct SerdeMapVisitor<B: Basics, C: ColumnList> {
+    pub marker: PhantomData<(FiatSnapshot<B>, C)>,
   }
-}
+  pub struct DeserializedMap<B: Basics> {
+    pub data: HashMap<FieldId, (FieldRc, ExtendedTime<B>)>,
+  }
+  impl<B: Basics> Deserialize for DeserializedMap<B> {
+    fn deserialize<D>(_: &mut D) -> Result<Self, D::Error>
+      where D: Deserializer
+    {
+      panic!("I believe that Visitor::Value requiring Deserialize is bogus, so this panic will never occur.")
+    }
+  }
 
-impl<B: Basics, C: ColumnList>  serde::de::Visitor for SerdeMapVisitor<B, C>
-{
-  type Value = DeserializedMap <B>;
-  fn visit_map<M>(&mut self, mut visitor: M) -> Result<Self::Value, M::Error>
-    where M: serde::de::MapVisitor
-  {
-    let mut table = DeserializationTable::<B, M> (HashMap::new());
-    C::apply(&mut table);
-    
-    let mut fields = HashMap::with_capacity(visitor.size_hint().0); 
-    
-    use serde::Error;
-    while let Some (key) = try!(visitor.visit_key::<FieldId>()) {
-      fields.insert (key, match table.0.get(& key.column_id) {
+  impl<B: Basics, C: ColumnList> serde::de::Visitor for SerdeMapVisitor<B, C> {
+    type Value = DeserializedMap<B>;
+    fn visit_map<M>(&mut self, mut visitor: M) -> Result<Self::Value, M::Error>
+      where M: serde::de::MapVisitor
+    {
+      let mut table = DeserializationTable::<B, M>(HashMap::new());
+      C::apply(&mut table);
+
+      let mut fields = HashMap::with_capacity(visitor.size_hint().0);
+
+      use serde::Error;
+      while let Some(key) = try!(visitor.visit_key::<FieldId>()) {
+        fields.insert (key, match table.0.get(& key.column_id) {
         None => return Err (M::Error::custom (format! ("Attempt to deserialize field from uninitialized column {:?}; Maybe you're trying to load a snapshot from a different version of your program? Or did you forget to initialize all the columns from your own code and/or the libraries you're using?", key. column_id))),
         Some (function) => try! (function (&mut visitor)),
       });
+      }
+
+      try!(visitor.end());
+      Ok(DeserializedMap { data: fields })
     }
-
-    try!(visitor.end());
-    Ok(DeserializedMap {data: fields})
   }
-}
 
 }
 
 
-pub fn serialize_snapshot <'a, B: Basics, C: ColumnList, Shot: Snapshot <B>, S: Serializer> (snapshot: & 'a Shot, serializer: &mut S)->Result <(), S::Error> where & 'a Shot: IntoIterator <Item = SnapshotEntry <'a, B>>  {
-  let mut table = snapshot_serde_functions_impl::SerializationTable::<S> (HashMap::new());
-  C::apply (&mut table);
-  
+pub fn serialize_snapshot<'a, B: Basics, C: ColumnList, Shot: Snapshot<B>, S: Serializer>
+  (snapshot: &'a Shot,
+   serializer: &mut S)
+   -> Result<(), S::Error>
+  where &'a Shot: IntoIterator<Item = SnapshotEntry<'a, B>>
+{
+  let mut table = snapshot_serde_functions_impl::SerializationTable::<S>(HashMap::new());
+  C::apply(&mut table);
+
   try! (snapshot.now().serialize (serializer));
   try! (snapshot.constants().serialize (serializer));
   let mut state = try!(serializer.serialize_map(Some (snapshot.num_fields())));
   for (id, (data, changed)) in snapshot {
     try! (serializer.serialize_map_key (&mut state, id));
     try! (serializer.serialize_map_value (&mut state, (& snapshot_serde_functions_impl::SerializationField (id.column_id, & data, & table), changed)));
-  };
-  serializer.serialize_map_end (state)
+  }
+  serializer.serialize_map_end(state)
 }
 
 
-pub fn deserialize_snapshot <B: Basics, C: ColumnList, D: Deserializer> (deserializer: &mut D)->Result <FiatSnapshot <B>, D::Error> {
+pub fn deserialize_snapshot<B: Basics, C: ColumnList, D: Deserializer>
+  (deserializer: &mut D)
+   -> Result<FiatSnapshot<B>, D::Error> {
   Ok (FiatSnapshot {
     now: try! (B::Time::deserialize (deserializer)),
     constants: try! (B::Constants::deserialize (deserializer)),
@@ -536,7 +553,7 @@ pub enum ValidSince<BaseTime> {
   Before(BaseTime),
   After(BaseTime),
 }
-impl <B: fmt::Display> fmt::Display for ValidSince <B> {
+impl<B: fmt::Display> fmt::Display for ValidSince<B> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
       &ValidSince::TheBeginning => write!(f, "TheBeginning"),
@@ -552,20 +569,20 @@ impl<T: Ord> Ord for ValidSince<T> {
       (&ValidSince::TheBeginning, &ValidSince::TheBeginning) => Ordering::Equal,
       (&ValidSince::TheBeginning, _) => Ordering::Less,
       (_, &ValidSince::TheBeginning) => Ordering::Greater,
-      (&ValidSince::Before(ref something),
-       &ValidSince::Before(ref anything)) => something.cmp(anything),
-      (&ValidSince::After(ref something),
-       &ValidSince::After(ref anything)) => something.cmp(anything),
-      (&ValidSince::Before(ref something),
-       &ValidSince::After(ref anything)) => {
+      (&ValidSince::Before(ref something), &ValidSince::Before(ref anything)) => {
+        something.cmp(anything)
+      }
+      (&ValidSince::After(ref something), &ValidSince::After(ref anything)) => {
+        something.cmp(anything)
+      }
+      (&ValidSince::Before(ref something), &ValidSince::After(ref anything)) => {
         if something <= anything {
           Ordering::Less
         } else {
           Ordering::Greater
         }
       }
-      (&ValidSince::After(ref something),
-       &ValidSince::Before(ref anything)) => {
+      (&ValidSince::After(ref something), &ValidSince::Before(ref anything)) => {
         if something < anything {
           Ordering::Less
         } else {
@@ -613,7 +630,7 @@ impl<T: Ord> PartialOrd for ValidSince<T> {
 //  }
 // }
 
-pub trait TimeStewardSettings <B: Basics>: Clone {
+pub trait TimeStewardSettings<B: Basics>: Clone {
   fn new() -> Self;
   fn insert_predictor<P: PredictorFn<B>>(&mut self,
                                          predictor_id: PredictorId,
@@ -621,9 +638,9 @@ pub trait TimeStewardSettings <B: Basics>: Clone {
                                          function: P);
 }
 
-pub trait TimeSteward <B: Basics> {
-  type Snapshot: Snapshot <B>;
-  type Settings: TimeStewardSettings <B>;
+pub trait TimeSteward<B: Basics> {
+  type Snapshot: Snapshot<B>;
+  type Settings: TimeStewardSettings<B>;
 
   /**
   You are allowed to call snapshot_before(), insert_fiat_event(),
@@ -691,9 +708,9 @@ pub trait TimeSteward <B: Basics> {
   fn snapshot_before(&mut self, time: &B::Time) -> Option<Self::Snapshot>;
 }
 
-pub trait IncrementalTimeSteward <B: Basics>: TimeSteward <B> {
+pub trait IncrementalTimeSteward<B: Basics>: TimeSteward<B> {
   fn step(&mut self);
-  fn updated_until_before (&self)->Option <B::Time>;
+  fn updated_until_before(&self) -> Option<B::Time>;
 }
 
 #[cfg (test)]
@@ -701,18 +718,30 @@ mod tests {
   use super::*;
   use serde::Serialize;
   use std::fmt::Debug;
-  
-  fn test_id_endianness_impl <T: Serialize + Debug>(thing: T, confirm: DeterministicRandomId) {
+
+  fn test_id_endianness_impl<T: Serialize + Debug>(thing: T, confirm: DeterministicRandomId) {
     println!("DeterministicRandomId::new({:?}) = {:?}", thing, DeterministicRandomId::new(& thing));
     assert_eq! (DeterministicRandomId::new(& thing), confirm);
   }
 
   #[test]
   fn test_id_endianness() {
-    test_id_endianness_impl ((), DeterministicRandomId{data: [18033283813966546569, 10131395250899649866]});
-    test_id_endianness_impl (1337, DeterministicRandomId{data: [3453333590764588377, 1257515737963236726]});
-    let a : (Option <Option <i32>>,) = (Some (None),);
-    test_id_endianness_impl (a, DeterministicRandomId{data: [16808472249412258235, 2826611911447572457]});
-    test_id_endianness_impl (DeterministicRandomId::new (& 0x70f7b85b08ba4fd5u64), DeterministicRandomId{data: [12393903562314107346, 11644372085838480024]});
+    test_id_endianness_impl((),
+                            DeterministicRandomId {
+                              data: [18033283813966546569, 10131395250899649866],
+                            });
+    test_id_endianness_impl(1337,
+                            DeterministicRandomId {
+                              data: [3453333590764588377, 1257515737963236726],
+                            });
+    let a: (Option<Option<i32>>,) = (Some(None),);
+    test_id_endianness_impl(a,
+                            DeterministicRandomId {
+                              data: [16808472249412258235, 2826611911447572457],
+                            });
+    test_id_endianness_impl(DeterministicRandomId::new(&0x70f7b85b08ba4fd5u64),
+                            DeterministicRandomId {
+                              data: [12393903562314107346, 11644372085838480024],
+                            });
   }
 }

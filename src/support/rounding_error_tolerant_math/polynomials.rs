@@ -21,8 +21,7 @@ TODO: instead of Vec<Range>, these should return a stack-allocated type.
 */
 
 pub fn roots_linear(coefficients: [Range; 2], min_input: i64, max_input: i64) -> Vec<Range> {
-  if coefficients[1].min() == 0 && coefficients[1].max() == 0 &&
-     !coefficients[0].includes_0() {
+  if coefficients[1].min() == 0 && coefficients[1].max() == 0 && !coefficients[0].includes_0() {
     return Vec::new();
   }
   if let Some(result) = ((-coefficients[0]) / coefficients[1]).clamp_to_0_exponent() {
@@ -44,8 +43,7 @@ pub fn roots_quadratic(terms: [Range; 3], min_input: i64, max_input: i64) -> Vec
     return Vec::new();
   }
   let sqrt = discriminant.sqrt()
-                         .expect("I thought we just ruled out the case where the square root \
-                                  would be nonexistent");
+    .expect("I thought we just ruled out the case where the square root would be nonexistent");
   // printlnerr!(" sqrt {:?}", sqrt);
   let result_0 = (-b - sqrt) / (a * 2);
   let result_1 = (-b + sqrt) / (a * 2);
@@ -69,15 +67,15 @@ pub fn roots_quadratic(terms: [Range; 3], min_input: i64, max_input: i64) -> Vec
 
   // printlnerr!("My results: {:?}", results);
   return results;
-  /* if result_0.max >= result_1.min {
-   * vec![Range {
-   * min: result_0.min,
-   * max: result_1.max,
-   * exponent: 0,
-   * }]
-   * } else {
-   * vec![result_0, result_1]
-   * } */
+  // if result_0.max >= result_1.min {
+  // vec![Range {
+  // min: result_0.min,
+  // max: result_1.max,
+  // exponent: 0,
+  // }]
+  // } else {
+  // vec![result_0, result_1]
+  // }
 }
 
 
@@ -113,9 +111,9 @@ fn find_root_search(terms: &[Range],
     } else {
       input = (Range::exactly(input_2) -
                value_2 * (Range::exactly(input_2) - Range::exactly(input_1)) / denominator)
-                .clamp_to_0_exponent()
-                .unwrap()
-                .min();
+        .clamp_to_0_exponent()
+        .unwrap()
+        .min();
       if input.cmp(&input_2) != input.cmp(&input_1).reverse() {
         input = average_round_towards_neginf(input_1, input_2);
       }
@@ -138,15 +136,8 @@ fn find_root_search(terms: &[Range],
       if closer_to_1 != other_closer_to_1 {
         min_only = true;
         if other_closer_to_1 {
-          result_for_other = find_root_search(terms,
-                                              false,
-                                              true,
-                                              input_2,
-                                              input,
-                                              value_2,
-                                              value_2,
-                                              value)
-                               .0;
+          result_for_other =
+            find_root_search(terms, false, true, input_2, input, value_2, value_2, value).0;
         } else {
           // possible optimization: use a better factor, referring to "A Family of Regula Falsi Methods", Galdino
           result_for_other = find_root_search(terms,
@@ -157,7 +148,7 @@ fn find_root_search(terms: &[Range],
                                               value_1,
                                               adjusted_value_1 >> 1,
                                               value)
-                               .0;
+            .0;
         }
       }
     }
@@ -174,20 +165,10 @@ fn find_root_search(terms: &[Range],
   }
   if max_only {
     assert!((value_1 < 0) != (value_2 < 0));
-    (if value_1 < 0 {
-      input_1
-    } else {
-      input_2
-    },
-     result_for_other)
+    (if value_1 < 0 { input_1 } else { input_2 }, result_for_other)
   } else {
     assert!((value_1 > 0) != (value_2 > 0));
-    (if value_1 > 0 {
-      input_1
-    } else {
-      input_2
-    },
-     result_for_other)
+    (if value_1 > 0 { input_1 } else { input_2 }, result_for_other)
   }
 
 }
@@ -242,28 +223,28 @@ fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
                                                             max_value);
     Some(Range::new_either_order(result_for_min, result_for_max))
   }
-  /* return find_root_search (terms, false, min, max,
-   * let mut lower_bound = min;
-   * let mut upper_bound = max;
-   * hack: use a negative number for move_size so that it can store a slightly larger value
-   * let mut move_size = -1i64 << 63;
-   * while min.checked_sub(max).is_some() && move_size < min - max {
-   * move_size /= 2;
-   * }
-   * while move_size < 0 {
-   * printlnerr!(" Next values {:?}:{:?}, {:?}:{:?}", lower_bound, evaluate (terms, lower_bound ), upper_bound, evaluate (terms, upper_bound ));
-   *
-   * if lower_bound - move_size <= max &&
-   * (evaluate(terms, lower_bound - move_size) * direction).max <= 0 {
-   * lower_bound -= move_size;
-   * }
-   * if upper_bound + move_size >= min &&
-   * (evaluate(terms, upper_bound + move_size) * direction).min >= 0 {
-   * upper_bound += move_size;
-   * }
-   * move_size /= 2;
-   * }
-   * Some(Range::new(lower_bound, upper_bound)) */
+  // return find_root_search (terms, false, min, max,
+  // let mut lower_bound = min;
+  // let mut upper_bound = max;
+  // hack: use a negative number for move_size so that it can store a slightly larger value
+  // let mut move_size = -1i64 << 63;
+  // while min.checked_sub(max).is_some() && move_size < min - max {
+  // move_size /= 2;
+  // }
+  // while move_size < 0 {
+  // printlnerr!(" Next values {:?}:{:?}, {:?}:{:?}", lower_bound, evaluate (terms, lower_bound ), upper_bound, evaluate (terms, upper_bound ));
+  //
+  // if lower_bound - move_size <= max &&
+  // (evaluate(terms, lower_bound - move_size) * direction).max <= 0 {
+  // lower_bound -= move_size;
+  // }
+  // if upper_bound + move_size >= min &&
+  // (evaluate(terms, upper_bound + move_size) * direction).min >= 0 {
+  // upper_bound += move_size;
+  // }
+  // move_size /= 2;
+  // }
+  // Some(Range::new(lower_bound, upper_bound))
 
 }
 fn collect_root(terms: &[Range], min: i64, max: i64, bucket: &mut Vec<Option<Range>>) {
@@ -274,10 +255,10 @@ fn collect_root(terms: &[Range], min: i64, max: i64, bucket: &mut Vec<Option<Ran
 fn roots_derivative_based(terms: &[Range], min_input: i64, max_input: i64) -> Vec<Range> {
 
   let derivative: Vec<Range> = terms[1..]
-                                 .iter()
-                                 .enumerate()
-                                 .map(|(which, term)| term * (which as i64 + 1))
-                                 .collect();
+    .iter()
+    .enumerate()
+    .map(|(which, term)| term * (which as i64 + 1))
+    .collect();
   // printlnerr!(" Derivative {:?}", derivative);
   let extrema = roots(derivative.as_slice(), min_input, max_input);
   // printlnerr!("extrema {:?}", extrema);
@@ -393,10 +374,8 @@ pub fn quadratic_move_origin_rounding_change_towards_0(terms: &mut [i64],
     return false;
   }
   let between_time = rand::thread_rng().gen_range(0, origin + 1);
-  let confirm = quadratic_future_proxy_minimizing_error(terms,
-                                                        between_time,
-                                                        input_scale_shift,
-                                                        max_error);
+  let confirm =
+    quadratic_future_proxy_minimizing_error(terms, between_time, input_scale_shift, max_error);
   terms[0] += distance_traveled.rounded_towards_0();
   terms[1] += ((Range::exactly(terms[2]) * origin) >> (input_scale_shift - 1)).rounded_towards_0();
   let experimented = evaluate(&confirm, origin - between_time) >> (input_scale_shift * 2);
@@ -436,18 +415,16 @@ pub fn time_until_which_quadratic_trajectory_may_remain_in_bounds(start_time: i6
   let mut max_input = i64::max_value() - max(0, start_time);
   // printlnerr!("begin {:?} {:?} {:?}", start_time, trajectory, bounds);
   for (third, more) in trajectory.iter().zip(bounds.iter()) {
-    let mut rubble = quadratic_future_proxy_minimizing_error(third,
-                                                             0,
-                                                             input_scale_shift,
-                                                             max_error);
+    let mut rubble =
+      quadratic_future_proxy_minimizing_error(third, 0, input_scale_shift, max_error);
     rubble[0] = rubble[0] - (Range::new(more[0], more[1]) << (input_scale_shift * 2));
     let possible_overlap_times = roots(&rubble, min_input, max_input);
     // printlnerr!("roots {:?} {:?}", rubble, possible_overlap_times);
     if let Some((this_min, this_max)) = if possible_overlap_times.is_empty() {
       None
     } else if possible_overlap_times.len() == 2 &&
-                                           possible_overlap_times[0].max() >=
-                                           possible_overlap_times[1].min() - 1 {
+                                                  possible_overlap_times[0].max() >=
+                                                  possible_overlap_times[1].min() - 1 {
       if possible_overlap_times[0].min() <= start_time &&
          possible_overlap_times[1].max() >= start_time {
         Some((possible_overlap_times[0].min(), possible_overlap_times[1].max()))
@@ -456,8 +433,8 @@ pub fn time_until_which_quadratic_trajectory_may_remain_in_bounds(start_time: i6
       }
     } else {
       possible_overlap_times.iter()
-                            .find(|root| root.min() <= start_time && root.max() >= start_time)
-                            .map(|root| (root.min(), root.max()))
+        .find(|root| root.min() <= start_time && root.max() >= start_time)
+        .map(|root| (root.min(), root.max()))
     } {
       min_input = max(min_input, this_min);
       max_input = min(max_input, this_max);
@@ -482,11 +459,8 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
   assert!(first.1.len() == second.1.len());
   assert!(first.1.len() > 0);
   let base = max(first.0, second.0);
-  let mut proxy = [Range::exactly(0),
-                   Range::exactly(0),
-                   Range::exactly(0),
-                   Range::exactly(0),
-                   Range::exactly(0)];
+  let mut proxy =
+    [Range::exactly(0), Range::exactly(0), Range::exactly(0), Range::exactly(0), Range::exactly(0)];
   let mut min_input = 0;
   let mut max_input = i64::max_value() - max(0, base);
   for (third, more) in first.1.iter().zip(second.1.iter()) {
@@ -501,10 +475,8 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
     for index in 0..3 {
       rubble[index] = rubble[index] - bravo[index];
     }
-    let this_dimension_tester = [rubble[0] +
-                                 (Range::error_sized(distance) << (input_scale_shift * 2)),
-                                 rubble[1],
-                                 rubble[2]];
+    let this_dimension_tester =
+      [rubble[0] + (Range::error_sized(distance) << (input_scale_shift * 2)), rubble[1], rubble[2]];
     let possible_overlap_times = roots(&this_dimension_tester, min_input, max_input);
     // printlnerr!("one-dimensional proxy: {:?} {:?} {:?} {:?}", min_input, max_input, this_dimension_tester, possible_overlap_times );
 
@@ -622,7 +594,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(distance: i64
     }
   }
   for root in result.iter_mut() {
-    *root = *root + Range::exactly (base);
+    *root = *root + Range::exactly(base);
   }
   result
 }
@@ -647,9 +619,9 @@ mod tests {
                         .collect::<Vec<Range>>());
   }
 
-  /*quickcheck! {
-    fn automatic_roots(given_roots: Vec<Range>)
-  }*/
+  // quickcheck! {
+  // fn automatic_roots(given_roots: Vec<Range>)
+  // }
 
   #[test]
   fn explicit_roots() {

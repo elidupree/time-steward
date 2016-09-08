@@ -65,11 +65,17 @@ pub fn average_round_towards_neginf(input_1: i64, input_2: i64) -> i64 {
   (input_1 >> 1) + (input_2 >> 1) + (input_1 & input_2 & 1)
 }
 
-pub fn overflow_checked_shift_left (value: i64, shift: u32)->Option <i64> {
-  if value == 0 {return Some (0)}
-  if shift > 63 {return None;}
-  if (value.abs() & !((1i64 << (63 - shift)).wrapping_sub(1))) != 0 {return None;}
- Some ( value << shift)
+pub fn overflow_checked_shift_left(value: i64, shift: u32) -> Option<i64> {
+  if value == 0 {
+    return Some(0);
+  }
+  if shift > 63 {
+    return None;
+  }
+  if (value.abs() & !((1i64 << (63 - shift)).wrapping_sub(1))) != 0 {
+    return None;
+  }
+  Some(value << shift)
 }
 
 
@@ -119,7 +125,7 @@ impl Range {
     self.increase_exponent_by(increase);
   }
   fn increase_exponent_by(&mut self, increase: u32) {
-    //let confirm = self.clone();
+    // let confirm = self.clone();
     if increase >= 63 {
       self.min = self.min.signum();
       self.max = self.max.signum();
@@ -136,7 +142,10 @@ impl Range {
   }
   fn minimize_exponent(&mut self) {
     let confirm = self.clone();
-    if self.min == 0 && self.max == 0 {self.exponent = 0; return;}
+    if self.min == 0 && self.max == 0 {
+      self.exponent = 0;
+      return;
+    }
     let leeway = min(self.min.abs().leading_zeros(),
                      self.max.abs().leading_zeros()) - 1;
     let change = min(leeway, self.exponent);
@@ -158,11 +167,15 @@ impl Range {
     if self.exponent < other.exponent {
       return false;
     }
-    if let Some (bound) = overflow_checked_shift_left(self.min, self.exponent - other.exponent) {
-      if bound > other.min {return false;}
+    if let Some(bound) = overflow_checked_shift_left(self.min, self.exponent - other.exponent) {
+      if bound > other.min {
+        return false;
+      }
     }
-    if let Some (bound) = overflow_checked_shift_left(self.max, self.exponent - other.exponent) {
-      if bound < other.max {return false;}
+    if let Some(bound) = overflow_checked_shift_left(self.max, self.exponent - other.exponent) {
+      if bound < other.max {
+        return false;
+      }
     }
     true
   }
@@ -190,7 +203,9 @@ impl Range {
   pub fn internal_max(&self) -> i64 {
     self.max
   }
-  pub fn exponent (& self)->u32 {self.exponent}
+  pub fn exponent(&self) -> u32 {
+    self.exponent
+  }
 
   pub fn clamp_to_0_exponent(&self) -> Option<Range> {
     let mut result = self.clone();
@@ -208,7 +223,7 @@ impl Range {
       Some(result)
     }
   }
-  pub fn rounded_to_middle_towards_neginf (&self) -> Range {
+  pub fn rounded_to_middle_towards_neginf(&self) -> Range {
     // this could sometimes be slightly more accurate when the exponent is not 0,
     // but it probably isn't worth the complication
     let middle = average_round_towards_neginf(self.min, self.max);
@@ -350,9 +365,13 @@ impl<'a> Mul for &'a Range {
       max: extremes[0],
       exponent: result.exponent + other.exponent,
     };
-    for extreme in extremes [1..].iter() {
-      if *extreme < result.min {result.min = *extreme;}
-      if *extreme > result.max {result.max = *extreme;}
+    for extreme in extremes[1..].iter() {
+      if *extreme < result.min {
+        result.min = *extreme;
+      }
+      if *extreme > result.max {
+        result.max = *extreme;
+      }
     }
     result.minimize_exponent();
     result
@@ -436,7 +455,7 @@ impl<'a> Div for &'a Range {
       result.max = (result.max - 1) / other.min + 1;
     }
     result.minimize_exponent();
-    
+
     // TODO: we might still be able to reduce the rounding error further in these cases:
     if result.min > 0 {
       result.min = result.min / other.max;
@@ -497,17 +516,20 @@ impl Sum for Range {
 
 
 impl Range {
-  pub fn abs (&self) -> Range {
+  pub fn abs(&self) -> Range {
     // this could be made more efficient
     Range {
-      min: if self.includes_0() {0}
-      else {min (self.min.abs(), self.max.abs())},
-      max: max (self.min.abs(), self.max.abs()),
-      exponent: self.exponent
+      min: if self.includes_0() {
+        0
+      } else {
+        min(self.min.abs(), self.max.abs())
+      },
+      max: max(self.min.abs(), self.max.abs()),
+      exponent: self.exponent,
     }
   }
 
-  ///Squaring is a slightly narrower operation than self*self, because it never invokes (for instance) self.min*self.max.
+  /// Squaring is a slightly narrower operation than self*self, because it never invokes (for instance) self.min*self.max.
   pub fn squared(&self) -> Range {
     let mut result = self.clone();
     let leeway = min(self.min.abs().leading_zeros(),
@@ -575,80 +597,99 @@ impl Range {
 
 
 impl PartialOrd for Range {
-  fn partial_cmp (&self, other: & Range)->Option <Ordering> {
+  fn partial_cmp(&self, other: &Range) -> Option<Ordering> {
     if self.exponent < other.exponent {
-      return other.partial_cmp (self).map (| order | order.reverse());
+      return other.partial_cmp(self).map(|order| order.reverse());
     }
-    if let Some (bound) = overflow_checked_shift_left(self.min, self.exponent - other.exponent) {
-      if bound > other.max {return Some (Ordering::Greater);}
+    if let Some(bound) = overflow_checked_shift_left(self.min, self.exponent - other.exponent) {
+      if bound > other.max {
+        return Some(Ordering::Greater);
+      }
+    } else if self.min > 0 {
+      return Some(Ordering::Greater);
     }
-    else if self.min > 0 {return Some (Ordering::Greater);}
-    if let Some (bound) = overflow_checked_shift_left(self.max, self.exponent - other.exponent) {
-      if bound < other.min {return Some (Ordering::Less);}
+    if let Some(bound) = overflow_checked_shift_left(self.max, self.exponent - other.exponent) {
+      if bound < other.min {
+        return Some(Ordering::Less);
+      }
+    } else if self.max < 0 {
+      return Some(Ordering::Less);
     }
-    else if self.max < 0 {return Some (Ordering::Less);}
     None
   }
   // TODO: implement the others for efficiency
 }
 
-impl PartialOrd <i64> for Range {
-  fn partial_cmp (&self, other: & i64)->Option <Ordering> {
-    if let Some (bound) = overflow_checked_shift_left(self.min, self.exponent) {
-      if bound > *other {return Some (Ordering::Greater);}
+impl PartialOrd<i64> for Range {
+  fn partial_cmp(&self, other: &i64) -> Option<Ordering> {
+    if let Some(bound) = overflow_checked_shift_left(self.min, self.exponent) {
+      if bound > *other {
+        return Some(Ordering::Greater);
+      }
+    } else if self.min > 0 {
+      return Some(Ordering::Greater);
     }
-    else if self.min > 0 {return Some (Ordering::Greater);}
-    if let Some (bound) = overflow_checked_shift_left(self.max, self.exponent) {
-      if bound < *other {return Some (Ordering::Less);}
+    if let Some(bound) = overflow_checked_shift_left(self.max, self.exponent) {
+      if bound < *other {
+        return Some(Ordering::Less);
+      }
+    } else if self.max < 0 {
+      return Some(Ordering::Less);
     }
-    else if self.max < 0 {return Some (Ordering::Less);}
     None
   }
   // TODO: implement the others for efficiency
 }
 
 
-impl PartialOrd <Range> for i64 {
-  fn partial_cmp (&self, other: & Range)->Option <Ordering> {
-    other.partial_cmp (self).map (| order | order.reverse())
+impl PartialOrd<Range> for i64 {
+  fn partial_cmp(&self, other: &Range) -> Option<Ordering> {
+    other.partial_cmp(self).map(|order| order.reverse())
   }
   // TODO: implement the others for efficiency
 }
 
-impl PartialEq <i64> for Range {
-  fn eq (&self, other: & i64)->bool {
+impl PartialEq<i64> for Range {
+  fn eq(&self, other: &i64) -> bool {
     self.exponent == 0 && self.min == *other && self.max == *other
   }
 }
 
-impl PartialEq <Range> for i64 {
-  fn eq (&self, other: & Range)->bool {
+impl PartialEq<Range> for i64 {
+  fn eq(&self, other: &Range) -> bool {
     other.exponent == 0 && other.min == *self && other.max == *self
   }
 }
 
 impl Arbitrary for Range {
-  fn arbitrary <G: Gen> (generator: &mut G)->Range {
-    let mut result = Range::new_either_order (generator.gen(), generator.gen());
+  fn arbitrary<G: Gen>(generator: &mut G) -> Range {
+    let mut result = Range::new_either_order(generator.gen(), generator.gen());
     result.exponent = generator.gen();
     result.minimize_exponent();
     result
   }
-  //TODO: implement shrink
-  fn shrink (&self)->Box <Iterator <Item = Range>> {
+  // TODO: implement shrink
+  fn shrink(&self) -> Box<Iterator<Item = Range>> {
     struct Shrinker {
       value: Range,
     }
     impl Iterator for Shrinker {
       type Item = Range;
-      fn next (&mut self)->Option <Range> {
-        if self.value.exponent > 0 {self.value.exponent >>= 1;}
-        else {self.value.min /= 2; self.value.max /= 2;}
-        if self.value == Range::exactly (0) {None}
-        else {Some (self.value)}
+      fn next(&mut self) -> Option<Range> {
+        if self.value.exponent > 0 {
+          self.value.exponent >>= 1;
+        } else {
+          self.value.min /= 2;
+          self.value.max /= 2;
+        }
+        if self.value == Range::exactly(0) {
+          None
+        } else {
+          Some(self.value)
+        }
       }
     }
-    Box::new (Shrinker {value: self.clone()})
+    Box::new(Shrinker { value: self.clone() })
   }
 }
 

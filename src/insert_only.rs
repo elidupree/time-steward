@@ -37,33 +37,37 @@ impl<K: Eq + Hash, V> HashMap<K, V> {
     self.inserting.set(false);
     result
   }
-  
+
   // if you are holding a &mut HashMap, you can also use it like a regular map
-  pub fn insert (&mut self, key: K, value: V)->Option <V> {
-    unsafe { (*self.data.get()).insert (key, Box::new (value)) }.map (| something | *something) 
+  pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+    unsafe { (*self.data.get()).insert(key, Box::new(value)) }.map(|something| *something)
   }
-  
-  pub fn len (&self)->usize {
+
+  pub fn len(&self) -> usize {
     assert!(!self.inserting.get(),
                 "Attempt to call len() on a insert_only::HashMap within the default_function \
                  callback for a get_default() on the same map");
-    unsafe { (*self.data.get()).len () }
+    unsafe { (*self.data.get()).len() }
   }
 }
 
-pub struct IntoIter <K, V> {
-  data: hash_map::IntoIter <K, Box <V>>,
+pub struct IntoIter<K, V> {
+  data: hash_map::IntoIter<K, Box<V>>,
 }
-impl <K, V> Iterator for IntoIter <K, V> {
+impl<K, V> Iterator for IntoIter<K, V> {
   type Item = (K, V);
-  fn next (&mut self)->Option <Self::Item> {
-    self.data.next().map (| (key, value) | (key,*value))
+  fn next(&mut self) -> Option<Self::Item> {
+    self.data.next().map(|(key, value)| (key, *value))
   }
-  fn size_hint (&self)->(usize, Option <usize>) {self.data.size_hint()}
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    self.data.size_hint()
+  }
 }
 
-impl <K: Eq + Hash, V> IntoIterator for HashMap <K, V> {
+impl<K: Eq + Hash, V> IntoIterator for HashMap<K, V> {
   type Item = (K, V);
-  type IntoIter = IntoIter <K, V>;
-  fn into_iter (self)->Self::IntoIter {IntoIter {data: unsafe { self.data.into_inner().into_iter()}}}
+  type IntoIter = IntoIter<K, V>;
+  fn into_iter(self) -> Self::IntoIter {
+    IntoIter { data: unsafe { self.data.into_inner().into_iter() } }
+  }
 }

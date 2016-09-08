@@ -1,6 +1,5 @@
 use stewards::crossverified as s;
-use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId,
-     PredictorId};
+use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId, PredictorId};
 // use serde_json;
 use bincode::serde::{Serializer, Deserializer};
 use bincode;
@@ -33,13 +32,16 @@ impl Column for Philosopher {
   }
 }
 
-type Steward = s::Steward<Basics, Columns, amortized::Steward <Basics>, memoized_flat::Steward <Basics>>;
+type Steward = s::Steward<Basics,
+                          Columns,
+                          amortized::Steward<Basics>,
+                          memoized_flat::Steward<Basics>>;
 
 fn get_philosopher_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x2302c38efb47e0d0u64, index))
 }
 
-type Columns = PhantomData <Philosopher>;
+type Columns = PhantomData<Philosopher>;
 
 fn display_snapshot<S: ::Snapshot<Basics>>(snapshot: &S) {
   println!("snapshot for {}", snapshot.now());
@@ -83,8 +85,8 @@ pub fn testfunc() {
   let mut stew: Steward = ::TimeSteward::new_empty((), settings.clone());
 
   stew.insert_fiat_event(0,
-                         DeterministicRandomId::new(&0x32e1570766e768a7u64),
-                         time_steward_event! (Basics, struct Initialize {}, | &self, m | {
+                       DeterministicRandomId::new(&0x32e1570766e768a7u64),
+                       time_steward_event! (Basics, struct Initialize {}, | &self, m | {
       println!("FIAT!!!!!");
       for i in 0..HOW_MANY_PHILOSOPHERS {
         m.set::<Philosopher>(get_philosopher_id(i),
@@ -94,16 +96,15 @@ pub fn testfunc() {
         );
       }
     }))
-      .unwrap();
+    .unwrap();
 
   let mut snapshots = Vec::new();
   for increment in 1..21 {
     snapshots.push(stew.snapshot_before(&(increment * 100i64)));
     stew = ::TimeSteward::from_snapshot::<<Steward as ::TimeSteward<Basics>>::Snapshot> (snapshots.last().unwrap().as_ref().unwrap(), settings.clone());
   }
-  for snapshot in snapshots.iter_mut().map(|option| {
-    option.as_mut().expect("all these snapshots should have been valid")
-  }) {
+  for snapshot in snapshots.iter_mut()
+    .map(|option| option.as_mut().expect("all these snapshots should have been valid")) {
     display_snapshot(snapshot);
     let mut writer: Vec<u8> = Vec::with_capacity(128);
     {
@@ -117,7 +118,7 @@ pub fn testfunc() {
     use MomentaryAccessor;
     display_snapshot(&<Steward as ::TimeSteward<Basics>>::from_snapshot::<::FiatSnapshot<Basics>>(&deserialized, settings.clone()).snapshot_before(deserialized.now()).unwrap());
   }
-  //panic!("anyway")
+  // panic!("anyway")
 }
 
 #[test]

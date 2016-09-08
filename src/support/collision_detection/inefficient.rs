@@ -7,7 +7,7 @@ struct Detector<B: Basics> {
   _marker: PhantomData<B>,
 }
 impl<B: Basics> Column for Detector<B> {
-  type FieldType = HashSet <RowId>;
+  type FieldType = HashSet<RowId>;
   fn column_id() -> ColumnId {
     ColumnId(B::nearness_column_id().0 ^ 0xdaa7e18546759b65)
   }
@@ -32,8 +32,8 @@ pub fn erase<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
                                                       me: B::DetectorId) {
   let my_row = RowId::new(&me);
   let mut members = mutator.get::<Detector<B>>(my_row)
-                           .expect("erasing an element when there are no elements")
-                           .clone();
+    .expect("erasing an element when there are no elements")
+    .clone();
   members.remove(&who);
   for member in members.iter() {
     let (id, _) = Nearness::<B>::new(who, member.clone(), me);

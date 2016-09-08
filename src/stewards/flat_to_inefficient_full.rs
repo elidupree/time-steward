@@ -4,22 +4,22 @@
 //!
 
 
-use {DeterministicRandomId,
-             Basics,  TimeSteward, FiatEventOperationError, ValidSince, Accessor, MomentaryAccessor};
+use {DeterministicRandomId, Basics, TimeSteward, FiatEventOperationError, ValidSince, Accessor,
+     MomentaryAccessor};
 use std::collections::HashMap;
 
-pub struct Steward<B: Basics, Steward0: TimeSteward<B> > {
+pub struct Steward<B: Basics, Steward0: TimeSteward<B>> {
   steward: Steward0,
-  invalid_before: ValidSince <B::Time>,
+  invalid_before: ValidSince<B::Time>,
   constants: B::Constants,
   settings: Steward0::Settings,
-  fiat_events: HashMap <DeterministicRandomId, (B::Time, Box <Fn (&mut Steward0, B::Time, DeterministicRandomId)>)>,
+  fiat_events: HashMap<DeterministicRandomId,
+                       (B::Time, Box<Fn(&mut Steward0, B::Time, DeterministicRandomId)>)>,
   snapshots: Vec<Steward0::Snapshot>,
 }
 
 
-impl<B: Basics, Steward0: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward0> 
-{
+impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0> {
   type Snapshot = Steward0::Snapshot;
   type Settings = Steward0::Settings;
 
@@ -28,7 +28,7 @@ impl<B: Basics, Steward0: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward
   }
   fn new_empty(constants: B::Constants, settings: Self::Settings) -> Self {
     Steward::<B, Steward0> {
-      steward: TimeSteward::new_empty (constants.clone(), settings.clone()),
+      steward: TimeSteward::new_empty(constants.clone(), settings.clone()),
       invalid_before: ValidSince::TheBeginning,
       constants: constants,
       settings: settings,
@@ -37,33 +37,38 @@ impl<B: Basics, Steward0: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward
     }
   }
 
-  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: & 'a S,
-                                              settings: Self::Settings)
-                                              -> Self
-                                              where & 'a S: IntoIterator <Item = ::SnapshotEntry <'a, B>> {
-    let mut steward: Steward0 = TimeSteward::from_snapshot::<'a, S> (snapshot, settings.clone());
-    let snapshot =steward.snapshot_before (snapshot.now()).unwrap();
+  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: &'a S, settings: Self::Settings) -> Self
+    where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
+  {
+    let mut steward: Steward0 = TimeSteward::from_snapshot::<'a, S>(snapshot, settings.clone());
+    let snapshot = steward.snapshot_before(snapshot.now()).unwrap();
     Steward::<B, Steward0> {
       steward: steward,
-      invalid_before: ValidSince::Before (snapshot.now().clone()),
+      invalid_before: ValidSince::Before(snapshot.now().clone()),
       constants: snapshot.constants().clone(),
       settings: settings,
       fiat_events: HashMap::new(),
       snapshots: vec![snapshot],
     }
   }
-  fn insert_fiat_event <E: ::EventFn <B>> (&mut self,
-                       time: B::Time,
-                       id: DeterministicRandomId,
-                       event: E)
-                       -> Result<(), FiatEventOperationError> {
+  fn insert_fiat_event<E: ::EventFn<B>>(&mut self,
+                                        time: B::Time,
+                                        id: DeterministicRandomId,
+                                        event: E)
+                                        -> Result<(), FiatEventOperationError> {
     if self.valid_since() > time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    if self.fiat_events.contains_key (& id) {return Err (FiatEventOperationError::InvalidInput);}
-    let _ = self.steward.insert_fiat_event (time.clone(), id, event.clone());
-    self.fiat_events.insert (id, (time, Box::new (move | steward, time, id | {let _ = steward.insert_fiat_event (time, id, event.clone());})));
-    Ok (())
+    if self.fiat_events.contains_key(&id) {
+      return Err(FiatEventOperationError::InvalidInput);
+    }
+    let _ = self.steward.insert_fiat_event(time.clone(), id, event.clone());
+    self.fiat_events.insert(id,
+                            (time,
+                             Box::new(move |steward, time, id| {
+                              let _ = steward.insert_fiat_event(time, id, event.clone());
+                            })));
+    Ok(())
   }
   fn erase_fiat_event(&mut self,
                       time: &B::Time,
@@ -72,9 +77,11 @@ impl<B: Basics, Steward0: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward
     if self.valid_since() > *time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    if self.fiat_events.remove (& id).is_none() {return Err (FiatEventOperationError::InvalidInput);}
-    let _ = self.steward.erase_fiat_event (time, id);
-    Ok (())
+    if self.fiat_events.remove(&id).is_none() {
+      return Err(FiatEventOperationError::InvalidInput);
+    }
+    let _ = self.steward.erase_fiat_event(time, id);
+    Ok(())
   }
 
   fn snapshot_before<'b>(&'b mut self, time: &'b B::Time) -> Option<Self::Snapshot> {
@@ -82,7 +89,7 @@ impl<B: Basics, Steward0: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward
       return None;
     }
     if self.steward.valid_since() > *time {
-      while self.snapshots.last().map_or (false, | snapshot | snapshot.now() > time) {
+      while self.snapshots.last().map_or(false, |snapshot| snapshot.now() > time) {
         self.snapshots.pop();
       }
       self.steward = //match self.snapshots.last() {
@@ -92,12 +99,14 @@ impl<B: Basics, Steward0: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward
         //Some (snapshot) => TimeSteward::from_snapshot::<Self::Snapshot> (snapshot, self.settings.clone()),
       //}
       ;
-      for (id, & (ref time, ref insert_event)) in self.fiat_events.iter() {
-        insert_event (&mut self.steward, time.clone(), id.clone());
+      for (id, &(ref time, ref insert_event)) in self.fiat_events.iter() {
+        insert_event(&mut self.steward, time.clone(), id.clone());
       }
     }
-    self.snapshots.push (self.steward.snapshot_before (time).expect ("reloading from an earlier snapshot was supposed to make this work!"));
-    self.steward.snapshot_before (time)
+    self.snapshots.push(self.steward
+      .snapshot_before(time)
+      .expect("reloading from an earlier snapshot was supposed to make this work!"));
+    self.steward.snapshot_before(time)
   }
 }
 
@@ -111,4 +120,3 @@ where for <'a> & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a
     self. steward.updated_until_before()
   }
 }
-

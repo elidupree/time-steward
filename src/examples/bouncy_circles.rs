@@ -65,7 +65,7 @@ impl ::Basics for Basics {
 struct CollisionBasics;
 impl support::collision_detection::Basics for CollisionBasics {
   type StewardBasics = Basics;
-  type DetectorId =();
+  type DetectorId = ();
   fn nearness_column_id() -> ColumnId {
     ColumnId(0x89ebc3ba9a24c286)
   }
@@ -76,8 +76,7 @@ impl collisions::Basics for CollisionBasics {
                                               _: ())
                                               -> collisions::Bounds {
     let (circle, time) = accessor.data_and_last_change::<Circle>(who)
-                                 .expect("no circle despite is being collision detected as a \
-                                          circle");
+      .expect("no circle despite is being collision detected as a circle");
     let center = circle.position.updated_by(accessor.now() - time).unwrap().evaluate();
     collisions::Bounds {
       min: [(center[0] - circle.radius) >> GRID_SIZE_SHIFT,
@@ -92,8 +91,7 @@ impl collisions::Basics for CollisionBasics {
                                        _: ())
                                        -> Option<Time> {
     let (circle, time) = accessor.data_and_last_change::<Circle>(who)
-                                 .expect("no circle despite is being collision detected as a \
-                                          circle");
+      .expect("no circle despite is being collision detected as a circle");
     circle.position.approximately_when_escapes(time.clone(),
                                                accessor.unsafe_now().clone(),
                                                [[(bounds.min[0] << GRID_SIZE_SHIFT) +
@@ -132,9 +130,14 @@ impl Column for Intersection {
 }
 
 
-type Columns = (PhantomData <Circle>, PhantomData <Intersection>, collisions::Columns <CollisionBasics>);
+type Columns = (PhantomData<Circle>,
+                PhantomData<Intersection>,
+                collisions::Columns<CollisionBasics>);
 
-type Steward = s::Steward<Basics, Columns, inefficient_flat::Steward<Basics>, memoized_flat::Steward<Basics>>;
+type Steward = s::Steward<Basics,
+                          Columns,
+                          inefficient_flat::Steward<Basics>,
+                          memoized_flat::Steward<Basics>>;
 
 fn get_circle_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x86ccbeb2c140cc51u64, index))
@@ -146,9 +149,9 @@ fn collision_predictor<PA: PredictorAccessor<Basics>>(accessor: &mut PA, id: Row
   {
 
     let us = (accessor.data_and_last_change::<Circle>(ids[0])
-                      .expect("a nearness exists for a circle that doesn't"),
+      .expect("a nearness exists for a circle that doesn't"),
               accessor.data_and_last_change::<Circle>(ids[1])
-                      .expect("a nearness exists for a circle that doesn't"));
+      .expect("a nearness exists for a circle that doesn't"));
 
     let relationship = accessor.get::<Intersection>(id);
     time = QuadraticTrajectory::approximately_when_distance_passes((us.0).0.radius +
@@ -224,7 +227,7 @@ fn boundary_predictor<PA: PredictorAccessor<Basics>>(accessor: &mut PA, id: RowI
                                                 MAX_DISTANCE_TRAVELED_AT_ONCE,
                                                 [ARENA_SIZE / 2, ARENA_SIZE / 2, 0, 0, 0, 0]);
     let me = accessor.data_and_last_change::<Circle>(id)
-                     .expect("a prediction was recorded for a circle that doesn't exist");
+      .expect("a prediction was recorded for a circle that doesn't exist");
 
     let relationship = accessor.get::<Intersection>(id);
     time = QuadraticTrajectory::approximately_when_distance_passes(ARENA_SIZE - me.0.radius,
@@ -295,8 +298,8 @@ pub fn testfunc() {
   let mut stew: Steward = ::TimeSteward::new_empty((), settings);
 
   stew.insert_fiat_event(0,
-                         DeterministicRandomId::new(&0),
-                         time_steward_event! (Basics, struct Initialize {}, | &self, mutator | {
+                       DeterministicRandomId::new(&0),
+                       time_steward_event! (Basics, struct Initialize {}, | &self, mutator | {
                            for i in 0..HOW_MANY_CIRCLES {
                              let thingy = ARENA_SIZE / 20;
                              let radius = mutator.gen_range(ARENA_SIZE / 30, ARENA_SIZE / 15);
@@ -319,7 +322,7 @@ pub fn testfunc() {
                              collisions::insert::<CollisionBasics, _>(mutator, id, ());
                            }
     }))
-      .unwrap();
+    .unwrap();
 
   let vertex_shader_source = r#"
 #version 140
@@ -355,14 +358,12 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
 
   if true {
     let display = glium::glutin::WindowBuilder::new()
-                    .with_dimensions(600, 600)
-                    .build_glium()
-                    .expect("failed to create window");
-    let program = glium::Program::from_source(&display,
-                                              vertex_shader_source,
-                                              fragment_shader_source,
-                                              None)
-                    .expect("glium program generation failed");
+      .with_dimensions(600, 600)
+      .build_glium()
+      .expect("failed to create window");
+    let program =
+      glium::Program::from_source(&display, vertex_shader_source, fragment_shader_source, None)
+        .expect("glium program generation failed");
     let parameters = glium::DrawParameters {
       blend: glium::draw_parameters::Blend::alpha_blending(),
       ..Default::default()
@@ -386,14 +387,13 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
       let mut vertices = Vec::<Vertex>::new();
 
       let snapshot = stew.snapshot_before(&(((start.elapsed().as_secs() as i64 * 1000000000i64) +
-                                             start.elapsed().subsec_nanos() as i64) *
-                                            SECOND /
-                                            1000000000i64))
-                         .expect("steward failed to provide snapshot");
+                            start.elapsed().subsec_nanos() as i64) *
+                           SECOND / 1000000000i64))
+        .expect("steward failed to provide snapshot");
       for index in 0..HOW_MANY_CIRCLES {
         let (circle, time) = snapshot.data_and_last_change::<Circle>(get_circle_id(index))
-                                     .expect("missing circle")
-                                     .clone();
+          .expect("missing circle")
+          .clone();
         let position = circle.position.updated_by(snapshot.now() - time).unwrap().evaluate();
         let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,
                       position[1] as f32 / ARENA_SIZE as f32 - 0.5];
@@ -432,12 +432,12 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
 
       }
       target.draw(&glium::VertexBuffer::new(&display, &vertices)
-                     .expect("failed to generate glium Vertex buffer"),
-                  &indices,
-                  &program,
-                  &glium::uniforms::EmptyUniforms,
-                  &parameters)
-            .expect("failed target.draw");
+                .expect("failed to generate glium Vertex buffer"),
+              &indices,
+              &program,
+              &glium::uniforms::EmptyUniforms,
+              &parameters)
+        .expect("failed target.draw");
 
       target.finish().expect("failed to finish drawing");
       sleep(Duration::from_millis(10));
@@ -448,9 +448,8 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
   for increment in 1..21 {
     snapshots.push(stew.snapshot_before(&(increment * SECOND * 2)));
   }
-  for snapshot in snapshots.iter_mut().map(|option| {
-    option.as_mut().expect("all these snapshots should have been valid")
-  }) {
+  for snapshot in snapshots.iter_mut()
+    .map(|option| option.as_mut().expect("all these snapshots should have been valid")) {
     printlnerr!("snapshot for {}", snapshot.now());
     // for index in 0..HOW_MANY_CIRCLES {
     // printlnerr!("{}", snapshot.get::<Circle> (get_circle_id (index)).expect("missing circle").position);

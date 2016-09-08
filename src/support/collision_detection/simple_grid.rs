@@ -24,7 +24,7 @@ struct Cell<B: Basics> {
   _marker: PhantomData<B>,
 }
 impl<B: Basics> Column for Cell<B> {
-  type FieldType = HashSet <RowId>;
+  type FieldType = HashSet<RowId>;
   fn column_id() -> ColumnId {
     ColumnId(B::nearness_column_id().0 ^ 0x030fc8868af34f2c)
   }
@@ -34,7 +34,7 @@ impl<B: Basics> Column for Cell<B> {
 // (which are implementation details) are not visible elsewhere.
 mod hack {
   use super::*;
-  use {RowId};
+  use RowId;
   #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
   pub struct Member<B: Basics> {
     pub row: RowId,
@@ -45,7 +45,7 @@ mod hack {
 use self::hack::Member;
 
 impl<B: Basics> Column for Member<B> {
-  type FieldType = Member <B>;
+  type FieldType = Member<B>;
   fn column_id() -> ColumnId {
     ColumnId(B::nearness_column_id().0 ^ 0xe844c90eaf2e20ab)
   }
@@ -116,7 +116,7 @@ pub fn erase<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
   }
 }
 
-pub type Columns <B> = PhantomData <Member <B>>;
+pub type Columns<B> = PhantomData<Member<B>>;
 
 pub fn insert_predictors <B: Basics, Settings: TimeStewardSettings <<B as super::Basics>::StewardBasics>> (settings: &mut Settings) {
   settings.insert_predictor (PredictorId (<B as super::Basics>::nearness_column_id().0 ^ 0x3686689daa651bf3),

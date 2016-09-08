@@ -100,8 +100,8 @@ impl QuadraticTrajectory {
 
     let base = max(first.0, second.0);
     if (distance_squared_would_be(first, second, base)
-          .expect("we shouldn't have already maxed out our distance traveled at the \
-                   BEGINNING of the test!") - distance * distance) * direction > 0 {
+      .expect("we shouldn't have already maxed out our distance traveled at the \
+               BEGINNING of the test!") - distance * distance) * direction > 0 {
       printlnerr!("rejefoo");
       return Some(base);
     }

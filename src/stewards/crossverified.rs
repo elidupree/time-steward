@@ -5,8 +5,9 @@
 
 
 use {DeterministicRandomId, ColumnId, FieldId, PredictorId, Column, ExtendedTime, StewardRc,
-             Basics, FieldRc, TimeSteward, IncrementalTimeSteward, FiatEventOperationError, ValidSince, PredictorFn, TimeStewardSettings,ColumnList, ColumnListUser};
-use std::collections::{HashMap};
+     Basics, FieldRc, TimeSteward, IncrementalTimeSteward, FiatEventOperationError, ValidSince,
+     PredictorFn, TimeStewardSettings, ColumnList, ColumnListUser};
+use std::collections::HashMap;
 use std::cmp::max;
 use std::marker::PhantomData;
 use Snapshot as SuperSnapshot;
@@ -27,22 +28,26 @@ pub struct Settings <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<
   <Steward0 as TimeSteward <B>>::Settings,
   <Steward1 as TimeSteward <B>>::Settings,
 );
-impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > Clone for Settings <B, Steward0, Steward1> {
-  fn clone (&self)->Self {Settings (self.0.clone(), self.1.clone())}
+impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> Clone for Settings<B,
+                                                                                       Steward0,
+                                                                                       Steward1> {
+  fn clone(&self) -> Self {
+    Settings(self.0.clone(), self.1.clone())
+  }
 }
 
-fn check_equality <C: Column> (first: &FieldRc, second: &FieldRc) {
+fn check_equality<C: Column>(first: &FieldRc, second: &FieldRc) {
   assert_eq!(::unwrap_field::<C>(first), ::unwrap_field::<C>(second), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
 }
 
 
 impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::Accessor<B> for Snapshot<B, Steward0, Steward1> {
-  //macro_rules! forward_snapshot_method ($method: ident ($self, $($argument_name: ident: $argument_type:ty),*)->$return_type:ty
-  // TODO: forward all the methods properly
-  // and check equality by serialization
+// macro_rules! forward_snapshot_method ($method: ident ($self, $($argument_name: ident: $argument_type:ty),*)->$return_type:ty
+// TODO: forward all the methods properly
+// and check equality by serialization
   fn generic_data_and_extended_last_change (&self, id: FieldId)->Option <(& FieldRc, & ExtendedTime <B>)> {
     match (
-      self.0.generic_data_and_extended_last_change (id), 
+      self.0.generic_data_and_extended_last_change (id),
       self.1.generic_data_and_extended_last_change (id)
     ) {
       (None, None) => None,
@@ -55,8 +60,8 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::Accessor<
     }
   }
   fn constants(&self) -> &B::Constants {
-    //constants methods are usually implemented trivially; we don't bother checking them.
-    //Since the user only gives you one set of constants, it's hard to return a wrong value
+// constants methods are usually implemented trivially; we don't bother checking them.
+// Since the user only gives you one set of constants, it's hard to return a wrong value
     self.0.constants()
   }
   fn unsafe_now(&self) -> &B::Time {
@@ -117,8 +122,10 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
   }
 }
 
-impl ColumnListUser for HashMap<ColumnId, fn (&FieldRc, &FieldRc)> {
-  fn apply <C: Column> (&mut self) {self.insert (C::column_id(), check_equality::<C>);}
+impl ColumnListUser for HashMap<ColumnId, fn(&FieldRc, &FieldRc)> {
+  fn apply<C: Column>(&mut self) {
+    self.insert(C::column_id(), check_equality::<C>);
+  }
 }
 
 
@@ -261,5 +268,3 @@ impl<B: Basics, C: ColumnList, Steward0: IncrementalTimeSteward <B>, Steward1: I
     }
   }
 }
-
-

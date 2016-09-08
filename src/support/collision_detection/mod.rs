@@ -6,7 +6,8 @@ use serde::{Serialize, Deserialize};
 pub mod inefficient;
 pub mod simple_grid;
 
-pub trait Basics: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
+pub trait Basics
+  : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
   type StewardBasics: ::Basics;
   type DetectorId: Copy + Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug;//=()
   fn nearness_column_id() -> ColumnId;

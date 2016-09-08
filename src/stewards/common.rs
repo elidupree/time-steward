@@ -1,7 +1,8 @@
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use rand::{ChaChaRng, SeedableRng};
-use {DeterministicRandomId, PredictorId,  TimeId, RowId, FieldId, SiphashIdGenerator, IterationType, Basics, ExtendedTime, GenericExtendedTime};
+use {DeterministicRandomId, PredictorId, TimeId, RowId, FieldId, SiphashIdGenerator,
+     IterationType, Basics, ExtendedTime, GenericExtendedTime};
 
 // https://github.com/rust-lang/rfcs/issues/1485
 pub trait Filter<T> {
@@ -9,22 +10,16 @@ pub trait Filter<T> {
 }
 impl<T> Filter<T> for Option<T> {
   fn filter<P: FnOnce(&T) -> bool>(self, predicate: P) -> Self {
-    self.and_then(|x| {
-      if predicate(&x) {
-        Some(x)
-      } else {
-        None
-      }
-    })
+    self.and_then(|x| { if predicate(&x) { Some(x) } else { None } })
   }
 }
 
 type EventRng = ChaChaRng;
 fn generator_for_event(id: TimeId) -> EventRng {
-  EventRng::from_seed(&[(id.data() [0] >> 32) as u32,
-                        (id.data() [0] & 0xffffffff) as u32,
-                        (id.data() [1] >> 32) as u32,
-                        (id.data() [1] & 0xffffffff) as u32])
+  EventRng::from_seed(&[(id.data()[0] >> 32) as u32,
+                        (id.data()[0] & 0xffffffff) as u32,
+                        (id.data()[1] >> 32) as u32,
+                        (id.data()[1] & 0xffffffff) as u32])
 }
 
 #[macro_export]
@@ -219,7 +214,7 @@ macro_rules! time_steward_common_mutator_methods_for_mutator {
 macro_rules! time_steward_common_rng_methods_for_mutator {
   ($B: ty) => {
     fn next_u32(&mut self) -> u32 {self.generic.generator.next_u32()}
-    
+
     fn next_f32(&mut self) -> f32 {
       assert!(<$B as $crate::Basics>::allow_floats_unsafe(), "Using floating point numbers in TimeSteward events is forbidden by default because it is nondeterministic across platforms. If you know you don't need to be consistent between different computers, or you otherwise know EXACTLY what you're doing, you may add fn allow_floats_unsafe() {true} to your Basics.");
       self.generic.generator.next_f32()
@@ -236,8 +231,8 @@ macro_rules! time_steward_common_rng_methods_for_mutator {
 
 
 pub fn extended_time_of_fiat_event<BaseTime: Ord>(time: BaseTime,
-                                              id: TimeId)
-                                              -> GenericExtendedTime<BaseTime> {
+                                                  id: TimeId)
+                                                  -> GenericExtendedTime<BaseTime> {
   GenericExtendedTime {
     base: time,
     iteration: 0,
@@ -246,10 +241,10 @@ pub fn extended_time_of_fiat_event<BaseTime: Ord>(time: BaseTime,
 }
 
 pub fn time_id_for_predicted_event(predictor_id: PredictorId,
-                               row_id: RowId,
-                               iteration: IterationType,
-                               dependencies_hash: DeterministicRandomId)
-                               -> TimeId {
+                                   row_id: RowId,
+                                   iteration: IterationType,
+                                   dependencies_hash: DeterministicRandomId)
+                                   -> TimeId {
   TimeId::new(&(predictor_id, row_id, iteration, dependencies_hash))
 }
 pub fn next_extended_time_of_predicted_event<BaseTime: Ord>
@@ -262,8 +257,7 @@ pub fn next_extended_time_of_predicted_event<BaseTime: Ord>
   let (iteration, id) = match event_base_time.cmp(&from.base) {
     Ordering::Less => return None, // short-circuit
     Ordering::Greater => {
-      (0,
-       time_id_for_predicted_event(predictor_id, row_id, 0, dependencies_hash))
+      (0, time_id_for_predicted_event(predictor_id, row_id, 0, dependencies_hash))
     }
     Ordering::Equal => {
       let id = time_id_for_predicted_event(predictor_id, row_id, from.iteration, dependencies_hash);
