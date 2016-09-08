@@ -244,8 +244,10 @@ impl<B: Basics, C: ColumnList, Steward0: TimeSteward<B> , Steward1: TimeSteward<
 impl<B: Basics, C: ColumnList, Steward0: IncrementalTimeSteward <B>, Steward1: IncrementalTimeSteward <B>> ::IncrementalTimeSteward<B> for Steward<B, C, Steward0, Steward1> {
   fn step(&mut self) {
     if self.0.updated_until_before() <self.1.updated_until_before() {
+      //printlnerr!("stepping 0");
       self.0.step();
     } else {
+      //printlnerr!("stepping 1");
       self.1.step();
     }
   }

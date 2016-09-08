@@ -1268,3 +1268,17 @@ impl<B: Basics> ::IncrementalTimeSteward<B> for Steward<B> {
     }
   }
 }
+
+/*
+Wait, we don't actually need to do this, because self.shared isn't dropped as long as the snapshot exist!
+impl<B: Basics> Drop for Steward<B> {
+  fn drop(&mut self) {
+    let mut fields_guard = self.shared.fields.borrow_mut();
+    let fields = &mut*fields_guard;
+    for (id, field) in fields.field_states.iter_mut() {
+      field.update_snapshots (*id, & fields.changed_since_snapshots);
+    }
+  }
+}
+*/
+

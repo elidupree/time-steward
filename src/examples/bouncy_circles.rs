@@ -17,13 +17,6 @@ use support::rounding_error_tolerant_math::right_shift_round_up;
 use stewards::inefficient_flat;
 use stewards::memoized_flat;
 
-use std::io::Write;
-macro_rules! printlnerr(
-    ($($arg:tt)*) => { {
-        let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
-        r.expect("failed printing to stderr");
-    } }
-);
 
 type Time = i64;
 type SpaceCoordinate = i64;

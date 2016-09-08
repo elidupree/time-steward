@@ -34,6 +34,13 @@ extern crate bincode;
 #[macro_use]
 extern crate quickcheck;
 
+macro_rules! printlnerr(
+    ($($arg:tt)*) => { {use std::io::Write;
+        let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
+        r.expect("failed printing to stderr");
+    } }
+);
+
 #[macro_use]
 mod api;
 pub use api::*;

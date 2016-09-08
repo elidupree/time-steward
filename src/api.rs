@@ -118,7 +118,7 @@ pub struct ColumnId(pub u64);
 pub struct PredictorId(pub u64);
 
 
-pub trait Column {
+pub trait Column: Any {
   type FieldType: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug;// = Self;
 
   /**
@@ -315,7 +315,7 @@ pub trait PredictorAccessor<B: Basics>: Accessor<B> {
 }
 pub type SnapshotEntry<'a, B: Basics> = (FieldId, (&'a FieldRc, &'a ExtendedTime<B>));
 // where for <'a> & 'a Self: IntoIterator <Item = SnapshotEntry <'a, B>>
-pub trait Snapshot<B: Basics>: MomentaryAccessor<B> {
+pub trait Snapshot<B: Basics>: MomentaryAccessor<B> + Any {
   fn num_fields(&self) -> usize;
   // with slightly better polymorphism we could do this more straightforwardly
   // type Iter<'a>: Iterator<(FieldId, (&'a FieldRc, &'a ExtendedTime<B>))>;
@@ -346,6 +346,17 @@ impl<B: Basics> Snapshot<B> for FiatSnapshot<B> {
     self.fields.len()
   }
 }
+impl<B: Basics> FiatSnapshot<B> {
+  pub fn from_snapshot<'a, S: Snapshot<B>>(snapshot: &'a S) -> Self
+    where &'a S: IntoIterator<Item = SnapshotEntry<'a, B>>
+  {
+    FiatSnapshot {
+      now: snapshot.now().clone(),
+      constants: snapshot.constants().clone(),
+      fields: snapshot.into_iter().map (| (id, stuff) | (id, (stuff.0.clone(), stuff.1.clone()))).collect(),
+    }
+  }
+}
 use std::collections::hash_map;
 pub struct FiatSnapshotIter<'a, B: Basics>(hash_map::Iter<'a, FieldId, (FieldRc, ExtendedTime<B>)>);
 impl<'a, B: Basics> Iterator for FiatSnapshotIter<'a, B> {
@@ -368,7 +379,7 @@ impl<'a, B: Basics> IntoIterator for &'a FiatSnapshot<B> {
 pub trait ColumnListUser {
   fn apply<C: Column>(&mut self);
 }
-pub trait ColumnList {
+pub trait ColumnList: Any {
   fn apply<U: ColumnListUser>(user: &mut U);
 }
 impl<C: Column> ColumnList for PhantomData<C> {
@@ -630,7 +641,7 @@ impl<T: Ord> PartialOrd for ValidSince<T> {
 //  }
 // }
 
-pub trait TimeStewardSettings<B: Basics>: Clone {
+pub trait TimeStewardSettings<B: Basics>: Clone + Any {
   fn new() -> Self;
   fn insert_predictor<P: PredictorFn<B>>(&mut self,
                                          predictor_id: PredictorId,
@@ -638,7 +649,7 @@ pub trait TimeStewardSettings<B: Basics>: Clone {
                                          function: P);
 }
 
-pub trait TimeSteward<B: Basics> {
+pub trait TimeSteward<B: Basics>: Any {
   type Snapshot: Snapshot<B>;
   type Settings: TimeStewardSettings<B>;
 

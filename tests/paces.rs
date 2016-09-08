@@ -6,7 +6,7 @@ extern crate time_steward as steward;
 extern crate rand;
 extern crate serde;
 
-use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, Column, TimeStewardSettings};
+use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, Column, TimeStewardSettings, MomentaryAccessor};
 use std::marker::PhantomData;
 use rand::{Rng, SeedableRng, ChaChaRng};
 
@@ -78,12 +78,20 @@ for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a
   );
   
   let mut stew: Steward = Steward::new_empty (RowId::new (& generator.gen::<u64>()), settings.clone());
-  let mut snapshots = Vec::new();
+  let mut snapshots: Vec<Steward::Snapshot> = Vec::new();
+  
+  fn display_snapshot <S: steward::Snapshot <Basics>> (snapshot: & S)->(usize, DeterministicRandomId) {(snapshot.num_fields(), snapshot.now().clone())}
   
   for index in 0..1000000 {
     let time = RowId::new (& generator.gen::<u64>());
     let choice = generator.gen_range::<u64> (0, 16);
-    //printlnerr!(" Index: {:?}\n ValidSince: {:?}\n    Present: {:?}\n Choice: {:?}\n\n ", index, stew.valid_since(), stew.updated_until_before (), choice);
+    //printlnerr!(" Index: {:?}\n Time: {:?}\n ValidSince: {:?}\n    Present: {:?}\n Choice: {:?}\n\n ", index, time, stew.valid_since(), stew.updated_until_before (), choice);
+    /*for snapshot in snapshots.iter() {
+      snapshot.into_iter().count();
+      if let Some (snapshot2) = Steward::from_snapshot::<Steward::Snapshot> (snapshot, settings.clone()).snapshot_before (& snapshot.now()) {
+        snapshot2.into_iter().count();
+      }
+    }*/
     match choice {
       0 => { printlnerr!("inserting fiat event"); stew.insert_fiat_event (time, RowId::new (& index),
       
@@ -98,12 +106,15 @@ for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a
 
       
       );},
-      1 => if let Some (limit) = stew.updated_until_before () {if let Some (snapshot) = stew.snapshot_before (& limit) {printlnerr!("recorded snapshot"); snapshots.push (snapshot);}},
-      2 => if snapshots.len() >30 {printlnerr!("deleting_snapshot"); let who = generator.gen_range (0, snapshots.len()); snapshots.remove (who);},
-      3 => if let Some (snapshot) = generator.choose (snapshots.as_slice()) { printlnerr!("reloading from snapshot"); stew = Steward::from_snapshot::<Steward::Snapshot> (snapshot, settings.clone());},
+      1 => if let Some (limit) = stew.updated_until_before () {if let Some (snapshot) = stew.snapshot_before (& limit) {printlnerr!("recording snapshot {:?}", display_snapshot::<Steward::Snapshot> (&snapshot)); (&snapshot).into_iter().count(); snapshots.push (snapshot);}},
+      2 => if snapshots.len() >30 {printlnerr!("deleting snapshot"); let who = generator.gen_range (0, snapshots.len()); snapshots.remove (who);},
+      3 => if let Some (snapshot) = generator.choose (snapshots.as_slice()) { printlnerr!("reloading from snapshot {:?}", display_snapshot::<Steward::Snapshot> (&snapshot)); stew = Steward::from_snapshot::<Steward::Snapshot> (snapshot, settings.clone());},
       _ => {
-        //printlnerr!("stepping"); 
+        printlnerr!("stepping"); 
         stew.step();
+        //printlnerr!(" ValidSince: {:?}\n    Present: {:?} ", stew.valid_since(), stew.updated_until_before ());
+        if let Some (limit) = stew.updated_until_before () {if let Some (snapshot) = stew.snapshot_before (& limit) {printlnerr!("checking snapshot at {:?}", snapshot.now()); (&snapshot).into_iter().count();}}
+        
       },
       //_ => ()
     }

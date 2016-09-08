@@ -30,11 +30,12 @@ type SnapshotField<B: Basics> = (FieldRc, ExtendedTime<B>);
 
 
 type FieldsMap<B: Basics> = HashMap<FieldId, Field<B>>;
+type SnapshotsData <B: Basics> =BTreeMap<SnapshotIdx,
+                                    Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>>;
 
 struct Fields<B: Basics> {
   field_states: FieldsMap<B>,
-  changed_since_snapshots: BTreeMap<SnapshotIdx,
-                                    Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>>,
+  changed_since_snapshots: SnapshotsData <B>,
 }
 
 
@@ -200,6 +201,18 @@ impl<'a, B: Basics> IntoIterator for &'a Snapshot<B> {
   }
 }
 
+impl <B: Basics> Field <B> {
+  fn update_snapshots(&self, my_id: FieldId, snapshots: & SnapshotsData <B>) {
+    // Old snapshot are already "updated" with all nonexistent values
+    for (index, snapshot_map) in snapshots.iter().rev() {
+      if *index <self.first_snapshot_not_updated {
+        break;
+      }
+      snapshot_map.get_default(my_id,
+                               || Some((self.data.clone(), self.last_change.clone())));
+    }
+  }
+}
 
 impl<'a, B: Basics> ::Mutator<B> for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
@@ -210,17 +223,7 @@ impl<'a, B: Basics> ::Mutator<B> for Mutator<'a, B> {
     let old_value = self.fields.field_states.get(&field_id).cloned();
     let existence_changed = self.fields
       .set_opt::<C>(id, data, &self.generic.now, self.steward.next_snapshot);
-    // Old snapshot are already "updated" with all nonexistent values
-    if let Some(ref value) = old_value {
-      for (index, snapshot_map) in self.fields.changed_since_snapshots.iter().rev() {
-        if *index < value.first_snapshot_not_updated {
-          break;
-        }
-        snapshot_map.get_default(field_id,
-                                 || Some((value.data.clone(), value.last_change.clone())));
-      }
-    }
-
+    
     if existence_changed {
       self.shared.settings.predictors_by_column.get(&C::column_id()).map(|predictors| {
         for predictor in predictors {
@@ -263,9 +266,11 @@ impl<B: Basics> Fields<B> {
       last_change: time.clone(),
       first_snapshot_not_updated: next_snapshot,
     };
+    let field_id = FieldId::new(id, C::column_id());
     match self.field_states
-      .entry(FieldId::new(id, C::column_id())) {
+      .entry(field_id) {
       Entry::Occupied(mut entry) => {
+        entry.get_mut().update_snapshots (field_id, &self.changed_since_snapshots);
         entry.insert(field);
         false
       }
@@ -277,9 +282,14 @@ impl<B: Basics> Fields<B> {
   }
   // returns true if the field changed from existing to nonexistent or vice versa
   fn remove<C: Column>(&mut self, id: RowId) -> bool {
-    self.field_states
-      .remove(&FieldId::new(id, C::column_id()))
-      .is_some()
+    let field_id = FieldId::new(id, C::column_id());
+    let removed = self.field_states
+      .remove(&field_id);
+    if let Some (value) = removed {
+      value.update_snapshots (field_id, &self.changed_since_snapshots);
+      return true;
+    }
+    false
   }
   // returns true if the field changed from existing to nonexistent or vice versa
   fn set_opt<C: Column>(&mut self,
@@ -574,3 +584,16 @@ impl<B: Basics> ::IncrementalTimeSteward<B> for Steward<B> {
     self.next_event().map(|(time, _)| time.base)
   }
 }
+
+/*
+Wait, we don't actually need to do this, because self.shared isn't dropped as long as the snapshot exist!
+impl<B: Basics> Drop for Steward<B> {
+  fn drop(&mut self) {
+    let mut fields_guard = self.shared.fields.borrow_mut();
+    let fields = &mut*fields_guard;
+    for (id, field) in fields.field_states.iter_mut() {
+      field.update_snapshots (*id, & fields.changed_since_snapshots);
+    }
+  }
+}
+*/
