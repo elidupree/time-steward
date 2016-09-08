@@ -19,7 +19,7 @@ pub struct Steward<B: Basics, Steward0: TimeSteward<B> > {
 
 
 impl<B: Basics, Steward0: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward0> 
-where for <'a> & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>{
+{
   type Snapshot = Steward0::Snapshot;
   type Settings = Steward0::Settings;
 
@@ -85,10 +85,13 @@ where for <'a> & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a
       while self.snapshots.last().map_or (false, | snapshot | snapshot.now() > time) {
         self.snapshots.pop();
       }
-      self.steward = match self.snapshots.last() {
-        None => TimeSteward::new_empty (self.constants.clone(), self.settings.clone()),
-        Some (snapshot) => TimeSteward::from_snapshot::<Self::Snapshot> (snapshot, self.settings.clone()),
-      };
+      self.steward = //match self.snapshots.last() {
+        //None =>
+        TimeSteward::new_empty (self.constants.clone(), self.settings.clone())
+        //,
+        //Some (snapshot) => TimeSteward::from_snapshot::<Self::Snapshot> (snapshot, self.settings.clone()),
+      //}
+      ;
       for (id, & (ref time, ref insert_event)) in self.fiat_events.iter() {
         insert_event (&mut self.steward, time.clone(), id.clone());
       }

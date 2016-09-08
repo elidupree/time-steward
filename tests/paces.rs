@@ -118,6 +118,6 @@ fn main() {
   paces:: <crossverified::Steward <Basics, 
     PhantomData <ColumnHack>,
     amortized::Steward <Basics>,
-    /*flat_to_inefficient_full::Steward <Basics, */memoized_flat::Steward <Basics>/*>*/
+    flat_to_inefficient_full::Steward <Basics, memoized_flat::Steward <Basics>>
   >,_> (&mut generator);
 }
