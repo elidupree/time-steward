@@ -558,11 +558,10 @@ impl<B: Basics> StewardOwned<B> {
       match history.changes.binary_search_by_key(&time, |change| &change.last_change) {
         Ok(index) => {
           assert!(is_replacement);
-          // TODO: be able to check field equality in general
-          // if history.changes [index].data != field.data {
-          self.discard_changes(id, &mut history, index, true, snapshots, shared);
-          self.add_change(id, &mut history, field, snapshots, shared);
-          // }
+          if !self.field_equality_table.options_are_equal (id.column_id, history.changes [index].data.as_ref(), field.data.as_ref()) {
+            self.discard_changes(id, &mut history, index, true, snapshots, shared);
+            self.add_change(id, &mut history, field, snapshots, shared);
+          }
         }
         Err(index) => {
           if !(field.data.is_none() &&
@@ -910,6 +909,8 @@ struct StewardOwned<B: Basics> {
 
   predictions_by_id: HashMap<(RowId, PredictorId), PredictionHistory<B>>,
   predictions_missing_by_time: BTreeMap<ExtendedTime<B>, HashSet<(RowId, PredictorId)>>,
+  
+  field_equality_table: common::FieldEqualityTable,
 }
 
 pub struct Steward<B: Basics> {
@@ -1158,6 +1159,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
         existent_fields: partially_persistent_nonindexed_set::Set::new(),
         predictions_missing_by_time: BTreeMap::new(),
         predictions_by_id: HashMap::new(),
+        field_equality_table: common::FieldEqualityTable::new::<B::Columns>(),
       },
       shared: Rc::new(StewardShared {
         settings: settings,

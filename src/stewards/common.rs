@@ -299,4 +299,11 @@ impl FieldEqualityTable{
   pub fn fields_are_equal(&self, column_id: ColumnId, first: & FieldRc, second: & FieldRc)->bool {
     (self.0.get (&column_id).expect ("Column missing from equality table; did you forget to list a column in Basics::Columns?")) (first, second)
   }
+  pub fn options_are_equal(&self, column_id: ColumnId, first: Option <& FieldRc>, second: Option <& FieldRc>)->bool {
+    match (first, second) {
+      (None, None) => true,
+      (Some (first), Some (second)) => self.fields_are_equal (column_id, first, second),
+      _ => false,
+    }
+  }
 }
