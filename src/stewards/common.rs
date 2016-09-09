@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use rand::{ChaChaRng, SeedableRng};
-use {DeterministicRandomId, PredictorId, TimeId, RowId, FieldId, SiphashIdGenerator,
-     IterationType, Basics, ExtendedTime, GenericExtendedTime};
+use {DeterministicRandomId, PredictorId, TimeId, RowId, FieldId, FieldRc, SiphashIdGenerator,
+     IterationType, Basics, ExtendedTime, GenericExtendedTime, ColumnId, Column, ColumnList, ColumnListUser};
 
 // https://github.com/rust-lang/rfcs/issues/1485
 pub trait Filter<T> {
@@ -277,4 +278,25 @@ pub fn next_extended_time_of_predicted_event<BaseTime: Ord>
     iteration: iteration,
     id: id,
   })
+}
+
+
+fn check_equality<C: Column>(first: &FieldRc, second: &FieldRc)->bool {
+  ::unwrap_field::<C>(first) == ::unwrap_field::<C>(second)
+}
+pub struct FieldEqualityTable (HashMap<ColumnId, fn(&FieldRc, &FieldRc)->bool>);
+impl ColumnListUser for FieldEqualityTable{
+  fn apply<C: Column>(&mut self) {
+    self.0.insert(C::column_id(), check_equality::<C>);
+  }
+}
+impl FieldEqualityTable{
+  pub fn new <C: ColumnList>()->FieldEqualityTable{
+    let mut result = FieldEqualityTable(HashMap::new());
+    C::apply (&mut result);
+    result
+  }
+  pub fn fields_are_equal(&self, column_id: ColumnId, first: & FieldRc, second: & FieldRc)->bool {
+    (self.0.get (&column_id).expect ("Column missing from equality table; did you forget to list a column in Basics::Columns?")) (first, second)
+  }
 }

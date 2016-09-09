@@ -4,25 +4,25 @@
 //!
 
 
-use {DeterministicRandomId, ColumnId, FieldId, PredictorId, Column, ExtendedTime, StewardRc,
+use {DeterministicRandomId, ColumnId, FieldId, PredictorId, ExtendedTime, StewardRc,
      Basics, FieldRc, TimeSteward, IncrementalTimeSteward, FiatEventOperationError, ValidSince,
-     PredictorFn, TimeStewardSettings, ColumnList, ColumnListUser};
+     PredictorFn, TimeStewardSettings};
+use stewards::common::FieldEqualityTable;
 use std::collections::HashMap;
 use std::cmp::max;
 use std::marker::PhantomData;
 use Snapshot as SuperSnapshot;
 
-pub struct Steward<B: Basics, C: ColumnList, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
+pub struct Steward<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
   Steward0,
   Steward1,
-  StewardRc <HashMap<ColumnId, fn (&FieldRc, &FieldRc)>>,
+  StewardRc <FieldEqualityTable>,
   PhantomData <B::Constants>,
-  PhantomData <C>,
 );
 pub struct Snapshot<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
   <Steward0 as TimeSteward <B>>::Snapshot,
   <Steward1 as TimeSteward <B>>::Snapshot,
-  StewardRc <HashMap<ColumnId, fn (&FieldRc, &FieldRc)>>,
+  StewardRc <FieldEqualityTable>,
 );
 pub struct Settings <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
   <Steward0 as TimeSteward <B>>::Settings,
@@ -34,10 +34,6 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> Clone for Se
   fn clone(&self) -> Self {
     Settings(self.0.clone(), self.1.clone())
   }
-}
-
-fn check_equality<C: Column>(first: &FieldRc, second: &FieldRc) {
-  assert_eq!(::unwrap_field::<C>(first), ::unwrap_field::<C>(second), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
 }
 
 
@@ -53,7 +49,7 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::Accessor<
       (None, None) => None,
       (Some (value_0), Some (value_1)) => {
         assert_eq!(value_0.1, value_1.1, "Snapshots returned different last change times for the same field; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
-        (self.2.get (& id.column_id).expect ("Column missing from crossverification table; did you forget to call populate_crossverified_time_stewards_equality_table!()? Or did you forget to list a column in for_all_columns!()?")) (value_0.0, value_1.0);
+        assert!(self.2.fields_are_equal (id.column_id, value_0.0, value_1.0), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
         Some (value_0)
       },
       _=> panic! ("One snapshot returned a value and the other didn't; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types")
@@ -113,18 +109,12 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
     for (id, data) in & self.1 {
       let other_data = fields.get (& id).expect ("field existed in Steward1 snapshot but not Steward0 snapshot");
       assert_eq!(*data .1, other_data .1, "Snapshots returned different last change times for the same field; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
-      (self.2.get (& id.column_id).expect ("Column missing from crossverification table; did you forget to call populate_crossverified_time_stewards_equality_table!()? Or did you forget to list a column in for_all_columns!()?")) (data .0, & other_data .0);
+      assert!(self.2.fields_are_equal (id.column_id, data .0, & other_data .0), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
     }
     SnapshotIter:: <'a, B, Steward0, Steward1> {
       iter: (& self.0).into_iter(),
       snapshot: self
     }
-  }
-}
-
-impl ColumnListUser for HashMap<ColumnId, fn(&FieldRc, &FieldRc)> {
-  fn apply<C: Column>(&mut self) {
-    self.insert(C::column_id(), check_equality::<C>);
   }
 }
 
@@ -139,7 +129,7 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > TimeSteward
   }
 }
 
-impl<B: Basics, C: ColumnList, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeSteward<B> for Steward<B, C, Steward0, Steward1> {
+impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward0, Steward1> {
   type Snapshot = Snapshot<B, Steward0, Steward1>;
   type Settings = Settings<B, Steward0, Steward1>;
 
@@ -147,13 +137,11 @@ impl<B: Basics, C: ColumnList, Steward0: TimeSteward<B> , Steward1: TimeSteward<
     max (self.0.valid_since(), self.1.valid_since())
   }
   fn new_empty(constants: B::Constants, settings: Self::Settings) -> Self {
-    let mut equality_table = HashMap::new();
-    C::apply (&mut equality_table);
-    let result = Steward::<B, C, Steward0, Steward1> (
+    let result = Steward::<B, Steward0, Steward1> (
       TimeSteward::new_empty (constants.clone(), settings.0),
       TimeSteward::new_empty (constants, settings.1),
-      StewardRc::new (equality_table),
-      PhantomData, PhantomData,
+      StewardRc::new (FieldEqualityTable::new:: <B::Columns>()),
+      PhantomData,
     );
     assert!(result.0.valid_since() == ValidSince::TheBeginning, "Steward0 broke the ValidSince rules");
     assert!(result.1.valid_since() == ValidSince::TheBeginning, "Steward1 broke the ValidSince rules");
@@ -164,13 +152,11 @@ impl<B: Basics, C: ColumnList, Steward0: TimeSteward<B> , Steward1: TimeSteward<
                                               settings: Self::Settings)
                                               -> Self
                                               where & 'a S: IntoIterator <Item = ::SnapshotEntry <'a, B>> {
-    let mut equality_table = HashMap::new();
-    C::apply (&mut equality_table);
     let result = Steward (
       Steward0::from_snapshot::<'a, S>(snapshot, settings.0),
       Steward1::from_snapshot::<'a, S>(snapshot, settings.1),
-      StewardRc::new (equality_table),
-      PhantomData, PhantomData,
+      StewardRc::new (FieldEqualityTable::new:: <B::Columns>()),
+      PhantomData,
     );
     assert!(result.0.valid_since() == ValidSince::Before (snapshot.now().clone()), "Steward0 broke the ValidSince rules");
     assert!(result.1.valid_since() == ValidSince::Before (snapshot.now().clone()), "Steward1 broke the ValidSince rules");
@@ -241,7 +227,7 @@ impl<B: Basics, C: ColumnList, Steward0: TimeSteward<B> , Steward1: TimeSteward<
 }
 
 
-impl<B: Basics, C: ColumnList, Steward0: IncrementalTimeSteward <B>, Steward1: IncrementalTimeSteward <B>> ::IncrementalTimeSteward<B> for Steward<B, C, Steward0, Steward1> {
+impl<B: Basics, Steward0: IncrementalTimeSteward <B>, Steward1: IncrementalTimeSteward <B>> ::IncrementalTimeSteward<B> for Steward<B, Steward0, Steward1> {
   fn step(&mut self) {
     if self.0.updated_until_before() <self.1.updated_until_before() {
       //println!("stepping 0");

@@ -53,6 +53,7 @@ struct Basics;
 impl ::Basics for Basics {
   type Time = Time;
   type Constants = ();
+  type Columns = Columns;
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct CollisionBasics;
@@ -128,7 +129,6 @@ type Columns = (PhantomData<Circle>,
                 collisions::Columns<CollisionBasics>);
 
 type Steward = s::Steward<Basics,
-                          Columns,
                           inefficient_flat::Steward<Basics>,
                           memoized_flat::Steward<Basics>>;
 

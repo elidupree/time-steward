@@ -220,6 +220,7 @@ pub trait Basics
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug + Default {
   type Time: Any + Send + Sync + Clone + Ord + Hash + Serialize + Deserialize + Debug;
   type Constants: Any + Send + Sync + Clone + Serialize + Deserialize + Debug;
+  type Columns: ColumnList;
   fn allow_floats_unsafe() -> bool {
     false
   }
@@ -699,7 +700,7 @@ pub trait TimeSteward<B: Basics>: Any {
   /**
   Removes a fiat event that has been inserted previously.
   
-  If time < valid_since(), this does nothing and returns Err(InvalidTime). If there is no fiat event with the specified time and distinguisher, this does nothing and returns Err(InvalidInput). Otherwise, it erases the event and returns Ok.
+  If time < valid_since(), this does nothing and returns Err(InvalidTime). If there is no fiat event with the specified time and distinguisher, this does nothing and returns Err(InvalidInput). Otherwise, it removes the event and returns Ok.
   
   steward.remove_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
   steward.remove_fiat_event() may not change steward.valid_since().

@@ -36,6 +36,7 @@ struct Basics;
 impl steward::Basics for Basics {
   type Time = DeterministicRandomId;
   type Constants = DeterministicRandomId;
+  type Columns = PhantomData <ColumnHack>;
 }
   struct ColumnHack;
   impl Column for ColumnHack {
@@ -129,7 +130,6 @@ fn main() {
   let mut generator = ChaChaRng::from_seed(& [1337]);
   use steward::stewards::{amortized, memoized_flat, flat_to_inefficient_full, crossverified};
   paces:: <crossverified::Steward <Basics, 
-    PhantomData <ColumnHack>,
     amortized::Steward <Basics>,
     flat_to_inefficient_full::Steward <Basics, memoized_flat::Steward <Basics>>
   >,_> (&mut generator);

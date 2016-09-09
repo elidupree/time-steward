@@ -16,6 +16,7 @@ struct Basics;
 impl ::Basics for Basics {
   type Time = Time;
   type Constants = ();
+  type Columns = Columns;
 }
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -33,7 +34,6 @@ impl Column for Philosopher {
 }
 
 type Steward = s::Steward<Basics,
-                          Columns,
                           amortized::Steward<Basics>,
                           memoized_flat::Steward<Basics>>;
 
