@@ -24,11 +24,29 @@ impl<T: $Trait> $List for $Wrapper<T> {
 }
 tuple_impls! ($List, $User, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
 };
+
+($Trait: ident<B>, $Wrapper: ident, $List: ident, $User: ident) => {
+pub struct $Wrapper<B: Basics, T: $Trait <B>>(PhantomData <B>, PhantomData <T>, Void);
+pub trait $User <B: Basics> {
+  fn apply<C: $Trait <B>>(&mut self);
+}
+pub trait $List <B: Basics>: Any {
+  fn apply<U: $User <B>>(user: &mut U);
+}
+impl<B: Basics, T: $Trait <B>> $List <B> for $Wrapper<B, T> {
+  #[inline]
+  fn apply<U: $User <B>>(user: &mut U) {
+    user.apply::<T>();
+  }
+}
+tuple_impls! (B $List, $User, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
+};
+
 }
 macro_rules! tuple_impls {
   ($List: ident, $User: ident, $TL: ident $(, $T: ident)*) => {
     impl<$($T,)* $TL> $List for ($($T,)* $TL,)
-      where $($T: $List,)* $TL: ColumnList
+      where $($T: $List,)* $TL: $List
     {
       #[inline]
       fn apply <U: $User> (user: &mut U) {
@@ -38,31 +56,66 @@ macro_rules! tuple_impls {
     }
     tuple_impls! ($List, $User, $($T),*);
   };
+  (B $List: ident, $User: ident, $TL: ident $(, $T: ident)*) => {
+    impl<B: Basics, $($T,)* $TL> $List <B> for ($($T,)* $TL,)
+      where $($T: $List <B>,)* $TL: $List <B>
+    {
+      #[inline]
+      fn apply <U: $User <B>> (user: &mut U) {
+        $($T::apply(user);)*
+        $TL::apply(user);
+      }
+    }
+    tuple_impls! (B $List, $User, $($T),*);
+  };
   ($List: ident, $User: ident,) => {};
+  (B $List: ident, $User: ident,) => {};
 }
 macro_rules! pair_null_impls {
-($Trait0: ident, $Wrapper0: ident, $List0: ident, $User0: ident, $Trait1: ident, $Wrapper1: ident, $List1: ident, $User1: ident) => {
-impl<T> $List1 for $Wrapper0<T> {
+([$Trait0: ident, $Wrapper0: ident, $List0: ident, $User0: ident][$Trait1: ident, $Wrapper1: ident, $List1: ident, $User1: ident]) => {
+impl<T: $Trait0> $List1 for $Wrapper0<T> {
   #[inline]
   fn apply<U: $User1>(_: &mut U) {}
 }
-impl<T> $List0 for $Wrapper1<T> {
+impl<T: $Trait1> $List0 for $Wrapper1<T> {
   #[inline]
   fn apply<U: $User0>(_: &mut U) {}
 }
 };
+
+([$Trait0: ident, $Wrapper0: ident, $List0: ident, $User0: ident][$Trait1: ident <B>, $Wrapper1: ident, $List1: ident, $User1: ident]) => {
+impl<B: Basics, T: $Trait0> $List1 <B> for $Wrapper0<T> {
+  #[inline]
+  fn apply<U: $User1 <B>>(_: &mut U) {}
+}
+impl<B: Basics, T: $Trait1 <B>> $List0 for $Wrapper1<B, T> {
+  #[inline]
+  fn apply<U: $User0>(_: &mut U) {}
+}
+};
+
+([$Trait0: ident <B>, $Wrapper0: ident, $List0: ident, $User0: ident][$Trait1: ident <B>, $Wrapper1: ident, $List1: ident, $User1: ident]) => {
+impl<B: Basics, T: $Trait0 <B>> $List1 <B> for $Wrapper0<B, T> {
+  #[inline]
+  fn apply<U: $User1 <B>>(_: &mut U) {}
+}
+impl<B: Basics, T: $Trait1 <B>> $List0 <B> for $Wrapper1<B, T> {
+  #[inline]
+  fn apply<U: $User0 <B>>(_: &mut U) {}
+}
+};
 }
 macro_rules! all_null_impls {
-([$Trait0: ident, $Wrapper0: ident, $List0: ident, $User0: ident] $(, [$Trait: ident, $Wrapper: ident, $List: ident, $User: ident])*) => {
-  $(pair_null_impls! ($Trait0, $Wrapper0, $List0, $User0, $Trait, $Wrapper, $List, $User);)*
-  all_null_impls! ($([$Trait, $Wrapper, $List, $User]),*);
+($info0:tt $($info:tt)*) => {
+  $(pair_null_impls! ($info0 $info);)*
+  all_null_impls! ($($info)*);
 };
 () => {};
 }
 macro_rules! all_list_definitions {
-($([$Trait: ident, $Wrapper: ident, $List: ident, $User: ident],)*) => {
-  $(type_list_definitions! ($Trait, $Wrapper, $List, $User);)*
-  all_null_impls! ($([$Trait, $Wrapper, $List, $User]),*);
+($([$($info:tt)*])*) => {
+  $(type_list_definitions! ($($info)*);)*
+  all_null_impls! ($([$($info)*])*);
 };
 }
 
@@ -76,8 +129,9 @@ macro_rules! all_list_definitions {
 //
 
 all_list_definitions! (
-  [Column, ColumnType, ColumnList, ColumnListUser],
-  //[EventFn, EventType, EventList, EventListUser],
+  [Column, ColumnType, ColumnList, ColumnListUser]
+  [EventFn<B>, EventType, EventList, EventListUser]
+  [PredictorFn<B>, PredictorType, PredictorList, PredictorListUser]
 );
 
 
