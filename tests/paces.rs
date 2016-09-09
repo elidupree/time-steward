@@ -6,8 +6,7 @@ extern crate time_steward as steward;
 extern crate rand;
 extern crate serde;
 
-use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, Column, TimeStewardSettings};
-use std::marker::PhantomData;
+use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, Column, TimeStewardSettings, ColumnType};
 use rand::{Rng, SeedableRng, ChaChaRng};
 
 
@@ -36,7 +35,7 @@ struct Basics;
 impl steward::Basics for Basics {
   type Time = DeterministicRandomId;
   type Constants = DeterministicRandomId;
-  type Columns = PhantomData <ColumnHack>;
+  type Columns = ColumnType <ColumnHack>;
 }
   struct ColumnHack;
   impl Column for ColumnHack {
