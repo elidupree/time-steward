@@ -16,6 +16,7 @@
 use {DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, Column, StewardRc,
      FieldRc, ExtendedTime, Basics, Accessor, FiatEventOperationError, ValidSince, TimeSteward, IncrementalTimeSteward};
 use stewards::common;
+use list_of_types::FieldEqualityTable;
 use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet, btree_map};
 use std::collections::hash_map::Entry;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
@@ -910,7 +911,7 @@ struct StewardOwned<B: Basics> {
   predictions_by_id: HashMap<(RowId, PredictorId), PredictionHistory<B>>,
   predictions_missing_by_time: BTreeMap<ExtendedTime<B>, HashSet<(RowId, PredictorId)>>,
   
-  field_equality_table: common::FieldEqualityTable,
+  field_equality_table: FieldEqualityTable,
 }
 
 pub struct Steward<B: Basics> {
@@ -1159,7 +1160,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
         existent_fields: partially_persistent_nonindexed_set::Set::new(),
         predictions_missing_by_time: BTreeMap::new(),
         predictions_by_id: HashMap::new(),
-        field_equality_table: common::FieldEqualityTable::new::<B::Columns>(),
+        field_equality_table: FieldEqualityTable::new::<B::Columns>(),
       },
       shared: Rc::new(StewardShared {
         settings: settings,

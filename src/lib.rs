@@ -44,6 +44,8 @@ macro_rules! printlnerr(
 #[macro_use]
 mod api;
 pub use api::*;
+mod list_of_types;
+pub use list_of_types::*;
 
 mod insert_only;
 pub mod data_structures;

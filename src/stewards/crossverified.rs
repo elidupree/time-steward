@@ -7,7 +7,7 @@
 use {DeterministicRandomId, ColumnId, FieldId, PredictorId, ExtendedTime, StewardRc,
      Basics, FieldRc, TimeSteward, IncrementalTimeSteward, FiatEventOperationError, ValidSince,
      PredictorFn, TimeStewardSettings};
-use stewards::common::FieldEqualityTable;
+use list_of_types::FieldEqualityTable;
 use std::collections::HashMap;
 use std::cmp::max;
 use std::marker::PhantomData;
