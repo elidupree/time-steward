@@ -5,34 +5,40 @@ use serde::{Serialize, Serializer, Error, de};
 
 use {ExtendedTime, StewardRc, FieldRc, ColumnId, Column, Basics};
 
-pub trait ColumnListUser {
-  fn apply<C: Column>(&mut self);
+macro_rules! type_list_definitions {
+($Trait: ident, $List: ident, $User: ident, $field: ident) => {
+pub trait $User {
+  fn apply<C: $Trait>(&mut self);
 }
-pub trait ColumnList: Any {
-  fn apply<U: ColumnListUser>(user: &mut U);
+pub trait $List: Any {
+  fn apply<U: $User>(user: &mut U);
 }
-impl<C: Column> ColumnList for PhantomData<C> {
+impl<C: Column> $List for PhantomData<C> {
   #[inline]
-  fn apply<U: ColumnListUser>(user: &mut U) {
+  fn apply<U: $User>(user: &mut U) {
     user.apply::<C>();
   }
 }
+tuple_impls! ($List, $User, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
+}
+}
 macro_rules! tuple_impls {
-  ($TL: ident $(, $T: ident)*) => {
-    impl<$($T,)* $TL> ColumnList for ($($T,)* $TL,)
-      where $($T: ColumnList,)* $TL: ColumnList
+  ($List: ident, $User: ident, $TL: ident $(, $T: ident)*) => {
+    impl<$($T,)* $TL> $List for ($($T,)* $TL,)
+      where $($T: $List,)* $TL: ColumnList
     {
       #[inline]
-      fn apply <U: ColumnListUser> (user: &mut U) {
+      fn apply <U: $User> (user: &mut U) {
         $($T::apply(user);)*
         $TL::apply(user);
       }
     }
-    tuple_impls! ($($T),*);
+    tuple_impls! ($List, $User, $($T),*);
   };
-  () => {};
+  ($List: ident, $User: ident,) => {};
 }
-tuple_impls! (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
+type_list_definitions! (Column, ColumnList, ColumnListUser, whatever);
+
 // Today I Learned that macro hygiene is not applied to type parameter lists
 //
 // macro_rules! escalate {
