@@ -135,24 +135,38 @@ all_list_definitions! (
 );
 
 
+#[macro_export]
+macro_rules! time_steward_make_function_table_type {
+  ($Struct: ident, $Id: ty, $get_id: ident, $List: ident, $User: ident, fn $function: ident <$T: ident: $Trait: ident $(, [$Parameter: ident $($bounds:tt)*])*> ($($argument_name: ident: $argument_type:ty),*)->$return_type:ty) => {
+pub struct $Struct <$($Parameter $($bounds)*),*> (HashMap<$Id, fn($($argument_name: $argument_type),*)-> $return_type>);
+impl<$($Parameter $($bounds)*),*> $User for $Struct<$($Parameter),*> {
+  fn apply<$T: $Trait>(&mut self) {
+    self.0.insert($T::$get_id(), $function::<$T $(, $Parameter)*>);
+  }
+}
+impl<$($Parameter $($bounds)*),*> $Struct<$($Parameter),*> {
+  pub fn new <L: $List>()->$Struct<$($Parameter),*> {
+    let mut result = $Struct (HashMap::new());
+    L::apply (&mut result);
+    result
+  }
+  pub fn call (&self, id: $Id $(, $argument_name: $argument_type)*)->$return_type {
+    (self.0.get (&id).expect ("Type missing from function table; did you forget to list it in Basics::IncludedTypes?")) ($($argument_name),*)
+  }
+}
+}
+
+}
+
 
 fn check_equality<C: Column>(first: &FieldRc, second: &FieldRc)->bool {
   ::unwrap_field::<C>(first) == ::unwrap_field::<C>(second)
 }
-pub struct FieldEqualityTable (HashMap<ColumnId, fn(&FieldRc, &FieldRc)->bool>);
-impl ColumnListUser for FieldEqualityTable{
-  fn apply<C: Column>(&mut self) {
-    self.0.insert(C::column_id(), check_equality::<C>);
-  }
-}
+time_steward_make_function_table_type! (FieldEqualityTable, ColumnId, column_id, ColumnList, ColumnListUser, fn check_equality<C: Column>(first: &FieldRc, second: &FieldRc)->bool);
+
 impl FieldEqualityTable{
-  pub fn new <C: ColumnList>()->FieldEqualityTable{
-    let mut result = FieldEqualityTable(HashMap::new());
-    C::apply (&mut result);
-    result
-  }
   pub fn fields_are_equal(&self, column_id: ColumnId, first: & FieldRc, second: & FieldRc)->bool {
-    (self.0.get (&column_id).expect ("Column missing from equality table; did you forget to list a column in Basics::Columns?")) (first, second)
+    self.call (column_id, first, second)
   }
   pub fn options_are_equal(&self, column_id: ColumnId, first: Option <& FieldRc>, second: Option <& FieldRc>)->bool {
     match (first, second) {
@@ -163,57 +177,35 @@ impl FieldEqualityTable{
   }
 }
 
-
-  fn serialize_column<C: Column, S: Serializer>(field: &FieldRc,
+fn serialize_column<C: Column, S: Serializer>(field: &FieldRc,
+                                              serializer: &mut S)
+                                              -> Result<(), S::Error> {
+  try!(::unwrap_field::<C>(field).serialize(serializer));
+  Ok(())
+}
+fn deserialize_column<C: Column, B: Basics, M: de::MapVisitor>
+  (visitor: &mut M)
+   -> Result<(FieldRc, ExtendedTime<B>), M::Error> {
+  let (data, time) = try!(visitor.visit_value::<(C::FieldType, ExtendedTime<B>)>());
+  Ok((StewardRc::new(data), time))
+}
+time_steward_make_function_table_type! (FieldSerializationTable, ColumnId, column_id, ColumnList, ColumnListUser, fn serialize_column <C: Column, [S: Serializer]>(field: &FieldRc,
                                                 serializer: &mut S)
-                                                -> Result<(), S::Error> {
-    try!(::unwrap_field::<C>(field).serialize(serializer));
-    Ok(())
-  }
+                                                -> Result<(), S::Error> );
+time_steward_make_function_table_type! (FieldDeserializationTable, ColumnId, column_id, ColumnList, ColumnListUser, fn deserialize_column <C: Column, [B: Basics], [M: de::MapVisitor]>(visitor: &mut M)
+                                                -> Result<(FieldRc, ExtendedTime<B>), M::Error>  );
 
-  fn deserialize_column<B: Basics, C: Column, M: de::MapVisitor>
-    (visitor: &mut M)
-     -> Result<(FieldRc, ExtendedTime<B>), M::Error> {
-    let (data, time) = try!(visitor.visit_value::<(C::FieldType, ExtendedTime<B>)>());
-    Ok((StewardRc::new(data), time))
-  }
-
-  pub struct FieldSerializationTable<S: Serializer>(HashMap<ColumnId,
-                                                           fn(&FieldRc, &mut S)
-                                                              -> Result<(), S::Error>>);
-  pub struct FieldDeserializationTable <B: Basics, M: de::MapVisitor> (HashMap<ColumnId, fn (&mut M)->Result <(FieldRc, ExtendedTime <B>), M::Error>>);
-
-  impl<S: Serializer> ColumnListUser for FieldSerializationTable<S> {
-    fn apply<C: Column>(&mut self) {
-      self.0.insert(C::column_id(), serialize_column::<C, S>);
-    }
-  }
-  impl<B: Basics, M: de::MapVisitor> ColumnListUser for FieldDeserializationTable <B, M> {
-    fn apply<C: Column>(&mut self) {
-      self.0.insert(C::column_id(), deserialize_column::<B, C, M>);
-    }
-  }
-  impl<S: Serializer> FieldSerializationTable<S> {
-  pub fn new <C: ColumnList>()->FieldSerializationTable <S> {
-    let mut result = FieldSerializationTable(HashMap::new());
-    C::apply (&mut result);
-    result
-  }
+impl<S: Serializer> FieldSerializationTable<S> {
   pub fn serialize_field(&self, column_id: ColumnId, first: & FieldRc,
                                                   serializer: &mut S)->Result<(), S::Error>{
     use serde::ser::Error;
     try!(self.0.get (&column_id).ok_or (S::Error::custom ("Column missing from serialization table; did you forget to list a column in Basics::Columns?"))) (first, serializer)
   }
-  }
-  impl<B: Basics, M: de::MapVisitor> FieldDeserializationTable <B, M> {
-  pub fn new <C: ColumnList>()->FieldDeserializationTable <B, M> {
-    let mut result = FieldDeserializationTable (HashMap::new());
-    C::apply (&mut result);
-    result
-  }
+}
+impl<B: Basics, M: de::MapVisitor> FieldDeserializationTable <B, M> {
   pub fn deserialize_field(&self, column_id: ColumnId, visitor: &mut M)->Result<(FieldRc, ExtendedTime<B>), M::Error>{
     try!(self.0.get (&column_id).ok_or (M::Error::custom ("Column missing from deserialization table; did you forget to list a column in Basics::Columns?"))) (visitor)
   }
-  }
+}
 
 
