@@ -88,7 +88,7 @@ pub fn insert<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
   }
 }
 
-pub fn erase<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
+pub fn remove<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
                                                       who: RowId,
                                                       me: B::DetectorId,
                                                       membership_id: RowId,
@@ -129,8 +129,8 @@ pub fn insert_predictors <B: Basics, Settings: TimeStewardSettings <<B as super:
       }
       if let Some (time) = B::when_escapes (accessor, member.row, member.bounds, member.detector) {
         accessor.predict_at_time (time, time_steward_event! (<B as super::Basics>::StewardBasics, struct BoundsChange [B: Basics]=[B] {id: RowId = id, member: Member <B> = member}, | &self, mutator | {
-          //TODO: optimize erase-then-insert
-          erase::<B,_> (mutator, self.member.row, self.member.detector, self.id, self.member.bounds);
+          //TODO: optimize remove-then-insert
+          remove::<B,_> (mutator, self.member.row, self.member.detector, self.id, self.member.bounds);
           insert::<B,_> (mutator, self.member.row, self.member.detector);
         }));
       }

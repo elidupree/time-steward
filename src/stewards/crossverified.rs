@@ -199,7 +199,7 @@ impl<B: Basics, C: ColumnList, Steward0: TimeSteward<B> , Steward1: TimeSteward<
     assert!(self .1.valid_since() == old_valid_since.1, "Steward1 broke the ValidSince rules");
     result
   }
-  fn erase_fiat_event(&mut self,
+  fn remove_fiat_event(&mut self,
                       time: &B::Time,
                       id: DeterministicRandomId)
                       -> Result<(), FiatEventOperationError> {
@@ -208,8 +208,8 @@ impl<B: Basics, C: ColumnList, Steward0: TimeSteward<B> , Steward1: TimeSteward<
     }
     let old_valid_since = (self.0.valid_since(), self.1.valid_since());
     let result = match (
-      self.0.erase_fiat_event (time, id),
-      self.1.erase_fiat_event (time, id)
+      self.0.remove_fiat_event (time, id),
+      self.1.remove_fiat_event (time, id)
     ){
       (Ok (()), Ok (())) => Ok (()),
       (Err (FiatEventOperationError::InvalidTime),_) => panic!("Steward0 returned InvalidTime after its own ValidSince"),

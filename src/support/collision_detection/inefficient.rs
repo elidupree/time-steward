@@ -27,7 +27,7 @@ pub fn insert<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
   mutator.set::<Detector<B>>(my_row, Some(members));
 }
 
-pub fn erase<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
+pub fn remove<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
                                                       who: RowId,
                                                       me: B::DetectorId) {
   let my_row = RowId::new(&me);

@@ -533,7 +533,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
     }
   }
 
-  fn erase_fiat_event(&mut self,
+  fn remove_fiat_event(&mut self,
                       time: &B::Time,
                       id: DeterministicRandomId)
                       -> Result<(), FiatEventOperationError> {

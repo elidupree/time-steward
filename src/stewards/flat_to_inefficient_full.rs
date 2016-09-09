@@ -102,7 +102,7 @@ impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0
                             })));
     Ok(())
   }
-  fn erase_fiat_event(&mut self,
+  fn remove_fiat_event(&mut self,
                       time: &B::Time,
                       id: DeterministicRandomId)
                       -> Result<(), FiatEventOperationError> {
@@ -113,7 +113,7 @@ impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0
     if self.fiat_events.remove(&id).is_none() {
       return Err(FiatEventOperationError::InvalidInput);
     }
-    self.steward.erase_fiat_event(time, id).unwrap();
+    self.steward.remove_fiat_event(time, id).unwrap();
     Ok(())
   }
 

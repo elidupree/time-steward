@@ -657,7 +657,7 @@ pub trait TimeSteward<B: Basics>: Any {
 
   /**
   You are allowed to call snapshot_before(), insert_fiat_event(),
-  and erase_fiat_event() for times >= valid_since().
+  and remove_fiat_event() for times >= valid_since().
   
   TimeSteward implementors are permitted, but not required, to discard old data in order to save memory. This may make the TimeSteward unusable at some points in its history.
   
@@ -697,14 +697,14 @@ pub trait TimeSteward<B: Basics>: Any {
                                       -> Result<(), FiatEventOperationError>;
 
   /**
-  Erases a fiat event that has been inserted previously.
+  Removes a fiat event that has been inserted previously.
   
   If time < valid_since(), this does nothing and returns Err(InvalidTime). If there is no fiat event with the specified time and distinguisher, this does nothing and returns Err(InvalidInput). Otherwise, it erases the event and returns Ok.
   
-  steward.erase_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
-  steward.erase_fiat_event() may not change steward.valid_since().
+  steward.remove_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
+  steward.remove_fiat_event() may not change steward.valid_since().
   */
-  fn erase_fiat_event(&mut self,
+  fn remove_fiat_event(&mut self,
                       time: &B::Time,
                       id: DeterministicRandomId)
                       -> Result<(), FiatEventOperationError>;
@@ -724,6 +724,17 @@ pub trait TimeSteward<B: Basics>: Any {
 pub trait IncrementalTimeSteward<B: Basics>: TimeSteward<B> {
   fn step(&mut self);
   fn updated_until_before(&self) -> Option<B::Time>;
+}
+
+use std::ops::{Sub, Mul, Div};
+use std::collections::BTreeMap;
+
+pub trait SimpleSynchronizableTimeSteward<B: Basics>: TimeSteward<B>
+where B::Time: Sub + Mul<i64, Output = B::Time> + Div<B::Time, Output = i64> {
+  fn begin_checks (&mut self, start: B::Time, stride: B::Time);
+  fn checksum(&self, which: i64)->u64;
+  fn debug_dump(&self, which: i64) ->BTreeMap<ExtendedTime <B>, u64>;
+  fn event_details (&self, time: & ExtendedTime <B>)->String;
 }
 
 #[cfg (test)]
