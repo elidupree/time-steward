@@ -2,7 +2,7 @@ extern crate nalgebra;
 
 use stewards::crossverified as s;
 use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId,
-     PredictorId, Accessor, MomentaryAccessor, PredictorAccessor};
+     PredictorId, Accessor, MomentaryAccessor, PredictorAccessor, ColumnType};
 use support::collision_detection::simple_grid as collisions;
 
 use support;
@@ -10,7 +10,6 @@ use support::time_functions::QuadraticTrajectory;
 use nalgebra::Vector2;
 use std::thread::sleep;
 use std::time::{Instant, Duration};
-use std::marker::PhantomData;
 use glium;
 use glium::{DisplayBuild, Surface};
 use support::rounding_error_tolerant_math::right_shift_round_up;
@@ -124,8 +123,8 @@ impl Column for Intersection {
 }
 
 
-type Columns = (PhantomData<Circle>,
-                PhantomData<Intersection>,
+type Columns = (ColumnType<Circle>,
+                ColumnType<Intersection>,
                 collisions::Columns<CollisionBasics>);
 
 type Steward = s::Steward<Basics,

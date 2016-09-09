@@ -1,11 +1,10 @@
 use stewards::crossverified as s;
-use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId, PredictorId};
+use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, ColumnType};
 // use serde_json;
 use bincode::serde::{Serializer, Deserializer};
 use bincode;
 use stewards::amortized;
 use stewards::memoized_flat;
-use std::marker::PhantomData;
 
 type Time = i64;
 
@@ -41,7 +40,7 @@ fn get_philosopher_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x2302c38efb47e0d0u64, index))
 }
 
-type Columns = PhantomData<Philosopher>;
+type Columns = ColumnType<Philosopher>;
 
 fn display_snapshot<S: ::Snapshot<Basics>>(snapshot: &S) {
   println!("snapshot for {}", snapshot.now());

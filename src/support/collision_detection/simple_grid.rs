@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use super::Nearness;
 use {RowId, ColumnId, PredictorId, Column, Accessor, MomentaryAccessor, Mutator,
-     TimeStewardSettings};
+     TimeStewardSettings, ColumnType};
 use std::marker::PhantomData;
 use serde::Serialize;
 
@@ -116,7 +116,7 @@ pub fn remove<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
   }
 }
 
-pub type Columns<B> = PhantomData<Member<B>>;
+pub type Columns<B> = ColumnType<Member<B>>;
 
 pub fn insert_predictors <B: Basics, Settings: TimeStewardSettings <<B as super::Basics>::StewardBasics>> (settings: &mut Settings) {
   settings.insert_predictor (PredictorId (<B as super::Basics>::nearness_column_id().0 ^ 0x3686689daa651bf3),

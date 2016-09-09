@@ -3,29 +3,44 @@ use std::any::Any;
 use std::marker::PhantomData;
 use serde::{Serialize, Serializer, Error, de};
 
-use {ExtendedTime, StewardRc, FieldRc, ColumnId, Column, Basics};
+use {ExtendedTime, StewardRc, FieldRc, ColumnId, Column, Basics, EventFn, PredictorFn,};
+
+enum Void {}
 
 macro_rules! type_list_definitions {
-($Trait: ident, $List: ident, $User: ident, $field: ident) => {
-pub trait $User {
-  fn apply<C: $Trait>(&mut self);
+($Trait: ident [$($bounded:tt)*] [$($unbounded: ident),*], $Wrapper: ident, $List: ident, $User: ident) => {
+pub struct $Wrapper <$($bounded)* T: $Trait<$($unbounded),*>>($(PhantomData <$unbounded>,)* PhantomData <T>, Void);
+pub trait $User<$($bounded)*> {
+  fn apply<C: $Trait <$($unbounded),*>>(&mut self);
 }
-pub trait $List: Any {
+pub trait $List<$($bounded)*>: Any {
   fn apply<U: $User>(user: &mut U);
 }
-impl<C: Column> $List for PhantomData<C> {
+impl<$($bounded)* T: $Trait <$($unbounded),*>> $List <$($unbounded),*> for $Wrapper<$($unbounded,)* T> {
   #[inline]
   fn apply<U: $User>(user: &mut U) {
-    user.apply::<C>();
+    user.apply::<T>();
   }
 }
-tuple_impls! ($List, $User, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
-}
+tuple_impls! ([$($bounded)*] [$($unbounded),*], $List, $User, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
+};
 }
 macro_rules! tuple_impls {
-  ($List: ident, $User: ident, $TL: ident $(, $T: ident)*) => {
-    impl<$($T,)* $TL> $List for ($($T,)* $TL,)
-      where $($T: $List,)* $TL: ColumnList
+  ([$($bounded:tt)*] [$unbounded: ident], $List: ident, $User: ident, $TL: ident $(, $T: ident)*) => {
+    impl<$($bounded)* $($T,)* $TL> $List<$unbounded> for ($($T,)* $TL,)
+      where $($T: $List<$unbounded>,)* $TL: $List<$unbounded>
+    {
+      #[inline]
+      fn apply <U: $User<$unbounded>> (user: &mut U) {
+        $($T::apply(user);)*
+        $TL::apply(user);
+      }
+    }
+    tuple_impls! ([$($bounded)*] [$unbounded], $List, $User, $($T),*);
+  };
+  ([$($bounded:tt)*] [], $List: ident, $User: ident, $TL: ident $(, $T: ident)*) => {
+    impl<$($bounded)* $($T,)* $TL> $List<> for ($($T,)* $TL,)
+      where $($T: $List<>,)* $TL: $List<>
     {
       #[inline]
       fn apply <U: $User> (user: &mut U) {
@@ -33,11 +48,35 @@ macro_rules! tuple_impls {
         $TL::apply(user);
       }
     }
-    tuple_impls! ($List, $User, $($T),*);
+    tuple_impls! ([$($bounded)*] [], $List, $User, $($T),*);
   };
-  ($List: ident, $User: ident,) => {};
+  ([$($bounded:tt)*] [$($unbounded: ident),*], $List: ident, $User: ident,) => {};
 }
-type_list_definitions! (Column, ColumnList, ColumnListUser, whatever);
+macro_rules! pair_null_impls {
+([$($bounded0:tt)*] [$($unbounded0: ident),*], $Wrapper0: ident, $List0: ident, $User0: ident, [$($bounded1:tt)*] [$($unbounded1: ident),*], $Wrapper1: ident, $List1: ident, $User1: ident) => {
+impl<$($bounded1)* T> $List1 for $Wrapper0<$($bounded)* T> {
+  #[inline]
+  fn apply<U: $User1>(_: &mut U) {}
+}
+impl<$($bounded0)* T> $List0 for $Wrapper1<$($bounded)* T> {
+  #[inline]
+  fn apply<U: $User0>(_: &mut U) {}
+}
+};
+}
+macro_rules! all_null_impls {
+([$Wrapper0: ident, $List0: ident, $User0: ident] $(, [$Wrapper: ident, $List: ident, $User: ident])*) => {
+  $(pair_null_impls! ($Wrapper0, $List0, $User0, $Wrapper, $List, $User);)*
+  all_null_impls! ($([$Wrapper, $List, $User]),*);
+};
+() => {};
+}
+macro_rules! all_list_definitions {
+($([$Trait: ident [$($bounded:tt)*] [$($unbounded: ident),*],  $Wrapper: ident, $List: ident, $User: ident],)*) => {
+  $(type_list_definitions! ($Trait[$($bounded)*] [$($unbounded),*], $Wrapper, $List, $User);)*
+  all_null_impls! ($([$Wrapper, $List, $User]),*);
+};
+}
 
 // Today I Learned that macro hygiene is not applied to type parameter lists
 //
@@ -47,6 +86,11 @@ type_list_definitions! (Column, ColumnList, ColumnListUser, whatever);
 // }
 // escalate! ([!!!!!!!! !!!!!!!! !!!!!!!! !!!!!!!!]);
 //
+
+all_list_definitions! (
+  [Column[][], ColumnType, ColumnList, ColumnListUser],
+  [EventFn[B: Basics,][B], EventType, EventList, EventListUser],
+);
 
 
 
