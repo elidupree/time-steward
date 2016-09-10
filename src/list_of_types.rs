@@ -31,12 +31,15 @@ tuple_impls! (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T
 }
 };
 
-($module: ident, $Trait: ident<B>) => {
+($module: ident, $Trait: ident<B>, $IdType: ident, $get_id: ident) => {
 pub mod $module {
 use Basics;
 use std::any::Any;
 use std::marker::PhantomData;
-use $Trait;
+use {$Trait,$IdType};
+
+pub type Id = $IdType;
+pub fn get_id <B: Basics, T: $Trait <B>>()->Id {T::$get_id()}
 
 enum Void {}
 pub struct Item <B: Basics, T: $Trait <B>>(PhantomData <B>, PhantomData <T>, Void);
@@ -87,35 +90,35 @@ macro_rules! tuple_impls {
 }
 macro_rules! pair_null_impls {
 ([$module0: ident, $Trait0: ident][$module1: ident $Trait1: ident]) => {
-impl<T: $Trait0> $List1 for $Wrapper0<T> {
+impl<T: $Trait0> $module1::List for $module0::Item <T> {
   #[inline]
-  fn apply<U: $User1>(_: &mut U) {}
+  fn apply<U: $module1::User>(_: &mut U) {}
 }
-impl<T: $Trait1> $List0 for $Wrapper1<T> {
+impl<T: $Trait1> $module0::List for $module1::Item <T> {
   #[inline]
-  fn apply<U: $User0>(_: &mut U) {}
-}
-};
-
-([$Trait0: ident, $Wrapper0: ident, $List0: ident, $User0: ident][$Trait1: ident <B>, $Wrapper1: ident, $List1: ident, $User1: ident]) => {
-impl<B: Basics, T: $Trait0> $List1 <B> for $Wrapper0<T> {
-  #[inline]
-  fn apply<U: $User1 <B>>(_: &mut U) {}
-}
-impl<B: Basics, T: $Trait1 <B>> $List0 for $Wrapper1<B, T> {
-  #[inline]
-  fn apply<U: $User0>(_: &mut U) {}
+  fn apply<U: $module0::User>(_: &mut U) {}
 }
 };
 
-([$Trait0: ident <B>, $Wrapper0: ident, $List0: ident, $User0: ident][$Trait1: ident <B>, $Wrapper1: ident, $List1: ident, $User1: ident]) => {
-impl<B: Basics, T: $Trait0 <B>> $List1 <B> for $Wrapper0<B, T> {
+([$module0: ident, $Trait0: ident][$module1: ident, $Trait1 <B>]) => {
+impl<B: Basics, T: $Trait0> $List1 <B> for $module0::Item <T> {
   #[inline]
-  fn apply<U: $User1 <B>>(_: &mut U) {}
+  fn apply<U: $module1::User <B>>(_: &mut U) {}
 }
-impl<B: Basics, T: $Trait1 <B>> $List0 <B> for $Wrapper1<B, T> {
+impl<B: Basics, T: $Trait1 <B>> $List0 for $module1::Item <B, T> {
   #[inline]
-  fn apply<U: $User0 <B>>(_: &mut U) {}
+  fn apply<U: $module0::User>(_: &mut U) {}
+}
+};
+
+([$module0: ident, $Trait0: ident <B>][$module1: ident, $Trait1: ident <B>]) => {
+impl<B: Basics, T: $Trait0 <B>> $List1 <B> for $module0::Item <B, T> {
+  #[inline]
+  fn apply<U: $module1::User <B>>(_: &mut U) {}
+}
+impl<B: Basics, T: $Trait1 <B>> $List0 <B> for $module1::Item <B, T> {
+  #[inline]
+  fn apply<U: $module0::User <B>>(_: &mut U) {}
 }
 };
 }
@@ -144,8 +147,8 @@ macro_rules! all_list_definitions {
 
 all_list_definitions! (
   [column_list, Column, ColumnId, column_id]
-  [event_list, EventFn<B>]
-  [predictor_list, PredictorFn<B>]
+  [event_list, EventFn<B>, EventId, event_id]
+  [predictor_list, PredictorFn<B>, PredictorId, predictor_id]
 );
 
 pub use column_list::List as ColumnList;

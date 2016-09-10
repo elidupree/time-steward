@@ -121,6 +121,9 @@ pub struct ColumnId(pub u64);
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct PredictorId(pub u64);
 
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+pub struct EventId(pub u64);
+
 
 pub trait Column: Any {
   type FieldType: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug;// = Self;
@@ -166,10 +169,12 @@ impl FieldId {
 pub trait EventFn<B: Basics>
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
   fn call<M: Mutator<B>>(&self, mutator: &mut M);
+  fn event_id()->EventId;
 }
 pub trait PredictorFn<B: Basics>
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
-  fn call<PA: PredictorAccessor<B>>(&self, accessor: &mut PA, id: RowId);
+  fn call<PA: PredictorAccessor<B>>(accessor: &mut PA, id: RowId);
+  fn predictor_id()->PredictorId;
 }
 
 #[macro_export]
