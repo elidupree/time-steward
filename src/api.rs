@@ -383,7 +383,7 @@ impl<'a, B: Basics> IntoIterator for &'a FiatSnapshot<B> {
 
 mod snapshot_serde_functions_impl {
   use super::*;
-  use list_of_types::{FieldSerializationTable, FieldDeserializationTable, ColumnList};
+  use list_of_types::{FieldSerializationTable, MappedFieldDeserializationTable, ColumnList};
   use std::collections::HashMap;
   use serde::{self, Serialize, Serializer, Deserialize, Deserializer};
   use std::marker::PhantomData;
@@ -422,7 +422,7 @@ mod snapshot_serde_functions_impl {
     fn visit_map<M>(&mut self, mut visitor: M) -> Result<Self::Value, M::Error>
       where M: serde::de::MapVisitor
     {
-      let table = FieldDeserializationTable::<B, M>::new::<C>();
+      let table = MappedFieldDeserializationTable::<B, M>::new::<C>();
 
       let mut fields = HashMap::with_capacity(visitor.size_hint().0);
 
