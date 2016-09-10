@@ -11,6 +11,7 @@ use std::marker::PhantomData;
 use {$Trait,$IdType};
 
 pub type Id = $IdType;
+pub use $Trait as Trait;
 pub fn get_id <T: $Trait>()->Id {T::$get_id()}
 
 enum Void {}
@@ -47,12 +48,12 @@ macro_rules! tuple_impls {
   () => {};
 }
 macro_rules! pair_null_impls {
-([$module0: ident, $Trait0: ident][$module1: ident $Trait1: ident]) => {
-impl<T: $Trait0> $module1::List for $module0::Item <T> {
+($module0: ident $module1: ident) => {
+impl<T: $module0::Trait> $module1::List for $module0::Item <T> {
   #[inline]
   fn apply<U: $module1::User>(_: &mut U) {}
 }
-impl<T: $Trait1> $module0::List for $module1::Item <T> {
+impl<T: $module1::Trait> $module0::List for $module1::Item <T> {
   #[inline]
   fn apply<U: $module0::User>(_: &mut U) {}
 }
@@ -86,6 +87,7 @@ all_list_definitions! (
   [event_list, EventFn, EventId, event_id]
   [predictor_list, PredictorFn, PredictorId, predictor_id]
 );
+all_null_impls! (column_list event_list predictor_list);
 
 pub use column_list::List as ColumnList;
 pub use column_list::Item as ColumnType;
