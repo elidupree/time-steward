@@ -33,48 +33,48 @@ use $crate::{Basics, EventFn, PredictorFn, RowId, ColumnId, PredictorId, Steward
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-pub struct DynamicEventFn <B: Basics, E: EventFn <B>> (E, PhantomData <B>);
-pub struct DynamicPredictorFn <B: Basics, P: PredictorFn <B>> (P, PhantomData <B>);
+pub struct DynamicEventFn <E: EventFn> (E);
+pub struct DynamicPredictorFn <P: PredictorFn> (P);
 
-impl<B: Basics, E: EventFn <B>> DynamicEventFn <B, E> {
-  pub fn new (event: E)->Self {DynamicEventFn (event, PhantomData)}
+impl<E: EventFn> DynamicEventFn <E> {
+  pub fn new (event: E)->Self {DynamicEventFn (event)}
 }
-impl<B: Basics, P: PredictorFn <B>> DynamicPredictorFn <B, P> {
-  pub fn new (predictor: P)->Self {DynamicPredictorFn (predictor, PhantomData)}
+impl<P: PredictorFn> DynamicPredictorFn <P> {
+  pub fn new (predictor: P)->Self {DynamicPredictorFn (predictor)}
 }
 
-impl<'a, 'b, B: Basics, E: EventFn <B>> Fn <(& 'a mut super::$M <'b, B>,)> for DynamicEventFn <B, E> {
-  extern "rust-call" fn call (&self, arguments: (& 'a mut super::$M <'b, B>,)) {
+impl<'a, 'b, E: EventFn> Fn <(& 'a mut super::$M <'b, E::Basics>,)> for DynamicEventFn <E> {
+  extern "rust-call" fn call (&self, arguments: (& 'a mut super::$M <'b, E::Basics>,)) {
     self.0.call (arguments.0)
   }
 }
-impl<'a, 'b, B: Basics, P: PredictorFn <B>> Fn <(& 'a mut super::$PA <'b, B>, RowId)> for DynamicPredictorFn <B, P> {
-  extern "rust-call" fn call (&self, arguments: (& 'a mut super::$PA <'b, B>, RowId)) {
-    self.0.call (arguments.0, arguments.1)
+impl<'a, 'b, P: PredictorFn> Fn <(& 'a mut super::$PA <'b, P::Basics>, RowId)> for DynamicPredictorFn <P> {
+  extern "rust-call" fn call (&self, arguments: (& 'a mut super::$PA <'b, P::Basics>, RowId)) {
+    P::call (arguments.0, arguments.1)
   }
 }
 
-impl<'a, 'b, B: Basics, E: EventFn <B>> FnMut <(& 'a mut super::$M <'b, B>,)> for DynamicEventFn <B, E> {
-  extern "rust-call" fn call_mut (&mut self, arguments: (& 'a mut super::$M <'b, B>,)) {
+impl<'a, 'b, E: EventFn> FnMut <(& 'a mut super::$M <'b, E::Basics>,)> for DynamicEventFn <E> {
+  extern "rust-call" fn call_mut (&mut self, arguments: (& 'a mut super::$M <'b, E::Basics>,)) {
     self.call (arguments)
   }
 }
-impl<'a, 'b, B: Basics, E: EventFn <B>> FnOnce <(& 'a mut super::$M <'b, B>,)> for DynamicEventFn <B, E> {
+impl<'a, 'b, E: EventFn> FnOnce <(& 'a mut super::$M <'b, E::Basics>,)> for DynamicEventFn <E> {
   type Output = ();
-  extern "rust-call" fn call_once (self, arguments: (& 'a mut super::$M <'b, B>,)) {
+  extern "rust-call" fn call_once (self, arguments: (& 'a mut super::$M <'b, E::Basics>,)) {
     self.call (arguments)
   }
 }
 
 
-impl<'a, 'b, B: Basics, P: PredictorFn <B>> FnMut <(& 'a mut super::$PA <'b, B>, RowId)> for DynamicPredictorFn <B, P> {
-  extern "rust-call" fn call_mut (&mut self, arguments: (& 'a mut super::$PA <'b, B>, RowId)) {
+impl<'a, 'b, P: PredictorFn> FnMut <(& 'a mut super::$PA <'b, P::Basics>, RowId)> for DynamicPredictorFn <P> {
+  extern "rust-call" fn call_mut (&mut self, arguments: (& 'a mut super::$PA <'b, P::Basics>, RowId)) {
     self.call (arguments)
   }
 }
-impl<'a, 'b, B: Basics, P: PredictorFn <B>> FnOnce <(& 'a mut super::$PA <'b, B>, RowId)> for DynamicPredictorFn <B, P> {
+impl<'a, 'b, P: PredictorFn> FnOnce <(& 'a mut super::$PA <'b, P::Basics>, RowId)> for DynamicPredictorFn <P> {
   type Output = ();
-  extern "rust-call" fn call_once (self, arguments: (& 'a mut super::$PA <'b, B>, RowId)) {
+  extern "rust-call" fn call_once (self, arguments: (& 'a mut super::$PA <'b, P::Basics>, RowId)) {
     self.call (arguments)
   }
 }
@@ -110,7 +110,7 @@ impl<B: Basics> TimeStewardSettings <B> for StandardSettings <B> {
       predictors_by_column: HashMap::new(),
     }
   }
-  fn insert_predictor <P: PredictorFn <B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: P) {
+  fn insert_predictor <P: PredictorFn <Basics = B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: P) {
     let predictor = DynamicPredictor {
       predictor_id: predictor_id,
       column_id: column_id,
@@ -169,7 +169,7 @@ macro_rules! time_steward_common_accessor_methods_for_predictor_accessor {
 #[macro_export]
 macro_rules! time_steward_common_predictor_accessor_methods_for_predictor_accessor {
   ($B: ty, $DynamicEventFn: ident) => {
-    fn predict_at_time <E: $crate::EventFn <$B>> (&mut self, time: <$B as $crate::Basics>::Time, event: E) {
+    fn predict_at_time <E: $crate::EventFn <Basics = $B>> (&mut self, time: <$B as $crate::Basics>::Time, event: E) {
       if time < *self.unsafe_now() {
         return;
       }

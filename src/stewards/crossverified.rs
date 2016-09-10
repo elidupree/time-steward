@@ -123,7 +123,7 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > TimeSteward
   fn new()->Self {
     Settings (<Steward0::Settings as TimeStewardSettings <B>>::new(), <Steward1::Settings as TimeStewardSettings <B>>::new())
   }
-  fn insert_predictor <P: PredictorFn <B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: P) {
+  fn insert_predictor <P: PredictorFn <Basics = B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: P) {
     self.0.insert_predictor (predictor_id, column_id, function.clone());
     self.1.insert_predictor (predictor_id, column_id, function);
   }
@@ -162,7 +162,7 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
     assert!(result.1.valid_since() == ValidSince::Before (snapshot.now().clone()), "Steward1 broke the ValidSince rules");
     result
   }
-  fn insert_fiat_event <E: ::EventFn <B>> (&mut self,
+  fn insert_fiat_event <E: ::EventFn <Basics = B>> (&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
                        event: E)

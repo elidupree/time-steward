@@ -82,7 +82,7 @@ impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0
       snapshots: vec![snapshot],
     }
   }
-  fn insert_fiat_event<E: ::EventFn<B>>(&mut self,
+  fn insert_fiat_event<E: ::EventFn<Basics = B>>(&mut self,
                                         time: B::Time,
                                         id: DeterministicRandomId,
                                         event: E)

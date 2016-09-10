@@ -166,14 +166,16 @@ impl FieldId {
 // I'm not sure if 'static (from Any) is strictly necessary, but it makes things easier, and
 // wanting a non-'static callback (which still must live at least as long as the TimeSteward)
 // seems like a very strange situation.
-pub trait EventFn<B: Basics>
+pub trait EventFn
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
-  fn call<M: Mutator<B>>(&self, mutator: &mut M);
+  type Basics: Basics;
+  fn call<M: Mutator<Self::Basics>>(&self, mutator: &mut M);
   fn event_id()->EventId;
 }
-pub trait PredictorFn<B: Basics>
+pub trait PredictorFn
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
-  fn call<PA: PredictorAccessor<B>>(accessor: &mut PA, id: RowId);
+  type Basics: Basics;
+  fn call<PA: PredictorAccessor<Self::Basics>>(accessor: &mut PA, id: RowId);
   fn predictor_id()->PredictorId;
 }
 
@@ -182,10 +184,12 @@ macro_rules! time_steward_predictor {
   ($B: ty, struct $name: ident [$($generic_parameters:tt)*]=[$($specific_parameters:ty),*] {$($field_name: ident: $field_type: ty = $field_value: expr),*} , | &$self_name: ident, $accessor_name: ident, $row_name: ident | $contents: expr) => {{
     #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
     struct $name <$($generic_parameters)*> {$($field_name: $field_type),*}
-    impl<$($generic_parameters)*> $crate::PredictorFn <$B> for $name<$($specific_parameters),*> {
-      fn call <P: $crate::PredictorAccessor <$B>> (&$self_name, $accessor_name: &mut P, $row_name: RowId) {
+    impl<$($generic_parameters)*> $crate::PredictorFn for $name<$($specific_parameters),*> {
+      type Basics = $B;
+      fn call <P: $crate::PredictorAccessor <$B>> ($accessor_name: &mut P, $row_name: RowId) {
         $contents
       }
+      fn predictor_id()->$crate::PredictorId {unimplemented!();}
     }
     $name::<$($specific_parameters),*> {$($field_name: $field_value),*}
   }};
@@ -199,10 +203,12 @@ macro_rules! time_steward_event {
   ($B: ty, struct $name: ident [$($generic_parameters:tt)*]=[$($specific_parameters:ty),*] {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $mutator_name: ident | $contents: expr) => {{
     #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
     struct $name <$($generic_parameters)*> {$($field_name: $field_type),*}
-    impl<$($generic_parameters)*> $crate::EventFn <$B> for $name<$($specific_parameters),*> {
+    impl<$($generic_parameters)*> $crate::EventFn for $name<$($specific_parameters),*> {
+      type Basics = $B;
       fn call <M: $crate::Mutator <$B>> (&$self_name, $mutator_name: &mut M) {
         $contents
       }
+      fn event_id()->$crate::EventId {unimplemented!();}
     }
     $name::<$($specific_parameters),*> {$($field_name: $field_value),*}
   }};
@@ -315,10 +321,10 @@ pub trait Mutator<B: Basics>: MomentaryAccessor<B> + Rng {
   fn gen_id(&mut self) -> RowId;
 }
 pub trait PredictorAccessor<B: Basics>: Accessor<B> {
-  fn predict_at_time<E: EventFn<B>>(&mut self, time: B::Time, event: E);
+  fn predict_at_time<E: EventFn<Basics = B>>(&mut self, time: B::Time, event: E);
 
   /// A specific use of unsafe_now() that is guaranteed to be safe
-  fn predict_immediately<E: EventFn<B>>(&mut self, event: E) {
+  fn predict_immediately<E: EventFn<Basics = B>>(&mut self, event: E) {
     let time = self.unsafe_now().clone();
     self.predict_at_time(time, event)
   }
@@ -572,7 +578,7 @@ impl<T: Ord> PartialOrd for ValidSince<T> {
 
 pub trait TimeStewardSettings<B: Basics>: Clone + Any {
   fn new() -> Self;
-  fn insert_predictor<P: PredictorFn<B>>(&mut self,
+  fn insert_predictor<P: PredictorFn<Basics = B>>(&mut self,
                                          predictor_id: PredictorId,
                                          column_id: ColumnId,
                                          function: P);
@@ -617,7 +623,7 @@ pub trait TimeSteward<B: Basics>: Any {
   steward.insert_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
   steward.insert_fiat_event() may not change steward.valid_since().
   */
-  fn insert_fiat_event<E: EventFn<B>>(&mut self,
+  fn insert_fiat_event<E: EventFn<Basics = B>>(&mut self,
                                       time: B::Time,
                                       id: DeterministicRandomId,
                                       event: E)
