@@ -249,7 +249,7 @@ This is intended to be implemented on an empty struct. Requiring Clone etc. is a
 pub trait Basics
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug + Default {
   type Time: Any + Send + Sync + Clone + Ord + Hash + Serialize + Deserialize + Debug;
-  type Constants: Any + Send + Sync + Clone + Serialize + Deserialize + Debug;
+  type Constants: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug;
   type IncludedTypes: ColumnList + EventList <Self> + PredictorList <Self>;
   fn allow_floats_unsafe() -> bool {
     false
@@ -356,6 +356,7 @@ pub trait Snapshot: MomentaryAccessor + Any {
   // fn iter (&self)->Iter;
 }
 
+#[derive (Clone, Debug)]
 pub struct FiatSnapshot<B: Basics> {
   now: B::Time,
   constants: B::Constants,
@@ -494,12 +495,14 @@ pub fn deserialize_snapshot<B: Basics, R: Any + Read>
   use bincode::serde::deserialize_from;
   let now = try! (deserialize_from (reader, size_limit));
   let constants = try! (deserialize_from(reader, size_limit));
-  let num_fields = try! (deserialize_from(reader, size_limit));
-  let fields = HashMap::new();
+  let num_fields = try! (deserialize_from::<R, usize> (reader, size_limit));
+  println! ("{}", num_fields);
+  let mut fields = HashMap::new();
   for _ in 0..num_fields {
     let id: FieldId = try! (deserialize_from (reader, size_limit));
     let field = try! (::list_of_types::deserialize_field::<B, R> (id.column_id, reader, size_limit));
-    let changed = try! (deserialize_from(reader, size_limit));
+    let changed = try! (deserialize_from(reader, size_limit));  println! ("{:?}", (id, (&field, &changed)));
+    fields.insert (id, (field, changed));
   }
   Ok (FiatSnapshot {
     now: now,

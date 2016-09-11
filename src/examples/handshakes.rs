@@ -111,6 +111,7 @@ pub fn testfunc() {
     use std::io::Cursor;
     let mut reader = Cursor::new (writer);
     let deserialized = ::deserialize_snapshot:: <Basics, _> (&mut reader, bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/).unwrap();
+    println!("{:?}", deserialized);
     display_snapshot(&deserialized);
     use MomentaryAccessor;
     display_snapshot(&<Steward as ::TimeSteward>::from_snapshot::<::FiatSnapshot<Basics>>(&deserialized).snapshot_before(deserialized.now()).unwrap());
