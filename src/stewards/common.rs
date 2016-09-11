@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use rand::{ChaChaRng, SeedableRng};
-use {DeterministicRandomId, PredictorId, TimeId, RowId, FieldId, SiphashIdGenerator,
+use {DeterministicRandomId, PredictorId, TimeId, RowId, ColumnId, FieldId, SiphashIdGenerator,
      IterationType, Basics, ExtendedTime, GenericExtendedTime, Predictor, Event, PredictorAccessor, Mutator};
 use std::marker::PhantomData;
 
@@ -34,23 +34,23 @@ impl<P: Predictor> DynamicPredictorFn <P> {
   pub fn new ()->Self {DynamicPredictorFn (PhantomData)}
 }
 
-impl<'a, 'b, E: Event, M: Mutator <Basics = E::Basics>> Fn <(& 'a mut M,)> for DynamicEventFn <E> {
+impl<'a, E: Event, M: Mutator <Basics = E::Basics>> Fn <(& 'a mut M,)> for DynamicEventFn <E> {
   extern "rust-call" fn call (&self, arguments: (& 'a mut M,)) {
     self.0.call (arguments.0)
   }
 }
-impl<'a, 'b, P: Predictor, PA: PredictorAccessor <Basics = P::Basics>> Fn <(& 'a mut PA, RowId)> for DynamicPredictorFn <P> {
+impl<'a, P: Predictor, PA: PredictorAccessor <Basics = P::Basics>> Fn <(& 'a mut PA, RowId)> for DynamicPredictorFn <P> {
   extern "rust-call" fn call (&self, arguments: (& 'a mut PA, RowId)) {
     P::call (arguments.0, arguments.1)
   }
 }
 
-impl<'a, 'b, E: Event, M: Mutator <Basics = E::Basics>> FnMut <(& 'a mut M,)> for DynamicEventFn <E> {
+impl<'a, E: Event, M: Mutator <Basics = E::Basics>> FnMut <(& 'a mut M,)> for DynamicEventFn <E> {
   extern "rust-call" fn call_mut (&mut self, arguments: (& 'a mut M,)) {
     self.call (arguments)
   }
 }
-impl<'a, 'b, E: Event, M: Mutator <Basics = E::Basics>> FnOnce <(& 'a mut M,)> for DynamicEventFn <E> {
+impl<'a, E: Event, M: Mutator <Basics = E::Basics>> FnOnce <(& 'a mut M,)> for DynamicEventFn <E> {
   type Output = ();
   extern "rust-call" fn call_once (self, arguments: (& 'a mut M,)) {
     self.call (arguments)
@@ -58,22 +58,17 @@ impl<'a, 'b, E: Event, M: Mutator <Basics = E::Basics>> FnOnce <(& 'a mut M,)> f
 }
 
 
-impl<'a, 'b, P: Predictor, PA: PredictorAccessor <Basics = P::Basics>> FnMut <(& 'a mut PA,RowId)> for DynamicPredictorFn <P> {
+impl<'a, P: Predictor, PA: PredictorAccessor <Basics = P::Basics>> FnMut <(& 'a mut PA,RowId)> for DynamicPredictorFn <P> {
   extern "rust-call" fn call_mut (&mut self, arguments: (& 'a mut PA, RowId)) {
     self.call (arguments)
   }
 }
-impl<'a, 'b, P: Predictor, PA: PredictorAccessor <Basics = P::Basics>> FnOnce <(& 'a mut PA,RowId)> for DynamicPredictorFn <P> {
+impl<'a, P: Predictor, PA: PredictorAccessor <Basics = P::Basics>> FnOnce <(& 'a mut PA,RowId)> for DynamicPredictorFn <P> {
   type Output = ();
   extern "rust-call" fn call_once (self, arguments: (& 'a mut PA,RowId)) {
     self.call (arguments)
   }
 }
-
-//trait DynamicPredictorTrait <PA: PredictorAccessor>: for <'a, 'b> Fn(& 'a mut PA, RowId) {
- // 
-//}
-
 
 #[macro_export]
 macro_rules! time_steward_common_dynamic_callback_structs {
@@ -88,12 +83,21 @@ use std::marker::PhantomData;
 
 use ::stewards::common::*;
 
+pub trait DynamicPredictorTrait <B: Basics>: for <'a, 'b> Fn(& 'a mut super:: $PA <'b, B>, RowId) {
+  fn predictor_id(&self)->PredictorId;
+  fn column_id(&self)->ColumnId;
+}
+impl<B: Basics, P: Predictor<Basics = B >> DynamicPredictorTrait <B> for DynamicPredictorFn <P> {
+  //Implementing these is redundant with restoring the ids in DynamicPredictor itself. TODO: resolve
+  fn predictor_id(&self)->PredictorId {P::predictor_id()}
+  fn column_id(&self)->ColumnId {P::column_id()}
+}
 
 // #[derive (Clone)]
 pub struct DynamicPredictor <B: Basics> {
   pub predictor_id: PredictorId,
   pub column_id: ColumnId,
-  pub function: StewardRc <for <'a, 'b> Fn(& 'a mut super::$PA <'b, B>, RowId)>,
+  pub function: StewardRc <DynamicPredictorTrait <B, Output =()>>,
   _marker: PhantomData <B>,
 }
 // explicitly implement Clone to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
