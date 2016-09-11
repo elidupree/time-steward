@@ -27,13 +27,13 @@ use std::sync::Arc;
 use std::cmp::Ordering;
 use std::fmt::{self, Debug};
 use std::borrow::Borrow;
-use std::io::{self, Write};
+use std::io::{self, Write, Read};
 use std::marker::PhantomData;
 use rand::{Rng, ChaChaRng};
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use bincode;
 
-use list_of_types::{ColumnList, EventList, PredictorList, FieldSerializationTable};
+use list_of_types::{ColumnList, EventList, PredictorList};
 
 // We need to make sure that DeterministicRandomIds
 // do not vary with CPU endianness.
@@ -411,6 +411,7 @@ impl<'a, B: Basics> IntoIterator for &'a FiatSnapshot<B> {
   }
 }
 
+/*
 mod snapshot_serde_functions_impl {
   use super::*;
   use list_of_types::{FieldSerializationTable, MappedFieldDeserializationTable, ColumnList};
@@ -465,36 +466,45 @@ mod snapshot_serde_functions_impl {
     }
   }
 
-}
+}*/
 
 
-pub fn serialize_snapshot<'a, B: Basics, C: ColumnList, Shot: Snapshot<Basics = B>, S: Serializer>
-  (snapshot: &'a Shot,
-   serializer: &mut S)
-   -> Result<(), S::Error>
+
+pub fn serialize_snapshot<'a, B: Basics, Shot: Snapshot<Basics = B>, W: Any + Write>
+  (snapshot: &'a Shot, writer: &mut W, size_limit: bincode::SizeLimit)
+   -> bincode::serde::SerializeResult <()>
   where &'a Shot: IntoIterator<Item = SnapshotEntry<'a, B>>
 {
-  let mut table = FieldSerializationTable::<S>::new::<C>();
-  C::apply(&mut table);
-
-  try! (snapshot.now().serialize (serializer));
-  try! (snapshot.constants().serialize (serializer));
-  let mut state = try!(serializer.serialize_map(Some (snapshot.num_fields())));
+  use bincode::serde::serialize_into;
+  try! (serialize_into (writer, snapshot.now(), size_limit));
+  try! (serialize_into (writer, snapshot.constants(), size_limit));
+  try! (serialize_into (writer, &snapshot.num_fields(), size_limit));
   for (id, (data, changed)) in snapshot {
-    try! (serializer.serialize_map_key (&mut state, id));
-    try! (serializer.serialize_map_value (&mut state, (& snapshot_serde_functions_impl::SerializationField (id.column_id, & data, & table), changed)));
+    try! (serialize_into (writer, &id, size_limit));
+    try! (::list_of_types::serialize_field::<B, W> (id.column_id, writer, data, size_limit));
+    try! (serialize_into (writer, changed, size_limit));
   }
-  serializer.serialize_map_end(state)
+  Ok (())
 }
 
 
-pub fn deserialize_snapshot<B: Basics, C: ColumnList, D: Deserializer>
-  (deserializer: &mut D)
-   -> Result<FiatSnapshot<B>, D::Error> {
+pub fn deserialize_snapshot<B: Basics, R: Any + Read>
+  (reader: &mut R, size_limit: bincode::SizeLimit) 
+   -> bincode::serde::DeserializeResult<FiatSnapshot<B>> {
+  use bincode::serde::deserialize_from;
+  let now = try! (deserialize_from (reader, size_limit));
+  let constants = try! (deserialize_from(reader, size_limit));
+  let num_fields = try! (deserialize_from(reader, size_limit));
+  let fields = HashMap::new();
+  for _ in 0..num_fields {
+    let id: FieldId = try! (deserialize_from (reader, size_limit));
+    let field = try! (::list_of_types::deserialize_field::<B, R> (id.column_id, reader, size_limit));
+    let changed = try! (deserialize_from(reader, size_limit));
+  }
   Ok (FiatSnapshot {
-    now: try! (B::Time::deserialize (deserializer)),
-    constants: try! (B::Constants::deserialize (deserializer)),
-    fields: try! (deserializer.deserialize_map(snapshot_serde_functions_impl::SerdeMapVisitor::<B, C>{ marker: PhantomData })).data,
+    now: now,
+    constants: constants,
+    fields: fields,
   })
 }
 

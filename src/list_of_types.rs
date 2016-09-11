@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Read, Write};
+use std::any::Any;
 use serde::{Serialize, Serializer, Error, de};
 
 use {ExtendedTime, StewardRc, FieldRc, ColumnId, EventId, Column, Event, Basics};
@@ -195,7 +196,7 @@ macro_rules! time_steward_dynamic_fn {
   (pub fn $($rest:tt)*) => { time_steward_dynamic_fn! (@privacy $($rest)* => [pub]); };
   (fn $($rest:tt)*) => { time_steward_dynamic_fn! (@privacy $($rest)* => []); };
   
-  (@privacy $name: ident <$B: ident: Basics $(, [$Parameter: ident $($bounds:tt)*])*> $($rest:tt)*) => { time_steward_dynamic_fn! (@parameters $B $($rest)* $name [[$B: Basics] $([$Parameter $($bounds)*])*]); };
+  (@privacy $name: ident <$B: ident: Basics $(, [$Parameter: ident: Any $($bounds:tt)*])*> $($rest:tt)*) => { time_steward_dynamic_fn! (@parameters $B $($rest)* $name [[$B: Basics] $([$Parameter: Any $($bounds)*])*]); };
   
   (@parameters $B: ident ($id: ident: ColumnId of <$T: ident: Column> $(, $argument_name: ident: $argument_type:ty)*) $($rest:tt)*) => {
     time_steward_dynamic_fn! (@arguments $($rest)*
@@ -238,7 +239,7 @@ macro_rules! time_steward_dynamic_fn {
         $($where_clause)*
         {$($body)*}
       
-      struct Table <$($Parameter $($bounds)*),*> (HashMap<$Id, fn($($argument_name: $argument_type),*)-> $return_type>);
+      struct Table <$($Parameter $($bounds)*),*> (HashMap<$Id, fn($($argument_name: $argument_type),*)-> $return_type>,::std::marker::PhantomData <($($Parameter),*)>);
       impl<$($Parameter $($bounds)*),*> $($User)* for Table <$($Parameter),*> {
         fn apply<T: $($Trait)*>(&mut self) {
           self.0.insert($crate::list_of_types::$module::get_id::<T>(), inner::<T $(, $Parameter)*>);
@@ -246,8 +247,8 @@ macro_rules! time_steward_dynamic_fn {
       }
       impl<$($Parameter $($bounds)*),*> Table <$($Parameter),*> {
         fn new()-> Table <$($Parameter),*> {
-          let mut result = Table (::std::collections::HashMap::new());
-          $B::IncludedTypes::apply (&mut result);
+          let mut result = Table (::std::collections::HashMap::new(),::std::marker::PhantomData);
+          <$B::IncludedTypes as $($List)*>::apply (&mut result);
           result
         }
         pub fn get (&self, id: $Id)->fn ($($argument_type),*)->$return_type {
@@ -271,13 +272,6 @@ time_steward_dynamic_fn! (pub fn fields_are_equal <B: Basics> (id: ColumnId of <
   ::unwrap_field::<C>(first) == ::unwrap_field::<C>(second)
 });
 
-use bincode;
-time_steward_dynamic_fn! (pub fn serialize_event <B: Basics, [W: Write]> (id: EventId of <E: Event <Basics = B>>, writer: &mut W, data: & StewardRc <Any>, size_limit: bincode::SizeLimit) ->bincode::serde::SerializeResult <()> {
-  try! (bincode::serde::serialize_into (writer, id, bincode::SizeLimit::Bounded (8)));
-  try! (bincode::serde::serialize_into (writer, data.downcast_ref::<E>().expect ("id and type don't match"), size_limit));
-  Ok (())
-});
-
 pub fn field_options_are_equal <B: Basics> (column_id: ColumnId, first: Option <& FieldRc>, second: Option <& FieldRc>)->bool {
     match (first, second) {
       (None, None) => true,
@@ -285,6 +279,24 @@ pub fn field_options_are_equal <B: Basics> (column_id: ColumnId, first: Option <
       _ => false,
     }
 }
+
+use bincode;
+time_steward_dynamic_fn! (pub fn serialize_event <B: Basics, [W: Any + Write]> (id: EventId of <E: Event <Basics = B>>, writer: &mut W, data: & StewardRc <Any>, size_limit: bincode::SizeLimit) ->bincode::serde::SerializeResult <()> {
+  try! (bincode::serde::serialize_into (writer, &id, bincode::SizeLimit::Bounded (8)));
+  try! (bincode::serde::serialize_into (writer, data.downcast_ref::<E>().expect ("id and type don't match"), size_limit));
+  Ok (())
+});
+
+time_steward_dynamic_fn! (pub fn serialize_field <B: Basics, [W: Any + Write]> (id: ColumnId of <C: Column>, writer: &mut W, data: & FieldRc, size_limit: bincode::SizeLimit) ->bincode::serde::SerializeResult <()> {
+  try! (bincode::serde::serialize_into (writer, ::unwrap_field::<C>(data), size_limit));
+  Ok (())
+});
+
+time_steward_dynamic_fn! (pub fn deserialize_field <B: Basics, [R: Any + Read]> (id: ColumnId of <C: Column>, reader: &mut R, size_limit: bincode::SizeLimit) ->bincode::serde::DeserializeResult <FieldRc> {
+  Ok (StewardRc::new (try! (bincode::serde::deserialize_from::<R, C::FieldType> (reader, size_limit))))
+});
+
+
 
 /*
 

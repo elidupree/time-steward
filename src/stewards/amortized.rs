@@ -558,7 +558,7 @@ impl<B: Basics> StewardOwned<B> {
       match history.changes.binary_search_by_key(&time, |change| &change.last_change) {
         Ok(index) => {
           assert!(is_replacement);
-          if !::field_options_are_equal::<B::IncludedTypes> (id.column_id, history.changes [index].data.as_ref(), field.data.as_ref()) {
+          if !::field_options_are_equal::<B> (id.column_id, history.changes [index].data.as_ref(), field.data.as_ref()) {
             self.discard_changes(id, &mut history, index, true, snapshots, shared);
             self.add_change(id, &mut history, field, snapshots, shared);
           }

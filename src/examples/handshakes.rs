@@ -105,13 +105,12 @@ pub fn testfunc() {
     .map(|option| option.as_mut().expect("all these snapshots should have been valid")) {
     display_snapshot(snapshot);
     let mut writer: Vec<u8> = Vec::with_capacity(128);
-    {
-      let mut serializer = Serializer::new(&mut writer);
-      ::serialize_snapshot:: <Basics, TimeStewardTypes, <Steward as TimeSteward>::Snapshot,_> (snapshot, &mut serializer).unwrap();
-    }
+    ::serialize_snapshot:: <Basics, <Steward as TimeSteward>::Snapshot,_> (snapshot, &mut writer, bincode::SizeLimit::Infinite).unwrap();
     // let serialized = String::from_utf8 (serializer.into_inner()).unwrap();
     println!("{:?}", writer);
-    let deserialized = ::deserialize_snapshot:: <Basics, TimeStewardTypes,_> (&mut Deserializer::new (&mut writer.as_slice(), bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/)).unwrap();
+    use std::io::Cursor;
+    let mut reader = Cursor::new (writer);
+    let deserialized = ::deserialize_snapshot:: <Basics, _> (&mut reader, bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/).unwrap();
     display_snapshot(&deserialized);
     use MomentaryAccessor;
     display_snapshot(&<Steward as ::TimeSteward>::from_snapshot::<::FiatSnapshot<Basics>>(&deserialized).snapshot_before(deserialized.now()).unwrap());
