@@ -79,6 +79,10 @@ impl<'a, 'b, P: Predictor> FnOnce <(& 'a mut super::$PA <'b, P::Basics>, RowId)>
   }
 }
 
+//trait DynamicPredictorTrait: for <'a, 'b> Fn(& 'a mut super::$PA <'b, B>, RowId) {
+//  
+//}
+
 // #[derive (Clone)]
 pub struct DynamicPredictor <B: Basics> {
   pub predictor_id: PredictorId,

@@ -16,7 +16,6 @@
 use {DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, Column, StewardRc,
      FieldRc, ExtendedTime, Basics, Accessor, FiatEventOperationError, ValidSince, TimeSteward, IncrementalTimeSteward};
 use stewards::common;
-use list_of_types::FieldEqualityTable;
 use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet, btree_map};
 use std::collections::hash_map::Entry;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
@@ -559,7 +558,7 @@ impl<B: Basics> StewardOwned<B> {
       match history.changes.binary_search_by_key(&time, |change| &change.last_change) {
         Ok(index) => {
           assert!(is_replacement);
-          if !self.field_equality_table.options_are_equal (id.column_id, history.changes [index].data.as_ref(), field.data.as_ref()) {
+          if !::field_options_are_equal::<B::IncludedTypes> (id.column_id, history.changes [index].data.as_ref(), field.data.as_ref()) {
             self.discard_changes(id, &mut history, index, true, snapshots, shared);
             self.add_change(id, &mut history, field, snapshots, shared);
           }
@@ -910,8 +909,6 @@ struct StewardOwned<B: Basics> {
 
   predictions_by_id: HashMap<(RowId, PredictorId), PredictionHistory<B>>,
   predictions_missing_by_time: BTreeMap<ExtendedTime<B>, HashSet<(RowId, PredictorId)>>,
-  
-  field_equality_table: FieldEqualityTable,
 }
 
 pub struct Steward<B: Basics> {
@@ -1159,7 +1156,6 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
         existent_fields: partially_persistent_nonindexed_set::Set::new(),
         predictions_missing_by_time: BTreeMap::new(),
         predictions_by_id: HashMap::new(),
-        field_equality_table: FieldEqualityTable::new::<B::IncludedTypes>(),
       },
       shared: Rc::new(StewardShared {
         settings: Settings::<B>::new(),

@@ -149,7 +149,7 @@ pub use predictor_list::Item as PredictorType;
 
 #[macro_export]
 macro_rules! time_steward_make_function_table_type {
-  ($Struct: ident, $module: ident, fn $function: ident <$T: ident: $Trait: ident $(, [$Parameter: ident $($bounds:tt)*])*> ($($argument_name: ident: $argument_type:ty),*)->$return_type:ty) => {
+  ($module: ident, struct $Struct: ident, fn $memoized_function: ident, fn $function: ident <$T: ident: $Trait: ident $(, [$Parameter: ident $($bounds:tt)*])*> ($($argument_name: ident: $argument_type:ty),*)->$return_type:ty) => {
 pub struct $Struct <$($Parameter $($bounds)*),*> (HashMap<$module::Id, fn($($argument_name: $argument_type),*)-> $return_type>);
 impl<$($Parameter $($bounds)*),*> $module::User for $Struct<$($Parameter),*> {
   fn apply<$T: $Trait>(&mut self) {
@@ -162,31 +162,42 @@ impl<$($Parameter $($bounds)*),*> $Struct<$($Parameter),*> {
     L::apply (&mut result);
     result
   }
+  pub fn get (&self, id: $module::Id)->fn ($($argument_type),*)->$return_type {
+    *(self.0.get (&id).expect ("Type missing from function table; did you forget to list it in Basics::IncludedTypes?"))
+  }
   pub fn call (&self, id: $module::Id $(, $argument_name: $argument_type)*)->$return_type {
-    (self.0.get (&id).expect ("Type missing from function table; did you forget to list it in Basics::IncludedTypes?")) ($($argument_name),*)
+    self.get (id)($($argument_name),*)
   }
 }
+
+#[allow (unused_imports)]
+pub fn $memoized_function <L: $module::List $(, $Parameter $($bounds)*)*> (id: $module::Id $(, $argument_name: $argument_type)*)-> $return_type where L: ::std::any::Any $(, $Parameter: ::std::any::Any)* {
+  use std::any::{Any, TypeId};
+  use std::cell::RefCell;
+  thread_local! {static TABLE: RefCell<HashMap <($(time_steward_make_function_table_type ! (replace_with_typeid $Parameter)),*), Box <Any>>> = RefCell::new (HashMap::new());}
+  let function = TABLE.with (| table | {
+    table.borrow_mut().entry (($(TypeId::of::<$Parameter>()),*)).or_insert (Box::new ($Struct ::<$($Parameter),*>::new::<L>())).downcast_ref::<$Struct <$($Parameter),*>>().unwrap().get (id)
+  });
+  function ($($argument_name),*)
 }
 
+
+};
+(replace_with_typeid $Parameter: ident) => {TypeId};
 }
 
 
 fn check_equality<C: Column>(first: &FieldRc, second: &FieldRc)->bool {
   ::unwrap_field::<C>(first) == ::unwrap_field::<C>(second)
 }
-time_steward_make_function_table_type! (FieldEqualityTable, column_list, fn check_equality<C: Column>(first: &FieldRc, second: &FieldRc)->bool);
+time_steward_make_function_table_type! (column_list, struct FieldEqualityTable, fn fields_are_equal, fn check_equality<C: Column>(first: &FieldRc, second: &FieldRc)->bool);
 
-impl FieldEqualityTable{
-  pub fn fields_are_equal(&self, column_id: ColumnId, first: & FieldRc, second: & FieldRc)->bool {
-    self.call (column_id, first, second)
-  }
-  pub fn options_are_equal(&self, column_id: ColumnId, first: Option <& FieldRc>, second: Option <& FieldRc>)->bool {
+pub fn field_options_are_equal <C: ColumnList> (column_id: ColumnId, first: Option <& FieldRc>, second: Option <& FieldRc>)->bool {
     match (first, second) {
       (None, None) => true,
-      (Some (first), Some (second)) => self.fields_are_equal (column_id, first, second),
+      (Some (first), Some (second)) => fields_are_equal::<C> (column_id, first, second),
       _ => false,
     }
-  }
 }
 
 fn serialize_field <C: Column, S: Serializer>(field: &FieldRc,
@@ -201,10 +212,10 @@ fn deserialize_field_from_map <C: Column, B: Basics, M: de::MapVisitor>
   let (data, time) = try!(visitor.visit_value::<(C::FieldType, ExtendedTime<B>)>());
   Ok((StewardRc::new(data), time))
 }
-time_steward_make_function_table_type! (FieldSerializationTable, column_list, fn serialize_field <C: Column, [S: Serializer]>(field: &FieldRc,
+time_steward_make_function_table_type! (column_list, struct FieldSerializationTable, fn serialize_field_rename_this, fn serialize_field <C: Column, [S: Serializer]>(field: &FieldRc,
                                                 serializer: &mut S)
                                                 -> Result<(), S::Error> );
-time_steward_make_function_table_type! (MappedFieldDeserializationTable, column_list, fn deserialize_field_from_map <C: Column, [B: Basics], [M: de::MapVisitor]>(visitor: &mut M)
+time_steward_make_function_table_type! (column_list, struct MappedFieldDeserializationTable, fn deserialize_field_rename_this, fn deserialize_field_from_map <C: Column, [B: Basics], [M: de::MapVisitor]>(visitor: &mut M)
                                                 -> Result<(FieldRc, ExtendedTime<B>), M::Error>  );
 
 impl<S: Serializer> FieldSerializationTable<S> {

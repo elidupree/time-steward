@@ -4,9 +4,8 @@
 //!
 
 
-use {DeterministicRandomId, FieldId,  ExtendedTime, StewardRc,
+use {DeterministicRandomId, FieldId,  ExtendedTime,
      Basics, FieldRc, TimeSteward, IncrementalTimeSteward, FiatEventOperationError, ValidSince};
-use list_of_types::FieldEqualityTable;
 use std::collections::HashMap;
 use std::cmp::max;
 use std::marker::PhantomData;
@@ -15,13 +14,11 @@ use Snapshot as SuperSnapshot;
 pub struct Steward<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
   Steward0,
   Steward1,
-  StewardRc <FieldEqualityTable>,
   PhantomData <B::Constants>,
 );
 pub struct Snapshot<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
   <Steward0 as TimeSteward <B>>::Snapshot,
   <Steward1 as TimeSteward <B>>::Snapshot,
-  StewardRc <FieldEqualityTable>,
 );
 
 
@@ -37,7 +34,7 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::Accessor<
       (None, None) => None,
       (Some (value_0), Some (value_1)) => {
         assert_eq!(value_0.1, value_1.1, "Snapshots returned different last change times for the same field; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
-        assert!(self.2.fields_are_equal (id.column_id, value_0.0, value_1.0), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
+        assert!(::fields_are_equal::<B::IncludedTypes> (id.column_id, value_0.0, value_1.0), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
         Some (value_0)
       },
       _=> panic! ("One snapshot returned a value and the other didn't; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types")
@@ -97,7 +94,7 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
     for (id, data) in & self.1 {
       let other_data = fields.get (& id).expect ("field existed in Steward1 snapshot but not Steward0 snapshot");
       assert_eq!(*data .1, other_data .1, "Snapshots returned different last change times for the same field; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
-      assert!(self.2.fields_are_equal (id.column_id, data .0, & other_data .0), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
+      assert!(::fields_are_equal::<B::IncludedTypes> (id.column_id, data .0, & other_data .0), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
     }
     SnapshotIter:: <'a, B, Steward0, Steward1> {
       iter: (& self.0).into_iter(),
@@ -116,7 +113,6 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
     let result = Steward::<B, Steward0, Steward1> (
       TimeSteward::new_empty (constants.clone()),
       TimeSteward::new_empty (constants),
-      StewardRc::new (FieldEqualityTable::new:: <B::IncludedTypes>()),
       PhantomData,
     );
     assert!(result.0.valid_since() == ValidSince::TheBeginning, "Steward0 broke the ValidSince rules");
@@ -130,7 +126,6 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
     let result = Steward (
       Steward0::from_snapshot::<'a, S>(snapshot),
       Steward1::from_snapshot::<'a, S>(snapshot),
-      StewardRc::new (FieldEqualityTable::new:: <B::IncludedTypes>()),
       PhantomData,
     );
     assert!(result.0.valid_since() == ValidSince::Before (snapshot.now().clone()), "Steward0 broke the ValidSince rules");
@@ -191,7 +186,7 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
       self.0.snapshot_before (time),
       self.1.snapshot_before (time)
     ) {
-      (Some (snapshot_0), Some (snapshot_1)) => Some (Snapshot (snapshot_0, snapshot_1, self.2.clone())),
+      (Some (snapshot_0), Some (snapshot_1)) => Some (Snapshot (snapshot_0, snapshot_1)),
       (None, _) => panic! ("Steward0 failed to return a snapshot at a time it claims to be valid"),
       (_, None) => panic! ("Steward1 failed to return a snapshot at a time it claims to be valid"),
     };
