@@ -2,7 +2,8 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use rand::{ChaChaRng, SeedableRng};
 use {DeterministicRandomId, PredictorId, TimeId, RowId, FieldId, SiphashIdGenerator,
-     IterationType, Basics, ExtendedTime, GenericExtendedTime};
+     IterationType, Basics, ExtendedTime, GenericExtendedTime, Predictor, Event, PredictorAccessor, Mutator};
+use std::marker::PhantomData;
 
 // https://github.com/rust-lang/rfcs/issues/1485
 pub trait Filter<T> {
@@ -22,16 +23,6 @@ fn generator_for_event(id: TimeId) -> EventRng {
                         (id.data()[1] & 0xffffffff) as u32])
 }
 
-#[macro_export]
-macro_rules! time_steward_common_dynamic_callback_structs {
-
-($M: ident, $PA: ident, $DynamicEventFn: ident, $DynamicPredictorFn: ident, $DynamicPredictor: ident, $StandardSettings: ident) => {
-
-mod __time_steward_make_dynamic_callbacks_impl {
-
-use $crate::{Basics, Event, Predictor, RowId, ColumnId, PredictorId, StewardRc, PredictorList, predictor_list};
-use std::collections::HashMap;
-use std::marker::PhantomData;
 
 pub struct DynamicEventFn <E: Event> (E);
 pub struct DynamicPredictorFn <P: Predictor> (PhantomData <P>);
@@ -43,45 +34,60 @@ impl<P: Predictor> DynamicPredictorFn <P> {
   pub fn new ()->Self {DynamicPredictorFn (PhantomData)}
 }
 
-impl<'a, 'b, E: Event> Fn <(& 'a mut super::$M <'b, E::Basics>,)> for DynamicEventFn <E> {
-  extern "rust-call" fn call (&self, arguments: (& 'a mut super::$M <'b, E::Basics>,)) {
+impl<'a, 'b, E: Event, M: Mutator <E::Basics>> Fn <(& 'a mut M,)> for DynamicEventFn <E> {
+  extern "rust-call" fn call (&self, arguments: (& 'a mut M,)) {
     self.0.call (arguments.0)
   }
 }
-impl<'a, 'b, P: Predictor> Fn <(& 'a mut super::$PA <'b, P::Basics>, RowId)> for DynamicPredictorFn <P> {
-  extern "rust-call" fn call (&self, arguments: (& 'a mut super::$PA <'b, P::Basics>, RowId)) {
+impl<'a, 'b, P: Predictor, PA: PredictorAccessor <P::Basics>> Fn <(& 'a mut PA, RowId)> for DynamicPredictorFn <P> {
+  extern "rust-call" fn call (&self, arguments: (& 'a mut PA, RowId)) {
     P::call (arguments.0, arguments.1)
   }
 }
 
-impl<'a, 'b, E: Event> FnMut <(& 'a mut super::$M <'b, E::Basics>,)> for DynamicEventFn <E> {
-  extern "rust-call" fn call_mut (&mut self, arguments: (& 'a mut super::$M <'b, E::Basics>,)) {
+impl<'a, 'b, E: Event, M: Mutator <E::Basics>> FnMut <(& 'a mut M,)> for DynamicEventFn <E> {
+  extern "rust-call" fn call_mut (&mut self, arguments: (& 'a mut M,)) {
     self.call (arguments)
   }
 }
-impl<'a, 'b, E: Event> FnOnce <(& 'a mut super::$M <'b, E::Basics>,)> for DynamicEventFn <E> {
+impl<'a, 'b, E: Event, M: Mutator <E::Basics>> FnOnce <(& 'a mut M,)> for DynamicEventFn <E> {
   type Output = ();
-  extern "rust-call" fn call_once (self, arguments: (& 'a mut super::$M <'b, E::Basics>,)) {
+  extern "rust-call" fn call_once (self, arguments: (& 'a mut M,)) {
     self.call (arguments)
   }
 }
 
 
-impl<'a, 'b, P: Predictor> FnMut <(& 'a mut super::$PA <'b, P::Basics>, RowId)> for DynamicPredictorFn <P> {
-  extern "rust-call" fn call_mut (&mut self, arguments: (& 'a mut super::$PA <'b, P::Basics>, RowId)) {
+impl<'a, 'b, P: Predictor, PA: PredictorAccessor <P::Basics>> FnMut <(& 'a mut PA,RowId)> for DynamicPredictorFn <P> {
+  extern "rust-call" fn call_mut (&mut self, arguments: (& 'a mut PA, RowId)) {
     self.call (arguments)
   }
 }
-impl<'a, 'b, P: Predictor> FnOnce <(& 'a mut super::$PA <'b, P::Basics>, RowId)> for DynamicPredictorFn <P> {
+impl<'a, 'b, P: Predictor, PA: PredictorAccessor <P::Basics>> FnOnce <(& 'a mut PA,RowId)> for DynamicPredictorFn <P> {
   type Output = ();
-  extern "rust-call" fn call_once (self, arguments: (& 'a mut super::$PA <'b, P::Basics>, RowId)) {
+  extern "rust-call" fn call_once (self, arguments: (& 'a mut PA,RowId)) {
     self.call (arguments)
   }
 }
 
-//trait DynamicPredictorTrait: for <'a, 'b> Fn(& 'a mut super::$PA <'b, B>, RowId) {
-//  
+//trait DynamicPredictorTrait <PA: PredictorAccessor>: for <'a, 'b> Fn(& 'a mut PA, RowId) {
+ // 
 //}
+
+
+#[macro_export]
+macro_rules! time_steward_common_dynamic_callback_structs {
+
+($M: ident, $PA: ident, $DynamicEventFn: ident, $DynamicPredictorFn: ident, $DynamicPredictor: ident, $StandardSettings: ident) => {
+
+mod __time_steward_make_dynamic_callbacks_impl {
+
+use $crate::{Basics, Event, Predictor, RowId, ColumnId, PredictorId, StewardRc, PredictorList, predictor_list};
+use std::collections::HashMap;
+use std::marker::PhantomData;
+
+use ::stewards::common::*;
+
 
 // #[derive (Clone)]
 pub struct DynamicPredictor <B: Basics> {
@@ -133,11 +139,11 @@ impl<B: Basics> StandardSettings <B> {
 }
 
 #[allow (unused_imports)]
-use self::__time_steward_make_dynamic_callbacks_impl::DynamicEventFn as $DynamicEventFn;
+use ::stewards::common::DynamicEventFn as $DynamicEventFn;
 #[allow (unused_imports)]
 use self::__time_steward_make_dynamic_callbacks_impl::DynamicPredictor as $DynamicPredictor;
 #[allow (unused_imports)]
-use self::__time_steward_make_dynamic_callbacks_impl::DynamicPredictorFn as $DynamicPredictorFn;
+use ::stewards::common::DynamicPredictorFn as $DynamicPredictorFn;
 pub use self::__time_steward_make_dynamic_callbacks_impl::StandardSettings as $StandardSettings;
 
 }}
