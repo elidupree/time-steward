@@ -517,7 +517,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
 
 
 
-  fn insert_fiat_event<E: ::EventFn<Basics = B>>(&mut self,
+  fn insert_fiat_event<E: ::Event<Basics = B>>(&mut self,
                                         time: B::Time,
                                         id: DeterministicRandomId,
                                         event: E)

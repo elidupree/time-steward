@@ -134,8 +134,8 @@ macro_rules! all_list_definitions {
 
 all_list_definitions! (
   [column_list, Column, ColumnId, column_id]
-  [event_list, EventFn <B>, EventId, event_id]
-  [predictor_list, PredictorFn <B>, PredictorId, predictor_id]
+  [event_list, Event <B>, EventId, event_id]
+  [predictor_list, Predictor <B>, PredictorId, predictor_id]
 );
 //all_null_impls! (column_list event_list predictor_list);
 

@@ -166,13 +166,13 @@ impl FieldId {
 // I'm not sure if 'static (from Any) is strictly necessary, but it makes things easier, and
 // wanting a non-'static callback (which still must live at least as long as the TimeSteward)
 // seems like a very strange situation.
-pub trait EventFn
+pub trait Event
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
   type Basics: Basics;
   fn call<M: Mutator<Self::Basics>>(&self, mutator: &mut M);
   fn event_id()->EventId;
 }
-pub trait PredictorFn
+pub trait Predictor
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
   type Basics: Basics;
   fn call<PA: PredictorAccessor<Self::Basics>>(accessor: &mut PA, id: RowId);
@@ -185,7 +185,7 @@ macro_rules! time_steward_predictor {
   ([$($privacy:tt)*] struct $Struct: ident <$([$Parameter: ident $($bounds:tt)*]),*>, $B: ty, $predictor_id: expr, $column_id: expr, | $accessor_name: ident, $row_name: ident | $contents: expr) => {
     #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
     $($privacy)* struct $Struct<$($Parameter $($bounds)*),*>(::std::marker::PhantomData <($($Parameter),*)>);
-    impl<$($Parameter $($bounds)*),*> $crate::PredictorFn for $Struct <$($Parameter),*> {
+    impl<$($Parameter $($bounds)*),*> $crate::Predictor for $Struct <$($Parameter),*> {
       type Basics = $B;
       fn call <P: $crate::PredictorAccessor <$B>> ($accessor_name: &mut P, $row_name: RowId) {
         $contents
@@ -215,7 +215,7 @@ macro_rules! time_steward_event {
     $($privacy)* struct $Struct<$($Parameter $($bounds)*),*>{
       $($field_name: $field_type),*
     }
-    impl<$($Parameter $($bounds)*),*> $crate::EventFn for $Struct <$($Parameter),*> {
+    impl<$($Parameter $($bounds)*),*> $crate::Event for $Struct <$($Parameter),*> {
       type Basics = $B;
       fn call <M: $crate::Mutator <$B>> (&$self_name, $mutator_name: &mut M) {
         $contents
@@ -338,10 +338,10 @@ pub trait Mutator<B: Basics>: MomentaryAccessor<B> + Rng {
   fn gen_id(&mut self) -> RowId;
 }
 pub trait PredictorAccessor<B: Basics>: Accessor<B> {
-  fn predict_at_time<E: EventFn<Basics = B>>(&mut self, time: B::Time, event: E);
+  fn predict_at_time<E: Event<Basics = B>>(&mut self, time: B::Time, event: E);
 
   /// A specific use of unsafe_now() that is guaranteed to be safe
-  fn predict_immediately<E: EventFn<Basics = B>>(&mut self, event: E) {
+  fn predict_immediately<E: Event<Basics = B>>(&mut self, event: E) {
     let time = self.unsafe_now().clone();
     self.predict_at_time(time, event)
   }
@@ -631,7 +631,7 @@ pub trait TimeSteward<B: Basics>: Any {
   steward.insert_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
   steward.insert_fiat_event() may not change steward.valid_since().
   */
-  fn insert_fiat_event<E: EventFn<Basics = B>>(&mut self,
+  fn insert_fiat_event<E: Event<Basics = B>>(&mut self,
                                       time: B::Time,
                                       id: DeterministicRandomId,
                                       event: E)

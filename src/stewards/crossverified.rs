@@ -137,7 +137,7 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
     assert!(result.1.valid_since() == ValidSince::Before (snapshot.now().clone()), "Steward1 broke the ValidSince rules");
     result
   }
-  fn insert_fiat_event <E: ::EventFn <Basics = B>> (&mut self,
+  fn insert_fiat_event <E: ::Event <Basics = B>> (&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
                        event: E)
