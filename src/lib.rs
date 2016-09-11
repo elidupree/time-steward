@@ -20,7 +20,7 @@
 //
 //
 
-#![feature(unboxed_closures, fn_traits)]
+#![feature(unboxed_closures, fn_traits, specialization)]
 #![feature (plugin, custom_derive)]
 #![plugin (serde_macros)]
 // #![plugin (quickcheck_macros)]

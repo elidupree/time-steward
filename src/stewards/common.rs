@@ -29,18 +29,18 @@ macro_rules! time_steward_common_dynamic_callback_structs {
 
 mod __time_steward_make_dynamic_callbacks_impl {
 
-use $crate::{Basics, EventFn, PredictorFn, RowId, ColumnId, PredictorId, StewardRc, TimeStewardSettings};
+use $crate::{Basics, EventFn, PredictorFn, RowId, ColumnId, PredictorId, StewardRc, PredictorList, predictor_list};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
 pub struct DynamicEventFn <E: EventFn> (E);
-pub struct DynamicPredictorFn <P: PredictorFn> (P);
+pub struct DynamicPredictorFn <P: PredictorFn> (PhantomData <P>);
 
 impl<E: EventFn> DynamicEventFn <E> {
   pub fn new (event: E)->Self {DynamicEventFn (event)}
 }
 impl<P: PredictorFn> DynamicPredictorFn <P> {
-  pub fn new (predictor: P)->Self {DynamicPredictorFn (predictor)}
+  pub fn new ()->Self {DynamicPredictorFn (PhantomData)}
 }
 
 impl<'a, 'b, E: EventFn> Fn <(& 'a mut super::$M <'b, E::Basics>,)> for DynamicEventFn <E> {
@@ -103,22 +103,26 @@ pub struct StandardSettings <B: Basics> {
   pub predictors_by_column: HashMap<ColumnId, Vec<DynamicPredictor <B>>>,
   pub predictors_by_id: HashMap<PredictorId, DynamicPredictor <B>>,
 }
-impl<B: Basics> TimeStewardSettings <B> for StandardSettings <B> {
-  fn new()->Self {
-    StandardSettings {
-      predictors_by_id: HashMap::new(),
-      predictors_by_column: HashMap::new(),
-    }
-  }
-  fn insert_predictor <P: PredictorFn <Basics = B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: P) {
+impl<B: Basics> predictor_list::User <B> for StandardSettings <B> {
+  fn apply <P: PredictorFn <Basics = B>> (&mut self) {
     let predictor = DynamicPredictor {
-      predictor_id: predictor_id,
-      column_id: column_id,
-      function: StewardRc::new (DynamicPredictorFn::new (function)),
+      predictor_id: P::predictor_id(),
+      column_id: P::column_id(),
+      function: StewardRc::new (DynamicPredictorFn::<P>::new ()),
       _marker: PhantomData,
     };
     self.predictors_by_id.insert(predictor.predictor_id, predictor.clone());
     self.predictors_by_column.entry(predictor.column_id).or_insert(Vec::new()).push(predictor);
+  }
+}
+impl<B: Basics> StandardSettings <B> {
+  pub fn new()->Self {
+    let mut result = StandardSettings {
+      predictors_by_id: HashMap::new(),
+      predictors_by_column: HashMap::new(),
+    };
+    B::IncludedTypes::apply (&mut result);
+    result
   }
 }
 

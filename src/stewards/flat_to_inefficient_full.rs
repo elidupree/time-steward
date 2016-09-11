@@ -11,7 +11,6 @@ use std::collections::HashMap;
 pub struct Steward<B: Basics, Steward0: TimeSteward<B>> {
   steward: Steward0,
   invalid_before: ValidSince<B::Time>,
-  #[allow (dead_code)] settings: Steward0::Settings,
   fiat_events: HashMap<DeterministicRandomId,
                        (B::Time, Box<Fn(&mut Steward0, B::Time, DeterministicRandomId)>)>,
   reset_to_original: Box <Fn ()->Steward0>,
@@ -42,41 +41,36 @@ impl<B: Basics, Steward0: TimeSteward <B>> Steward<B, Steward0> {
 
 impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0> {
   type Snapshot = Steward0::Snapshot;
-  type Settings = Steward0::Settings;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     self.invalid_before.clone()
   }
-  fn new_empty(constants: B::Constants, settings: Self::Settings) -> Self {
+  fn new_empty(constants: B::Constants) -> Self {
     let reset_constants = constants.clone();
-    let reset_settings = settings.clone();
     let reset_to_original = Box::new (move | |
-      TimeSteward::new_empty(reset_constants.clone(), reset_settings.clone())
+      TimeSteward::new_empty(reset_constants.clone())
     );
     Steward::<B, Steward0> {
-      steward: TimeSteward::new_empty(constants.clone(), settings.clone()),
+      steward: TimeSteward::new_empty(constants.clone()),
       invalid_before: ValidSince::TheBeginning,
-      settings: settings,
       fiat_events: HashMap::new(),
       reset_to_original: reset_to_original,
       snapshots: Vec::new(),
     }
   }
 
-  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: &'a S, settings: Self::Settings) -> Self
+  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: &'a S) -> Self
     where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
   {
-    let reset_settings = settings.clone();
     let reset_snapshot = FiatSnapshot::<B>::from_snapshot:: <'a, S> (snapshot);
     let reset_to_original = Box::new (move | |
-      TimeSteward::from_snapshot::<FiatSnapshot <B>>(& reset_snapshot, reset_settings.clone())
+      TimeSteward::from_snapshot::<FiatSnapshot <B>>(& reset_snapshot)
     );
     let mut steward: Steward0 = reset_to_original();
     let snapshot = steward.snapshot_before(snapshot.now()).unwrap();
     Steward::<B, Steward0> {
       steward: steward,
       invalid_before: ValidSince::Before(snapshot.now().clone()),
-      settings: settings,
       fiat_events: HashMap::new(),
       reset_to_original: reset_to_original,
       snapshots: vec![snapshot],

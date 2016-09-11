@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use super::Nearness;
-use {RowId, ColumnId, PredictorId, Column, Accessor, MomentaryAccessor, Mutator,
-     TimeStewardSettings, ColumnType};
+use {RowId, ColumnId, Column, Accessor, MomentaryAccessor, Mutator,
+     ColumnType, PredictorType};
 use std::marker::PhantomData;
 use serde::Serialize;
 
@@ -30,17 +30,37 @@ impl<B: Basics> Column for Cell<B> {
   }
 }
 
-// Work around private-in-public rules so that our column types
+// Work around private-in-public rules so that our TimeSteward types
 // (which are implementation details) are not visible elsewhere.
 mod hack {
   use super::*;
-  use RowId;
+  use {RowId, PredictorId, Column};
   #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
   pub struct Member<B: Basics> {
     pub row: RowId,
     pub bounds: Bounds,
     pub detector: B::DetectorId,
   }
+time_steward_predictor! {
+  pub struct BoundsChangePredictor <[B: Basics]>,
+  <B as super::super::Basics>::StewardBasics,
+  PredictorId (<B as super::super::Basics>::nearness_column_id().0 ^ 0x3686689daa651bf3),
+  Member::<B>::column_id(),
+  | accessor, id | {
+    let member;
+    {
+      let member_reference = accessor.get::<Member <B>> (id).expect ("row is missing the field the predictor triggered on");
+      member = (*member_reference).clone();
+    }
+    if let Some (time) = B::when_escapes (accessor, member.row, member.bounds, member.detector) {
+      accessor.predict_at_time (time, time_steward_event! (<B as super::super::Basics>::StewardBasics, struct BoundsChange [B: Basics]=[B] {id: RowId = id, member: Member <B> = member}, | &self, mutator | {
+        //TODO: optimize remove-then-insert
+        remove::<B,_> (mutator, self.member.row, self.member.detector, self.id, self.member.bounds);
+        insert::<B,_> (mutator, self.member.row, self.member.detector);
+      }));
+    }
+  }
+}
 }
 use self::hack::Member;
 
@@ -116,24 +136,9 @@ pub fn remove<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
   }
 }
 
-pub type Columns<B> = ColumnType<Member<B>>;
+use self::hack::BoundsChangePredictor;
 
-pub fn insert_predictors <B: Basics, Settings: TimeStewardSettings <<B as super::Basics>::StewardBasics>> (settings: &mut Settings) {
-  settings.insert_predictor (PredictorId (<B as super::Basics>::nearness_column_id().0 ^ 0x3686689daa651bf3),
-    Member::<B>::column_id(),
-    time_steward_predictor! (<B as super::Basics>::StewardBasics, struct BoundsChangePredictor [B: Basics]=[B] {p: PhantomData<B> = PhantomData}, | &self, accessor, id | {
-      let member;
-      {
-        let member_reference = accessor.get::<Member <B>> (id).expect ("row is missing the field the predictor triggered on");
-        member = (*member_reference).clone();
-      }
-      if let Some (time) = B::when_escapes (accessor, member.row, member.bounds, member.detector) {
-        accessor.predict_at_time (time, time_steward_event! (<B as super::Basics>::StewardBasics, struct BoundsChange [B: Basics]=[B] {id: RowId = id, member: Member <B> = member}, | &self, mutator | {
-          //TODO: optimize remove-then-insert
-          remove::<B,_> (mutator, self.member.row, self.member.detector, self.id, self.member.bounds);
-          insert::<B,_> (mutator, self.member.row, self.member.detector);
-        }));
-      }
-    })
-  )
-}
+
+
+pub type TimeStewardTypes <B> = (ColumnType<Member<B>>, PredictorType <BoundsChangePredictor <B>>);
+

@@ -447,7 +447,6 @@ impl<B: Basics> Steward<B> {
 
 impl<B: Basics> TimeSteward<B> for Steward<B> {
   type Snapshot = Snapshot<B>;
-  type Settings = Settings<B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     max(self.owned.invalid_before.clone(),
@@ -457,7 +456,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
         })
   }
 
-  fn new_empty(constants: B::Constants, settings: Self::Settings) -> Self {
+  fn new_empty(constants: B::Constants) -> Self {
 
     Steward {
       owned: StewardOwned {
@@ -471,7 +470,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
         prediction_dependencies: HashMap::new(),
       },
       shared: Rc::new(StewardShared {
-        settings: settings,
+        settings: Settings::<B>::new(),
         constants: constants,
         fields: RefCell::new(Fields {
           field_states: HashMap::new(),
@@ -482,10 +481,10 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
   }
 
 
-  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: &'a S, settings: Self::Settings) -> Self
+  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: &'a S) -> Self
     where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
   {
-    let mut result = Self::new_empty(snapshot.constants().clone(), settings);
+    let mut result = Self::new_empty(snapshot.constants().clone());
     result.owned.invalid_before = ValidSince::Before(snapshot.now().clone());
     let mut predictions_needed = HashSet::new();
     result.shared.fields.borrow_mut().field_states = snapshot.into_iter()

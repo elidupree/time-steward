@@ -1,8 +1,8 @@
 extern crate nalgebra;
 
 use stewards::crossverified as s;
-use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId,
-     PredictorId, Accessor, MomentaryAccessor, PredictorAccessor, ColumnType};
+use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId,
+     PredictorId, Accessor, MomentaryAccessor, PredictorAccessor, ColumnType, EventType, PredictorType};
 use support::collision_detection::simple_grid as collisions;
 
 use support;
@@ -52,7 +52,7 @@ struct Basics;
 impl ::Basics for Basics {
   type Time = Time;
   type Constants = ();
-  type Columns = Columns;
+  type IncludedTypes = TimeStewardTypes;
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct CollisionBasics;
@@ -123,9 +123,11 @@ impl Column for Intersection {
 }
 
 
-type Columns = (ColumnType<Circle>,
+type TimeStewardTypes = (ColumnType<Circle>,
                 ColumnType<Intersection>,
-                collisions::Columns<CollisionBasics>);
+                PredictorType <CollisionPredictor>,
+                PredictorType <BoundaryPredictor>,
+                collisions::TimeStewardTypes <CollisionBasics>);
 
 type Steward = s::Steward<Basics,
                           inefficient_flat::Steward<Basics>,
@@ -267,6 +269,9 @@ fn boundary_predictor<PA: PredictorAccessor<Basics>>(accessor: &mut PA, id: RowI
   }
 }
 
+time_steward_predictor! (struct CollisionPredictor, Basics, PredictorId(0x5375592f4da8682c), Nearness::column_id(), collision_predictor);
+time_steward_predictor! (struct BoundaryPredictor, Basics, PredictorId(0x87d8a4a095350d30), Circle::column_id(), boundary_predictor);
+
 
 #[derive(Copy, Clone)]
 
@@ -277,17 +282,9 @@ struct Vertex {
 }
 implement_vertex!(Vertex, direction, center, radius);
 
-pub fn testfunc() {
 
-  let mut settings = <Steward as TimeSteward>::Settings::new();
-  settings.insert_predictor (PredictorId(0x5375592f4da8682c), Nearness::column_id(),
-    time_steward_predictor_from_generic_fn! (Basics, struct CollisionPredictor, collision_predictor)
-  );
-  settings.insert_predictor (PredictorId(0x87d8a4a095350d30), Circle::column_id(),
-    time_steward_predictor_from_generic_fn! (Basics, struct BoundaryPredictor, boundary_predictor)
-  );
-  collisions::insert_predictors::<CollisionBasics, _>(&mut settings);
-  let mut stew: Steward = ::TimeSteward::new_empty((), settings);
+pub fn testfunc() {
+  let mut stew: Steward = ::TimeSteward::new_empty(());
 
   stew.insert_fiat_event(0,
                        DeterministicRandomId::new(&0),

@@ -33,7 +33,7 @@ use rand::{Rng, ChaChaRng};
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use bincode;
 
-use list_of_types::{ColumnList, FieldSerializationTable};
+use list_of_types::{ColumnList, EventList, PredictorList, FieldSerializationTable};
 
 // We need to make sure that DeterministicRandomIds
 // do not vary with CPU endianness.
@@ -177,24 +177,37 @@ pub trait PredictorFn
   type Basics: Basics;
   fn call<PA: PredictorAccessor<Self::Basics>>(accessor: &mut PA, id: RowId);
   fn predictor_id()->PredictorId;
+  fn column_id()->ColumnId;
 }
 
 #[macro_export]
 macro_rules! time_steward_predictor {
-  ($B: ty, struct $name: ident [$($generic_parameters:tt)*]=[$($specific_parameters:ty),*] {$($field_name: ident: $field_type: ty = $field_value: expr),*} , | &$self_name: ident, $accessor_name: ident, $row_name: ident | $contents: expr) => {{
+  ([$($privacy:tt)*] struct $Struct: ident <$([$Parameter: ident $($bounds:tt)*]),*>, $B: ty, $predictor_id: expr, $column_id: expr, | $accessor_name: ident, $row_name: ident | $contents: expr) => {
     #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-    struct $name <$($generic_parameters)*> {$($field_name: $field_type),*}
-    impl<$($generic_parameters)*> $crate::PredictorFn for $name<$($specific_parameters),*> {
+    $($privacy)* struct $Struct<$($Parameter $($bounds)*),*>(::std::marker::PhantomData <($($Parameter),*)>);
+    impl<$($Parameter $($bounds)*),*> $crate::PredictorFn for $Struct <$($Parameter),*> {
       type Basics = $B;
       fn call <P: $crate::PredictorAccessor <$B>> ($accessor_name: &mut P, $row_name: RowId) {
         $contents
       }
-      fn predictor_id()->$crate::PredictorId {unimplemented!();}
+      fn predictor_id()->$crate::PredictorId {$predictor_id}
+      fn column_id()->$crate::ColumnId {$column_id}
     }
-    $name::<$($specific_parameters),*> {$($field_name: $field_value),*}
-  }};
-  ($B: ty, struct $name: ident {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $accessor_name: ident, $row_name: ident | $contents: expr) => {
-    time_steward_predictor! ($B, struct $name []=[] {$($field_name :$field_type = $field_value),*}, | & $self_name, $accessor_name, $row_name | $contents)
+    impl<$($Parameter $($bounds)*),*> $Struct <$($Parameter),*> {
+      fn new()->Self {$Struct (::std::marker::PhantomData)}
+    }
+  };
+  ([$($privacy:tt)*] struct $Struct: ident <$([$Parameter: ident $($bounds:tt)*]),*>, $B: ty, $predictor_id: expr, $column_id: expr, $generic_function: ident) => {
+    time_steward_predictor! ([$($privacy)*] struct $Struct <>, $B, $predictor_id, $column_id, | accessor, id | $generic_function::<$($Parameter),*>(accessor, id));
+  };
+  ([$($privacy:tt)*] struct $Struct: ident, $B: ty, $predictor_id: expr, $column_id: expr, $($rest:tt)*) => {
+    time_steward_predictor! ([$($privacy)*] struct $Struct <>, $B, $predictor_id, $column_id, $($rest)*);
+  };
+  (pub struct $($rest:tt)*) => {
+    time_steward_predictor! ([pub] struct $($rest)*);
+  };
+  (struct $($rest:tt)*) => {
+    time_steward_predictor! ([] struct $($rest)*);
   };
 }
 
@@ -218,13 +231,7 @@ macro_rules! time_steward_event {
 
 }
 
-macro_rules! time_steward_predictor_from_generic_fn {
-  ($B: ty, struct $name: ident, $function_name: ident) => {
-    time_steward_predictor! ($B, struct $name {}, | &self, accessor, id | {
-      $function_name (accessor, id)
-    })
-  }
-}
+
 
 /**
 This is intended to be implemented on an empty struct. Requiring Clone etc. is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
@@ -233,7 +240,7 @@ pub trait Basics
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug + Default {
   type Time: Any + Send + Sync + Clone + Ord + Hash + Serialize + Deserialize + Debug;
   type Constants: Any + Send + Sync + Clone + Serialize + Deserialize + Debug;
-  type Columns: ColumnList;
+  type IncludedTypes: ColumnList + EventList <Self> + PredictorList <Self>;
   fn allow_floats_unsafe() -> bool {
     false
   }
@@ -576,17 +583,8 @@ impl<T: Ord> PartialOrd for ValidSince<T> {
 //  }
 // }
 
-pub trait TimeStewardSettings<B: Basics>: Clone + Any {
-  fn new() -> Self;
-  fn insert_predictor<P: PredictorFn<Basics = B>>(&mut self,
-                                         predictor_id: PredictorId,
-                                         column_id: ColumnId,
-                                         function: P);
-}
-
 pub trait TimeSteward<B: Basics>: Any {
   type Snapshot: Snapshot<B>;
-  type Settings: TimeStewardSettings<B>;
 
   /**
   You are allowed to call snapshot_before(), insert_fiat_event(),
@@ -603,7 +601,7 @@ pub trait TimeSteward<B: Basics>: Any {
   
   new_empty().valid_since() must equal TheBeginning.
   */
-  fn new_empty(constants: B::Constants, settings: Self::Settings) -> Self;
+  fn new_empty(constants: B::Constants) -> Self;
 
   /**
   Creates a new TimeSteward from a snapshot.
@@ -611,7 +609,7 @@ pub trait TimeSteward<B: Basics>: Any {
   from_snapshot().valid_since() must equal Before(snapshot.now()),
   and must never go lower than that.
   */
-  fn from_snapshot<'a, S: Snapshot<B>>(snapshot: &'a S, settings: Self::Settings) -> Self
+  fn from_snapshot<'a, S: Snapshot<B>>(snapshot: &'a S) -> Self
     where &'a S: IntoIterator<Item = SnapshotEntry<'a, B>>;
 
 

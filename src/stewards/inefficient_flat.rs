@@ -243,7 +243,6 @@ impl<B: Basics> StewardImpl<B> {
 
 impl<B: Basics> TimeSteward<B> for Steward<B> {
   type Snapshot = Snapshot<B>;
-  type Settings = Settings<B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     max(self.state.invalid_before.clone(),
@@ -253,7 +252,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
         })
   }
 
-  fn new_empty(constants: B::Constants, settings: Self::Settings) -> Self {
+  fn new_empty(constants: B::Constants) -> Self {
     StewardImpl {
       state: StewardState {
         last_event: None,
@@ -262,13 +261,13 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
         fiat_events: BTreeMap::new(),
       },
       settings: StewardRc::new(StewardSettings {
-        settings: settings,
+        settings: Settings::<B>::new(),
         constants: constants,
       }),
     }
   }
 
-  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: &'a S, settings: Self::Settings) -> Self
+  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: &'a S) -> Self
     where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
   {
     let mut result = StewardImpl {
@@ -279,7 +278,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
         fiat_events: BTreeMap::new(),
       },
       settings: StewardRc::new(StewardSettings {
-        settings: settings,
+        settings: Settings::<B>::new(),
         constants: snapshot.constants().clone(),
       }),
     };

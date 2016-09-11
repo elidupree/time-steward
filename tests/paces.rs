@@ -6,7 +6,7 @@ extern crate time_steward as steward;
 extern crate rand;
 extern crate serde;
 
-use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, Column, TimeStewardSettings, ColumnType};
+use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, Column, ColumnType, PredictorType};
 use rand::{Rng, SeedableRng, ChaChaRng};
 
 
@@ -35,24 +35,15 @@ struct Basics;
 impl steward::Basics for Basics {
   type Time = DeterministicRandomId;
   type Constants = DeterministicRandomId;
-  type Columns = ColumnType <ColumnHack>;
+  type IncludedTypes = (ColumnType <ColumnHack>, PredictorType <Predictor>);
 }
   struct ColumnHack;
   impl Column for ColumnHack {
     type FieldType = DeterministicRandomId;
     fn column_id()->ColumnId {ColumnId (0x8e07f5045b91d636)}
   }
-// As in, "putting it through its paces"
-#[allow (unused_must_use)]
-fn paces <Steward: steward::IncrementalTimeSteward <Basics>, G: Rng> (generator: &mut G)
-where Steward::Settings: Clone,
-for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a, Basics>>
-{
-
-
-  let mut settings = Steward::Settings::new();
-  settings.insert_predictor (PredictorId (0x59c5a4cce2789300), ColumnHack::column_id(),
-    time_steward_predictor! (Basics, struct Predictor {}, | &self, accessor, id | {
+  
+time_steward_predictor! (struct Predictor, Basics, PredictorId (0x59c5a4cce2789300), ColumnHack::column_id(), | accessor, id | {
       let whatever = accessor.get::<ColumnHack> (id).unwrap().clone();
       for index in 0.. (id.data() [0] ^ accessor.constants().data() [0]).leading_zeros() {
         let data_0 = DeterministicRandomId::new (& (index, whatever, id));
@@ -74,10 +65,14 @@ for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a
           }
         }));
       }
-    })
-  );
+    });
   
-  let mut stew: Steward = Steward::new_empty (RowId::new (& generator.gen::<u64>()), settings.clone());
+// As in, "putting it through its paces"
+#[allow (unused_must_use)]
+fn paces <Steward: steward::IncrementalTimeSteward <Basics>, G: Rng> (generator: &mut G)
+where for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a, Basics>>
+{  
+  let mut stew: Steward = Steward::new_empty (RowId::new (& generator.gen::<u64>()));
   let mut snapshots: Vec<Steward::Snapshot> = Vec::new();
   
   fn display_snapshot <S: steward::Snapshot <Basics>> (snapshot: & S)->(usize, DeterministicRandomId) {(snapshot.num_fields(), snapshot.now().clone())}
@@ -88,7 +83,7 @@ for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a
     //println!(" Index: {:?}\n Time: {:?}\n ValidSince: {:?}\n    Present: {:?}\n Choice: {:?}\n\n ", index, time, stew.valid_since(), stew.updated_until_before (), choice);
     /*for snapshot in snapshots.iter() {
       snapshot.into_iter().count();
-      if let Some (snapshot2) = Steward::from_snapshot::<Steward::Snapshot> (snapshot, settings.clone()).snapshot_before (& snapshot.now()) {
+      if let Some (snapshot2) = Steward::from_snapshot::<Steward::Snapshot> (snapshot).snapshot_before (& snapshot.now()) {
         snapshot2.into_iter().count();
       }
     }*/
@@ -110,7 +105,7 @@ for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a
       //(&snapshot).into_iter().count();
       snapshots.push (snapshot);}},
       //2 => if snapshots.len() >30 {println!("deleting snapshot"); let who = generator.gen_range (0, snapshots.len()); snapshots.remove (who);},
-      3 => if let Some (snapshot) = generator.choose (snapshots.as_slice()) { println!("reloading from snapshot {:?}", display_snapshot::<Steward::Snapshot> (&snapshot)); stew = Steward::from_snapshot::<Steward::Snapshot> (snapshot, settings.clone());},
+      3 => if let Some (snapshot) = generator.choose (snapshots.as_slice()) { println!("reloading from snapshot {:?}", display_snapshot::<Steward::Snapshot> (&snapshot)); stew = Steward::from_snapshot::<Steward::Snapshot> (snapshot);},
       _ => {
         println!("stepping"); 
         stew.step();

@@ -1140,13 +1140,12 @@ impl<B: Basics> Steward<B> {
 
 impl<B: Basics> TimeSteward<B> for Steward<B> {
   type Snapshot = Snapshot<B>;
-  type Settings = Settings<B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     self.owned.invalid_before.clone()
   }
 
-  fn new_empty(constants: B::Constants, settings: Self::Settings) -> Self {
+  fn new_empty(constants: B::Constants) -> Self {
 
     Steward {
       owned: StewardOwned {
@@ -1160,10 +1159,10 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
         existent_fields: partially_persistent_nonindexed_set::Set::new(),
         predictions_missing_by_time: BTreeMap::new(),
         predictions_by_id: HashMap::new(),
-        field_equality_table: FieldEqualityTable::new::<B::Columns>(),
+        field_equality_table: FieldEqualityTable::new::<B::IncludedTypes>(),
       },
       shared: Rc::new(StewardShared {
-        settings: settings,
+        settings: Settings::<B>::new(),
         constants: constants,
         fields: RefCell::new(Fields {
           field_states: HashMap::new(),
@@ -1174,10 +1173,10 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
   }
 
 
-  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: &'a S, settings: Self::Settings) -> Self
+  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: &'a S) -> Self
     where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
   {
-    let mut result = Self::new_empty(snapshot.constants().clone(), settings);
+    let mut result = Self::new_empty(snapshot.constants().clone());
     result.owned.invalid_before = ValidSince::Before(snapshot.now().clone());
     let mut predictions_needed = HashSet::new();
     let mut last_event = None;

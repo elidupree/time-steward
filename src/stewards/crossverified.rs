@@ -6,7 +6,7 @@
 
 use {DeterministicRandomId, ColumnId, FieldId, PredictorId, ExtendedTime, StewardRc,
      Basics, FieldRc, TimeSteward, IncrementalTimeSteward, FiatEventOperationError, ValidSince,
-     PredictorFn, TimeStewardSettings};
+     PredictorFn};
 use list_of_types::FieldEqualityTable;
 use std::collections::HashMap;
 use std::cmp::max;
@@ -24,17 +24,6 @@ pub struct Snapshot<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B
   <Steward1 as TimeSteward <B>>::Snapshot,
   StewardRc <FieldEqualityTable>,
 );
-pub struct Settings <B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
-  <Steward0 as TimeSteward <B>>::Settings,
-  <Steward1 as TimeSteward <B>>::Settings,
-);
-impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> Clone for Settings<B,
-                                                                                       Steward0,
-                                                                                       Steward1> {
-  fn clone(&self) -> Self {
-    Settings(self.0.clone(), self.1.clone())
-  }
-}
 
 
 impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::Accessor<B> for Snapshot<B, Steward0, Steward1> {
@@ -118,29 +107,17 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
   }
 }
 
-
-impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > TimeStewardSettings <B> for Settings <B, Steward0, Steward1> {
-  fn new()->Self {
-    Settings (<Steward0::Settings as TimeStewardSettings <B>>::new(), <Steward1::Settings as TimeStewardSettings <B>>::new())
-  }
-  fn insert_predictor <P: PredictorFn <Basics = B>> (&mut self, predictor_id: PredictorId, column_id: ColumnId, function: P) {
-    self.0.insert_predictor (predictor_id, column_id, function.clone());
-    self.1.insert_predictor (predictor_id, column_id, function);
-  }
-}
-
 impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward0, Steward1> {
   type Snapshot = Snapshot<B, Steward0, Steward1>;
-  type Settings = Settings<B, Steward0, Steward1>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     max (self.0.valid_since(), self.1.valid_since())
   }
-  fn new_empty(constants: B::Constants, settings: Self::Settings) -> Self {
+  fn new_empty(constants: B::Constants) -> Self {
     let result = Steward::<B, Steward0, Steward1> (
-      TimeSteward::new_empty (constants.clone(), settings.0),
-      TimeSteward::new_empty (constants, settings.1),
-      StewardRc::new (FieldEqualityTable::new:: <B::Columns>()),
+      TimeSteward::new_empty (constants.clone()),
+      TimeSteward::new_empty (constants),
+      StewardRc::new (FieldEqualityTable::new:: <B::IncludedTypes>()),
       PhantomData,
     );
     assert!(result.0.valid_since() == ValidSince::TheBeginning, "Steward0 broke the ValidSince rules");
@@ -148,14 +125,13 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
     result
   }
 
-  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: & 'a S,
-                                              settings: Self::Settings)
+  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: & 'a S)
                                               -> Self
                                               where & 'a S: IntoIterator <Item = ::SnapshotEntry <'a, B>> {
     let result = Steward (
-      Steward0::from_snapshot::<'a, S>(snapshot, settings.0),
-      Steward1::from_snapshot::<'a, S>(snapshot, settings.1),
-      StewardRc::new (FieldEqualityTable::new:: <B::Columns>()),
+      Steward0::from_snapshot::<'a, S>(snapshot),
+      Steward1::from_snapshot::<'a, S>(snapshot),
+      StewardRc::new (FieldEqualityTable::new:: <B::IncludedTypes>()),
       PhantomData,
     );
     assert!(result.0.valid_since() == ValidSince::Before (snapshot.now().clone()), "Steward0 broke the ValidSince rules");

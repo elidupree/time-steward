@@ -1,5 +1,5 @@
 use stewards::crossverified as s;
-use {TimeSteward, TimeStewardSettings, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, ColumnType};
+use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, ColumnType, EventType, PredictorType};
 // use serde_json;
 use bincode::serde::{Serializer, Deserializer};
 use bincode;
@@ -15,7 +15,7 @@ struct Basics;
 impl ::Basics for Basics {
   type Time = Time;
   type Constants = ();
-  type Columns = Columns;
+  type IncludedTypes = TimeStewardTypes;
 }
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -40,7 +40,7 @@ fn get_philosopher_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x2302c38efb47e0d0u64, index))
 }
 
-type Columns = ColumnType<Philosopher>;
+type TimeStewardTypes = (ColumnType<Philosopher>, PredictorType <Shaker>);
 
 fn display_snapshot<S: ::Snapshot<Basics>>(snapshot: &S) {
   println!("snapshot for {}", snapshot.now());
@@ -52,10 +52,7 @@ fn display_snapshot<S: ::Snapshot<Basics>>(snapshot: &S) {
   }
 }
 
-pub fn testfunc() {
-  let mut settings = <Steward as TimeSteward>::Settings::new();
-  settings.insert_predictor (PredictorId(0x0e7f27c7643f8167), Philosopher::column_id(),
-    time_steward_predictor! (Basics, struct Shaker {}, | &self, pa, whodunnit | {
+    time_steward_predictor! (struct Shaker, Basics, PredictorId(0x0e7f27c7643f8167), Philosopher::column_id(), | pa, whodunnit | {
       println!("Planning {}", whodunnit);
       
       let me = pa.get::<Philosopher>(whodunnit).unwrap().clone();
@@ -78,10 +75,11 @@ pub fn testfunc() {
                                    }));
         })
       );
-    })
-  );
+    });
 
-  let mut stew: Steward = ::TimeSteward::new_empty((), settings.clone());
+
+pub fn testfunc() {
+  let mut stew: Steward = ::TimeSteward::new_empty(());
 
   stew.insert_fiat_event(0,
                        DeterministicRandomId::new(&0x32e1570766e768a7u64),
@@ -100,7 +98,7 @@ pub fn testfunc() {
   let mut snapshots = Vec::new();
   for increment in 1..21 {
     snapshots.push(stew.snapshot_before(&(increment * 100i64)));
-    stew = ::TimeSteward::from_snapshot::<<Steward as ::TimeSteward<Basics>>::Snapshot> (snapshots.last().unwrap().as_ref().unwrap(), settings.clone());
+    stew = ::TimeSteward::from_snapshot::<<Steward as ::TimeSteward<Basics>>::Snapshot> (snapshots.last().unwrap().as_ref().unwrap());
   }
   for snapshot in snapshots.iter_mut()
     .map(|option| option.as_mut().expect("all these snapshots should have been valid")) {
@@ -108,14 +106,14 @@ pub fn testfunc() {
     let mut writer: Vec<u8> = Vec::with_capacity(128);
     {
       let mut serializer = Serializer::new(&mut writer);
-      ::serialize_snapshot:: <Basics, Columns, <Steward as TimeSteward <Basics>>::Snapshot,_> (snapshot, &mut serializer).unwrap();
+      ::serialize_snapshot:: <Basics, TimeStewardTypes, <Steward as TimeSteward <Basics>>::Snapshot,_> (snapshot, &mut serializer).unwrap();
     }
     // let serialized = String::from_utf8 (serializer.into_inner()).unwrap();
     println!("{:?}", writer);
-    let deserialized = ::deserialize_snapshot:: <Basics, Columns,_> (&mut Deserializer::new (&mut writer.as_slice(), bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/)).unwrap();
+    let deserialized = ::deserialize_snapshot:: <Basics, TimeStewardTypes,_> (&mut Deserializer::new (&mut writer.as_slice(), bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/)).unwrap();
     display_snapshot(&deserialized);
     use MomentaryAccessor;
-    display_snapshot(&<Steward as ::TimeSteward<Basics>>::from_snapshot::<::FiatSnapshot<Basics>>(&deserialized, settings.clone()).snapshot_before(deserialized.now()).unwrap());
+    display_snapshot(&<Steward as ::TimeSteward<Basics>>::from_snapshot::<::FiatSnapshot<Basics>>(&deserialized).snapshot_before(deserialized.now()).unwrap());
   }
   // panic!("anyway")
 }
