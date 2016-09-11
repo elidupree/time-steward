@@ -193,12 +193,9 @@ macro_rules! time_steward_predictor {
       fn predictor_id()->$crate::PredictorId {$predictor_id}
       fn column_id()->$crate::ColumnId {$column_id}
     }
-    impl<$($Parameter $($bounds)*),*> $Struct <$($Parameter),*> {
-      fn new()->Self {$Struct (::std::marker::PhantomData)}
-    }
   };
   ([$($privacy:tt)*] struct $Struct: ident <$([$Parameter: ident $($bounds:tt)*]),*>, $B: ty, $predictor_id: expr, $column_id: expr, $generic_function: ident) => {
-    time_steward_predictor! ([$($privacy)*] struct $Struct <>, $B, $predictor_id, $column_id, | accessor, id | $generic_function::<$($Parameter),*>(accessor, id));
+    time_steward_predictor! ([$($privacy)*] struct $Struct <$([$Parameter $($bounds)*]),*>, $B, $predictor_id, $column_id, | accessor, id | $generic_function::<$($Parameter),*>(accessor, id));
   };
   ([$($privacy:tt)*] struct $Struct: ident, $B: ty, $predictor_id: expr, $column_id: expr, $($rest:tt)*) => {
     time_steward_predictor! ([$($privacy)*] struct $Struct <>, $B, $predictor_id, $column_id, $($rest)*);
@@ -213,22 +210,35 @@ macro_rules! time_steward_predictor {
 
 #[macro_export]
 macro_rules! time_steward_event {
-  ($B: ty, struct $name: ident [$($generic_parameters:tt)*]=[$($specific_parameters:ty),*] {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $mutator_name: ident | $contents: expr) => {{
+  ([$($privacy:tt)*] struct $Struct: ident <$([$Parameter: ident $($bounds:tt)*]),*>{$($field_name: ident: $field_type: ty),*}, $B: ty, $event_id: expr, | &$self_name: ident, $mutator_name: ident | $contents: expr) => {
     #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-    struct $name <$($generic_parameters)*> {$($field_name: $field_type),*}
-    impl<$($generic_parameters)*> $crate::EventFn for $name<$($specific_parameters),*> {
+    $($privacy)* struct $Struct<$($Parameter $($bounds)*),*>{
+      $($field_name: $field_type),*
+    }
+    impl<$($Parameter $($bounds)*),*> $crate::EventFn for $Struct <$($Parameter),*> {
       type Basics = $B;
       fn call <M: $crate::Mutator <$B>> (&$self_name, $mutator_name: &mut M) {
         $contents
       }
-      fn event_id()->$crate::EventId {unimplemented!();}
+      fn event_id()->$crate::EventId {$event_id}
     }
-    $name::<$($specific_parameters),*> {$($field_name: $field_value),*}
-  }};
-  ($B: ty, struct $name: ident {$($field_name: ident: $field_type: ty = $field_value: expr),*}, | &$self_name: ident, $mutator_name: ident | $contents: expr) => {
-    time_steward_event! ($B, struct $name []=[] {$($field_name :$field_type = $field_value),*}, | & $self_name, $mutator_name | $contents)
+    impl<$($Parameter $($bounds)*),*> $Struct <$($Parameter),*> {
+      #[allow (dead_code)]
+      fn new($($field_name: $field_type),*)->Self {$Struct {$($field_name: $field_name),*}}
+    }
   };
-
+  ([$($privacy:tt)*] struct $Struct: ident <$([$Parameter: ident $($bounds:tt)*]),*>{$($field_name: ident: $field_type: ty),*}, $B: ty, $event_id: expr, $generic_function: ident) => {
+    time_steward_event! ([$($privacy)*] struct $Struct <$([$Parameter $($bounds)*]),*>{$($field_name: $field_type),*}, $B, $event_id, | &self, mutator | $generic_function::<$($Parameter),*>(self, mutator, $Struct));
+  };
+  ([$($privacy:tt)*] struct $Struct: ident{$($field_name: ident: $field_type: ty),*}, $B: ty, $event_id: expr, $($rest:tt)*) => {
+    time_steward_event! ([$($privacy)*] struct $Struct <>{$($field_name: $field_type),*}, $B, $event_id, $($rest)*);
+  };
+  (pub struct $($rest:tt)*) => {
+    time_steward_event! ([pub] struct $($rest)*);
+  };
+  (struct $($rest:tt)*) => {
+    time_steward_event! ([] struct $($rest)*);
+  };
 }
 
 

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use super::Nearness;
 use {RowId, ColumnId, Column, Accessor, MomentaryAccessor, Mutator,
-     ColumnType, PredictorType};
+     ColumnType, EventType, PredictorType};
 use std::marker::PhantomData;
 use serde::Serialize;
 
@@ -34,13 +34,22 @@ impl<B: Basics> Column for Cell<B> {
 // (which are implementation details) are not visible elsewhere.
 mod hack {
   use super::*;
-  use {RowId, PredictorId, Column};
+  use {RowId, PredictorId, EventId, Column};
   #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
   pub struct Member<B: Basics> {
     pub row: RowId,
     pub bounds: Bounds,
     pub detector: B::DetectorId,
   }
+  time_steward_event! (
+    pub struct BoundsChange <[B: Basics]> {id: RowId, member: Member <B>},
+    <B as super::super::Basics>::StewardBasics,
+    EventId (<B as super::super::Basics>::nearness_column_id().0 ^ 0x1be13fa07975f552),
+    | &self, mutator | {
+        //TODO: optimize remove-then-insert
+        remove::<B,_> (mutator, self.member.row, self.member.detector, self.id, self.member.bounds);
+        insert::<B,_> (mutator, self.member.row, self.member.detector);
+      });
 time_steward_predictor! {
   pub struct BoundsChangePredictor <[B: Basics]>,
   <B as super::super::Basics>::StewardBasics,
@@ -53,16 +62,12 @@ time_steward_predictor! {
       member = (*member_reference).clone();
     }
     if let Some (time) = B::when_escapes (accessor, member.row, member.bounds, member.detector) {
-      accessor.predict_at_time (time, time_steward_event! (<B as super::super::Basics>::StewardBasics, struct BoundsChange [B: Basics]=[B] {id: RowId = id, member: Member <B> = member}, | &self, mutator | {
-        //TODO: optimize remove-then-insert
-        remove::<B,_> (mutator, self.member.row, self.member.detector, self.id, self.member.bounds);
-        insert::<B,_> (mutator, self.member.row, self.member.detector);
-      }));
+      accessor.predict_at_time (time, BoundsChange::new (id, member));
     }
   }
 }
 }
-use self::hack::Member;
+use self::hack::{Member, BoundsChange, BoundsChangePredictor};
 
 impl<B: Basics> Column for Member<B> {
   type FieldType = Member<B>;
@@ -136,9 +141,7 @@ pub fn remove<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
   }
 }
 
-use self::hack::BoundsChangePredictor;
 
 
-
-pub type TimeStewardTypes <B> = (ColumnType<Member<B>>, PredictorType <BoundsChangePredictor <B>>);
+pub type TimeStewardTypes <B> = (ColumnType<Member<B>>, EventType <BoundsChange <B>>, PredictorType <BoundsChangePredictor <B>>);
 

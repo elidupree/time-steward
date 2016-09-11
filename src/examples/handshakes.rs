@@ -1,5 +1,5 @@
 use stewards::crossverified as s;
-use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, ColumnType, EventType, PredictorType};
+use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, EventId, ColumnType, EventType, PredictorType};
 // use serde_json;
 use bincode::serde::{Serializer, Deserializer};
 use bincode;
@@ -40,7 +40,7 @@ fn get_philosopher_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x2302c38efb47e0d0u64, index))
 }
 
-type TimeStewardTypes = (ColumnType<Philosopher>, PredictorType <Shaker>);
+type TimeStewardTypes = (ColumnType<Philosopher>, EventType <Shake>, PredictorType <Shaker>);
 
 fn display_snapshot<S: ::Snapshot<Basics>>(snapshot: &S) {
   println!("snapshot for {}", snapshot.now());
@@ -56,8 +56,10 @@ fn display_snapshot<S: ::Snapshot<Basics>>(snapshot: &S) {
       println!("Planning {}", whodunnit);
       
       let me = pa.get::<Philosopher>(whodunnit).unwrap().clone();
-      pa.predict_at_time(me.time_when_next_initiates_handshake,
-        time_steward_event! (Basics, struct Shake {whodunnit: RowId = whodunnit}, | &self, m | {
+      pa.predict_at_time(me.time_when_next_initiates_handshake, Shake::new (whodunnit));
+    });
+
+        time_steward_event! (struct Shake {whodunnit: RowId}, Basics, EventId (0x8987a0b8e7d3d624), | &self, m | {
           let now = *m.now();
           let friend_id = get_philosopher_id(m.gen_range(0, HOW_MANY_PHILOSOPHERS));
           let awaken_time_1 = now + m.gen_range(-1, 4);
@@ -73,17 +75,9 @@ fn display_snapshot<S: ::Snapshot<Basics>>(snapshot: &S) {
                                    Some(Philosopher {
                                      time_when_next_initiates_handshake: awaken_time_2,
                                    }));
-        })
-      );
-    });
-
-
-pub fn testfunc() {
-  let mut stew: Steward = ::TimeSteward::new_empty(());
-
-  stew.insert_fiat_event(0,
-                       DeterministicRandomId::new(&0x32e1570766e768a7u64),
-                       time_steward_event! (Basics, struct Initialize {}, | &self, m | {
+        });
+        
+time_steward_event! (struct Initialize {}, Basics, EventId (0xd5e73d8ba6ec59a2), | &self, m | {
       println!("FIAT!!!!!");
       for i in 0..HOW_MANY_PHILOSOPHERS {
         m.set::<Philosopher>(get_philosopher_id(i),
@@ -92,7 +86,14 @@ pub fn testfunc() {
           })
         );
       }
-    }))
+    });
+
+pub fn testfunc() {
+  let mut stew: Steward = ::TimeSteward::new_empty(());
+
+  stew.insert_fiat_event(0,
+                       DeterministicRandomId::new(&0x32e1570766e768a7u64),
+                       Initialize::new())
     .unwrap();
 
   let mut snapshots = Vec::new();

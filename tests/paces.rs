@@ -6,7 +6,7 @@ extern crate time_steward as steward;
 extern crate rand;
 extern crate serde;
 
-use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, Column, ColumnType, PredictorType};
+use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, EventId, Column, ColumnType, PredictorType, EventType};
 use rand::{Rng, SeedableRng, ChaChaRng};
 
 
@@ -35,7 +35,7 @@ struct Basics;
 impl steward::Basics for Basics {
   type Time = DeterministicRandomId;
   type Constants = DeterministicRandomId;
-  type IncludedTypes = (ColumnType <ColumnHack>, PredictorType <Predictor>);
+  type IncludedTypes = (ColumnType <ColumnHack>, PredictorType <Predictor>, EventType <Event>);
 }
   struct ColumnHack;
   impl Column for ColumnHack {
@@ -48,7 +48,11 @@ time_steward_predictor! (struct Predictor, Basics, PredictorId (0x59c5a4cce27893
       for index in 0.. (id.data() [0] ^ accessor.constants().data() [0]).leading_zeros() {
         let data_0 = DeterministicRandomId::new (& (index, whatever, id));
         let data_1 = DeterministicRandomId::new (& (index, whatever, id, "something different"));
-        accessor.predict_at_time (data_0, time_steward_event! (Basics, struct Event {id: RowId = id, data: DeterministicRandomId = data_1}, | &self, mutator | {
+        accessor.predict_at_time (data_0, Event::new (id, data_1));
+      }
+    });
+    
+  time_steward_event! (struct Event {id: RowId, data: DeterministicRandomId}, Basics, EventId (0xc4b046f65bda3ba2), | &self, mutator | {
           if mutator.extended_now().iteration >10 {
             println!("Help! Loop!");
             mutator.set:: <ColumnHack> (self.id, None);
@@ -63,10 +67,17 @@ time_steward_predictor! (struct Predictor, Basics, PredictorId (0x59c5a4cce27893
               _ =>(),
             }
           }
-        }));
-      }
-    });
-  
+        });
+        
+ time_steward_event! (struct FiatEvent {}, Basics, EventId (0x87d2e8f07f402d57), | &self, mutator | {
+        let who =RowId::new (& mutator.gen::<u8>());
+          mutator.get:: <ColumnHack> (who);
+          let who =RowId::new (& mutator.gen::<u8>());
+          let what = if mutator.gen() {None} else {Some (mutator.gen_id())};
+          mutator.set:: <ColumnHack> (who, what);
+                    
+         });
+
 // As in, "putting it through its paces"
 #[allow (unused_must_use)]
 fn paces <Steward: steward::IncrementalTimeSteward <Basics>, G: Rng> (generator: &mut G)
@@ -90,15 +101,7 @@ where for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEnt
     match choice {
       0 => { println!("inserting fiat event"); stew.insert_fiat_event (time, RowId::new (& index),
       
-      time_steward_event! (Basics, struct Event {}, | &self, mutator | {
-        let who =RowId::new (& mutator.gen::<u8>());
-          mutator.get:: <ColumnHack> (who);
-          let who =RowId::new (& mutator.gen::<u8>());
-          let what = if mutator.gen() {None} else {Some (mutator.gen_id())};
-          mutator.set:: <ColumnHack> (who, what);
-                    
-         })
-
+      FiatEvent::new()
       
       );},
       1 => if let Some (limit) = stew.updated_until_before () {if let Some (snapshot) = stew.snapshot_before (& limit) {println!("recording snapshot {:?}", display_snapshot::<Steward::Snapshot> (&snapshot)); 
