@@ -28,9 +28,8 @@ use std::cmp::Ordering;
 use std::fmt::{self, Debug};
 use std::borrow::Borrow;
 use std::io::{self, Write, Read};
-use std::marker::PhantomData;
 use rand::{Rng, ChaChaRng};
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde::{Serialize, Deserialize};
 use bincode;
 
 use list_of_types::{ColumnList, EventList, PredictorList};
@@ -412,64 +411,6 @@ impl<'a, B: Basics> IntoIterator for &'a FiatSnapshot<B> {
   }
 }
 
-/*
-mod snapshot_serde_functions_impl {
-  use super::*;
-  use list_of_types::{FieldSerializationTable, MappedFieldDeserializationTable, ColumnList};
-  use std::collections::HashMap;
-  use serde::{self, Serialize, Serializer, Deserialize, Deserializer};
-  use std::marker::PhantomData;
-  
-  pub struct SerializationField<'a, 'b, Hack: Serializer + 'b>(pub ColumnId,
-                                                               pub &'a FieldRc,
-                                                               pub &'b FieldSerializationTable<Hack>);
-  impl<'a, 'b, Hack: Serializer> Serialize for SerializationField<'a, 'b, Hack> {
-    fn serialize<'c, S: Serializer + 'b>(&'c self, serializer: &mut S) -> Result<(), S::Error> {
-      // use std::any::TypeId;
-      // assert!(TypeId::of::<S>() == TypeId::of::<Hack>(), "hack: this can only actually serialize for the serializer it has tables for");
-      let table = unsafe {
-        use std::mem;
-        mem::transmute::<&'b FieldSerializationTable<Hack>, &'b FieldSerializationTable<S>>(self.2)
-      };
-      table.serialize_field (self.0, self.1, serializer)
-    }
-  }
-
-  pub struct SerdeMapVisitor<B: Basics, C: ColumnList> {
-    pub marker: PhantomData<(FiatSnapshot<B>, C)>,
-  }
-  pub struct DeserializedMap<B: Basics> {
-    pub data: HashMap<FieldId, (FieldRc, ExtendedTime<B>)>,
-  }
-  impl<B: Basics> Deserialize for DeserializedMap<B> {
-    fn deserialize<D>(_: &mut D) -> Result<Self, D::Error>
-      where D: Deserializer
-    {
-      panic!("I believe that Visitor::Value requiring Deserialize is bogus, so this panic will never occur.")
-    }
-  }
-
-  impl<B: Basics, C: ColumnList> serde::de::Visitor for SerdeMapVisitor<B, C> {
-    type Value = DeserializedMap<B>;
-    fn visit_map<M>(&mut self, mut visitor: M) -> Result<Self::Value, M::Error>
-      where M: serde::de::MapVisitor
-    {
-      let table = MappedFieldDeserializationTable::<B, M>::new::<C>();
-
-      let mut fields = HashMap::with_capacity(visitor.size_hint().0);
-
-      while let Some(key) = try!(visitor.visit_key::<FieldId>()) {
-        fields.insert (key, try!(table.deserialize_field (key.column_id, &mut visitor)));
-      }
-
-      try!(visitor.end());
-      Ok(DeserializedMap { data: fields })
-    }
-  }
-
-}*/
-
-
 
 pub fn serialize_snapshot<'a, B: Basics, Shot: Snapshot<Basics = B>, W: Any + Write>
   (snapshot: &'a Shot, writer: &mut W, size_limit: bincode::SizeLimit)
@@ -487,7 +428,6 @@ pub fn serialize_snapshot<'a, B: Basics, Shot: Snapshot<Basics = B>, W: Any + Wr
   }
   Ok (())
 }
-
 
 pub fn deserialize_snapshot<B: Basics, R: Any + Read>
   (reader: &mut R, size_limit: bincode::SizeLimit) 

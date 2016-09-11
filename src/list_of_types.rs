@@ -1,9 +1,7 @@
-use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::any::Any;
-use serde::{Serialize, Serializer, Error, de};
 
-use {ExtendedTime, StewardRc, FieldRc, ColumnId, EventId, Column, Event, Basics};
+use {StewardRc, FieldRc, ColumnId, EventId, Column, Event, Basics};
 
 macro_rules! type_list_definitions {
 ($module: ident, $Trait: ident, $IdType: ident, $get_id: ident) => {
@@ -192,6 +190,7 @@ pub fn $memoized_function <L: $crate::list_of_types::$module::List <$($trait_par
 }
 */
 
+#[macro_export]
 macro_rules! time_steward_dynamic_fn {
   (pub fn $($rest:tt)*) => { time_steward_dynamic_fn! (@privacy $($rest)* => [pub]); };
   (fn $($rest:tt)*) => { time_steward_dynamic_fn! (@privacy $($rest)* => []); };
@@ -233,6 +232,7 @@ macro_rules! time_steward_dynamic_fn {
       ->$return_type
       $($where_clause)*
     {
+      #[allow (unused_variables)]
       fn inner <$T: $($Trait)* $(, $Parameter $($bounds)*)*>
         ($($argument_name: $argument_type),*)
         ->$return_type
@@ -295,85 +295,4 @@ time_steward_dynamic_fn! (pub fn serialize_field <B: Basics, [W: Any + Write]> (
 time_steward_dynamic_fn! (pub fn deserialize_field <B: Basics, [R: Any + Read]> (id: ColumnId of <C: Column>, reader: &mut R, size_limit: bincode::SizeLimit) ->bincode::serde::DeserializeResult <FieldRc> {
   Ok (StewardRc::new (try! (bincode::serde::deserialize_from::<R, C::FieldType> (reader, size_limit))))
 });
-
-
-
-/*
-
-fn check_equality<C: Column>(first: &FieldRc, second: &FieldRc)->bool {
-  ::unwrap_field::<C>(first) == ::unwrap_field::<C>(second)
-}
-time_steward_make_function_table_type! (column_list, struct FieldEqualityTable, fn fields_are_equal, fn check_equality<C: Column []>(first: &FieldRc, second: &FieldRc)->bool);
-
-#[macro_export]
-macro_rules! time_steward_serialize_to_bincode_definitions {
-  ($Writer:ty, $module: ident, $Trait: ident [$($trait_parameters:tt)*]  , $impl_module: ident, fn $memoized_function: ident) => {
-    mod $impl_module {
-      use std::any::Any;
-      use $crate::{StewardRc, $Trait};
-      fn serialize <T: $crate::list_of_types::$module::Trait>(writer: &mut $Writer, data: & StewardRc <Any>, size_limit: ::bincode::SizeLimit)
-                                                        ->::bincode::serde::SerializeResult <()> {
-        use bincode;
-        try! (bincode::serde::serialize_into (writer, &$crate::list_of_types::$module::get_id:: <T>(),::bincode::SizeLimit::Bounded (8)));
-        try! (bincode::serde::serialize_into (writer, data.downcast_ref::<T>().expect (" id and type don't match"), size_limit));
-      }
-      time_steward_make_function_table_type! ($module, struct Table, fn $memoized_function, fn serialize <T: $Trait [$($trait_parameters)*]>(writer: &mut $Writer, data: & StewardRc <Any>) -> ::bincode::serde::SerializeResult <()>);
-    }
-    pub use $impl_module::$memoized_function;
-  };
-}
-
-#[macro_export]
-macro_rules! time_steward_deserialize_from_bincode_definitions {
-  ($Reader:ty, $module: ident, $Trait: ident [$($trait_parameters:tt)*]  , $impl_module: ident, fn $memoized_function: ident) => {
-    mod $impl_module {
-      fn deserialize <T: $crate::list_of_types::$module::Trait>(reader: &mut $Reader, size_limit: $bincode::SizeLimit)
-                                                        ->::bincode::serde::DeserializeResult <StewardRc <Any>> {
-        use bincode;
-        Ok (StewardRc::new (try! (bincode::serde::deserialize_from::<$Reader, T> (reader, size_limit))));
-      }
-      time_steward_make_function_table_type! ($module, struct Table, fn transit_function, fn deserialize <T: $Trait [$($trait_parameters)*]>(reader: &mut $Reader, data: & StewardRc <Any>) -> Result<(), $Reader::Error>  );
-    }
-    fn $memoized_function(reader: &mut $Reader, size_limit: $bincode::SizeLimit) ->bincode::serde::DeserializeResult <($crate::list_of_types::$module::Id, StewardRc <Any>)> {
-      let id = try! (bincode::serde::deserialize_from <$Reader, $crate::list_of_types::$module::Id> (reader, bincode::SizeLimit::Bounded (8)));
-      let data = try! ($impl_module::transit_function (reader, size_limit));
-      Ok ((id, data));
-    }
-  };
-}
-
-time_steward_serialize_to_bincode_definitions! (Vec<u8>, event_list, Event [B], serialize_event_impl, fn serialize_event_into_vector);
-
-
-fn serialize_field <C: Column, S: Serializer>(field: &FieldRc,
-                                              serializer: &mut S)
-                                              -> Result<(), S::Error> {
-  try!(::unwrap_field::<C>(field).serialize(serializer));
-  Ok(())
-}
-fn deserialize_field_from_map <C: Column, B: Basics, M: de::MapVisitor>
-  (visitor: &mut M)
-   -> Result<(FieldRc, ExtendedTime<B>), M::Error> {
-  let (data, time) = try!(visitor.visit_value::<(C::FieldType, ExtendedTime<B>)>());
-  Ok((StewardRc::new(data), time))
-}
-time_steward_make_function_table_type! (column_list, struct FieldSerializationTable, fn serialize_field_rename_this, fn serialize_field <C: Column, [S: Serializer]>(field: &FieldRc,
-                                                serializer: &mut S)
-                                                -> Result<(), S::Error> );
-time_steward_make_function_table_type! (column_list, struct MappedFieldDeserializationTable, fn deserialize_field_rename_this, fn deserialize_field_from_map <C: Column, [B: Basics], [M: de::MapVisitor]>(visitor: &mut M)
-                                                -> Result<(FieldRc, ExtendedTime<B>), M::Error>  );
-
-impl<S: Serializer> FieldSerializationTable<S> {
-  pub fn serialize_field(&self, column_id: ColumnId, first: & FieldRc,
-                                                  serializer: &mut S)->Result<(), S::Error>{
-    use serde::ser::Error;
-    try!(self.0.get (&column_id).ok_or (S::Error::custom ("Column missing from serialization table; did you forget to list a column in Basics::Columns?"))) (first, serializer)
-  }
-}
-impl<B: Basics, M: de::MapVisitor> MappedFieldDeserializationTable<B, M> {
-  pub fn deserialize_field(&self, column_id: ColumnId, visitor: &mut M)->Result<(FieldRc, ExtendedTime<B>), M::Error>{
-    try!(self.0.get (&column_id).ok_or (M::Error::custom ("Column missing from deserialization table; did you forget to list a column in Basics::Columns?"))) (visitor)
-  }
-}
-*/
 

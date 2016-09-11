@@ -1,7 +1,6 @@
 use stewards::crossverified as s;
 use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, EventId, ColumnType, EventType, PredictorType};
 // use serde_json;
-use bincode::serde::{Serializer, Deserializer};
 use bincode;
 use stewards::amortized;
 use stewards::memoized_flat;

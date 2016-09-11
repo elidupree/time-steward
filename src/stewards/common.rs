@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use rand::{ChaChaRng, SeedableRng};
-use {DeterministicRandomId, PredictorId, TimeId, RowId, ColumnId, FieldId, SiphashIdGenerator,
+use {DeterministicRandomId, PredictorId, TimeId, RowId, FieldId, SiphashIdGenerator,
      IterationType, Basics, ExtendedTime, GenericExtendedTime, Predictor, Event, PredictorAccessor, Mutator};
 use std::marker::PhantomData;
 
@@ -77,7 +77,7 @@ macro_rules! time_steward_common_dynamic_callback_structs {
 
 mod __time_steward_make_dynamic_callbacks_impl {
 
-use $crate::{Basics, Event, Predictor, RowId, ColumnId, PredictorId, StewardRc, PredictorList, predictor_list};
+use $crate::{Basics, Predictor, RowId, ColumnId, PredictorId, StewardRc, PredictorList, predictor_list};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
