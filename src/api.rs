@@ -169,13 +169,13 @@ impl FieldId {
 pub trait Event
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
   type Basics: Basics;
-  fn call<M: Mutator<Self::Basics>>(&self, mutator: &mut M);
+  fn call<M: Mutator<Basics = Self::Basics>>(&self, mutator: &mut M);
   fn event_id()->EventId;
 }
 pub trait Predictor
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
   type Basics: Basics;
-  fn call<PA: PredictorAccessor<Self::Basics>>(accessor: &mut PA, id: RowId);
+  fn call<PA: PredictorAccessor<Basics = Self::Basics>>(accessor: &mut PA, id: RowId);
   fn predictor_id()->PredictorId;
   fn column_id()->ColumnId;
 }
@@ -187,7 +187,7 @@ macro_rules! time_steward_predictor {
     $($privacy)* struct $Struct<$($Parameter $($bounds)*),*>(::std::marker::PhantomData <($($Parameter),*)>);
     impl<$($Parameter $($bounds)*),*> $crate::Predictor for $Struct <$($Parameter),*> {
       type Basics = $B;
-      fn call <P: $crate::PredictorAccessor <$B>> ($accessor_name: &mut P, $row_name: RowId) {
+      fn call <P: $crate::PredictorAccessor <Basics = $B>> ($accessor_name: &mut P, $row_name: RowId) {
         $contents
       }
       fn predictor_id()->$crate::PredictorId {$predictor_id}
@@ -217,7 +217,7 @@ macro_rules! time_steward_event {
     }
     impl<$($Parameter $($bounds)*),*> $crate::Event for $Struct <$($Parameter),*> {
       type Basics = $B;
-      fn call <M: $crate::Mutator <$B>> (&$self_name, $mutator_name: &mut M) {
+      fn call <M: $crate::Mutator <Basics = $B>> (&$self_name, $mutator_name: &mut M) {
         $contents
       }
       fn event_id()->$crate::EventId {$event_id}
@@ -286,17 +286,18 @@ pub fn unwrap_field<'a, C: Column>(field: &'a FieldRc) -> &'a C::FieldType {
   field.downcast_ref::<C::FieldType>().expect("a field had the wrong type for its column").borrow()
 }
 
-pub trait Accessor<B: Basics> {
+pub trait Accessor {
+  type Basics: Basics;
   fn generic_data_and_extended_last_change(&self,
                                            id: FieldId)
-                                           -> Option<(&FieldRc, &ExtendedTime<B>)>;
+                                           -> Option<(&FieldRc, &ExtendedTime<Self::Basics>)>;
   fn data_and_extended_last_change<C: Column>(&self,
                                               id: RowId)
-                                              -> Option<(&C::FieldType, &ExtendedTime<B>)> {
+                                              -> Option<(&C::FieldType, &ExtendedTime<Self::Basics>)> {
     self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id()))
       .map(|pair| (unwrap_field::<C>(pair.0), pair.1))
   }
-  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &B::Time)> {
+  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &<<Self as Accessor>::Basics as Basics>::Time)> {
     self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id()))
       .map(|pair| (unwrap_field::<C>(pair.0), &pair.1.base))
   }
@@ -304,10 +305,10 @@ pub trait Accessor<B: Basics> {
     self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id()))
       .map(|p| unwrap_field::<C>(p.0))
   }
-  fn last_change<C: Column>(&self, id: RowId) -> Option<&B::Time> {
+  fn last_change<C: Column>(&self, id: RowId) -> Option<&<<Self as Accessor>::Basics as Basics>::Time> {
     self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id())).map(|p| &p.1.base)
   }
-  fn constants(&self) -> &B::Constants;
+  fn constants(&self) -> &<<Self as Accessor>::Basics as Basics>::Constants;
 
   /**
   In general, predictions may NOT depend on the time the predictor is called.
@@ -323,32 +324,32 @@ pub trait Accessor<B: Basics> {
   
   This function is provided by Accessor rather than PredictorAccessor so that functions can be generic in whether they are used in a predictor or not.
   */
-  fn unsafe_now(&self) -> &B::Time;
+  fn unsafe_now(&self) -> &<<Self as Accessor>::Basics as Basics>::Time;
 }
 
-pub trait MomentaryAccessor<B: Basics>: Accessor<B> {
-  fn now(&self) -> &B::Time {
+pub trait MomentaryAccessor: Accessor {
+  fn now(&self) -> & <<Self as Accessor>::Basics as Basics>::Time {
     self.unsafe_now()
   }
 }
 
-pub trait Mutator<B: Basics>: MomentaryAccessor<B> + Rng {
-  fn extended_now(&self) -> &ExtendedTime<B>;
+pub trait Mutator: MomentaryAccessor + Rng {
+  fn extended_now(&self) -> &ExtendedTime<<Self as Accessor>::Basics>;
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>);
   fn gen_id(&mut self) -> RowId;
 }
-pub trait PredictorAccessor<B: Basics>: Accessor<B> {
-  fn predict_at_time<E: Event<Basics = B>>(&mut self, time: B::Time, event: E);
+pub trait PredictorAccessor: Accessor {
+  fn predict_at_time<E: Event<Basics = Self::Basics >>(&mut self, time: <<Self as Accessor>::Basics as Basics>::Time, event: E);
 
   /// A specific use of unsafe_now() that is guaranteed to be safe
-  fn predict_immediately<E: Event<Basics = B>>(&mut self, event: E) {
+  fn predict_immediately<E: Event<Basics = <Self as Accessor>::Basics>>(&mut self, event: E) {
     let time = self.unsafe_now().clone();
     self.predict_at_time(time, event)
   }
 }
 pub type SnapshotEntry<'a, B: Basics> = (FieldId, (&'a FieldRc, &'a ExtendedTime<B>));
 // where for <'a> & 'a Self: IntoIterator <Item = SnapshotEntry <'a, B>>
-pub trait Snapshot<B: Basics>: MomentaryAccessor<B> + Any {
+pub trait Snapshot: MomentaryAccessor + Any {
   fn num_fields(&self) -> usize;
   // with slightly better polymorphism we could do this more straightforwardly
   // type Iter<'a>: Iterator<(FieldId, (&'a FieldRc, &'a ExtendedTime<B>))>;
@@ -360,7 +361,8 @@ pub struct FiatSnapshot<B: Basics> {
   constants: B::Constants,
   fields: HashMap<FieldId, (FieldRc, ExtendedTime<B>)>,
 }
-impl<B: Basics> Accessor<B> for FiatSnapshot<B> {
+impl<B: Basics> Accessor for FiatSnapshot<B> {
+  type Basics = B;
   fn generic_data_and_extended_last_change(&self,
                                            id: FieldId)
                                            -> Option<(&FieldRc, &ExtendedTime<B>)> {
@@ -373,14 +375,14 @@ impl<B: Basics> Accessor<B> for FiatSnapshot<B> {
     &self.now
   }
 }
-impl<B: Basics> MomentaryAccessor<B> for FiatSnapshot<B> {}
-impl<B: Basics> Snapshot<B> for FiatSnapshot<B> {
+impl<B: Basics> MomentaryAccessor for FiatSnapshot<B> {}
+impl<B: Basics> Snapshot for FiatSnapshot<B> {
   fn num_fields(&self) -> usize {
     self.fields.len()
   }
 }
 impl<B: Basics> FiatSnapshot<B> {
-  pub fn from_snapshot<'a, S: Snapshot<B>>(snapshot: &'a S) -> Self
+  pub fn from_snapshot<'a, S: Snapshot<Basics = B>>(snapshot: &'a S) -> Self
     where &'a S: IntoIterator<Item = SnapshotEntry<'a, B>>
   {
     FiatSnapshot {
@@ -466,7 +468,7 @@ mod snapshot_serde_functions_impl {
 }
 
 
-pub fn serialize_snapshot<'a, B: Basics, C: ColumnList, Shot: Snapshot<B>, S: Serializer>
+pub fn serialize_snapshot<'a, B: Basics, C: ColumnList, Shot: Snapshot<Basics = B>, S: Serializer>
   (snapshot: &'a Shot,
    serializer: &mut S)
    -> Result<(), S::Error>
@@ -593,8 +595,9 @@ impl<T: Ord> PartialOrd for ValidSince<T> {
 //  }
 // }
 
-pub trait TimeSteward<B: Basics>: Any {
-  type Snapshot: Snapshot<B>;
+pub trait TimeSteward: Any {
+  type Basics: Basics;
+  type Snapshot: Snapshot<Basics = Self::Basics>;
 
   /**
   You are allowed to call snapshot_before(), insert_fiat_event(),
@@ -604,14 +607,14 @@ pub trait TimeSteward<B: Basics>: Any {
   
   All implementors must obey certain restrictions on how other TimeSteward methods may change the result of valid_since(). Implementors may have their own methods that can alter this in customized ways, which should be documented with those individual methods.
   */
-  fn valid_since(&self) -> ValidSince<B::Time>;
+  fn valid_since(&self) -> ValidSince<<<Self as TimeSteward>::Basics as Basics>::Time>;
 
   /**
   Creates a new, empty TimeSteward.
   
   new_empty().valid_since() must equal TheBeginning.
   */
-  fn new_empty(constants: B::Constants) -> Self;
+  fn new_empty(constants: <<Self as TimeSteward>::Basics as Basics>::Constants) -> Self;
 
   /**
   Creates a new TimeSteward from a snapshot.
@@ -619,8 +622,8 @@ pub trait TimeSteward<B: Basics>: Any {
   from_snapshot().valid_since() must equal Before(snapshot.now()),
   and must never go lower than that.
   */
-  fn from_snapshot<'a, S: Snapshot<B>>(snapshot: &'a S) -> Self
-    where &'a S: IntoIterator<Item = SnapshotEntry<'a, B>>;
+  fn from_snapshot<'a, S: Snapshot<Basics = Self::Basics>>(snapshot: &'a S) -> Self
+    where &'a S: IntoIterator<Item = SnapshotEntry<'a, Self::Basics>>;
 
 
   /**
@@ -631,8 +634,8 @@ pub trait TimeSteward<B: Basics>: Any {
   steward.insert_fiat_event(time, _) must not return InvalidTime if time > steward.valid_since().
   steward.insert_fiat_event() may not change steward.valid_since().
   */
-  fn insert_fiat_event<E: Event<Basics = B>>(&mut self,
-                                      time: B::Time,
+  fn insert_fiat_event<E: Event<Basics = Self::Basics>>(&mut self,
+                                      time: <<Self as TimeSteward>::Basics as Basics>::Time,
                                       id: DeterministicRandomId,
                                       event: E)
                                       -> Result<(), FiatEventOperationError>;
@@ -646,7 +649,7 @@ pub trait TimeSteward<B: Basics>: Any {
   steward.remove_fiat_event() may not change steward.valid_since().
   */
   fn remove_fiat_event(&mut self,
-                      time: &B::Time,
+                      time: &<<Self as TimeSteward>::Basics as Basics>::Time,
                       id: DeterministicRandomId)
                       -> Result<(), FiatEventOperationError>;
 
@@ -659,23 +662,22 @@ pub trait TimeSteward<B: Basics>: Any {
   steward.snapshot_before(time) must return Some if time > steward.valid_since().
   steward.snapshot_before(time) may not increase steward.valid_since() beyond Before(time).
   */
-  fn snapshot_before(&mut self, time: &B::Time) -> Option<Self::Snapshot>;
+  fn snapshot_before(&mut self, time: &<<Self as TimeSteward>::Basics as Basics>::Time) -> Option<Self::Snapshot>;
 }
 
-pub trait IncrementalTimeSteward<B: Basics>: TimeSteward<B> {
+pub trait IncrementalTimeSteward: TimeSteward {
   fn step(&mut self);
-  fn updated_until_before(&self) -> Option<B::Time>;
+  fn updated_until_before(&self) -> Option<<<Self as TimeSteward>::Basics as Basics>::Time>;
 }
 
 use std::ops::{Sub, Mul, Div};
 use std::collections::BTreeMap;
 
-pub trait SimpleSynchronizableTimeSteward<B: Basics>: TimeSteward<B>
-where B::Time: Sub + Mul<i64, Output = B::Time> + Div<B::Time, Output = i64> {
-  fn begin_checks (&mut self, start: B::Time, stride: B::Time);
+pub trait SimpleSynchronizableTimeSteward: TimeSteward where <<Self as TimeSteward>::Basics as Basics>::Time: Sub + Mul<i64, Output = <<Self as TimeSteward>::Basics as Basics>::Time> + Div<<<Self as TimeSteward>::Basics as Basics>::Time, Output = i64> {
+  fn begin_checks (&mut self, start: <<Self as TimeSteward>::Basics as Basics>::Time, stride: <<Self as TimeSteward>::Basics as Basics>::Time);
   fn checksum(&self, which: i64)->u64;
-  fn debug_dump(&self, which: i64) ->BTreeMap<ExtendedTime <B>, u64>;
-  fn event_details (&self, time: & ExtendedTime <B>)->String;
+  fn debug_dump(&self, which: i64) ->BTreeMap<ExtendedTime <<Self as TimeSteward>::Basics>, u64>;
+  fn event_details (&self, time: & ExtendedTime <<Self as TimeSteward>::Basics>)->String;
 }
 
 #[cfg (test)]

@@ -42,7 +42,7 @@ fn get_philosopher_id(index: i32) -> RowId {
 
 type TimeStewardTypes = (ColumnType<Philosopher>, EventType <Shake>, PredictorType <Shaker>);
 
-fn display_snapshot<S: ::Snapshot<Basics>>(snapshot: &S) {
+fn display_snapshot<S: ::Snapshot<Basics = Basics>>(snapshot: &S) {
   println!("snapshot for {}", snapshot.now());
   for index in 0..HOW_MANY_PHILOSOPHERS {
     println!("{}",
@@ -99,7 +99,7 @@ pub fn testfunc() {
   let mut snapshots = Vec::new();
   for increment in 1..21 {
     snapshots.push(stew.snapshot_before(&(increment * 100i64)));
-    stew = ::TimeSteward::from_snapshot::<<Steward as ::TimeSteward<Basics>>::Snapshot> (snapshots.last().unwrap().as_ref().unwrap());
+    stew = ::TimeSteward::from_snapshot::<<Steward as ::TimeSteward>::Snapshot> (snapshots.last().unwrap().as_ref().unwrap());
   }
   for snapshot in snapshots.iter_mut()
     .map(|option| option.as_mut().expect("all these snapshots should have been valid")) {
@@ -107,14 +107,14 @@ pub fn testfunc() {
     let mut writer: Vec<u8> = Vec::with_capacity(128);
     {
       let mut serializer = Serializer::new(&mut writer);
-      ::serialize_snapshot:: <Basics, TimeStewardTypes, <Steward as TimeSteward <Basics>>::Snapshot,_> (snapshot, &mut serializer).unwrap();
+      ::serialize_snapshot:: <Basics, TimeStewardTypes, <Steward as TimeSteward>::Snapshot,_> (snapshot, &mut serializer).unwrap();
     }
     // let serialized = String::from_utf8 (serializer.into_inner()).unwrap();
     println!("{:?}", writer);
     let deserialized = ::deserialize_snapshot:: <Basics, TimeStewardTypes,_> (&mut Deserializer::new (&mut writer.as_slice(), bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/)).unwrap();
     display_snapshot(&deserialized);
     use MomentaryAccessor;
-    display_snapshot(&<Steward as ::TimeSteward<Basics>>::from_snapshot::<::FiatSnapshot<Basics>>(&deserialized).snapshot_before(deserialized.now()).unwrap());
+    display_snapshot(&<Steward as ::TimeSteward>::from_snapshot::<::FiatSnapshot<Basics>>(&deserialized).snapshot_before(deserialized.now()).unwrap());
   }
   // panic!("anyway")
 }

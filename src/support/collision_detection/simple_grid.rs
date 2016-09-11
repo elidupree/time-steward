@@ -12,10 +12,10 @@ pub struct Bounds {
 }
 
 pub trait Basics: super::Basics {
-  fn get_bounds<A: MomentaryAccessor<<Self as super::Basics>::StewardBasics>>(accessor: &A,
+  fn get_bounds<A: MomentaryAccessor<Basics = <Self as super::Basics>::StewardBasics>>(accessor: &A,
                                                                               who: RowId, detector: <Self as super::Basics>::DetectorId)
                                                                               -> Bounds;
-  fn when_escapes <A: Accessor <<Self as super::Basics>::StewardBasics>>(accessor: & A, who: RowId, bounds: Bounds, detector: <Self as super::Basics>::DetectorId)->Option <<<Self as super::Basics>::StewardBasics as ::Basics>::Time>;
+  fn when_escapes <A: Accessor <Basics = <Self as super::Basics>::StewardBasics>>(accessor: & A, who: RowId, bounds: Bounds, detector: <Self as super::Basics>::DetectorId)->Option <<<Self as super::Basics>::StewardBasics as ::Basics>::Time>;
 }
 
 
@@ -80,13 +80,13 @@ impl<B: Basics> Column for Member<B> {
 fn cell_row<DetectorId: Serialize>(x: i64, y: i64, me: DetectorId) -> RowId {
   RowId::new(&(x, y, me))
 }
-fn get_bounds<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
+fn get_bounds<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
                                                        who: RowId,
                                                        me: B::DetectorId)
                                                        -> Bounds {
   B::get_bounds(mutator, who, me)
 }
-pub fn insert<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
+pub fn insert<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
                                                        who: RowId,
                                                        me: B::DetectorId) {
   let bounds = get_bounds::<B, M>(mutator, who, me);
@@ -113,7 +113,7 @@ pub fn insert<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
   }
 }
 
-pub fn remove<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
+pub fn remove<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
                                                       who: RowId,
                                                       me: B::DetectorId,
                                                       membership_id: RowId,

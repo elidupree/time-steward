@@ -32,7 +32,7 @@ impl<B: Basics> Nearness<B> {
       detector_id: detector_id,
     })
   }
-  pub fn get_ids<M: Accessor<B::StewardBasics>>(mutator: &mut M,
+  pub fn get_ids<M: Accessor<Basics = B::StewardBasics>>(mutator: &mut M,
                                                 my_id: RowId)
                                                 -> ([RowId; 2], B::DetectorId) {
     let me = mutator.get::<Nearness<B>>(my_id).expect("no nearness by this id exists");

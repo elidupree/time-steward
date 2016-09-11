@@ -80,13 +80,13 @@ time_steward_predictor! (struct Predictor, Basics, PredictorId (0x59c5a4cce27893
 
 // As in, "putting it through its paces"
 #[allow (unused_must_use)]
-fn paces <Steward: steward::IncrementalTimeSteward <Basics>, G: Rng> (generator: &mut G)
+fn paces <Steward: steward::IncrementalTimeSteward <Basics = Basics>, G: Rng> (generator: &mut G)
 where for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a, Basics>>
 {  
   let mut stew: Steward = Steward::new_empty (RowId::new (& generator.gen::<u64>()));
   let mut snapshots: Vec<Steward::Snapshot> = Vec::new();
   
-  fn display_snapshot <S: steward::Snapshot <Basics>> (snapshot: & S)->(usize, DeterministicRandomId) {(snapshot.num_fields(), snapshot.now().clone())}
+  fn display_snapshot <S: steward::Snapshot <Basics = Basics>> (snapshot: & S)->(usize, DeterministicRandomId) {(snapshot.num_fields(), snapshot.now().clone())}
   
   for index in 0..10000 {
     let time = RowId::new (& generator.gen::<u64>());

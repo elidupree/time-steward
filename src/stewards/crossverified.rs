@@ -11,18 +11,19 @@ use std::cmp::max;
 use std::marker::PhantomData;
 use Snapshot as SuperSnapshot;
 
-pub struct Steward<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
+pub struct Steward<B: Basics, Steward0: TimeSteward<Basics = B>, Steward1: TimeSteward<Basics = B> > (
   Steward0,
   Steward1,
   PhantomData <B::Constants>,
 );
-pub struct Snapshot<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > (
-  <Steward0 as TimeSteward <B>>::Snapshot,
-  <Steward1 as TimeSteward <B>>::Snapshot,
+pub struct Snapshot<B: Basics, Steward0: TimeSteward<Basics = B>, Steward1: TimeSteward<Basics = B> > (
+  <Steward0 as TimeSteward>::Snapshot,
+  <Steward1 as TimeSteward>::Snapshot,
 );
 
 
-impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::Accessor<B> for Snapshot<B, Steward0, Steward1> {
+impl<B: Basics, Steward0: TimeSteward<Basics = B>, Steward1: TimeSteward<Basics = B> > ::Accessor for Snapshot<B, Steward0, Steward1> {
+  type Basics = B;
 // macro_rules! forward_snapshot_method ($method: ident ($self, $($argument_name: ident: $argument_type:ty),*)->$return_type:ty
 // TODO: forward all the methods properly
 // and check equality by serialization
@@ -52,16 +53,16 @@ impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::Accessor<
   }
 }
 
-impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::MomentaryAccessor<B> for Snapshot<B, Steward0, Steward1> {}
+impl<B: Basics, Steward0: TimeSteward<Basics = B>, Steward1: TimeSteward<Basics = B> > ::MomentaryAccessor for Snapshot<B, Steward0, Steward1> {}
 
-impl<B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B> > ::Snapshot<B> for Snapshot<B, Steward0, Steward1> {
+impl<B: Basics, Steward0: TimeSteward<Basics = B>, Steward1: TimeSteward<Basics = B> > ::Snapshot for Snapshot<B, Steward0, Steward1> {
   fn num_fields(&self) -> usize {
     assert_eq!(self.0.num_fields(), self.1.num_fields());
     self.0.num_fields()
   }
 }
 
-pub struct SnapshotIter <'a, B: Basics, Steward0: TimeSteward<B> + 'a, Steward1: TimeSteward<B> + 'a>
+pub struct SnapshotIter <'a, B: Basics, Steward0: TimeSteward<Basics = B> + 'a, Steward1: TimeSteward<Basics = B> + 'a>
 where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
 & 'a Steward1::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>
 {
@@ -69,7 +70,7 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
   #[allow (dead_code)]
   snapshot: & 'a Snapshot <B, Steward0, Steward1>,
 }
-impl <'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> Iterator for SnapshotIter<'a, B, Steward0, Steward1>
+impl <'a, B: Basics, Steward0: TimeSteward<Basics = B>, Steward1: TimeSteward<Basics = B>> Iterator for SnapshotIter<'a, B, Steward0, Steward1>
 where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
 & 'a Steward1::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>> {
   type Item = (FieldId, (& 'a FieldRc, & 'a ExtendedTime <B>));
@@ -78,7 +79,7 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
   }
   fn size_hint (&self)->(usize, Option <usize>) {self. iter.size_hint()}
 }
-impl <'a, B: Basics, Steward0: TimeSteward<B>, Steward1: TimeSteward<B>> IntoIterator for & 'a Snapshot <B, Steward0, Steward1>
+impl <'a, B: Basics, Steward0: TimeSteward<Basics = B>, Steward1: TimeSteward<Basics = B>> IntoIterator for & 'a Snapshot <B, Steward0, Steward1>
 where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
 & 'a Steward1::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
 
@@ -103,7 +104,8 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
   }
 }
 
-impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeSteward<B> for Steward<B, Steward0, Steward1> {
+impl<B: Basics, Steward0: TimeSteward<Basics = B> , Steward1: TimeSteward<Basics = B> > TimeSteward for Steward<B, Steward0, Steward1> {
+  type Basics = B;
   type Snapshot = Snapshot<B, Steward0, Steward1>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
@@ -120,7 +122,7 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
     result
   }
 
-  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: & 'a S)
+  fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: & 'a S)
                                               -> Self
                                               where & 'a S: IntoIterator <Item = ::SnapshotEntry <'a, B>> {
     let result = Steward (
@@ -197,7 +199,7 @@ impl<B: Basics, Steward0: TimeSteward<B> , Steward1: TimeSteward<B> > TimeStewar
 }
 
 
-impl<B: Basics, Steward0: IncrementalTimeSteward <B>, Steward1: IncrementalTimeSteward <B>> ::IncrementalTimeSteward<B> for Steward<B, Steward0, Steward1> {
+impl<B: Basics, Steward0: IncrementalTimeSteward <Basics = B>, Steward1: IncrementalTimeSteward <Basics = B>> ::IncrementalTimeSteward for Steward<B, Steward0, Steward1> {
   fn step(&mut self) {
     if self.0.updated_until_before() <self.1.updated_until_before() {
       //println!("stepping 0");

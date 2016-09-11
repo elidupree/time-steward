@@ -64,7 +64,7 @@ impl support::collision_detection::Basics for CollisionBasics {
   }
 }
 impl collisions::Basics for CollisionBasics {
-  fn get_bounds<A: MomentaryAccessor<Basics>>(accessor: &A,
+  fn get_bounds<A: MomentaryAccessor<Basics = Basics>>(accessor: &A,
                                               who: RowId,
                                               _: ())
                                               -> collisions::Bounds {
@@ -78,7 +78,7 @@ impl collisions::Basics for CollisionBasics {
             right_shift_round_up(center[1] + circle.radius, GRID_SIZE_SHIFT)],
     }
   }
-  fn when_escapes<A: Accessor<Basics>>(accessor: &A,
+  fn when_escapes<A: Accessor<Basics = Basics>>(accessor: &A,
                                        who: RowId,
                                        bounds: collisions::Bounds,
                                        _: ())
@@ -140,7 +140,7 @@ fn get_circle_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x86ccbeb2c140cc51u64, index))
 }
 
-fn collision_predictor<PA: PredictorAccessor<Basics>>(accessor: &mut PA, id: RowId) {
+fn collision_predictor<PA: PredictorAccessor<Basics = Basics>>(accessor: &mut PA, id: RowId) {
   let ids = Nearness::get_ids(accessor, id).0;
   let time;
   {
@@ -217,7 +217,7 @@ fn collision_predictor<PA: PredictorAccessor<Basics>>(accessor: &mut PA, id: Row
                                mutator.set::<Circle>(ids[1], Some(new.1));
                              });
 
-fn boundary_predictor<PA: PredictorAccessor<Basics>>(accessor: &mut PA, id: RowId) {
+fn boundary_predictor<PA: PredictorAccessor<Basics = Basics>>(accessor: &mut PA, id: RowId) {
   let time;
   {
     let arena_center = QuadraticTrajectory::new(TIME_SHIFT,

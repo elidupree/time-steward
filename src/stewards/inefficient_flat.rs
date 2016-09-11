@@ -56,7 +56,8 @@ pub type Event<B> = StewardRc<EventFn<B>>;
 
 time_steward_common_dynamic_callback_structs! (Mutator, PredictorAccessor, DynamicEventFn, DynamicPredictorFn, DynamicPredictor, Settings);
 
-impl<B: Basics> ::Accessor<B> for Snapshot<B> {
+impl<B: Basics> ::Accessor for Snapshot<B> {
+  type Basics = B;
   fn generic_data_and_extended_last_change(&self,
                                            id: FieldId)
                                            -> Option<(&FieldRc, &ExtendedTime<B>)> {
@@ -69,7 +70,8 @@ impl<B: Basics> ::Accessor<B> for Snapshot<B> {
     &self.now
   }
 }
-impl<'a, B: Basics> ::Accessor<B> for Mutator<'a, B> {
+impl<'a, B: Basics> ::Accessor for Mutator<'a, B> {
+  type Basics = B;
   fn generic_data_and_extended_last_change(&self,
                                            id: FieldId)
                                            -> Option<(&FieldRc, &ExtendedTime<B>)> {
@@ -85,7 +87,8 @@ impl<'a, B: Basics> PredictorAccessor<'a, B> {
     self.steward.state.get(id)
   }
 }
-impl<'a, B: Basics> ::Accessor<B> for PredictorAccessor<'a, B> {
+impl<'a, B: Basics> ::Accessor for PredictorAccessor<'a, B> {
+  type Basics = B;
   time_steward_common_accessor_methods_for_predictor_accessor!(B, get_impl);
   fn constants(&self) -> &B::Constants {
     &self.steward.settings.constants
@@ -95,8 +98,8 @@ impl<'a, B: Basics> ::Accessor<B> for PredictorAccessor<'a, B> {
   }
 }
 
-impl<B: Basics> ::MomentaryAccessor<B> for Snapshot<B> {}
-impl<'a, B: Basics> ::MomentaryAccessor<B> for Mutator<'a, B> {}
+impl<B: Basics> ::MomentaryAccessor for Snapshot<B> {}
+impl<'a, B: Basics> ::MomentaryAccessor for Mutator<'a, B> {}
 impl<'a, B: Basics> PredictorAccessor<'a, B> {
   fn internal_now<'b>(&'b self) -> &'a ExtendedTime<B> {
     self.steward
@@ -106,10 +109,10 @@ impl<'a, B: Basics> PredictorAccessor<'a, B> {
       .expect("how can we be calling a predictor when there are no fields yet?")
   }
 }
-impl<'a, B: Basics> ::PredictorAccessor<B> for PredictorAccessor<'a, B> {
+impl<'a, B: Basics> ::PredictorAccessor for PredictorAccessor<'a, B> {
   time_steward_common_predictor_accessor_methods_for_predictor_accessor!(B, DynamicEventFn);
 }
-impl<B: Basics> ::Snapshot<B> for Snapshot<B> {
+impl<B: Basics> ::Snapshot for Snapshot<B> {
   fn num_fields(&self) -> usize {
     self.state.field_states.len()
   }
@@ -135,7 +138,7 @@ impl<'a, B: Basics> IntoIterator for &'a Snapshot<B> {
 
 
 
-impl<'a, B: Basics> ::Mutator<B> for Mutator<'a, B> {
+impl<'a, B: Basics> ::Mutator for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
     self.steward.state.set_opt::<C>(id, data, &self.generic.now);
   }
@@ -241,7 +244,8 @@ impl<B: Basics> StewardImpl<B> {
   }
 }
 
-impl<B: Basics> TimeSteward<B> for Steward<B> {
+impl<B: Basics> TimeSteward for Steward<B> {
+  type Basics = B;
   type Snapshot = Snapshot<B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
@@ -267,7 +271,7 @@ impl<B: Basics> TimeSteward<B> for Steward<B> {
     }
   }
 
-  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: &'a S) -> Self
+  fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: &'a S) -> Self
     where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
   {
     let mut result = StewardImpl {

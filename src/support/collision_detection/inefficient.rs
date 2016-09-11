@@ -14,7 +14,7 @@ impl<B: Basics> Column for Detector<B> {
 }
 
 
-pub fn insert<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
+pub fn insert<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
                                                        who: RowId,
                                                        me: B::DetectorId) {
   let my_row = RowId::new(&me);
@@ -27,7 +27,7 @@ pub fn insert<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
   mutator.set::<Detector<B>>(my_row, Some(members));
 }
 
-pub fn remove<B: Basics, M: Mutator<B::StewardBasics>>(mutator: &mut M,
+pub fn remove<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
                                                       who: RowId,
                                                       me: B::DetectorId) {
   let my_row = RowId::new(&me);

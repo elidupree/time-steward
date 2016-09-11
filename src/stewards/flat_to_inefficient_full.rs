@@ -8,7 +8,7 @@ use {DeterministicRandomId, Basics, TimeSteward, FiatEventOperationError, ValidS
      MomentaryAccessor, FiatSnapshot};
 use std::collections::HashMap;
 
-pub struct Steward<B: Basics, Steward0: TimeSteward<B>> {
+pub struct Steward<B: Basics, Steward0: TimeSteward<Basics = B>> {
   steward: Steward0,
   invalid_before: ValidSince<B::Time>,
   fiat_events: HashMap<DeterministicRandomId,
@@ -17,7 +17,7 @@ pub struct Steward<B: Basics, Steward0: TimeSteward<B>> {
   snapshots: Vec<Steward0::Snapshot>,
 }
 
-impl<B: Basics, Steward0: TimeSteward <B>> Steward<B, Steward0> {
+impl<B: Basics, Steward0: TimeSteward <Basics = B>> Steward<B, Steward0> {
   fn reset_if_needed (&mut self, time: & B::Time) {
     if self.steward.valid_since() > *time {
       //println!("whoops");
@@ -39,7 +39,8 @@ impl<B: Basics, Steward0: TimeSteward <B>> Steward<B, Steward0> {
 }
 
 
-impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0> {
+impl<B: Basics, Steward0: TimeSteward<Basics = B>> TimeSteward for Steward<B, Steward0> {
+  type Basics = B;
   type Snapshot = Steward0::Snapshot;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
@@ -59,7 +60,7 @@ impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0
     }
   }
 
-  fn from_snapshot<'a, S: ::Snapshot<B>>(snapshot: &'a S) -> Self
+  fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: &'a S) -> Self
     where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
   {
     let reset_snapshot = FiatSnapshot::<B>::from_snapshot:: <'a, S> (snapshot);
@@ -125,7 +126,7 @@ impl<B: Basics, Steward0: TimeSteward<B>> TimeSteward<B> for Steward<B, Steward0
 }
 
 
-impl<B: Basics, Steward0: ::IncrementalTimeSteward <B>> ::IncrementalTimeSteward<B> for Steward<B, Steward0>
+impl<B: Basics, Steward0: ::IncrementalTimeSteward <Basics = B>> ::IncrementalTimeSteward for Steward<B, Steward0>
 where for <'a> & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>{
   fn step(&mut self) {
     self.steward.step();
