@@ -17,7 +17,7 @@ use std::sync::mpsc::{channel, Sender, Receiver};
 use bincode;
 
 
-#[derive (Serialize, Deserialize)]
+#[derive (Clone, Serialize, Deserialize)]
 enum Message <B: Basics> {
   InsertFiatEvent (B::Time, DeterministicRandomId, EventId, Vec<u8>),
   RemoveFiatEvent (B::Time, DeterministicRandomId),
@@ -25,6 +25,7 @@ enum Message <B: Basics> {
   Checksum (i64, u64),
   DebugDump (BTreeMap<ExtendedTime <B>, u64>),
   EventDetails (String),
+  Finished,
 }
 
 pub struct Steward <B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics = B>> {
@@ -50,16 +51,19 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
           Err (_) => return,
           Ok (message) => message,
         };
-        send_back.send (message);
+        send_back.send (message.clone());
+        if let Message::Finished = message {return;}
       }
     });
     ::std::thread::spawn (move | | {
       loop {
         match receive_away.recv() {
           Err (_) => return,
-          Ok (message) => match bincode::serde::serialize_into (&mut writer, &message, bincode::SizeLimit::Infinite) {
+          Ok (message) => {match bincode::serde::serialize_into (&mut writer, &message, bincode::SizeLimit::Infinite) {
             Err (_) => return,
             Ok (_) => (),
+          }
+          if let Message::Finished = message {return;}
           }
         };
       }
@@ -81,7 +85,11 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
   fn receive_once (&mut self)->bool {
     match self.receiver.try_recv() {
       Err (_) => false,
-      Ok (message) => {
+      Ok (message) => {self.received (message); true},
+    }
+  }
+  
+  fn received (&mut self, message: Message <B>)->bool {
         match message {
           Message::InsertFiatEvent (time, id, event_id, data) => unimplemented!(),
           Message::RemoveFiatEvent (time, id) => self.remove_fiat_event (&time, id).unwrap(),
@@ -135,10 +143,9 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
             }
           },
           Message::EventDetails (string) => panic!("We should not receive an event details except where specifically expecting it"),
+          Message::Finished => return false,
         };
-        true
-      }
-    }
+    true
   }
   
   pub fn settle_before (&mut self, time: B::Time) {
@@ -153,6 +160,14 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
       let checksum: u64 = self.steward.checksum (self.checksums.len() as i64);
       self.sender.send (Message::Checksum (self.checksums.len() as i64, checksum)).unwrap();
       self.checksums.push (checksum);
+    }
+  }
+  
+  pub fn finish (&mut self) {
+    self.sender.send (Message::Finished).unwrap();
+    loop {
+      let message = self.receiver.recv().unwrap();
+      if !self.received (message) {return;}
     }
   }
   
