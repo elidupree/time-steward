@@ -135,3 +135,6 @@ where for <'a> & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a
     self.steward.updated_until_before()
   }
 }
+
+impl <B: Basics, Steward0: TimeSteward <Basics = B>> ::FullTimeSteward for Steward <B, Steward0> {}
+

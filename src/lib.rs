@@ -61,6 +61,7 @@ pub mod stewards {
 
   pub mod flat_to_inefficient_full;
   pub mod crossverified;
+  pub mod simply_synchronized;
 }
 
 #[macro_use]

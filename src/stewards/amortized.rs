@@ -1300,6 +1300,8 @@ impl<B: Basics> IncrementalTimeSteward for Steward<B> {
   }
 }
 
+impl <B: Basics> ::FullTimeSteward for Steward <B> {}
+
 /*
 Wait, we don't actually need to do this, because self.shared isn't dropped as long as the snapshot exist!
 impl<B: Basics> Drop for Steward<B> {

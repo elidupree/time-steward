@@ -633,6 +633,9 @@ pub trait SimpleSynchronizableTimeSteward: TimeSteward where <<Self as TimeStewa
   fn event_details (&self, time: & ExtendedTime <<Self as TimeSteward>::Basics>)->String;
 }
 
+/// A marker trait indicating that the TimeSteward promises that calling snapshot_before() or step() will not change valid_since()
+pub trait FullTimeSteward: TimeSteward{}
+
 #[cfg (test)]
 mod tests {
   use super::*;
