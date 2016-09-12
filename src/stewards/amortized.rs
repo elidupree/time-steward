@@ -513,9 +513,13 @@ impl<B: Basics> Steward<B> {
                                   changed_since_snapshots,
                                   &self.shared);
     }
+    let checksum = new_results.checksum_generator.into_inner().generate().data() [0];
+    if let Some (checksum_info) = self.owned.checksum_info.as_ref() {
+      //let chunk =
+    }
     EventExecutionState {
       fields_changed: new_fields_changed,
-      checksum: new_results.checksum_generator.into_inner().generate().data() [0],
+      checksum: checksum,
       validity: EventValidity::ValidWithDependencies(new_dependencies),
     }
   }
