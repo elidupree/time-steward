@@ -73,15 +73,22 @@ impl<'a, P: Predictor, PA: PredictorAccessor <Basics = P::Basics>> FnOnce <(& 'a
 #[macro_export]
 macro_rules! time_steward_common_dynamic_callback_structs {
 
-($M: ident, $PA: ident, $DynamicEventFn: ident, $DynamicPredictorFn: ident, $DynamicPredictor: ident, $StandardSettings: ident) => {
+($M: ident, $PA: ident, $DynamicEvent: ident, $DynamicPredictor: ident, $StandardSettings: ident) => {
 
 mod __time_steward_make_dynamic_callbacks_impl {
 
-use $crate::{Basics, Predictor, RowId, ColumnId, PredictorId, StewardRc, PredictorList, predictor_list};
+use $crate::{Basics, Event, Predictor, RowId, ColumnId, EventId, PredictorId, StewardRc, PredictorList, predictor_list};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
 use ::stewards::common::*;
+
+pub trait DynamicEventTrait <B: Basics>: for <'a, 'b> Fn(& 'a mut super:: $M<'b, B>) {
+  fn event_id(&self)->EventId;
+}
+impl<B: Basics, E: Event <Basics = B >> DynamicEventTrait <B> for DynamicEventFn <E> {
+  fn event_id(&self)->EventId {E::event_id()}
+}
 
 pub trait DynamicPredictorTrait <B: Basics>: for <'a, 'b> Fn(& 'a mut super:: $PA <'b, B>, RowId) {
   fn predictor_id(&self)->PredictorId;
@@ -92,6 +99,8 @@ impl<B: Basics, P: Predictor<Basics = B >> DynamicPredictorTrait <B> for Dynamic
   fn predictor_id(&self)->PredictorId {P::predictor_id()}
   fn column_id(&self)->ColumnId {P::column_id()}
 }
+
+pub type DynamicEvent <B: Basics> = StewardRc <DynamicEventTrait <B, Output =()>>;
 
 // #[derive (Clone)]
 pub struct DynamicPredictor <B: Basics> {
@@ -143,12 +152,11 @@ impl<B: Basics> StandardSettings <B> {
 }
 
 #[allow (unused_imports)]
-use ::stewards::common::DynamicEventFn as $DynamicEventFn;
+use self::__time_steward_make_dynamic_callbacks_impl::DynamicEvent as $DynamicEvent;
 #[allow (unused_imports)]
 use self::__time_steward_make_dynamic_callbacks_impl::DynamicPredictor as $DynamicPredictor;
 #[allow (unused_imports)]
-use ::stewards::common::DynamicPredictorFn as $DynamicPredictorFn;
-pub use self::__time_steward_make_dynamic_callbacks_impl::StandardSettings as $StandardSettings;
+use self::__time_steward_make_dynamic_callbacks_impl::StandardSettings as $StandardSettings;
 
 }}
 

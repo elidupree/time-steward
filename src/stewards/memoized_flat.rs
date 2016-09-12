@@ -7,7 +7,7 @@
 
 use ::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, StewardRc, FieldRc,
        Accessor, Column, ExtendedTime, Basics, TimeSteward, FiatEventOperationError, ValidSince};
-use stewards::common::{self, Filter};
+use stewards::common::{self, Filter, DynamicEventFn};
 use std::collections::{HashMap, BTreeMap, HashSet};
 use std::collections::hash_map::Entry;
 use std::rc::Rc;
@@ -44,7 +44,7 @@ struct Prediction<B: Basics> {
   predictor_id: PredictorId,
   prediction_is_about_row_id: RowId,
   predictor_accessed: Vec<FieldId>,
-  what_will_happen: Option<(ExtendedTime<B>, Event<B>)>,
+  what_will_happen: Option<(ExtendedTime<B>, DynamicEvent<B>)>,
 }
 
 struct StewardShared<B: Basics> {
@@ -56,7 +56,7 @@ struct StewardShared<B: Basics> {
 struct StewardOwned<B: Basics> {
   last_event: Option<ExtendedTime<B>>,
   invalid_before: ValidSince<B::Time>,
-  fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
+  fiat_events: BTreeMap<ExtendedTime<B>, DynamicEvent<B>>,
   next_snapshot: SnapshotIdx,
   existent_fields: partially_persistent_nonindexed_set::Set<FieldId>,
 
@@ -91,12 +91,10 @@ pub struct PredictorAccessor<'a, B: Basics> {
   steward: RefCell<&'a mut StewardOwned<B>>,
   shared: &'a StewardShared<B>,
   fields: &'a Fields<B>,
-  generic: common::GenericPredictorAccessor<B, Event<B>>,
+  generic: common::GenericPredictorAccessor<B, DynamicEvent<B>>,
 }
-pub type EventFn<B> = for<'d, 'e> Fn(&'d mut Mutator<'e, B>);
-pub type Event<B> = StewardRc<EventFn<B>>;
 
-time_steward_common_dynamic_callback_structs! (Mutator, PredictorAccessor, DynamicEventFn, DynamicPredictorFn, DynamicPredictor, Settings);
+time_steward_common_dynamic_callback_structs! (Mutator, PredictorAccessor, DynamicEvent, DynamicPredictor, Settings);
 
 impl<B: Basics> Drop for Snapshot<B> {
   fn drop(&mut self) {
@@ -309,7 +307,7 @@ impl<B: Basics> Fields<B> {
   }
 }
 impl<B: Basics> Steward<B> {
-  fn next_event(&self) -> Option<(ExtendedTime<B>, Event<B>)> {
+  fn next_event(&self) -> Option<(ExtendedTime<B>, DynamicEvent<B>)> {
     let first_fiat_event_iter = self.owned
       .fiat_events
       .iter()
@@ -415,7 +413,7 @@ impl<B: Basics> Steward<B> {
     }
   }
 
-  fn execute_event(&mut self, event_time: ExtendedTime<B>, event: Event<B>) {
+  fn execute_event(&mut self, event_time: ExtendedTime<B>, event: DynamicEvent<B>) {
     let predictions_needed;
 
     {

@@ -626,7 +626,9 @@ pub trait IncrementalTimeSteward: TimeSteward {
 use std::ops::{Sub, Mul, Div};
 use std::collections::BTreeMap;
 
-pub trait SimpleSynchronizableTimeSteward: TimeSteward where <<Self as TimeSteward>::Basics as Basics>::Time: Sub + Mul<i64, Output = <<Self as TimeSteward>::Basics as Basics>::Time> + Div<<<Self as TimeSteward>::Basics as Basics>::Time, Output = i64> {
+pub trait SimpleSynchronizableTimeSteward: TimeSteward
+//where <<Self as TimeSteward>::Basics as Basics>::Time: Sub<Output = <<Self as TimeSteward>::Basics as Basics>::Time> + Mul<i64, Output = <<Self as TimeSteward>::Basics as Basics>::Time> + Div<<<Self as TimeSteward>::Basics as Basics>::Time, Output = i64>
+{
   fn begin_checks (&mut self, start: <<Self as TimeSteward>::Basics as Basics>::Time, stride: <<Self as TimeSteward>::Basics as Basics>::Time);
   fn checksum(&self, which: i64)->u64;
   fn debug_dump(&self, which: i64) ->BTreeMap<ExtendedTime <<Self as TimeSteward>::Basics>, u64>;

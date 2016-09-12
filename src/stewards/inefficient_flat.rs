@@ -7,7 +7,7 @@
 
 use ::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, Column, ExtendedTime, Basics,
        TimeSteward, FiatEventOperationError, ValidSince, StewardRc, FieldRc, Accessor};
-use stewards::common::{self, Filter};
+use stewards::common::{self, Filter, DynamicEventFn};
 use std::collections::{HashMap, BTreeMap};
 use rand::Rng;
 use std::cmp::max;
@@ -25,7 +25,7 @@ struct StewardState<B: Basics> {
   last_event: Option<ExtendedTime<B>>,
   invalid_before: ValidSince<B::Time>,
   field_states: HashMap<FieldId, Field<B>>,
-  fiat_events: BTreeMap<ExtendedTime<B>, Event<B>>,
+  fiat_events: BTreeMap<ExtendedTime<B>, DynamicEvent<B>>,
 }
 
 struct StewardSettings<B: Basics> {
@@ -48,13 +48,11 @@ pub struct Mutator<'a, B: Basics> {
   steward: &'a mut StewardImpl<B>,
 }
 pub struct PredictorAccessor<'a, B: Basics> {
-  generic: common::GenericPredictorAccessor<B, Event<B>>,
+  generic: common::GenericPredictorAccessor<B, DynamicEvent<B>>,
   steward: &'a StewardImpl<B>,
 }
-pub type EventFn<B> = for<'d, 'e> Fn(&'d mut Mutator<'e, B>);
-pub type Event<B> = StewardRc<EventFn<B>>;
 
-time_steward_common_dynamic_callback_structs! (Mutator, PredictorAccessor, DynamicEventFn, DynamicPredictorFn, DynamicPredictor, Settings);
+time_steward_common_dynamic_callback_structs! (Mutator, PredictorAccessor, DynamicEvent, DynamicPredictor, Settings);
 
 impl<B: Basics> ::Accessor for Snapshot<B> {
   type Basics = B;
@@ -179,7 +177,7 @@ impl<B: Basics> StewardState<B> {
   }
 }
 impl<B: Basics> StewardImpl<B> {
-  fn next_event(&self) -> Option<(ExtendedTime<B>, Event<B>)> {
+  fn next_event(&self) -> Option<(ExtendedTime<B>, DynamicEvent<B>)> {
     let first_fiat_event_iter = self.state
       .fiat_events
       .iter()
@@ -226,7 +224,7 @@ impl<B: Basics> StewardImpl<B> {
     events_iter.min_by_key(|ev| ev.0.clone())
   }
 
-  fn execute_event(&mut self, event_time: ExtendedTime<B>, event: Event<B>) {
+  fn execute_event(&mut self, event_time: ExtendedTime<B>, event: DynamicEvent<B>) {
     event(&mut Mutator {
       generic: common::GenericMutator::new(event_time.clone()),
       steward: &mut *self,

@@ -15,7 +15,7 @@
 
 use {DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, Column, StewardRc,
      FieldRc, ExtendedTime, Basics, Accessor, FiatEventOperationError, ValidSince, TimeSteward, IncrementalTimeSteward};
-use stewards::common;
+use stewards::common::{self, DynamicEventFn};
 use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet, btree_map};
 use std::collections::hash_map::Entry;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
@@ -29,124 +29,18 @@ use data_structures::partially_persistent_nonindexed_set;
 
 type SnapshotIdx = u64;
 
-
-// An ExtendedTime may be in one of several states
-// – empty and unused
-// – a fiat event scheduled but nothing executed
-// – a fiat event scheduled and executed consistently to that, and still valid
-// – a fiat event scheduled and executed consistently to that, but its accessed fields have changed
-// – a fiat event executed, but not scheduled (we could disallow this by doing it immediately)
-// – a fiat event executed but then rescheduled differently (ditto)
-// – a predicted event scheduled but nothing executed
-// – a predicted event scheduled and executed consistently to that, and still valid
-// – a predicted event scheduled and executed consistently to that, but its accessed fields have changed
-// – a predicted event executed, but not scheduled (we could disallow this in STABLE states but it is guaranteed to occur at least temporarily during a function)
-// – a predicted event executed but then rescheduled differently (ditto)
-//
-// There are enough parallels between fiat and predicted that we should probably combine them:
-//
-// 0. Unused
-// 1. Scheduled only
-// 2. Executed consistently, still valid
-// 3. Executed consistently, fields changed
-// 4. Executed but not scheduled
-// 5. Executed but scheduled differently
-//
-// possible movements:
-// (1, 4)->0
-// 0->1
-// (1, 3, 5)->2
-// 2->3
-// (2, 3, 5)->4
-// 4->5
-//
-// The ExtendedTime needs attention in (1, 3, 4, 5) but not (2, 0).
-// Thus, the changes that affect "needs attention" are:
-// (1, 4)->0
-// 0->1
-// (1, 3, 5)->2
-// 2->3
-// 2->4
-//
-// Which can be split up into the ones CAUSED by giving the time attention:
-// 4->0
-// (1, 3, 5)->2
-// And the ones caused from a distance:
-// 0->1 (scheduling)
-// 1->0 and 2->4 (un-scheduling)
-// 2->3 (invalidating)
-//
-// that's assuming that you're not allowed to reschedule without un-scheduling first (which, in my current model, is true for both fiat events and predicted events)
-//
-// The only things distinguishing 3 and 5 are how they are created. Let's combine them:
-//
-// 0. Unused
-// 1. Scheduled only
-// 2. Executed consistently, still valid
-// 3. Executed consistently, fields OR schedule different than when it was executed
-// 4. Executed but not scheduled
-//
-// possible movements:
-// (1, 4)->0
-// 0->1
-// (1, 3)->2
-// (2, 4)->3
-// (2, 3)->4
-//
-// The ExtendedTime needs attention in (1, 3, 4) but not (2, 0).
-// Thus, the changes that affect "needs attention" are:
-// (1, 4)->0
-// 0->1
-// (1, 3)->2
-// 2->3
-// 2->4
-//
-// Which can be split up into the ones CAUSED by giving the time attention:
-// 4->0
-// (1, 3)->2
-// And the ones caused from a distance:
-// 0->1 (scheduling)
-// 1->0 and 2->4 (un-scheduling)
-// 2->3 (invalidating)
-//
-// notice that the (3, 4) trap can only be escaped by giving the time attention.
-// The only way to REMOVE "needs attention" from a time from a distance is 1->0.
-//
-//
-//
-// What about predictions?
-// Each (RowId, PredictorId) defines one "prediction history". The prediction history may be incomplete (predictions missing after a specific ExtendedTime) but may not be invalid (containing incorrect predictions). To do that, we clear invalidated predictions whenever a FieldHistory changes (but we don't clear invalidated events/fields when a prediction history changes).
-//
-// The incompleteness must be simple: things can be missing after a certain time, but there can't be missing patches in the middle of the history.
-//
-// For each history, keep exactly a record of 0 or 1 times when we need to make a new prediction. That time is always one of the following:
-// 0. Nothing
-// 1. The end of the validity-interval of the last prediction in the history
-// 2. The earliest nonexistent->existent transition of the corresponding field after (1) or (0).
-//
-// This can change in several ways:
-// 3. A tail of the prediction history gets invalidated, but there are still valid predictions immediately before that. (1->1)
-// 4. A tail of the prediction history gets invalidated, and there are no valid predictions immediately before that (because the field didn't exist). (1->2, 1->0, or 2->0)
-// 5. The field becomes existent. (0->2)
-// 6. We make a new prediction at the current prediction-needed-time. ((1 or 2)->(1 or 2))
-//
-// 3 and 5 are easy. 6 is the trickiest case – 6 needs to find the NEXT creation time. When 4 does 1->2, it can only be referring to a creation time at exactly the invalidation start time, because if it was an earlier one, the history would have been invalid.
-//
-//
-//
-//
-
 enum EventValidity {
   Invalid,
   ValidWithDependencies(HashSet<FieldId>),
 }
 struct EventExecutionState {
   fields_changed: HashSet<FieldId>,
+  checksum: u64,
   validity: EventValidity,
 }
 
 struct EventState<B: Basics> {
-  schedule: Option<Event<B>>,
+  schedule: Option<DynamicEvent<B>>,
   execution_state: Option<EventExecutionState>,
 }
 
@@ -203,7 +97,7 @@ fn invalidate_execution<B: Basics>(time: &ExtendedTime<B>,
 }
 
 impl<B: Basics> StewardEventsInfo<B> {
-  fn schedule_event(&mut self, time: ExtendedTime<B>, event: Event<B>) -> Result<(), ()> {
+  fn schedule_event(&mut self, time: ExtendedTime<B>, event: DynamicEvent<B>) -> Result<(), ()> {
     match self.event_states.entry(time.clone()) {
       Entry::Vacant(entry) => {
         entry.insert(EventState {
@@ -601,6 +495,7 @@ impl<B: Basics> Steward<B> {
     }
     EventExecutionState {
       fields_changed: new_fields_changed,
+      checksum: new_results.checksum_generator.into_inner().generate().data() [0],
       validity: EventValidity::ValidWithDependencies(new_dependencies),
     }
   }
@@ -647,6 +542,7 @@ impl<B: Basics> Steward<B> {
                                         &self.shared);
       }
     }
+    execution.checksum = new_results.checksum_generator.into_inner().generate().data() [0];
     execution.validity = EventValidity::ValidWithDependencies(new_dependencies);
   }
 
@@ -660,13 +556,15 @@ impl<B: Basics> Steward<B> {
     if let Some(event) = state.schedule {
       let results;
       {
+        let mut checksum_generator = SiphashIdGenerator::new();
         let field_ref = &*self.shared.fields.borrow();
+        ::bincode::serde::serialize_into (&mut checksum_generator, & (time, event.event_id()),::bincode::SizeLimit::Infinite);
         let mut mutator = Mutator {
           // steward: &mut self.owned,
           shared: &self.shared,
           fields: field_ref,
           generic: common::GenericMutator::new(time.clone()),
-          results: MutatorResults { fields: insert_only::HashMap::new() },
+          results: MutatorResults { fields: insert_only::HashMap::new(), checksum_generator: RefCell::new (checksum_generator) },
         };
         event(&mut mutator);
         results = mutator.results;
@@ -877,7 +775,7 @@ type DependenciesMap<B: Basics> = HashMap<FieldId, Dependencies<B>>;
 #[derive (Clone)]
 struct Prediction<B: Basics> {
   predictor_accessed: Vec<FieldId>,
-  what_will_happen: Option<(ExtendedTime<B>, Event<B>)>,
+  what_will_happen: Option<(ExtendedTime<B>, DynamicEvent <B>)>,
   made_at: ExtendedTime<B>,
   valid_until: Option<ExtendedTime<B>>,
 }
@@ -909,6 +807,8 @@ struct StewardOwned<B: Basics> {
 
   predictions_by_id: HashMap<(RowId, PredictorId), PredictionHistory<B>>,
   predictions_missing_by_time: BTreeMap<ExtendedTime<B>, HashSet<(RowId, PredictorId)>>,
+  
+  checksum_info: Option <ChecksumInfo <B>>,
 }
 
 pub struct Steward<B: Basics> {
@@ -925,6 +825,7 @@ pub struct Snapshot<B: Basics> {
 }
 pub struct MutatorResults<B: Basics> {
   fields: insert_only::HashMap<FieldId, Field<B>>,
+  checksum_generator: RefCell<SiphashIdGenerator>,
 }
 pub struct Mutator<'a, B: Basics> {
   shared: &'a StewardShared<B>,
@@ -941,13 +842,11 @@ pub struct PredictorAccessor<'a, B: Basics> {
   internal_now: ExtendedTime<B>,
   shared: &'a StewardShared<B>,
   fields: &'a Fields<B>,
-  generic: common::GenericPredictorAccessor<B, Event<B>>,
+  generic: common::GenericPredictorAccessor<B, DynamicEvent<B>>,
   results: RefCell<PredictorAccessorResults<B>>,
 }
-pub type EventFn<B> = for<'d, 'e> Fn(&'d mut Mutator<'e, B>);
-pub type Event<B> = StewardRc<EventFn<B>>;
 
-time_steward_common_dynamic_callback_structs! (Mutator, PredictorAccessor, DynamicEventFn, DynamicPredictorFn, DynamicPredictor, Settings);
+time_steward_common_dynamic_callback_structs! (Mutator, PredictorAccessor, DynamicEvent, DynamicPredictor, Settings);
 
 impl<B: Basics> Drop for Snapshot<B> {
   fn drop(&mut self) {
@@ -1075,6 +974,8 @@ impl<'a, B: Basics> IntoIterator for &'a Snapshot<B> {
 impl<'a, B: Basics> ::Mutator for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
     let field_id = FieldId::new(id, C::column_id());
+    ::bincode::serde::serialize_into (&mut *self.results.checksum_generator.borrow_mut(), &id,::bincode::SizeLimit::Infinite);
+    ::bincode::serde::serialize_into (&mut *self.results.checksum_generator.borrow_mut(), &data,::bincode::SizeLimit::Infinite);
     self.results.fields.insert(field_id,
                                Field {
                                  last_change: self.generic.now.clone(),
@@ -1160,6 +1061,7 @@ impl<B: Basics> TimeSteward for Steward <B> {
         existent_fields: partially_persistent_nonindexed_set::Set::new(),
         predictions_missing_by_time: BTreeMap::new(),
         predictions_by_id: HashMap::new(),
+        checksum_info: None,
       },
       shared: Rc::new(StewardShared {
         settings: Settings::<B>::new(),
@@ -1302,16 +1204,29 @@ impl<B: Basics> IncrementalTimeSteward for Steward<B> {
 
 impl <B: Basics> ::FullTimeSteward for Steward <B> {}
 
-/*
-Wait, we don't actually need to do this, because self.shared isn't dropped as long as the snapshot exist!
-impl<B: Basics> Drop for Steward<B> {
-  fn drop(&mut self) {
-    let mut fields_guard = self.shared.fields.borrow_mut();
-    let fields = &mut*fields_guard;
-    for (id, field) in fields.field_states.iter_mut() {
-      field.update_snapshots (*id, & fields.changed_since_snapshots);
-    }
+use std::ops::{Sub, Mul, Div};
+struct ChecksumInfo<B: Basics>{start: B::Time, stride: B::Time, checksums: Vec<u64>}
+impl <B: Basics> ::SimpleSynchronizableTimeSteward for Steward <B>
+where B::Time: Sub<Output = B::Time> + Mul<i64, Output = B::Time> + Div<B::Time, Output = i64>
+{
+  fn begin_checks (&mut self, start: B::Time, stride: B::Time) {
+    self.owned.checksum_info = Some (ChecksumInfo {
+      start: start, stride: stride, checksums: Vec::new()
+    });
+  }
+  fn checksum(&self, which: i64)->u64 {
+    self.owned.checksum_info.as_ref().unwrap().checksums.get (which as usize).cloned().unwrap_or (0)
+  }
+  fn debug_dump(&self, which: i64) ->BTreeMap<ExtendedTime <B>, u64>{
+    let result = BTreeMap::new();
+    
+    result
+  }
+  fn event_details (&self, time: & ExtendedTime <B>)->String {
+    let result = String::new();
+    
+    result
   }
 }
-*/
+
 
