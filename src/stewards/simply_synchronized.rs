@@ -27,7 +27,7 @@ enum Message <B: Basics> {
   EventDetails (String),
 }
 
-struct Steward <B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics = B>> {
+pub struct Steward <B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics = B>> {
   steward: Steward0,
   id: DeterministicRandomId,
   sender: Sender <Message <B>>,
@@ -141,7 +141,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
     }
   }
   
-  fn settle_before (&mut self, time: B::Time) {
+  pub fn settle_before (&mut self, time: B::Time) {
     let settled_chunk: i64 = (time - self. start.clone())/self.stride.clone() - 1;
     self.settled_through =::std::cmp::max (settled_chunk, self.settled_through);
     self.sender.send (Message::Settled (self.settled_through)).unwrap();

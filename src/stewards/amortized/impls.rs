@@ -434,8 +434,8 @@ impl<B: Basics> Steward<B> {
                                   &self.shared);
     }
     let checksum = new_results.checksum_generator.into_inner().generate().data() [0];
-    if let Some (checksum_info) = self.owned.checksum_info.as_ref() {
-      //let chunk =
+    if let Some (checksum_info) = self.owned.checksum_info.as_mut() {
+      checksum_info.add_event_checksum (checksum, &time.base);
     }
     EventExecutionState {
       fields_changed: new_fields_changed,
@@ -454,6 +454,9 @@ impl<B: Basics> Steward<B> {
                                       field_states,
                                       changed_since_snapshots,
                                       &self.shared);
+    }
+    if let Some (checksum_info) = self.owned.checksum_info.as_mut() {
+      checksum_info.add_event_checksum (execution.checksum.wrapping_neg(), &time.base);
     }
   }
   pub(super) fn replace_execution(&mut self,
@@ -486,7 +489,13 @@ impl<B: Basics> Steward<B> {
                                         &self.shared);
       }
     }
+    if let Some (checksum_info) = self.owned.checksum_info.as_mut() {
+      checksum_info.add_event_checksum (execution.checksum.wrapping_neg(), &time.base);
+    }
     execution.checksum = new_results.checksum_generator.into_inner().generate().data() [0];
+    if let Some (checksum_info) = self.owned.checksum_info.as_mut() {
+      checksum_info.add_event_checksum (execution.checksum, &time.base);
+    }
     execution.validity = EventValidity::ValidWithDependencies(new_dependencies);
   }
 

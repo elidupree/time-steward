@@ -594,4 +594,21 @@ where B::Time: Sub<Output = B::Time> + Mul<i64, Output = B::Time> + Div<B::Time,
   }
 }
 
+pub trait ChecksumTrait <B: Basics> {
+  fn add_event_checksum (&mut self,_: u64,_: & B::Time) {unreachable!()}
+}
+impl <B: Basics> ChecksumTrait <B> for ChecksumInfo <B> {
+  
+}
+
+impl <B: Basics> ChecksumTrait <B> for ChecksumInfo <B> where B::Time: Sub<Output = B::Time> + Mul<i64, Output = B::Time> + Div<B::Time, Output = i64>
+{
+  fn add_event_checksum (&mut self, checksum: u64, time: &B::Time) {
+    let chunk = (time.clone() - self.start.clone())/self.stride.clone();
+    assert!(chunk >= 0);
+    while (self.checksums.len() as i64) <= chunk {self.checksums.push (0);}
+    self.checksums [chunk as usize] = self.checksums [chunk as usize].wrapping_add (checksum);
+  }
+}
+
 
