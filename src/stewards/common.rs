@@ -73,7 +73,15 @@ impl<'a, P: Predictor, PA: PredictorAccessor <Basics = P::Basics>> FnOnce <(& 'a
 #[macro_export]
 macro_rules! time_steward_common_dynamic_callback_structs {
 
+(pub, $M: ident, $PA: ident, $DynamicEvent: ident, $DynamicPredictor: ident, $StandardSettings: ident) => {
+time_steward_common_dynamic_callback_structs! ($M, $PA, $DynamicEvent, $DynamicPredictor, $StandardSettings[pub] );
+};
+
 ($M: ident, $PA: ident, $DynamicEvent: ident, $DynamicPredictor: ident, $StandardSettings: ident) => {
+time_steward_common_dynamic_callback_structs! ($M, $PA, $DynamicEvent, $DynamicPredictor, $StandardSettings[] );
+};
+
+($M: ident, $PA: ident, $DynamicEvent: ident, $DynamicPredictor: ident, $StandardSettings: ident[$($privacy:tt)*] ) => {
 
 mod __time_steward_make_dynamic_callbacks_impl {
 
@@ -152,13 +160,15 @@ impl<B: Basics> StandardSettings <B> {
 }
 
 #[allow (unused_imports)]
-use self::__time_steward_make_dynamic_callbacks_impl::DynamicEvent as $DynamicEvent;
+$($privacy)* use self::__time_steward_make_dynamic_callbacks_impl::DynamicEvent as $DynamicEvent;
 #[allow (unused_imports)]
-use self::__time_steward_make_dynamic_callbacks_impl::DynamicPredictor as $DynamicPredictor;
+$($privacy)* use self::__time_steward_make_dynamic_callbacks_impl::DynamicPredictor as $DynamicPredictor;
 #[allow (unused_imports)]
-use self::__time_steward_make_dynamic_callbacks_impl::StandardSettings as $StandardSettings;
+$($privacy)* use self::__time_steward_make_dynamic_callbacks_impl::StandardSettings as $StandardSettings;
 
-}}
+};
+
+}
 
 pub struct GenericPredictorAccessor<B: Basics, E> {
   pub soonest_prediction: Option<(B::Time, E)>,
