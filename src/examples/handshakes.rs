@@ -40,7 +40,7 @@ fn get_philosopher_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x2302c38efb47e0d0u64, index))
 }
 
-type TimeStewardTypes = (ColumnType<Philosopher>, EventType <Shake>, PredictorType <Shaker>);
+type TimeStewardTypes = (ColumnType<Philosopher>, EventType <Initialize>, EventType <Tweak>, EventType <TweakUnsafe>, EventType <Shake>, PredictorType <Shaker>);
 
 fn display_snapshot<S: ::Snapshot<Basics = Basics>>(snapshot: &S) {
   println!("snapshot for {}", snapshot.now());

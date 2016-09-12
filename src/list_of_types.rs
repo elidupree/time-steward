@@ -240,7 +240,7 @@ macro_rules! time_steward_dynamic_fn {
         {$($body)*}
       
       struct Table <$($Parameter $($bounds)*),*> (HashMap<$Id, fn($($argument_name: $argument_type),*)-> $return_type>,::std::marker::PhantomData <($($Parameter),*)>);
-      impl<$($Parameter $($bounds)*),*> $($User)* for Table <$($Parameter),*> {
+      impl<$($Parameter $($bounds)*),*> $crate::list_of_types::$($User)* for Table <$($Parameter),*> {
         fn apply<T: $($Trait)*>(&mut self) {
           self.0.insert($crate::list_of_types::$module::get_id::<T>(), inner::<T $(, $Parameter)*>);
         }
@@ -248,7 +248,7 @@ macro_rules! time_steward_dynamic_fn {
       impl<$($Parameter $($bounds)*),*> Table <$($Parameter),*> {
         fn new()-> Table <$($Parameter),*> {
           let mut result = Table (::std::collections::HashMap::new(),::std::marker::PhantomData);
-          <$B::IncludedTypes as $($List)*>::apply (&mut result);
+          <$B::IncludedTypes as $crate::list_of_types::$($List)*>::apply (&mut result);
           result
         }
         pub fn get (&self, id: $Id)->fn ($($argument_type),*)->$return_type {

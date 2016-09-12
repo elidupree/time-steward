@@ -39,6 +39,10 @@ pub struct Steward <B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics 
   dump: BTreeMap<ExtendedTime <B>, u64>,
 }
 
+time_steward_dynamic_fn! (fn do_fiat_event_message <B: Basics, [Steward0: Any + SimpleSynchronizableTimeSteward<Basics = B>]> (event_id: EventId of <E: Event <Basics = B>>, steward: &mut Steward <B, Steward0>, time: B::Time, id: DeterministicRandomId, data: Vec <u8>)->() {
+  steward.steward.insert_fiat_event (time, id, bincode::serde::deserialize:: <E> (data.as_slice()).unwrap());
+});
+
 impl <B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics = B>> Steward <B, Steward0>
 where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Steward0 as TimeSteward>::Basics as Basics>::Time> + Mul<i64, Output = << Steward0 as TimeSteward>::Basics as Basics>::Time> + Div<<<Steward0 as TimeSteward>::Basics as Basics>::Time, Output = i64>
 {
@@ -91,7 +95,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
   
   fn received (&mut self, message: Message <B>)->bool {
         match message {
-          Message::InsertFiatEvent (time, id, event_id, data) => unimplemented!(),
+          Message::InsertFiatEvent (time, id, event_id, data) => do_fiat_event_message (event_id, self, time, id, data),
           Message::RemoveFiatEvent (time, id) => self.remove_fiat_event (&time, id).unwrap(),
           Message::Settled (chunk) => {
             self.other_settled_through = chunk;
