@@ -1,4 +1,3 @@
-
 use super::types::*;
 //use stewards::amortized::{EventExecutionState, StewardOwned, StewardShared, FieldHistory, StewardEventsInfo, EventValidity, Field, limit_option_by_value_with_none_representing_positive_infinity, split_off_greater, split_off_greater_set, SnapshotsData, Prediction, PredictionHistory, PredictorAccessorResults, DependenciesMap, DynamicEvent, EventState};
 
@@ -413,7 +412,7 @@ impl<B: Basics> StewardOwned<B> {
 }
 
 impl<B: Basics> Steward<B> {
-  pub fn create_execution(&mut self,
+  pub(super) fn create_execution(&mut self,
                       time: &ExtendedTime<B>,
                       new_results: MutatorResults<B>)
                       -> EventExecutionState {
@@ -444,7 +443,7 @@ impl<B: Basics> Steward<B> {
       validity: EventValidity::ValidWithDependencies(new_dependencies),
     }
   }
-  pub fn remove_execution(&mut self, time: &ExtendedTime<B>, execution: EventExecutionState) {
+  pub(super) fn remove_execution(&mut self, time: &ExtendedTime<B>, execution: EventExecutionState) {
     let mut fields_guard = self.shared.fields.borrow_mut();
     let fields = &mut *fields_guard;
     let field_states = &mut fields.field_states;
@@ -457,7 +456,7 @@ impl<B: Basics> Steward<B> {
                                       &self.shared);
     }
   }
-  pub fn replace_execution(&mut self,
+  pub(super) fn replace_execution(&mut self,
                        time: &ExtendedTime<B>,
                        execution: &mut EventExecutionState,
                        new_results: MutatorResults<B>) {
@@ -491,7 +490,7 @@ impl<B: Basics> Steward<B> {
     execution.validity = EventValidity::ValidWithDependencies(new_dependencies);
   }
 
-  pub fn do_event(&mut self, time: &ExtendedTime<B>) {
+  pub(super) fn do_event(&mut self, time: &ExtendedTime<B>) {
     self.owned.events.events_needing_attention.remove(time);
     let mut state = self.owned
       .events
@@ -527,7 +526,7 @@ impl<B: Basics> Steward<B> {
                               .expect("a null event state was left lying around"));
     }
   }
-  pub fn make_prediction(&mut self, row_id: RowId, predictor_id: PredictorId, time: &ExtendedTime<B>) {
+  pub(super) fn make_prediction(&mut self, row_id: RowId, predictor_id: PredictorId, time: &ExtendedTime<B>) {
     let prediction;
     let mut history = self.owned
       .predictions_by_id
@@ -614,7 +613,7 @@ impl<B: Basics> Steward<B> {
     history.predictions.push(prediction);
   }
 
-  pub fn next_stuff(&self) -> (Option<ExtendedTime<B>>, Option<(ExtendedTime<B>, RowId, PredictorId)>) {
+  pub(super) fn next_stuff(&self) -> (Option<ExtendedTime<B>>, Option<(ExtendedTime<B>, RowId, PredictorId)>) {
     let next_event = self.owned.events.events_needing_attention.iter().next().cloned();
     let next_prediction = self.owned.predictions_missing_by_time.iter().next().map(|(time, set)| {
       let &(row_id, predictor_id) =
@@ -624,7 +623,7 @@ impl<B: Basics> Steward<B> {
     (next_event, next_prediction)
   }
 
-  pub fn do_next(&mut self) -> Option<ExtendedTime<B>> {
+  pub(super) fn do_next(&mut self) -> Option<ExtendedTime<B>> {
     match self.next_stuff() {
       (None, None) => None,
       (Some(event_time), None) => {

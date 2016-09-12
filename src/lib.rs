@@ -21,6 +21,7 @@
 //
 
 #![feature(unboxed_closures, fn_traits, specialization)]
+#![feature(pub_restricted)]
 #![feature (plugin, custom_derive)]
 #![plugin (serde_macros)]
 // #![plugin (quickcheck_macros)]

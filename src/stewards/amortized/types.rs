@@ -177,16 +177,16 @@ pub struct StewardOwned<B: Basics> {
 }
 
 pub struct Steward<B: Basics> {
-  pub owned: StewardOwned<B>,
-  pub shared: Rc<StewardShared<B>>,
+  pub(super) owned: StewardOwned<B>,
+  pub(super) shared: Rc<StewardShared<B>>,
 }
 pub struct Snapshot<B: Basics> {
-  pub now: B::Time,
-  pub index: SnapshotIdx,
-  pub field_states: Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>,
-  pub shared: Rc<StewardShared<B>>,
-  pub num_fields: usize,
-  pub field_ids: partially_persistent_nonindexed_set::Snapshot<FieldId>,
+  pub(super) now: B::Time,
+  pub(super) index: SnapshotIdx,
+  pub(super) field_states: Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>,
+  pub(super) shared: Rc<StewardShared<B>>,
+  pub(super) num_fields: usize,
+  pub(super) field_ids: partially_persistent_nonindexed_set::Snapshot<FieldId>,
 }
 pub struct MutatorResults<B: Basics> {
   pub fields: insert_only::HashMap<FieldId, Field<B>>,
