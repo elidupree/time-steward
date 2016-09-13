@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use std::any::Any;
 use std::marker::PhantomData;
 
-use {StewardRc, FieldRc, ColumnId, EventId, PredictorId, Column, Event, Predictor, Basics};
+use {StewardRc, FieldRc, ColumnId, EventId, Column, Event, Predictor, Basics};
 
 macro_rules! type_list_definitions {
 ($module: ident, $Trait: ident, $IdType: ident, $get_id: ident) => {

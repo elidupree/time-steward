@@ -5,7 +5,7 @@ use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, E
 use bincode;
 use stewards::amortized;
 use stewards::memoized_flat;
-use stewards::simply_synchronized;
+
 
 type Time = i64;
 
@@ -167,6 +167,7 @@ fn actuallytest() {
 
 #[test]
 fn local_synchronization_test() {
+  use stewards::simply_synchronized;
   use std::net::{TcpListener, TcpStream};
   use std::io::{BufReader, BufWriter};
   let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
@@ -219,6 +220,7 @@ fn local_synchronization_test() {
 #[test]
 #[should_panic (expected = "event occurred this way locally")]
 fn local_synchronization_failure() {
+  use stewards::simply_synchronized;
   use std::net::{TcpListener, TcpStream};
   use std::io::{BufReader, BufWriter};
   let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();

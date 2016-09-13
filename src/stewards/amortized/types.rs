@@ -33,19 +33,15 @@
 //!
 //!
 
-use super::impls::*;
-
 use {DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, Column, StewardRc,
      FieldRc, ExtendedTime, Basics, Accessor, FiatEventOperationError, ValidSince, TimeSteward,
      IncrementalTimeSteward};
 use stewards::common::{self, DynamicEventFn};
-use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet, btree_map};
-use std::collections::hash_map::Entry;
+use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet};
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::ops::Drop;
-use std::mem;
 use rand::Rng;
 use insert_only;
 use data_structures::partially_persistent_nonindexed_set;
@@ -347,10 +343,10 @@ impl<'a, B: Basics> ::Mutator for Mutator<'a, B> {
     let field_id = FieldId::new(id, C::column_id());
     ::bincode::serde::serialize_into(&mut *self.results.checksum_generator.borrow_mut(),
                                      &id,
-                                     ::bincode::SizeLimit::Infinite);
+                                     ::bincode::SizeLimit::Infinite).unwrap();
     ::bincode::serde::serialize_into(&mut *self.results.checksum_generator.borrow_mut(),
                                      &data,
-                                     ::bincode::SizeLimit::Infinite);
+                                     ::bincode::SizeLimit::Infinite).unwrap();
     self.results.fields.insert(field_id,
                                Field {
                                  last_change: self.generic.now.clone(),
@@ -620,7 +616,7 @@ where B::Time: Add <Output = B::Time> + Sub<Output = B::Time> + Mul<i64, Output 
     let mut result = String::new();
     let state = self.owned.events.event_states.get (time).unwrap();
     use std::fmt::Write;
-    write! (&mut result, "At {:?}:\n EventId: {:?}\n {:?}\n", time, state.schedule.as_ref().unwrap().event_id(), &state.execution_state);
+    write! (&mut result, "At {:?}:\n EventId: {:?}\n {:?}\n", time, state.schedule.as_ref().unwrap().event_id(), &state.execution_state).unwrap();
     result
   }
 }

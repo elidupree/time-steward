@@ -637,7 +637,6 @@ pub trait IncrementalTimeSteward: TimeSteward {
   fn updated_until_before(&self) -> Option<<<Self as TimeSteward>::Basics as Basics>::Time>;
 }
 
-use std::ops::{Sub, Mul, Div};
 use std::collections::BTreeMap;
 
 pub trait SimpleSynchronizableTimeSteward: TimeSteward {

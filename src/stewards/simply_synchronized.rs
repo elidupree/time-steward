@@ -12,7 +12,7 @@ use std::io::{Read, Write};
 use std::any::Any;
 use std::ops::{Sub, Mul, Div};
 use {ExtendedTime, Basics, TimeSteward, SimpleSynchronizableTimeSteward, DeterministicRandomId,
-     EventId, Event, FiatEventOperationError, StewardRc};
+     EventId, Event, FiatEventOperationError};
 use std::sync::mpsc::{channel, Sender, Receiver};
 use bincode;
 
@@ -152,7 +152,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
               }
             }
           },
-          Message::EventDetails (string) => panic!("We should not receive an event details except where specifically expecting it"),
+          Message::EventDetails (_) => panic!("We should not receive an event details except where specifically expecting it"),
           Message::Finished (_) => {self.finishes_received += 1;},
         };
   }

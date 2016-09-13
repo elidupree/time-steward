@@ -1,20 +1,15 @@
 use super::types::*;
 // use stewards::amortized::{EventExecutionState, StewardOwned, StewardShared, FieldHistory, StewardEventsInfo, EventValidity, Field, limit_option_by_value_with_none_representing_positive_infinity, split_off_greater, split_off_greater_set, SnapshotsData, Prediction, PredictionHistory, PredictorAccessorResults, DependenciesMap, DynamicEvent, EventState};
 
-use {DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, Column, StewardRc,
-     FieldRc, ExtendedTime, Basics, Accessor, FiatEventOperationError, ValidSince, TimeSteward,
-     IncrementalTimeSteward};
-use stewards::common::{self, DynamicEventFn};
+use {SiphashIdGenerator, RowId, FieldId, PredictorId,
+     FieldRc, ExtendedTime, Basics};
+use stewards::common;
 use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet, btree_map};
 use std::collections::hash_map::Entry;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
-use std::rc::Rc;
 use std::cell::RefCell;
-use std::ops::Drop;
 use std::mem;
-use rand::Rng;
 use insert_only;
-use data_structures::partially_persistent_nonindexed_set;
 
 pub fn invalidate_execution<B: Basics>(time: &ExtendedTime<B>,
                                        execution: &mut EventExecutionState,
@@ -526,7 +521,7 @@ impl<B: Basics> Steward<B> {
         let field_ref = &*self.shared.fields.borrow();
         ::bincode::serde::serialize_into(&mut checksum_generator,
                                          &(time, event.event_id()),
-                                         ::bincode::SizeLimit::Infinite);
+                                         ::bincode::SizeLimit::Infinite).unwrap();
         let mut mutator = Mutator {
           // steward: &mut self.owned,
           shared: &self.shared,
