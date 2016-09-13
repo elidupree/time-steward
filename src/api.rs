@@ -88,7 +88,8 @@ impl DeterministicRandomId {
   /// or maliciously calls this BEFORE passing the ids in, too.
   pub fn for_fiat_event_internal(&self) -> DeterministicRandomId {
     DeterministicRandomId {
-      data: [self.data[0].wrapping_add (0xc1d40daaee67461d), self.data[1].wrapping_add (0xb23ce1f459edefff)],
+      data: [self.data[0].wrapping_add(0xc1d40daaee67461d),
+             self.data[1].wrapping_add(0xb23ce1f459edefff)],
     }
   }
   pub fn data(&self) -> &[u64; 2] {
@@ -169,14 +170,14 @@ pub trait Event
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
   type Basics: Basics;
   fn call<M: Mutator<Basics = Self::Basics>>(&self, mutator: &mut M);
-  fn event_id()->EventId;
+  fn event_id() -> EventId;
 }
 pub trait Predictor
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
   type Basics: Basics;
   fn call<PA: PredictorAccessor<Basics = Self::Basics>>(accessor: &mut PA, id: RowId);
-  fn predictor_id()->PredictorId;
-  fn column_id()->ColumnId;
+  fn predictor_id() -> PredictorId;
+  fn column_id() -> ColumnId;
 }
 
 #[macro_export]
@@ -249,7 +250,7 @@ pub trait Basics
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug + Default {
   type Time: Any + Send + Sync + Clone + Ord + Hash + Serialize + Deserialize + Debug;
   type Constants: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug;
-  type IncludedTypes: ColumnList + EventList <Self> + PredictorList <Self>;
+  type IncludedTypes: ColumnList + EventList<Self> + PredictorList<Self>;
   fn allow_floats_unsafe() -> bool {
     false
   }
@@ -290,13 +291,17 @@ pub trait Accessor {
   fn generic_data_and_extended_last_change(&self,
                                            id: FieldId)
                                            -> Option<(&FieldRc, &ExtendedTime<Self::Basics>)>;
-  fn data_and_extended_last_change<C: Column>(&self,
-                                              id: RowId)
-                                              -> Option<(&C::FieldType, &ExtendedTime<Self::Basics>)> {
+  fn data_and_extended_last_change<C: Column>
+    (&self,
+     id: RowId)
+     -> Option<(&C::FieldType, &ExtendedTime<Self::Basics>)> {
     self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id()))
       .map(|pair| (unwrap_field::<C>(pair.0), pair.1))
   }
-  fn data_and_last_change<C: Column>(&self, id: RowId) -> Option<(&C::FieldType, &<<Self as Accessor>::Basics as Basics>::Time)> {
+  fn data_and_last_change<C: Column>
+    (&self,
+     id: RowId)
+     -> Option<(&C::FieldType, &<<Self as Accessor>::Basics as Basics>::Time)> {
     self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id()))
       .map(|pair| (unwrap_field::<C>(pair.0), &pair.1.base))
   }
@@ -304,7 +309,9 @@ pub trait Accessor {
     self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id()))
       .map(|p| unwrap_field::<C>(p.0))
   }
-  fn last_change<C: Column>(&self, id: RowId) -> Option<&<<Self as Accessor>::Basics as Basics>::Time> {
+  fn last_change<C: Column>(&self,
+                            id: RowId)
+                            -> Option<&<<Self as Accessor>::Basics as Basics>::Time> {
     self.generic_data_and_extended_last_change(FieldId::new(id, C::column_id())).map(|p| &p.1.base)
   }
   fn constants(&self) -> &<<Self as Accessor>::Basics as Basics>::Constants;
@@ -327,7 +334,7 @@ pub trait Accessor {
 }
 
 pub trait MomentaryAccessor: Accessor {
-  fn now(&self) -> & <<Self as Accessor>::Basics as Basics>::Time {
+  fn now(&self) -> &<<Self as Accessor>::Basics as Basics>::Time {
     self.unsafe_now()
   }
 }
@@ -388,7 +395,9 @@ impl<B: Basics> FiatSnapshot<B> {
     FiatSnapshot {
       now: snapshot.now().clone(),
       constants: snapshot.constants().clone(),
-      fields: snapshot.into_iter().map (| (id, stuff) | (id, (stuff.0.clone(), stuff.1.clone()))).collect(),
+      fields: snapshot.into_iter()
+        .map(|(id, stuff)| (id, (stuff.0.clone(), stuff.1.clone())))
+        .collect(),
     }
   }
 }
@@ -413,8 +422,10 @@ impl<'a, B: Basics> IntoIterator for &'a FiatSnapshot<B> {
 
 
 pub fn serialize_snapshot<'a, B: Basics, Shot: Snapshot<Basics = B>, W: Any + Write>
-  (snapshot: &'a Shot, writer: &mut W, size_limit: bincode::SizeLimit)
-   -> bincode::serde::SerializeResult <()>
+  (snapshot: &'a Shot,
+   writer: &mut W,
+   size_limit: bincode::SizeLimit)
+   -> bincode::serde::SerializeResult<()>
   where &'a Shot: IntoIterator<Item = SnapshotEntry<'a, B>>
 {
   use bincode::serde::serialize_into;
@@ -426,11 +437,12 @@ pub fn serialize_snapshot<'a, B: Basics, Shot: Snapshot<Basics = B>, W: Any + Wr
     try! (::list_of_types::serialize_field::<B, W> (id.column_id, writer, data, size_limit));
     try! (serialize_into (writer, changed, size_limit));
   }
-  Ok (())
+  Ok(())
 }
 
 pub fn deserialize_snapshot<B: Basics, R: Any + Read>
-  (reader: &mut R, size_limit: bincode::SizeLimit) 
+  (reader: &mut R,
+   size_limit: bincode::SizeLimit)
    -> bincode::serde::DeserializeResult<FiatSnapshot<B>> {
   use bincode::serde::deserialize_from;
   let now = try! (deserialize_from (reader, size_limit));
@@ -440,11 +452,13 @@ pub fn deserialize_snapshot<B: Basics, R: Any + Read>
   let mut fields = HashMap::new();
   for _ in 0..num_fields {
     let id: FieldId = try! (deserialize_from (reader, size_limit));
-    let field = try! (::list_of_types::deserialize_field::<B, R> (id.column_id, reader, size_limit));
-    let changed = try! (deserialize_from(reader, size_limit));  println! ("{:?}", (id, (&field, &changed)));
-    fields.insert (id, (field, changed));
+    let field =
+      try! (::list_of_types::deserialize_field::<B, R> (id.column_id, reader, size_limit));
+    let changed = try! (deserialize_from(reader, size_limit));
+    println! ("{:?}", (id, (&field, &changed)));
+    fields.insert(id, (field, changed));
   }
-  Ok (FiatSnapshot {
+  Ok(FiatSnapshot {
     now: now,
     constants: constants,
     fields: fields,
@@ -626,17 +640,15 @@ pub trait IncrementalTimeSteward: TimeSteward {
 use std::ops::{Sub, Mul, Div};
 use std::collections::BTreeMap;
 
-pub trait SimpleSynchronizableTimeSteward: TimeSteward
-//where <<Self as TimeSteward>::Basics as Basics>::Time: Sub<Output = <<Self as TimeSteward>::Basics as Basics>::Time> + Mul<i64, Output = <<Self as TimeSteward>::Basics as Basics>::Time> + Div<<<Self as TimeSteward>::Basics as Basics>::Time, Output = i64>
-{
+pub trait SimpleSynchronizableTimeSteward: TimeSteward {
   fn begin_checks (&mut self, start: <<Self as TimeSteward>::Basics as Basics>::Time, stride: <<Self as TimeSteward>::Basics as Basics>::Time);
-  fn checksum(&mut self, chunk: i64)->u64;
-  fn debug_dump(&self, chunk: i64) ->BTreeMap<ExtendedTime <<Self as TimeSteward>::Basics>, u64>;
-  fn event_details (&self, time: & ExtendedTime <<Self as TimeSteward>::Basics>)->String;
+  fn checksum(&mut self, chunk: i64) -> u64;
+  fn debug_dump(&self, chunk: i64) -> BTreeMap<ExtendedTime<<Self as TimeSteward>::Basics>, u64>;
+  fn event_details(&self, time: &ExtendedTime<<Self as TimeSteward>::Basics>) -> String;
 }
 
 /// A marker trait indicating that the TimeSteward promises that calling snapshot_before() or step() will not change valid_since()
-pub trait FullTimeSteward: TimeSteward{}
+pub trait FullTimeSteward: TimeSteward {}
 
 #[cfg (test)]
 mod tests {

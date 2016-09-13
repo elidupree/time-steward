@@ -4,8 +4,8 @@
 //!
 
 
-use {DeterministicRandomId, FieldId,  ExtendedTime,
-     Basics, FieldRc, TimeSteward, IncrementalTimeSteward, FiatEventOperationError, ValidSince};
+use {DeterministicRandomId, FieldId, ExtendedTime, Basics, FieldRc, TimeSteward,
+     IncrementalTimeSteward, FiatEventOperationError, ValidSince};
 use std::collections::HashMap;
 use std::cmp::max;
 use std::marker::PhantomData;
@@ -202,10 +202,10 @@ impl<B: Basics, Steward0: TimeSteward<Basics = B> , Steward1: TimeSteward<Basics
 impl<B: Basics, Steward0: IncrementalTimeSteward <Basics = B>, Steward1: IncrementalTimeSteward <Basics = B>> ::IncrementalTimeSteward for Steward<B, Steward0, Steward1> {
   fn step(&mut self) {
     if self.0.updated_until_before() <self.1.updated_until_before() {
-      //println!("stepping 0");
+// println!("stepping 0");
       self.0.step();
     } else {
-      //println!("stepping 1");
+// println!("stepping 1");
       self.1.step();
     }
   }

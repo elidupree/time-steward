@@ -1,42 +1,44 @@
-/*
-pub trait SimpleSynchronizableTimeSteward<B: Basics>: TimeSteward<B>
-where B::Time: Sub + Mul<i64, Output = B::Time> + Div<B::Time, Output = i64> {
-  fn begin_checks (&mut self, start: B::Time, stride: B::Time);
-  fn checksum(&self, which: i64)->u64;
-  fn debug_dump(&self, which: i64) ->BTreeMap<ExtendedTime <B>, u64>;
-  fn event_details (&self, time: & ExtendedTime <B>)->String;
-}
-*/
+// pub trait SimpleSynchronizableTimeSteward<B: Basics>: TimeSteward<B>
+// where B::Time: Sub + Mul<i64, Output = B::Time> + Div<B::Time, Output = i64> {
+// fn begin_checks (&mut self, start: B::Time, stride: B::Time);
+// fn checksum(&self, which: i64)->u64;
+// fn debug_dump(&self, which: i64) ->BTreeMap<ExtendedTime <B>, u64>;
+// fn event_details (&self, time: & ExtendedTime <B>)->String;
+// }
+//
 
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::any::Any;
 use std::ops::{Sub, Mul, Div};
-use {ExtendedTime, Basics, TimeSteward, SimpleSynchronizableTimeSteward, DeterministicRandomId, EventId, Event, FiatEventOperationError, StewardRc,};
+use {ExtendedTime, Basics, TimeSteward, SimpleSynchronizableTimeSteward, DeterministicRandomId,
+     EventId, Event, FiatEventOperationError, StewardRc};
 use std::sync::mpsc::{channel, Sender, Receiver};
 use bincode;
 
 
 #[derive (Clone, Serialize, Deserialize)]
-enum Message <B: Basics> {
-  InsertFiatEvent (B::Time, DeterministicRandomId, EventId, Vec<u8>),
-  RemoveFiatEvent (B::Time, DeterministicRandomId),
-  Settled (i64),
-  Checksum (i64, u64),
-  DebugDump (BTreeMap<ExtendedTime <B>, u64>),
-  EventDetails (String),
-  Finished (u32),
+enum Message<B: Basics> {
+  InsertFiatEvent(B::Time, DeterministicRandomId, EventId, Vec<u8>),
+  RemoveFiatEvent(B::Time, DeterministicRandomId),
+  Settled(i64),
+  Checksum(i64, u64),
+  DebugDump(BTreeMap<ExtendedTime<B>, u64>),
+  EventDetails(String),
+  Finished(u32),
 }
 
-pub struct Steward <B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics = B>> {
+pub struct Steward<B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics = B>> {
   steward: Steward0,
   id: DeterministicRandomId,
-  sender: Sender <Message <B>>,
-  receiver: Receiver <Message <B>>,
-  start: B::Time, stride: B::Time,
-  settled_through: i64, other_settled_through: i64,
+  sender: Sender<Message<B>>,
+  receiver: Receiver<Message<B>>,
+  start: B::Time,
+  stride: B::Time,
+  settled_through: i64,
+  other_settled_through: i64,
   checksums: Vec<u64>,
-  dump: Option <BTreeMap<ExtendedTime <B>, u64>>,
+  dump: Option<BTreeMap<ExtendedTime<B>, u64>>,
   finishes_received: u32,
 }
 
@@ -87,7 +89,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
       finishes_received: 0,
     }
   }
-  
+
   fn receive_once (&mut self)->bool {
     match self.receiver.try_recv() {
       Err (_) => false,
@@ -102,7 +104,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
     }
     panic!("did not receive expected event details");
   }
-  
+
   fn received (&mut self, message: Message <B>) {
         match message {
           Message::InsertFiatEvent (time, id, event_id, data) => do_fiat_event_message (event_id, self, time, id, data),
@@ -154,14 +156,14 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
           Message::Finished (_) => {self.finishes_received += 1;},
         };
   }
-  
+
   pub fn settle_before (&mut self, time: B::Time) {
     let settled_chunk: i64 = (time - self. start.clone())/self.stride.clone() - 1;
     self.settled_through =::std::cmp::max (settled_chunk, self.settled_through);
     self.sender.send (Message::Settled (self.settled_through)).unwrap();
     self.do_checksums();
   }
-  
+
   fn do_checksums (&mut self) {
     while (self.checksums.len() as i64) <= ::std::cmp::min (self.settled_through, self.other_settled_through) {
       let checksum: u64 = self.steward.checksum (self.checksums.len() as i64);
@@ -169,7 +171,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
       self.checksums.push (checksum);
     }
   }
-  
+
   pub fn finish (&mut self) {
     for round in 0..10 {
       self.sender.send (Message::Finished (round)).unwrap();
@@ -180,7 +182,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
       }
     }
   }
-  
+
   pub fn insert_fiat_event<E: ::Event<Basics = B>>(&mut self,
                                         time: B::Time,
                                         id: DeterministicRandomId,
@@ -228,4 +230,3 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
     self.steward.updated_until_before()
   }
 }
-

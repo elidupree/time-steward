@@ -52,7 +52,11 @@ pub struct PredictorAccessor<'a, B: Basics> {
   steward: &'a StewardImpl<B>,
 }
 
-time_steward_common_dynamic_callback_structs! (Mutator, PredictorAccessor, DynamicEvent, DynamicPredictor, Settings);
+time_steward_common_dynamic_callback_structs!(Mutator,
+                                              PredictorAccessor,
+                                              DynamicEvent,
+                                              DynamicPredictor,
+                                              Settings);
 
 impl<B: Basics> ::Accessor for Snapshot<B> {
   type Basics = B;
@@ -303,10 +307,10 @@ impl<B: Basics> TimeSteward for Steward<B> {
   }
 
   fn insert_fiat_event<E: ::Event<Basics = B>>(&mut self,
-                                        time: B::Time,
-                                        id: DeterministicRandomId,
-                                        event: E)
-                                        -> Result<(), FiatEventOperationError> {
+                                               time: B::Time,
+                                               id: DeterministicRandomId,
+                                               event: E)
+                                               -> Result<(), FiatEventOperationError> {
     if self.valid_since() > time {
       return Err(FiatEventOperationError::InvalidTime);
     }
@@ -318,9 +322,9 @@ impl<B: Basics> TimeSteward for Steward<B> {
   }
 
   fn remove_fiat_event(&mut self,
-                      time: &B::Time,
-                      id: DeterministicRandomId)
-                      -> Result<(), FiatEventOperationError> {
+                       time: &B::Time,
+                       id: DeterministicRandomId)
+                       -> Result<(), FiatEventOperationError> {
     if self.valid_since() > *time {
       return Err(FiatEventOperationError::InvalidTime);
     }

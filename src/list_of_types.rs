@@ -138,7 +138,7 @@ all_list_definitions! (
   [event_list, Event <B>, EventId, event_id]
   [predictor_list, Predictor <B>, PredictorId, predictor_id]
 );
-//all_null_impls! (column_list event_list predictor_list);
+// all_null_impls! (column_list event_list predictor_list);
 
 pub use column_list::List as ColumnList;
 pub use column_list::Item as ColumnType;
@@ -195,30 +195,30 @@ pub fn $memoized_function <L: $crate::list_of_types::$module::List <$($trait_par
 macro_rules! time_steward_dynamic_fn {
   (pub fn $($rest:tt)*) => { time_steward_dynamic_fn! (@privacy $($rest)* => [pub]); };
   (fn $($rest:tt)*) => { time_steward_dynamic_fn! (@privacy $($rest)* => []); };
-  
+
   (@privacy $name: ident <$B: ident: Basics $(, [$Parameter: ident: Any $($bounds:tt)*])*> $($rest:tt)*) => { time_steward_dynamic_fn! (@parameters $B $($rest)* $name [[$B: Basics] $([$Parameter: Any $($bounds)*])*]); };
-  
+
   (@parameters $B: ident ($id: ident: ColumnId of <$T: ident: Column> $(, $argument_name: ident: $argument_type:ty)*) $($rest:tt)*) => {
     time_steward_dynamic_fn! (@arguments $($rest)*
       [$B, $id, ColumnId, $T, column_list] [Column] [ColumnList] [column_list::User]
       [$id: ColumnId $(, $argument_name: $argument_type)*]
-    );};  
+    );};
   (@parameters $B: ident ($id: ident: EventId of <$T: ident: Event <Basics = $B2: ident>> $(, $argument_name: ident: $argument_type:ty)*) $($rest:tt)*) => {
     time_steward_dynamic_fn! (@arguments $($rest)*
       [$B, $id, EventId, $T, event_list] [Event <Basics = $B>] [EventList <$B>] [event_list::User <$B>]
       [$id: EventId $(, $argument_name: $argument_type)*]
-    );};  
+    );};
   (@parameters $B: ident ($id: ident: PredictorId of <$T: ident: Predictor <Basics = $B2: ident>> $(, $argument_name: ident: $argument_type:ty)*) $($rest:tt)*) => {
     time_steward_dynamic_fn! (@arguments $($rest)*
       [$B, $id, PredictorId, $T, predictor_list] [Predictor <Basics = $B>] [PredictorList <$B>] [predictor_list::User <$B>]
       [$id: PredictorId $(, $argument_name: $argument_type)*]
     );};
-  
+
   (@arguments -> $return_type: ty [where $($clause:tt)*] {$($body: tt)*} => $($rest:tt)*) => { time_steward_dynamic_fn! (@complete $($rest)* $return_type [where $($clause)*] [$($body)*]); };
   (@arguments -> $return_type: ty {$($body: tt)*} => $($rest:tt)*) => { time_steward_dynamic_fn! (@complete $($rest)* $return_type [] [$($body)*]);};
-  
+
   (@replace_with_typeid $Parameter: ident) => {TypeId};
-  
+
   (@complete
     [$($privacy:tt)*]
     $name: ident [$([$Parameter: ident $($bounds:tt)*])*]
@@ -226,7 +226,7 @@ macro_rules! time_steward_dynamic_fn {
     [$($argument_name: ident: $argument_type:ty),*] $return_type:ty
     [$($where_clause:tt)*] [$($body:tt)*]
     ) => {
-    
+
     $($privacy)* fn $name
       <$($Parameter $($bounds)*),*>
       ($($argument_name: $argument_type),*)
@@ -239,7 +239,7 @@ macro_rules! time_steward_dynamic_fn {
         ->$return_type
         $($where_clause)*
         {$($body)*}
-      
+
       struct Table <$($Parameter $($bounds)*),*> (HashMap<$Id, fn($($argument_name: $argument_type),*)-> $return_type>,::std::marker::PhantomData <($($Parameter),*)>);
       impl<$($Parameter $($bounds)*),*> $crate::list_of_types::$($User)* for Table <$($Parameter),*> {
         fn apply<T: $($Trait)*>(&mut self) {
@@ -274,12 +274,15 @@ time_steward_dynamic_fn! (pub fn fields_are_equal <B: Basics> (id: ColumnId of <
   ::unwrap_field::<C>(first) == ::unwrap_field::<C>(second)
 });
 
-pub fn field_options_are_equal <B: Basics> (column_id: ColumnId, first: Option <& FieldRc>, second: Option <& FieldRc>)->bool {
-    match (first, second) {
-      (None, None) => true,
-      (Some (first), Some (second)) => fields_are_equal::<B> (column_id, first, second),
-      _ => false,
-    }
+pub fn field_options_are_equal<B: Basics>(column_id: ColumnId,
+                                          first: Option<&FieldRc>,
+                                          second: Option<&FieldRc>)
+                                          -> bool {
+  match (first, second) {
+    (None, None) => true,
+    (Some(first), Some(second)) => fields_are_equal::<B>(column_id, first, second),
+    _ => false,
+  }
 }
 
 use bincode;
@@ -298,42 +301,42 @@ time_steward_dynamic_fn! (pub fn deserialize_field <B: Basics, [R: Any + Read]> 
   Ok (StewardRc::new (try! (bincode::serde::deserialize_from::<R, C::FieldType> (reader, size_limit))))
 });
 
-pub fn audit_basics <Q: Basics> () {
+pub fn audit_basics<Q: Basics>() {
   use std::collections::HashMap;
-      
-      struct Table <B: Basics> (HashMap <u64, u32>, PhantomData <B>);
-      impl<B: Basics> Table <B> {
-        fn insert_id (&mut self, id: u64, traitidx: u32) {
-          if self.0.insert(id, traitidx).is_some() {
-            panic! ("Multiple IncludedTypes had the same id: 0x{:016x}", id);
-          }
-        }
-      }
-      
-      impl<B: Basics> column_list::User for Table <B> {
-        fn apply<T: Column>(&mut self) {
-          self.insert_id (T::column_id().0, 0);
-        }
-      }
 
-      impl<B: Basics> event_list::User <B> for Table <B> {
-        fn apply<T: Event>(&mut self) {
-          self.insert_id (T::event_id().0, 1);
-        }
+  struct Table<B: Basics>(HashMap<u64, u32>, PhantomData<B>);
+  impl<B: Basics> Table<B> {
+    fn insert_id(&mut self, id: u64, traitidx: u32) {
+      if self.0.insert(id, traitidx).is_some() {
+        panic! ("Multiple IncludedTypes had the same id: 0x{:016x}", id);
       }
+    }
+  }
 
-      impl<B: Basics> predictor_list::User <B> for Table <B> {
-        fn apply<T: Predictor>(&mut self) {
-          self.insert_id (T::predictor_id().0, 2);
-          match self.0.get (& T::column_id().0) {
-            Some (& 0) =>(),
-            _=>panic! ("Predictor 0x{:016x} corresponds to column 0x{:016x}, but no such column is listed", T::predictor_id().0, T::column_id().0),
-          }
-        }
+  impl<B: Basics> column_list::User for Table<B> {
+    fn apply<T: Column>(&mut self) {
+      self.insert_id(T::column_id().0, 0);
+    }
+  }
+
+  impl<B: Basics> event_list::User<B> for Table<B> {
+    fn apply<T: Event>(&mut self) {
+      self.insert_id(T::event_id().0, 1);
+    }
+  }
+
+  impl<B: Basics> predictor_list::User<B> for Table<B> {
+    fn apply<T: Predictor>(&mut self) {
+      self.insert_id(T::predictor_id().0, 2);
+      match self.0.get(&T::column_id().0) {
+        Some(&0) => (),
+        _=>panic! ("Predictor 0x{:016x} corresponds to column 0x{:016x}, but no such column is listed", T::predictor_id().0, T::column_id().0),
       }
-          let mut checker = Table::<Q> (::std::collections::HashMap::new(), PhantomData);
-          <Q::IncludedTypes as ColumnList>::apply (&mut checker );
-          <Q::IncludedTypes as EventList <Q>>::apply (&mut checker );
-          <Q::IncludedTypes as PredictorList <Q>>::apply (&mut checker );
+    }
+  }
+  let mut checker = Table::<Q>(::std::collections::HashMap::new(), PhantomData);
+  <Q::IncludedTypes as ColumnList>::apply(&mut checker);
+  <Q::IncludedTypes as EventList<Q>>::apply(&mut checker);
+  <Q::IncludedTypes as PredictorList<Q>>::apply(&mut checker);
 
 }

@@ -36,7 +36,8 @@
 use super::impls::*;
 
 use {DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, Column, StewardRc,
-     FieldRc, ExtendedTime, Basics, Accessor, FiatEventOperationError, ValidSince, TimeSteward, IncrementalTimeSteward};
+     FieldRc, ExtendedTime, Basics, Accessor, FiatEventOperationError, ValidSince, TimeSteward,
+     IncrementalTimeSteward};
 use stewards::common::{self, DynamicEventFn};
 use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet, btree_map};
 use std::collections::hash_map::Entry;
@@ -79,24 +80,26 @@ pub fn limit_option_by_value_with_none_representing_positive_infinity <B: Ord + 
   }
 }
 
-pub fn split_off_greater <K: Ord + Clone, V> (input: &mut BTreeMap<K, V>, split: & K)->BTreeMap<K, V> {
-      // BTreeMap::split_off() DOES remove this splitting key, while we want to NOT include that key.
-      // TODO: will Rust eventually make this easier?
-      let mut result = input.split_off(split);
-      if let Some(whoops) = result.remove(split) {
-        input.insert(split.clone(), whoops);
-      }
-      result
+pub fn split_off_greater<K: Ord + Clone, V>(input: &mut BTreeMap<K, V>,
+                                            split: &K)
+                                            -> BTreeMap<K, V> {
+  // BTreeMap::split_off() DOES remove this splitting key, while we want to NOT include that key.
+  // TODO: will Rust eventually make this easier?
+  let mut result = input.split_off(split);
+  if let Some(whoops) = result.remove(split) {
+    input.insert(split.clone(), whoops);
+  }
+  result
 }
 
-pub fn split_off_greater_set <K: Ord + Clone> (input: &mut BTreeSet <K>, split: & K)->BTreeSet <K> {
-      // BTreeMap::split_off() DOES remove this splitting key, while we want to NOT include that key.
-      // TODO: will Rust eventually make this easier?
-      let mut result = input.split_off(split);
-      if result.remove(split) {
-        input.insert(split.clone());
-      }
-      result
+pub fn split_off_greater_set<K: Ord + Clone>(input: &mut BTreeSet<K>, split: &K) -> BTreeSet<K> {
+  // BTreeMap::split_off() DOES remove this splitting key, while we want to NOT include that key.
+  // TODO: will Rust eventually make this easier?
+  let mut result = input.split_off(split);
+  if result.remove(split) {
+    input.insert(split.clone());
+  }
+  result
 }
 
 
@@ -107,19 +110,19 @@ pub struct Field<B: Basics> {
 }
 pub type SnapshotField<B: Basics> = (FieldRc, ExtendedTime<B>);
 
-//#[derive (Clone)]
-//enum AccessInfo {
+// #[derive (Clone)]
+// enum AccessInfo {
 //  EventAccess,
 //  PredictionAccess(RowId, PredictorId),
-//}
+// }
 pub struct FieldHistory<B: Basics> {
   pub changes: Vec<Field<B>>,
   pub first_snapshot_not_updated: SnapshotIdx,
 }
 
 pub type SnapshotsData<B: Basics> = BTreeMap<SnapshotIdx,
-                                         (B::Time,
-                                          Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>)>;
+                                             (B::Time,
+                                              Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>)>;
 
 pub struct Fields<B: Basics> {
   pub field_states: HashMap<FieldId, FieldHistory<B>>,
@@ -128,13 +131,14 @@ pub struct Fields<B: Basics> {
 
 #[derive (Default)]
 pub struct Dependencies<B: Basics> {
-  pub events: BTreeSet <ExtendedTime<B>>,
+  pub events: BTreeSet<ExtendedTime<B>>,
   pub bounded_predictions: BTreeMap<ExtendedTime<B>, HashSet<(RowId, PredictorId)>>,
   pub unbounded_predictions: HashSet<(RowId, PredictorId)>,
 }
 impl<B: Basics> Dependencies<B> {
   pub fn is_empty(&self) -> bool {
-    self.events.is_empty() && self.bounded_predictions.is_empty() && self.unbounded_predictions.is_empty()
+    self.events.is_empty() && self.bounded_predictions.is_empty() &&
+    self.unbounded_predictions.is_empty()
   }
 }
 pub type DependenciesMap<B: Basics> = HashMap<FieldId, Dependencies<B>>;
@@ -142,7 +146,7 @@ pub type DependenciesMap<B: Basics> = HashMap<FieldId, Dependencies<B>>;
 #[derive (Clone)]
 pub struct Prediction<B: Basics> {
   pub predictor_accessed: Vec<FieldId>,
-  pub what_will_happen: Option<(ExtendedTime<B>, DynamicEvent <B>)>,
+  pub what_will_happen: Option<(ExtendedTime<B>, DynamicEvent<B>)>,
   pub made_at: ExtendedTime<B>,
   pub valid_until: Option<ExtendedTime<B>>,
 }
@@ -174,8 +178,8 @@ pub struct StewardOwned<B: Basics> {
 
   pub predictions_by_id: HashMap<(RowId, PredictorId), PredictionHistory<B>>,
   pub predictions_missing_by_time: BTreeMap<ExtendedTime<B>, HashSet<(RowId, PredictorId)>>,
-  
-  pub checksum_info: Option <ChecksumInfo <B>>,
+
+  pub checksum_info: Option<ChecksumInfo<B>>,
 }
 
 pub struct Steward<B: Basics> {
@@ -341,8 +345,12 @@ impl<'a, B: Basics> IntoIterator for &'a Snapshot<B> {
 impl<'a, B: Basics> ::Mutator for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
     let field_id = FieldId::new(id, C::column_id());
-    ::bincode::serde::serialize_into (&mut *self.results.checksum_generator.borrow_mut(), &id,::bincode::SizeLimit::Infinite);
-    ::bincode::serde::serialize_into (&mut *self.results.checksum_generator.borrow_mut(), &data,::bincode::SizeLimit::Infinite);
+    ::bincode::serde::serialize_into(&mut *self.results.checksum_generator.borrow_mut(),
+                                     &id,
+                                     ::bincode::SizeLimit::Infinite);
+    ::bincode::serde::serialize_into(&mut *self.results.checksum_generator.borrow_mut(),
+                                     &data,
+                                     ::bincode::SizeLimit::Infinite);
     self.results.fields.insert(field_id,
                                Field {
                                  last_change: self.generic.now.clone(),
@@ -360,17 +368,17 @@ impl<'a, B: Basics> Rng for Mutator<'a, B> {
 
 impl<B: Basics> Fields<B> {
   pub fn get(&self,
-         id: FieldId,
-         time: &ExtendedTime<B>,
-         after: bool)
-         -> Option<(&FieldRc, &ExtendedTime<B>)> {
+             id: FieldId,
+             time: &ExtendedTime<B>,
+             after: bool)
+             -> Option<(&FieldRc, &ExtendedTime<B>)> {
     self.get_and_next(id, time, after).map(|whatever| whatever.0)
   }
   pub fn get_and_next(&self,
-                  id: FieldId,
-                  time: &ExtendedTime<B>,
-                  after: bool)
-                  -> Option<((&FieldRc, &ExtendedTime<B>), Option<&ExtendedTime<B>>)> {
+                      id: FieldId,
+                      time: &ExtendedTime<B>,
+                      after: bool)
+                      -> Option<((&FieldRc, &ExtendedTime<B>), Option<&ExtendedTime<B>>)> {
     self.field_states.get(&id).and_then(|history| {
       let index = match history.changes.binary_search_by_key(&time, |change| &change.last_change) {
         Ok(index) => if after { index } else { index.wrapping_sub(1) },
@@ -385,10 +393,10 @@ impl<B: Basics> Fields<B> {
     })
   }
   pub fn get_for_snapshot(&self,
-                      id: FieldId,
-                      time: &B::Time,
-                      index: SnapshotIdx)
-                      -> Option<(FieldRc, ExtendedTime<B>)> {
+                          id: FieldId,
+                          time: &B::Time,
+                          index: SnapshotIdx)
+                          -> Option<(FieldRc, ExtendedTime<B>)> {
     self.field_states.get(&id).and_then(|history| {
       if history.first_snapshot_not_updated > index {
         return None;
@@ -399,14 +407,14 @@ impl<B: Basics> Fields<B> {
 }
 impl<B: Basics> Steward<B> {
   fn update_until_beginning_of(&mut self, target_time: &B::Time) {
-    while self.updated_until_before().map_or (false, | time | time < *target_time) {
+    while self.updated_until_before().map_or(false, |time| time < *target_time) {
       self.do_next();
     }
   }
 }
 
 
-impl<B: Basics> TimeSteward for Steward <B> {
+impl<B: Basics> TimeSteward for Steward<B> {
   type Basics = B;
   type Snapshot = Snapshot<B>;
 
@@ -492,10 +500,10 @@ impl<B: Basics> TimeSteward for Steward <B> {
     result
   }
   fn insert_fiat_event<E: ::Event<Basics = B>>(&mut self,
-                                        time: B::Time,
-                                        id: DeterministicRandomId,
-                                        event: E)
-                                        -> Result<(), FiatEventOperationError> {
+                                               time: B::Time,
+                                               id: DeterministicRandomId,
+                                               event: E)
+                                               -> Result<(), FiatEventOperationError> {
     if self.valid_since() > time {
       return Err(FiatEventOperationError::InvalidTime);
     }
@@ -507,9 +515,9 @@ impl<B: Basics> TimeSteward for Steward <B> {
   }
 
   fn remove_fiat_event(&mut self,
-                      time: &B::Time,
-                      id: DeterministicRandomId)
-                      -> Result<(), FiatEventOperationError> {
+                       time: &B::Time,
+                       id: DeterministicRandomId)
+                       -> Result<(), FiatEventOperationError> {
     if self.valid_since() > *time {
       return Err(FiatEventOperationError::InvalidTime);
     }
@@ -569,10 +577,14 @@ impl<B: Basics> IncrementalTimeSteward for Steward<B> {
   }
 }
 
-impl <B: Basics> ::FullTimeSteward for Steward <B> {}
+impl<B: Basics> ::FullTimeSteward for Steward<B> {}
 
 use std::ops::{Add, Sub, Mul, Div};
-pub struct ChecksumInfo<B: Basics>{start: B::Time, stride: B::Time, checksums: Vec<u64>}
+pub struct ChecksumInfo<B: Basics> {
+  start: B::Time,
+  stride: B::Time,
+  checksums: Vec<u64>,
+}
 impl <B: Basics> ::SimpleSynchronizableTimeSteward for Steward <B>
 where B::Time: Add <Output = B::Time> + Sub<Output = B::Time> + Mul<i64, Output = B::Time> + Div<B::Time, Output = i64>
 {
@@ -613,21 +625,22 @@ where B::Time: Add <Output = B::Time> + Sub<Output = B::Time> + Mul<i64, Output 
   }
 }
 
-pub trait ChecksumTrait <B: Basics> {
-  fn add_event_checksum (&mut self,_: u64,_: & B::Time) {unreachable!()}
-}
-impl <B: Basics> ChecksumTrait <B> for ChecksumInfo <B> {
-  
-}
-
-impl <B: Basics> ChecksumTrait <B> for ChecksumInfo <B> where B::Time: Sub<Output = B::Time> + Mul<i64, Output = B::Time> + Div<B::Time, Output = i64>
-{
-  fn add_event_checksum (&mut self, checksum: u64, time: &B::Time) {
-    let chunk = (time.clone() - self.start.clone())/self.stride.clone();
-    assert!(chunk >= 0);
-    while (self.checksums.len() as i64) <= chunk {self.checksums.push (0);}
-    self.checksums [chunk as usize] = self.checksums [chunk as usize].wrapping_add (checksum);
+pub trait ChecksumTrait<B: Basics> {
+  fn add_event_checksum(&mut self, _: u64, _: &B::Time) {
+    unreachable!()
   }
 }
+impl<B: Basics> ChecksumTrait<B> for ChecksumInfo<B> {}
 
-
+impl<B: Basics> ChecksumTrait<B> for ChecksumInfo<B>
+  where B::Time: Sub<Output = B::Time> + Mul<i64, Output = B::Time> + Div<B::Time, Output = i64>
+{
+  fn add_event_checksum(&mut self, checksum: u64, time: &B::Time) {
+    let chunk = (time.clone() - self.start.clone()) / self.stride.clone();
+    assert!(chunk >= 0);
+    while (self.checksums.len() as i64) <= chunk {
+      self.checksums.push(0);
+    }
+    self.checksums[chunk as usize] = self.checksums[chunk as usize].wrapping_add(checksum);
+  }
+}

@@ -1,8 +1,8 @@
 extern crate nalgebra;
 
 use stewards::crossverified as s;
-use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId,
-     PredictorId, EventId, Accessor, MomentaryAccessor, PredictorAccessor, ColumnType, EventType, PredictorType};
+use {TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, EventId, Accessor,
+     MomentaryAccessor, PredictorAccessor, ColumnType, EventType, PredictorType};
 use support::collision_detection::simple_grid as collisions;
 
 use support;
@@ -65,9 +65,9 @@ impl support::collision_detection::Basics for CollisionBasics {
 }
 impl collisions::Basics for CollisionBasics {
   fn get_bounds<A: MomentaryAccessor<Basics = Basics>>(accessor: &A,
-                                              who: RowId,
-                                              _: ())
-                                              -> collisions::Bounds {
+                                                       who: RowId,
+                                                       _: ())
+                                                       -> collisions::Bounds {
     let (circle, time) = accessor.data_and_last_change::<Circle>(who)
       .expect("no circle despite is being collision detected as a circle");
     let center = circle.position.updated_by(accessor.now() - time).unwrap().evaluate();
@@ -79,10 +79,10 @@ impl collisions::Basics for CollisionBasics {
     }
   }
   fn when_escapes<A: Accessor<Basics = Basics>>(accessor: &A,
-                                       who: RowId,
-                                       bounds: collisions::Bounds,
-                                       _: ())
-                                       -> Option<Time> {
+                                                who: RowId,
+                                                bounds: collisions::Bounds,
+                                                _: ())
+                                                -> Option<Time> {
     let (circle, time) = accessor.data_and_last_change::<Circle>(who)
       .expect("no circle despite is being collision detected as a circle");
     circle.position.approximately_when_escapes(time.clone(),
@@ -124,13 +124,13 @@ impl Column for Intersection {
 
 
 type TimeStewardTypes = (ColumnType<Circle>,
-                ColumnType<Intersection>,
-                PredictorType <CollisionPredictor>,
-                PredictorType <BoundaryPredictor>,
-                EventType <Initialize>,
-                EventType <Collision>,
-                EventType <BoundaryCollision>,
-                collisions::TimeStewardTypes <CollisionBasics>);
+                         ColumnType<Intersection>,
+                         PredictorType<CollisionPredictor>,
+                         PredictorType<BoundaryPredictor>,
+                         EventType<Initialize>,
+                         EventType<Collision>,
+                         EventType<BoundaryCollision>,
+                         collisions::TimeStewardTypes<CollisionBasics>);
 
 type Steward = s::Steward<Basics,
                           inefficient_flat::Steward<Basics>,
@@ -170,13 +170,13 @@ fn collision_predictor<PA: PredictorAccessor<Basics = Basics>>(accessor: &mut PA
   }
   if let Some(yes) = time {
     // printlnerr!(" planned for {}", &yes);
-    accessor.predict_at_time(yes, Collision::new (id));
+    accessor.predict_at_time(yes, Collision::new(id));
   }
 }
 
-       time_steward_event! (struct Collision {id: RowId}, Basics, EventId (0x2312e29e341a2495), | &self, mutator | {
+time_steward_event! (struct Collision {id: RowId}, Basics, EventId (0x2312e29e341a2495), | &self, mutator | {
                                let new_relationship;
-                               let mut new; 
+                               let mut new;
                                let ids = Nearness::get_ids(mutator, self.id).0;
                                {
                                  let relationship = mutator.get::<Intersection>(self.id).clone();
@@ -239,8 +239,7 @@ fn boundary_predictor<PA: PredictorAccessor<Basics = Basics>>(accessor: &mut PA,
   }
   if let Some(yes) = time {
     // printlnerr!(" planned for {}", &yes);
-    accessor.predict_at_time(yes,
-       BoundaryCollision::new (id));
+    accessor.predict_at_time(yes, BoundaryCollision::new(id));
   }
 }
 
@@ -273,7 +272,7 @@ time_steward_event! (struct BoundaryCollision {id: RowId}, Basics, EventId (0x59
                                mutator.set::<Intersection>(self.id, new_relationship);
                                mutator.set::<Circle>(self.id, Some(new));
                              });
-                             
+
 time_steward_predictor! (struct CollisionPredictor, Basics, PredictorId(0x5375592f4da8682c), Nearness::column_id(), collision_predictor);
 time_steward_predictor! (struct BoundaryPredictor, Basics, PredictorId(0x87d8a4a095350d30), Circle::column_id(), boundary_predictor);
 
@@ -314,9 +313,7 @@ implement_vertex!(Vertex, direction, center, radius);
 pub fn testfunc() {
   let mut stew: Steward = ::TimeSteward::new_empty(());
 
-  stew.insert_fiat_event(0,
-                       DeterministicRandomId::new(&0),
-                       Initialize::new ())
+  stew.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new())
     .unwrap();
 
   let vertex_shader_source = r#"

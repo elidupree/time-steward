@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use super::Nearness;
-use {RowId, ColumnId, Column, Accessor, MomentaryAccessor, Mutator,
-     ColumnType, EventType, PredictorType};
+use {RowId, ColumnId, Column, Accessor, MomentaryAccessor, Mutator, ColumnType, EventType,
+     PredictorType};
 use std::marker::PhantomData;
 use serde::Serialize;
 
@@ -46,11 +46,11 @@ mod hack {
     <B as super::super::Basics>::StewardBasics,
     EventId (<B as super::super::Basics>::nearness_column_id().0 ^ 0x1be13fa07975f552),
     | &self, mutator | {
-        //TODO: optimize remove-then-insert
+  // TODO: optimize remove-then-insert
         remove::<B,_> (mutator, self.member.row, self.member.detector, self.id, self.member.bounds);
         insert::<B,_> (mutator, self.member.row, self.member.detector);
       });
-time_steward_predictor! {
+  time_steward_predictor! {
   pub struct BoundsChangePredictor <[B: Basics]>,
   <B as super::super::Basics>::StewardBasics,
   PredictorId (<B as super::super::Basics>::nearness_column_id().0 ^ 0x3686689daa651bf3),
@@ -81,14 +81,14 @@ fn cell_row<DetectorId: Serialize>(x: i64, y: i64, me: DetectorId) -> RowId {
   RowId::new(&(x, y, me))
 }
 fn get_bounds<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
-                                                       who: RowId,
-                                                       me: B::DetectorId)
-                                                       -> Bounds {
+                                                                who: RowId,
+                                                                me: B::DetectorId)
+                                                                -> Bounds {
   B::get_bounds(mutator, who, me)
 }
 pub fn insert<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
-                                                       who: RowId,
-                                                       me: B::DetectorId) {
+                                                                who: RowId,
+                                                                me: B::DetectorId) {
   let bounds = get_bounds::<B, M>(mutator, who, me);
   mutator.set::<Member<B>>(RowId::new(&(who, me)),
                            Some(Member {
@@ -114,10 +114,10 @@ pub fn insert<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
 }
 
 pub fn remove<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
-                                                      who: RowId,
-                                                      me: B::DetectorId,
-                                                      membership_id: RowId,
-                                                      bounds: Bounds) {
+                                                                who: RowId,
+                                                                me: B::DetectorId,
+                                                                membership_id: RowId,
+                                                                bounds: Bounds) {
 
   mutator.set::<Member<B>>(membership_id, None);
   for next in bounds.min[0]..bounds.max[0] + 1 {
@@ -143,5 +143,6 @@ pub fn remove<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
 
 
 
-pub type TimeStewardTypes <B> = (ColumnType<Member<B>>, EventType <BoundsChange <B>>, PredictorType <BoundsChangePredictor <B>>);
-
+pub type TimeStewardTypes<B> = (ColumnType<Member<B>>,
+                                EventType<BoundsChange<B>>,
+                                PredictorType<BoundsChangePredictor<B>>);

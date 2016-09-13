@@ -30,12 +30,12 @@ type SnapshotField<B: Basics> = (FieldRc, ExtendedTime<B>);
 
 
 type FieldsMap<B: Basics> = HashMap<FieldId, Field<B>>;
-type SnapshotsData <B: Basics> =BTreeMap<SnapshotIdx,
-                                    Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>>;
+type SnapshotsData<B: Basics> = BTreeMap<SnapshotIdx,
+                                         Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>>;
 
 struct Fields<B: Basics> {
   field_states: FieldsMap<B>,
-  changed_since_snapshots: SnapshotsData <B>,
+  changed_since_snapshots: SnapshotsData<B>,
 }
 
 
@@ -202,11 +202,11 @@ impl<'a, B: Basics> IntoIterator for &'a Snapshot<B> {
   }
 }
 
-impl <B: Basics> Field <B> {
-  fn update_snapshots(&self, my_id: FieldId, snapshots: & SnapshotsData <B>) {
+impl<B: Basics> Field<B> {
+  fn update_snapshots(&self, my_id: FieldId, snapshots: &SnapshotsData<B>) {
     // Old snapshot are already "updated" with all nonexistent values
     for (index, snapshot_map) in snapshots.iter().rev() {
-      if *index <self.first_snapshot_not_updated {
+      if *index < self.first_snapshot_not_updated {
         break;
       }
       snapshot_map.get_default(my_id,
@@ -224,7 +224,7 @@ impl<'a, B: Basics> ::Mutator for Mutator<'a, B> {
     let old_value = self.fields.field_states.get(&field_id).cloned();
     let existence_changed = self.fields
       .set_opt::<C>(id, data, &self.generic.now, self.steward.next_snapshot);
-    
+
     if existence_changed {
       self.shared.settings.predictors_by_column.get(&C::column_id()).map(|predictors| {
         for predictor in predictors {
@@ -271,7 +271,7 @@ impl<B: Basics> Fields<B> {
     match self.field_states
       .entry(field_id) {
       Entry::Occupied(mut entry) => {
-        entry.get_mut().update_snapshots (field_id, &self.changed_since_snapshots);
+        entry.get_mut().update_snapshots(field_id, &self.changed_since_snapshots);
         entry.insert(field);
         false
       }
@@ -286,8 +286,8 @@ impl<B: Basics> Fields<B> {
     let field_id = FieldId::new(id, C::column_id());
     let removed = self.field_states
       .remove(&field_id);
-    if let Some (value) = removed {
-      value.update_snapshots (field_id, &self.changed_since_snapshots);
+    if let Some(value) = removed {
+      value.update_snapshots(field_id, &self.changed_since_snapshots);
       return true;
     }
     false
@@ -520,10 +520,10 @@ impl<B: Basics> TimeSteward for Steward<B> {
 
 
   fn insert_fiat_event<E: ::Event<Basics = B>>(&mut self,
-                                        time: B::Time,
-                                        id: DeterministicRandomId,
-                                        event: E)
-                                        -> Result<(), FiatEventOperationError> {
+                                               time: B::Time,
+                                               id: DeterministicRandomId,
+                                               event: E)
+                                               -> Result<(), FiatEventOperationError> {
     if self.valid_since() > time {
       return Err(FiatEventOperationError::InvalidTime);
     }
@@ -535,9 +535,9 @@ impl<B: Basics> TimeSteward for Steward<B> {
   }
 
   fn remove_fiat_event(&mut self,
-                      time: &B::Time,
-                      id: DeterministicRandomId)
-                      -> Result<(), FiatEventOperationError> {
+                       time: &B::Time,
+                       id: DeterministicRandomId)
+                       -> Result<(), FiatEventOperationError> {
     if self.valid_since() > *time {
       return Err(FiatEventOperationError::InvalidTime);
     }
@@ -586,15 +586,14 @@ impl<B: Basics> ::IncrementalTimeSteward for Steward<B> {
   }
 }
 
-/*
-Wait, we don't actually need to do this, because self.shared isn't dropped as long as the snapshot exist!
-impl<B: Basics> Drop for Steward<B> {
-  fn drop(&mut self) {
-    let mut fields_guard = self.shared.fields.borrow_mut();
-    let fields = &mut*fields_guard;
-    for (id, field) in fields.field_states.iter_mut() {
-      field.update_snapshots (*id, & fields.changed_since_snapshots);
-    }
-  }
-}
-*/
+// Wait, we don't actually need to do this, because self.shared isn't dropped as long as the snapshot exist!
+// impl<B: Basics> Drop for Steward<B> {
+// fn drop(&mut self) {
+// let mut fields_guard = self.shared.fields.borrow_mut();
+// let fields = &mut*fields_guard;
+// for (id, field) in fields.field_states.iter_mut() {
+// field.update_snapshots (*id, & fields.changed_since_snapshots);
+// }
+// }
+// }
+//

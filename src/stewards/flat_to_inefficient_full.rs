@@ -13,14 +13,14 @@ pub struct Steward<B: Basics, Steward0: TimeSteward<Basics = B>> {
   invalid_before: ValidSince<B::Time>,
   fiat_events: HashMap<DeterministicRandomId,
                        (B::Time, Box<Fn(&mut Steward0, B::Time, DeterministicRandomId)>)>,
-  reset_to_original: Box <Fn ()->Steward0>,
+  reset_to_original: Box<Fn() -> Steward0>,
   snapshots: Vec<Steward0::Snapshot>,
 }
 
-impl<B: Basics, Steward0: TimeSteward <Basics = B>> Steward<B, Steward0> {
-  fn reset_if_needed (&mut self, time: & B::Time) {
+impl<B: Basics, Steward0: TimeSteward<Basics = B>> Steward<B, Steward0> {
+  fn reset_if_needed(&mut self, time: &B::Time) {
     if self.steward.valid_since() > *time {
-      //println!("whoops");
+      // println!("whoops");
       while self.snapshots.last().map_or(false, |snapshot| snapshot.now() > time) {
         self.snapshots.pop();
       }
@@ -48,9 +48,7 @@ impl<B: Basics, Steward0: TimeSteward<Basics = B>> TimeSteward for Steward<B, St
   }
   fn new_empty(constants: B::Constants) -> Self {
     let reset_constants = constants.clone();
-    let reset_to_original = Box::new (move | |
-      TimeSteward::new_empty(reset_constants.clone())
-    );
+    let reset_to_original = Box::new(move || TimeSteward::new_empty(reset_constants.clone()));
     Steward::<B, Steward0> {
       steward: TimeSteward::new_empty(constants.clone()),
       invalid_before: ValidSince::TheBeginning,
@@ -63,10 +61,9 @@ impl<B: Basics, Steward0: TimeSteward<Basics = B>> TimeSteward for Steward<B, St
   fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: &'a S) -> Self
     where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
   {
-    let reset_snapshot = FiatSnapshot::<B>::from_snapshot:: <'a, S> (snapshot);
-    let reset_to_original = Box::new (move | |
-      TimeSteward::from_snapshot::<FiatSnapshot <B>>(& reset_snapshot)
-    );
+    let reset_snapshot = FiatSnapshot::<B>::from_snapshot::<'a, S>(snapshot);
+    let reset_to_original =
+      Box::new(move || TimeSteward::from_snapshot::<FiatSnapshot<B>>(&reset_snapshot));
     let mut steward: Steward0 = reset_to_original();
     let snapshot = steward.snapshot_before(snapshot.now()).unwrap();
     Steward::<B, Steward0> {
@@ -78,14 +75,14 @@ impl<B: Basics, Steward0: TimeSteward<Basics = B>> TimeSteward for Steward<B, St
     }
   }
   fn insert_fiat_event<E: ::Event<Basics = B>>(&mut self,
-                                        time: B::Time,
-                                        id: DeterministicRandomId,
-                                        event: E)
-                                        -> Result<(), FiatEventOperationError> {
+                                               time: B::Time,
+                                               id: DeterministicRandomId,
+                                               event: E)
+                                               -> Result<(), FiatEventOperationError> {
     if self.valid_since() > time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    self.reset_if_needed(& time);
+    self.reset_if_needed(&time);
     if self.fiat_events.contains_key(&id) {
       return Err(FiatEventOperationError::InvalidInput);
     }
@@ -98,9 +95,9 @@ impl<B: Basics, Steward0: TimeSteward<Basics = B>> TimeSteward for Steward<B, St
     Ok(())
   }
   fn remove_fiat_event(&mut self,
-                      time: &B::Time,
-                      id: DeterministicRandomId)
-                      -> Result<(), FiatEventOperationError> {
+                       time: &B::Time,
+                       id: DeterministicRandomId)
+                       -> Result<(), FiatEventOperationError> {
     if self.valid_since() > *time {
       return Err(FiatEventOperationError::InvalidTime);
     }
@@ -116,7 +113,7 @@ impl<B: Basics, Steward0: TimeSteward<Basics = B>> TimeSteward for Steward<B, St
     if self.valid_since() > *time {
       return None;
     }
-    //println!("snapshot?");
+    // println!("snapshot?");
     self.reset_if_needed(time);
     self.snapshots.push(self.steward
       .snapshot_before(time)
@@ -136,5 +133,4 @@ where for <'a> & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a
   }
 }
 
-impl <B: Basics, Steward0: TimeSteward <Basics = B>> ::FullTimeSteward for Steward <B, Steward0> {}
-
+impl<B: Basics, Steward0: TimeSteward<Basics = B>> ::FullTimeSteward for Steward<B, Steward0> {}

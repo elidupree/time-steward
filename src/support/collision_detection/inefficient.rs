@@ -15,8 +15,8 @@ impl<B: Basics> Column for Detector<B> {
 
 
 pub fn insert<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
-                                                       who: RowId,
-                                                       me: B::DetectorId) {
+                                                                who: RowId,
+                                                                me: B::DetectorId) {
   let my_row = RowId::new(&me);
   let mut members = mutator.get::<Detector<B>>(my_row).cloned().unwrap_or(HashSet::new());
   for member in members.iter() {
@@ -28,8 +28,8 @@ pub fn insert<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
 }
 
 pub fn remove<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
-                                                      who: RowId,
-                                                      me: B::DetectorId) {
+                                                                who: RowId,
+                                                                me: B::DetectorId) {
   let my_row = RowId::new(&me);
   let mut members = mutator.get::<Detector<B>>(my_row)
     .expect("erasing an element when there are no elements")

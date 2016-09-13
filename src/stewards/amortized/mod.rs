@@ -37,4 +37,3 @@ mod impls;
 mod types;
 use self::impls::*;
 pub use self::types::{Steward, Snapshot, SnapshotIter};
-
