@@ -64,7 +64,7 @@ fn display_snapshot<S: ::Snapshot<Basics = Basics>>(snapshot: &S) {
           let friend_id = get_philosopher_id(m.gen_range(0, HOW_MANY_PHILOSOPHERS));
           let awaken_time_1 = now + m.gen_range(-1, 4);
           let awaken_time_2 = now + m.gen_range(-1, 7);
-          println!("SHAKE!!! @{}. {}={}; {}={}", now, self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
+          //println!("SHAKE!!! @{}. {}={}; {}={}", now, self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
           // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
           // IN THE SECOND TIME APPARENTLY
           m.set::<Philosopher>(friend_id,
@@ -181,7 +181,7 @@ fn local_synchronization_test() {
 }
 
 #[test]
-#[should_panic]
+#[should_panic (expected = "event occurred this way locally")]
 fn local_synchronization_failure() {
   use std::net::{TcpListener, TcpStream};
   use std::io::{BufReader, BufWriter};

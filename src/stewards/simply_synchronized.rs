@@ -94,6 +94,14 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
       Ok (message) => {self.received (message); true},
     }
   }
+  fn receive_event_details (&self)->String {
+    while let Ok (message) = self.receiver.recv() {
+      if let Message::EventDetails (event_details) = message {
+        return event_details;
+      }
+    }
+    panic!("did not receive expected event details");
+  }
   
   fn received (&mut self, message: Message <B>) {
         match message {
@@ -123,17 +131,12 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
                     panic!("event only occurred locally:\n {}", event_details);
                   }
                   if my_time > other_time {
-                    if let Message::EventDetails (event_details) = self.receiver.recv().unwrap() {
-                      panic!("event only occurred remotely:\n {}", event_details);
-                    }
-                    panic!("did not receive expected event details");
+                    panic!("event only occurred remotely:\n {}", self.receive_event_details());
                   }
                   if my_checksum != other_checksum {
                     let event_details = self.steward.event_details (my_time);
-                    self.sender.send (Message::EventDetails (event_details.clone())).unwrap();                 if let Message::EventDetails (other_details) = self.receiver.recv().unwrap() {
-                      panic!("event occurred this way locally:\n {}\n\nbut this way remotely: {}", event_details, other_details);
-                    }
-                    panic!("did not receive expected event details");
+                    self.sender.send (Message::EventDetails (event_details.clone())).unwrap();
+                    panic!("event occurred this way locally:\n {}\n\nbut this way remotely: {}", event_details, self.receive_event_details());
                   }
                 },
                 (Some ((my_time, _)), None) => {
@@ -142,9 +145,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
                   panic!("event only occurred locally:\n {}", event_details);
                 },
                 (None, Some ((_, _))) => {
-                  if let Message::EventDetails (event_details) = self.receiver.recv().unwrap() {
-                    panic!("event only occurred remotely:\n {}", event_details);
-                  }
+                  panic!("event only occurred remotely:\n {}", self.receive_event_details());
                 },
               }
             }
