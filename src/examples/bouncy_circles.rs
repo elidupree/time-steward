@@ -174,48 +174,51 @@ fn collision_predictor<PA: PredictorAccessor<Basics = Basics>>(accessor: &mut PA
   }
 }
 
-time_steward_event! (struct Collision {id: RowId}, Basics, EventId (0x2312e29e341a2495), | &self, mutator | {
-                               let new_relationship;
-                               let mut new;
-                               let ids = Nearness::get_ids(mutator, self.id).0;
-                               {
-                                 let relationship = mutator.get::<Intersection>(self.id).clone();
-                                 let us = (mutator.data_and_last_change::<Circle>(ids[0])
-                                                  .expect("a nearness exists for a circle that \
-                                                           doesn't (event)"),
-                                           mutator.data_and_last_change::<Circle>(ids[1])
-                                                  .expect("a nearness exists for a circle that \
-                                                           doesn't (event)"));
-                                 new = ((us.0).0.clone(), (us.1).0.clone());
-                                 new.0.position.update_by(mutator.now() - (us.0).1);
-                                 new.1.position.update_by(mutator.now() - (us.1).1);
-                                 if let Some(intersection) = relationship {
-                                   new.0
-                                      .position
-                                      .add_acceleration(-intersection.induced_acceleration.get());
-                                   new.1
-                                      .position
-                                      .add_acceleration(intersection.induced_acceleration.get());
-                                   new_relationship = None;
-                                   printlnerr!("Parted {} At {}", self.id, mutator.now());
-                                 } else {
-                                   let acceleration = (new.0.position.evaluate() -
-                                                       new.1.position.evaluate()) *
-                                                      (ARENA_SIZE * 4 /
-                                                       (new.0.radius + new.1.radius));
-                                   new.0.position.add_acceleration(acceleration);
-                                   new.1.position.add_acceleration(-acceleration);
-                                   new_relationship = Some(Intersection {
-                                     induced_acceleration: SerializableVector2 ::new (acceleration),
-                                   });
+time_steward_event! (
+  struct Collision {id: RowId}, Basics, EventId (0x2312e29e341a2495),
+  | &self, mutator | {
+    let new_relationship;
+    let mut new;
+    let ids = Nearness::get_ids(mutator, self.id).0;
+    {
+      let relationship = mutator.get::<Intersection>(self.id).clone();
+      let us = (mutator.data_and_last_change::<Circle>(ids[0])
+                    .expect("a nearness exists for a circle that \
+                             doesn't (event)"),
+             mutator.data_and_last_change::<Circle>(ids[1])
+                    .expect("a nearness exists for a circle that \
+                             doesn't (event)"));
+      new = ((us.0).0.clone(), (us.1).0.clone());
+      new.0.position.update_by(mutator.now() - (us.0).1);
+      new.1.position.update_by(mutator.now() - (us.1).1);
+      if let Some(intersection) = relationship {
+        new.0
+          .position
+          .add_acceleration(-intersection.induced_acceleration.get());
+        new.1
+          .position
+          .add_acceleration(intersection.induced_acceleration.get());
+        new_relationship = None;
+        printlnerr!("Parted {} At {}", self.id, mutator.now());
+      } else {
+        let acceleration = (new.0.position.evaluate() -
+                           new.1.position.evaluate()) *
+                          (ARENA_SIZE * 4 /
+                           (new.0.radius + new.1.radius));
+        new.0.position.add_acceleration(acceleration);
+        new.1.position.add_acceleration(-acceleration);
+        new_relationship = Some(Intersection {
+         induced_acceleration: SerializableVector2 ::new (acceleration),
+        });
 
-                                   printlnerr!("Joined {} At {}", self.id, mutator.now());
-                                 }
-                               }
-                               mutator.set::<Intersection>(self.id, new_relationship);
-                               mutator.set::<Circle>(ids[0], Some(new.0));
-                               mutator.set::<Circle>(ids[1], Some(new.1));
-                             });
+        printlnerr!("Joined {} At {}", self.id, mutator.now());
+      }
+    }
+    mutator.set::<Intersection>(self.id, new_relationship);
+    mutator.set::<Circle>(ids[0], Some(new.0));
+    mutator.set::<Circle>(ids[1], Some(new.1));
+  }
+);
 
 fn boundary_predictor<PA: PredictorAccessor<Basics = Basics>>(accessor: &mut PA, id: RowId) {
   let time;
@@ -243,62 +246,68 @@ fn boundary_predictor<PA: PredictorAccessor<Basics = Basics>>(accessor: &mut PA,
   }
 }
 
-time_steward_event! (struct BoundaryCollision {id: RowId}, Basics, EventId (0x59732d675b2329ad), | &self, mutator | {
-                               let new_relationship;
-                               let mut new;
-                               {
-                                 let relationship = mutator.get::<Intersection>(self.id).clone();
-                                 let me = mutator.data_and_last_change::<Circle>(self.id)
-                                                 .expect("a an event was recorded for a circle \
-                                                          that doesn't exist)");
-                                 new = me.0.clone();
-                                 new.position.update_by(mutator.now() - me.1);
-                                 if let Some(intersection) = relationship {
-                                   new.position
-                                      .add_acceleration(-intersection.induced_acceleration.get());
-                                   new_relationship = None;
-                                 } else {
-                                   let acceleration = -(new.position.evaluate() -
-                                                        Vector2::new(ARENA_SIZE / 2,
-                                                                     ARENA_SIZE / 2)) *
-                                                      (ARENA_SIZE * 4 / (ARENA_SIZE - me.0.radius));
-                                   new.position.add_acceleration(acceleration);
-                                   new_relationship = Some(Intersection {
-                                     induced_acceleration: SerializableVector2 ::new (acceleration),
-                                   });
+time_steward_event! (
+  struct BoundaryCollision {id: RowId}, Basics, EventId (0x59732d675b2329ad),
+  | &self, mutator | {
+    let new_relationship;
+    let mut new;
+    {
+      let relationship = mutator.get::<Intersection>(self.id).clone();
+      let me = mutator.data_and_last_change::<Circle>(self.id)
+                   .expect("a an event was recorded for a circle \
+                            that doesn't exist)");
+      new = me.0.clone();
+      new.position.update_by(mutator.now() - me.1);
+      if let Some(intersection) = relationship {
+        new.position
+          .add_acceleration(-intersection.induced_acceleration.get());
+        new_relationship = None;
+      } else {
+      let acceleration = -(new.position.evaluate() -
+                            Vector2::new(ARENA_SIZE / 2,
+                                         ARENA_SIZE / 2)) *
+                          (ARENA_SIZE * 4 / (ARENA_SIZE - me.0.radius));
+        new.position.add_acceleration(acceleration);
+        new_relationship = Some(Intersection {
+         induced_acceleration: SerializableVector2 ::new (acceleration),
+      });
 
-                                 }
-                               }
-                               mutator.set::<Intersection>(self.id, new_relationship);
-                               mutator.set::<Circle>(self.id, Some(new));
-                             });
+      }
+    }
+    mutator.set::<Intersection>(self.id, new_relationship);
+    mutator.set::<Circle>(self.id, Some(new));
+  }
+);
 
 time_steward_predictor! (struct CollisionPredictor, Basics, PredictorId(0x5375592f4da8682c), Nearness::column_id(), collision_predictor);
 time_steward_predictor! (struct BoundaryPredictor, Basics, PredictorId(0x87d8a4a095350d30), Circle::column_id(), boundary_predictor);
 
-time_steward_event! (struct Initialize {}, Basics, EventId (0xa2a17317b84f96e5), | &self, mutator | {
-                           for i in 0..HOW_MANY_CIRCLES {
-                             let thingy = ARENA_SIZE / 20;
-                             let radius = mutator.gen_range(ARENA_SIZE / 30, ARENA_SIZE / 15);
-                             let id = get_circle_id(i);
+time_steward_event! (
+  struct Initialize {}, Basics, EventId (0xa2a17317b84f96e5),
+  | &self, mutator | {
+    for i in 0..HOW_MANY_CIRCLES {
+      let thingy = ARENA_SIZE / 20;
+      let radius = mutator.gen_range(ARENA_SIZE / 30, ARENA_SIZE / 15);
+      let id = get_circle_id(i);
 
-                             let position =
-                               QuadraticTrajectory::new(TIME_SHIFT,
-                                                        MAX_DISTANCE_TRAVELED_AT_ONCE,
-                                                        [mutator.gen_range(0, ARENA_SIZE),
-                                                         mutator.gen_range(0, ARENA_SIZE),
-                                                         mutator.gen_range(-thingy, thingy),
-                                                         mutator.gen_range(-thingy, thingy),
-                                                         0,
-                                                         0]);
-                             mutator.set::<Circle>(id,
-                                                   Some(Circle {
-                                                     position: position,
-                                                     radius: radius,
-                                                   }));
-                             collisions::insert::<CollisionBasics, _>(mutator, id, ());
-                           }
-    });
+      let position =
+      QuadraticTrajectory::new(TIME_SHIFT,
+                              MAX_DISTANCE_TRAVELED_AT_ONCE,
+                              [mutator.gen_range(0, ARENA_SIZE),
+                               mutator.gen_range(0, ARENA_SIZE),
+                               mutator.gen_range(-thingy, thingy),
+                               mutator.gen_range(-thingy, thingy),
+                               0,
+                               0]);
+      mutator.set::<Circle>(id,
+                         Some(Circle {
+                           position: position,
+                           radius: radius,
+                         }));
+      collisions::insert::<CollisionBasics, _>(mutator, id, ());
+    }
+  }
+);
 
 #[derive(Copy, Clone)]
 

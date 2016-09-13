@@ -56,65 +56,78 @@ fn display_snapshot<S: ::Snapshot<Basics = Basics>>(snapshot: &S) {
   }
 }
 
-time_steward_predictor! (struct Shaker, Basics, PredictorId(0x0e7f27c7643f8167), Philosopher::column_id(), | pa, whodunnit | {
+time_steward_predictor! (
+  struct Shaker, Basics, PredictorId(0x0e7f27c7643f8167), Philosopher::column_id(),
+  | pa, whodunnit | {
 // println!("Planning {}", whodunnit);
+  let me = pa.get::<Philosopher>(whodunnit).unwrap().clone();
+  pa.predict_at_time(me.time_when_next_initiates_handshake, Shake::new (whodunnit));
+});
 
-      let me = pa.get::<Philosopher>(whodunnit).unwrap().clone();
-      pa.predict_at_time(me.time_when_next_initiates_handshake, Shake::new (whodunnit));
-    });
-
-time_steward_event! (struct Shake {whodunnit: RowId}, Basics, EventId (0x8987a0b8e7d3d624), | &self, m | {
-          let now = *m.now();
-          let friend_id = get_philosopher_id(m.gen_range(0, HOW_MANY_PHILOSOPHERS));
-          let awaken_time_1 = now + m.gen_range(-1, 4);
-          let awaken_time_2 = now + m.gen_range(-1, 7);
+time_steward_event! (
+  struct Shake {whodunnit: RowId}, Basics, EventId (0x8987a0b8e7d3d624),
+  | &self, m | {
+    let now = *m.now();
+    let friend_id = get_philosopher_id(m.gen_range(0, HOW_MANY_PHILOSOPHERS));
+    let awaken_time_1 = now + m.gen_range(-1, 4);
+    let awaken_time_2 = now + m.gen_range(-1, 7);
 // println!("SHAKE!!! @{}. {}={}; {}={}", now, self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
 // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
 // IN THE SECOND TIME APPARENTLY
-          m.set::<Philosopher>(friend_id,
-                                   Some(Philosopher {
-                                     time_when_next_initiates_handshake: awaken_time_1,
-                                   }));
-          m.set::<Philosopher>(self.whodunnit,
-                                   Some(Philosopher {
-                                     time_when_next_initiates_handshake: awaken_time_2,
-                                   }));
-        });
+    m.set::<Philosopher>(friend_id,
+                             Some(Philosopher {
+                               time_when_next_initiates_handshake: awaken_time_1,
+                             }));
+    m.set::<Philosopher>(self.whodunnit,
+                             Some(Philosopher {
+                               time_when_next_initiates_handshake: awaken_time_2,
+                             }));
+  }
+);
 
-time_steward_event! (struct Initialize {}, Basics, EventId (0xd5e73d8ba6ec59a2), | &self, m | {
-      println!("FIAT!!!!!");
-      for i in 0..HOW_MANY_PHILOSOPHERS {
-        m.set::<Philosopher>(get_philosopher_id(i),
-          Some(Philosopher {
-            time_when_next_initiates_handshake: (i + 1) as Time,
-          })
-        );
-      }
-    });
+time_steward_event! (
+  struct Initialize {}, Basics, EventId (0xd5e73d8ba6ec59a2),
+  | &self, m | {
+    println!("FIAT!!!!!");
+    for i in 0..HOW_MANY_PHILOSOPHERS {
+      m.set::<Philosopher>(get_philosopher_id(i),
+        Some(Philosopher {
+          time_when_next_initiates_handshake: (i + 1) as Time,
+        })
+      );
+    }
+  }
+);
 
-time_steward_event! (struct Tweak {}, Basics, EventId (0xfe9ff3047f9a9552), | &self, m | {
-      println!(" Tweak !!!!!");
-          let now = *m.now();
-          let friend_id = get_philosopher_id(m.gen_range(0, HOW_MANY_PHILOSOPHERS));
-          let awaken_time = now + m.gen_range(-1, 7);
+time_steward_event! (
+  struct Tweak {}, Basics, EventId (0xfe9ff3047f9a9552),
+  | &self, m | {
+    println!(" Tweak !!!!!");
+    let now = *m.now();
+    let friend_id = get_philosopher_id(m.gen_range(0, HOW_MANY_PHILOSOPHERS));
+    let awaken_time = now + m.gen_range(-1, 7);
 
-          m.set::<Philosopher>(friend_id,
-                                   Some(Philosopher {
-                                     time_when_next_initiates_handshake: awaken_time,
-                                   }));
-    });
-time_steward_event! (struct TweakUnsafe {}, Basics, EventId (0xa1618440808703da), | &self, m | {
-      println!(" TweakUnsafe !!!!!");
-          let now = *m.now();
-          let friend_id = get_philosopher_id(m.gen_range(0, HOW_MANY_PHILOSOPHERS));
-          use rand::{self, Rng};
-          let awaken_time = now + rand::thread_rng().gen_range(-1, 7);
+    m.set::<Philosopher>(friend_id,
+                             Some(Philosopher {
+                               time_when_next_initiates_handshake: awaken_time,
+                             }));
+  }
+);
+time_steward_event! (
+  struct TweakUnsafe {}, Basics, EventId (0xa1618440808703da),
+  | &self, m | {
+    println!(" TweakUnsafe !!!!!");
+    let now = *m.now();
+    let friend_id = get_philosopher_id(m.gen_range(0, HOW_MANY_PHILOSOPHERS));
+    use rand::{self, Rng};
+    let awaken_time = now + rand::thread_rng().gen_range(-1, 7);
 
-          m.set::<Philosopher>(friend_id,
-                                   Some(Philosopher {
-                                     time_when_next_initiates_handshake: awaken_time,
-                                   }));
-    });
+    m.set::<Philosopher>(friend_id,
+                             Some(Philosopher {
+                               time_when_next_initiates_handshake: awaken_time,
+                             }));
+  }
+);
 
 pub fn testfunc() {
   let mut stew: Steward = ::TimeSteward::new_empty(());
