@@ -1,7 +1,8 @@
 use std::io::{Read, Write};
 use std::any::Any;
+use std::marker::PhantomData;
 
-use {StewardRc, FieldRc, ColumnId, EventId, Column, Event, Basics};
+use {StewardRc, FieldRc, ColumnId, EventId, PredictorId, Column, Event, Predictor, Basics};
 
 macro_rules! type_list_definitions {
 ($module: ident, $Trait: ident, $IdType: ident, $get_id: ident) => {
@@ -247,6 +248,7 @@ macro_rules! time_steward_dynamic_fn {
       }
       impl<$($Parameter $($bounds)*),*> Table <$($Parameter),*> {
         fn new()-> Table <$($Parameter),*> {
+          $crate::list_of_types::audit_basics::<$B>();
           let mut result = Table (::std::collections::HashMap::new(),::std::marker::PhantomData);
           <$B::IncludedTypes as $crate::list_of_types::$($List)*>::apply (&mut result);
           result
@@ -296,3 +298,42 @@ time_steward_dynamic_fn! (pub fn deserialize_field <B: Basics, [R: Any + Read]> 
   Ok (StewardRc::new (try! (bincode::serde::deserialize_from::<R, C::FieldType> (reader, size_limit))))
 });
 
+pub fn audit_basics <Q: Basics> () {
+  use std::collections::HashMap;
+      
+      struct Table <B: Basics> (HashMap <u64, u32>, PhantomData <B>);
+      impl<B: Basics> Table <B> {
+        fn insert_id (&mut self, id: u64, traitidx: u32) {
+          if self.0.insert(id, traitidx).is_some() {
+            panic! ("Multiple IncludedTypes had the same id: 0x{:016x}", id);
+          }
+        }
+      }
+      
+      impl<B: Basics> column_list::User for Table <B> {
+        fn apply<T: Column>(&mut self) {
+          self.insert_id (T::column_id().0, 0);
+        }
+      }
+
+      impl<B: Basics> event_list::User <B> for Table <B> {
+        fn apply<T: Event>(&mut self) {
+          self.insert_id (T::event_id().0, 1);
+        }
+      }
+
+      impl<B: Basics> predictor_list::User <B> for Table <B> {
+        fn apply<T: Predictor>(&mut self) {
+          self.insert_id (T::predictor_id().0, 2);
+          match self.0.get (& T::column_id().0) {
+            Some (& 0) =>(),
+            _=>panic! ("Predictor 0x{:016x} corresponds to column 0x{:016x}, but no such column is listed", T::predictor_id().0, T::column_id().0),
+          }
+        }
+      }
+          let mut checker = Table::<Q> (::std::collections::HashMap::new(), PhantomData);
+          <Q::IncludedTypes as ColumnList>::apply (&mut checker );
+          <Q::IncludedTypes as EventList <Q>>::apply (&mut checker );
+          <Q::IncludedTypes as PredictorList <Q>>::apply (&mut checker );
+
+}

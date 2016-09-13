@@ -35,7 +35,7 @@ struct Basics;
 impl steward::Basics for Basics {
   type Time = DeterministicRandomId;
   type Constants = DeterministicRandomId;
-  type IncludedTypes = (ColumnType <ColumnHack>, PredictorType <Predictor>, EventType <Event>);
+  type IncludedTypes = (ColumnType <ColumnHack>, PredictorType <Predictor>, EventType <Event>, EventType <FiatEvent>);
 }
   struct ColumnHack;
   impl Column for ColumnHack {
