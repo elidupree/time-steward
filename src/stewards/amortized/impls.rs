@@ -172,7 +172,7 @@ impl<B: Basics> StewardOwned<B> {
           break;
         }
         if let Some((ref event_time, _)) = prediction.what_will_happen {
-          if event_time > time {
+          if event_time > time && prediction.valid_until.as_ref().map_or (true, | limit | limit >= event_time) {
             self.events.unschedule_event(event_time).unwrap();
           }
         }

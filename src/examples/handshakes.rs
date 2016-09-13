@@ -53,7 +53,7 @@ fn display_snapshot<S: ::Snapshot<Basics = Basics>>(snapshot: &S) {
 }
 
     time_steward_predictor! (struct Shaker, Basics, PredictorId(0x0e7f27c7643f8167), Philosopher::column_id(), | pa, whodunnit | {
-      println!("Planning {}", whodunnit);
+      //println!("Planning {}", whodunnit);
       
       let me = pa.get::<Philosopher>(whodunnit).unwrap().clone();
       pa.predict_at_time(me.time_when_next_initiates_handshake, Shake::new (whodunnit));

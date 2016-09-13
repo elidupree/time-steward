@@ -25,7 +25,7 @@ enum Message <B: Basics> {
   Checksum (i64, u64),
   DebugDump (BTreeMap<ExtendedTime <B>, u64>),
   EventDetails (String),
-  Finished,
+  Finished (u32),
 }
 
 pub struct Steward <B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics = B>> {
@@ -37,10 +37,11 @@ pub struct Steward <B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics 
   settled_through: i64, other_settled_through: i64,
   checksums: Vec<u64>,
   dump: BTreeMap<ExtendedTime <B>, u64>,
+  finishes_received: u32,
 }
 
 time_steward_dynamic_fn! (fn do_fiat_event_message <B: Basics, [Steward0: Any + SimpleSynchronizableTimeSteward<Basics = B>]> (event_id: EventId of <E: Event <Basics = B>>, steward: &mut Steward <B, Steward0>, time: B::Time, id: DeterministicRandomId, data: Vec <u8>)->() {
-  steward.steward.insert_fiat_event (time, id, bincode::serde::deserialize:: <E> (data.as_slice()).unwrap());
+  steward.steward.insert_fiat_event (time, id, bincode::serde::deserialize:: <E> (data.as_slice()).unwrap()).unwrap();
 });
 
 impl <B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics = B>> Steward <B, Steward0>
@@ -55,8 +56,8 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
           Err (_) => return,
           Ok (message) => message,
         };
-        send_back.send (message.clone());
-        if let Message::Finished = message {return;}
+        send_back.send (message.clone()).unwrap();
+        if let Message::Finished (9) = message {return;}
       }
     });
     ::std::thread::spawn (move | | {
@@ -65,9 +66,9 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
           Err (_) => return,
           Ok (message) => {match bincode::serde::serialize_into (&mut writer, &message, bincode::SizeLimit::Infinite) {
             Err (_) => return,
-            Ok (_) => (),
+            Ok (_) => {writer.flush().unwrap()},
           }
-          if let Message::Finished = message {return;}
+          if let Message::Finished (9) = message {return;}
           }
         };
       }
@@ -83,6 +84,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
       settled_through: -1, other_settled_through: -1,
       checksums: Vec::new(),
       dump: BTreeMap::new(),
+      finishes_received: 0,
     }
   }
   
@@ -93,7 +95,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
     }
   }
   
-  fn received (&mut self, message: Message <B>)->bool {
+  fn received (&mut self, message: Message <B>) {
         match message {
           Message::InsertFiatEvent (time, id, event_id, data) => do_fiat_event_message (event_id, self, time, id, data),
           Message::RemoveFiatEvent (time, id) => self.remove_fiat_event (&time, id).unwrap(),
@@ -133,12 +135,12 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
                     panic!("did not receive expected event details");
                   }
                 },
-                (Some ((my_time, my_checksum)), None) => {
+                (Some ((my_time, _)), None) => {
                   let event_details = self.steward.event_details (my_time);
                   self.sender.send (Message::EventDetails (event_details.clone())).unwrap();
                   panic!("event only occurred locally:\n {}", event_details);
                 },
-                (None, Some ((other_time, other_checksum))) => {
+                (None, Some ((_, _))) => {
                   if let Message::EventDetails (event_details) = self.receiver.recv().unwrap() {
                     panic!("event only occurred remotely:\n {}", event_details);
                   }
@@ -147,9 +149,8 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
             }
           },
           Message::EventDetails (string) => panic!("We should not receive an event details except where specifically expecting it"),
-          Message::Finished => return false,
+          Message::Finished (_) => {self.finishes_received += 1;},
         };
-    true
   }
   
   pub fn settle_before (&mut self, time: B::Time) {
@@ -168,10 +169,13 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
   }
   
   pub fn finish (&mut self) {
-    self.sender.send (Message::Finished).unwrap();
-    loop {
-      let message = self.receiver.recv().unwrap();
-      if !self.received (message) {return;}
+    for round in 0..10 {
+      self.sender.send (Message::Finished (round)).unwrap();
+      loop {
+        let message = self.receiver.recv().unwrap();
+        self.received (message);
+        if self.finishes_received > round {break;}
+      }
     }
   }
   
