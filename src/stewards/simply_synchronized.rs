@@ -40,8 +40,8 @@ pub struct Steward <B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics 
   finishes_received: u32,
 }
 
-time_steward_dynamic_fn! (fn do_fiat_event_message <B: Basics, [Steward0: Any + SimpleSynchronizableTimeSteward<Basics = B>]> (event_id: EventId of <E: Event <Basics = B>>, steward: &mut Steward <B, Steward0>, time: B::Time, id: DeterministicRandomId, data: Vec <u8>)->() {
-  steward.steward.insert_fiat_event (time, id, bincode::serde::deserialize:: <E> (data.as_slice()).unwrap()).unwrap();
+time_steward_dynamic_fn! (fn do_fiat_event_message <B: Basics, [Steward0: Any + SimpleSynchronizableTimeSteward<Basics = B>]> (event_id: EventId of <E: Event <Basics = B>>, steward: &mut Steward <B, Steward0>, time: B::Time, qualified_id: DeterministicRandomId, data: Vec <u8>)->() {
+  steward.steward.insert_fiat_event (time, qualified_id, bincode::serde::deserialize:: <E> (data.as_slice()).unwrap()).unwrap();
 });
 
 impl <B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics = B>> Steward <B, Steward0>
@@ -185,10 +185,10 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
                                         id: DeterministicRandomId,
                                         event: E)
                                         -> Result<(), FiatEventOperationError> {
-    let id = DeterministicRandomId::new (& (id, self .id));
-    let result = self.steward.insert_fiat_event (time.clone(), id, event.clone());
+    let qualified_id = DeterministicRandomId::new (& (id, self .id));
+    let result = self.steward.insert_fiat_event (time.clone(), qualified_id, event.clone());
     match result {
-      Ok (_) => self.sender.send (Message::InsertFiatEvent (time, id, E::event_id(), bincode::serde::serialize (&event, bincode::SizeLimit::Infinite).unwrap())).unwrap(),
+      Ok (_) => self.sender.send (Message::InsertFiatEvent (time, qualified_id, E::event_id(), bincode::serde::serialize (&event, bincode::SizeLimit::Infinite).unwrap())).unwrap(),
       Err (FiatEventOperationError::InvalidInput) => (),
       Err (FiatEventOperationError::InvalidTime) => (),
     }
@@ -199,10 +199,10 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
                       time: &B::Time,
                       id: DeterministicRandomId)
                       -> Result<(), FiatEventOperationError> {
-    let id = DeterministicRandomId::new (& (id, self .id));
-    let result = self.steward.remove_fiat_event (time, id);
+    let qualified_id = DeterministicRandomId::new (& (id, self .id));
+    let result = self.steward.remove_fiat_event (time, qualified_id);
     match result {
-      Ok (_) => self.sender.send (Message::RemoveFiatEvent (time.clone(), id)).unwrap(),
+      Ok (_) => self.sender.send (Message::RemoveFiatEvent (time.clone(), qualified_id)).unwrap(),
       Err (FiatEventOperationError::InvalidInput) => (),
       Err (FiatEventOperationError::InvalidTime) => (),
     }

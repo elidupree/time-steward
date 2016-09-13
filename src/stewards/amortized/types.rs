@@ -608,7 +608,7 @@ where B::Time: Add <Output = B::Time> + Sub<Output = B::Time> + Mul<i64, Output 
     let mut result = String::new();
     let state = self.owned.events.event_states.get (time).unwrap();
     use std::fmt::Write;
-    write! (&mut result, "At {:?}:\n {:?}\n", time, &state.execution_state);
+    write! (&mut result, "At {:?}:\n EventId: {:?}\n {:?}\n", time, state.schedule.as_ref().unwrap().event_id(), &state.execution_state);
     result
   }
 }
