@@ -36,7 +36,7 @@ pub struct Steward <B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics 
   start: B::Time, stride: B::Time,
   settled_through: i64, other_settled_through: i64,
   checksums: Vec<u64>,
-  dump: BTreeMap<ExtendedTime <B>, u64>,
+  dump: Option <BTreeMap<ExtendedTime <B>, u64>>,
   finishes_received: u32,
 }
 
@@ -83,7 +83,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
       start: start, stride: stride,
       settled_through: -1, other_settled_through: -1,
       checksums: Vec::new(),
-      dump: BTreeMap::new(),
+      dump: None,
       finishes_received: 0,
     }
   }
@@ -104,13 +104,14 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
             self.do_checksums();
           },
           Message::Checksum (chunk, checksum) => {
-            if self.checksums [chunk as usize] != checksum {
-              self.dump = self.steward.debug_dump (chunk);
-              self.sender.send (Message::DebugDump (self.dump.clone())).unwrap();
+            if self.checksums [chunk as usize] != checksum && self.dump.is_none() {
+              println!("detected desynchronization in chunk {}", chunk);
+              self.dump = Some (self.steward.debug_dump (chunk));
+              self.sender.send (Message::DebugDump (self.dump.clone().unwrap())).unwrap();
             }
           },
           Message::DebugDump (events) => {
-            let mut my_iter = self.dump.iter();
+            let mut my_iter = self.dump.as_ref().unwrap().iter();
             let mut other_iter = events.iter();
             loop {
               match (my_iter.next(), other_iter.next()) {

@@ -51,10 +51,12 @@ use data_structures::partially_persistent_nonindexed_set;
 
 pub type SnapshotIdx = u64;
 
+#[derive (Debug)]
 pub enum EventValidity {
   Invalid,
   ValidWithDependencies(HashSet<FieldId>),
 }
+#[derive (Debug)]
 pub struct EventExecutionState {
   pub fields_changed: HashSet<FieldId>,
   pub checksum: u64,
@@ -569,27 +571,44 @@ impl<B: Basics> IncrementalTimeSteward for Steward<B> {
 
 impl <B: Basics> ::FullTimeSteward for Steward <B> {}
 
-use std::ops::{Sub, Mul, Div};
+use std::ops::{Add, Sub, Mul, Div};
 pub struct ChecksumInfo<B: Basics>{start: B::Time, stride: B::Time, checksums: Vec<u64>}
 impl <B: Basics> ::SimpleSynchronizableTimeSteward for Steward <B>
-where B::Time: Sub<Output = B::Time> + Mul<i64, Output = B::Time> + Div<B::Time, Output = i64>
+where B::Time: Add <Output = B::Time> + Sub<Output = B::Time> + Mul<i64, Output = B::Time> + Div<B::Time, Output = i64>
 {
   fn begin_checks (&mut self, start: B::Time, stride: B::Time) {
     self.owned.checksum_info = Some (ChecksumInfo {
       start: start, stride: stride, checksums: Vec::new()
     });
   }
-  fn checksum(&self, which: i64)->u64 {
-    self.owned.checksum_info.as_ref().unwrap().checksums.get (which as usize).cloned().unwrap_or (0)
+  fn checksum(&mut self, chunk: i64)->u64 {
+    loop {
+      if let Some (time) = self.updated_until_before() {
+        if (time - self.owned.checksum_info.as_ref().unwrap().start.clone())/self.owned.checksum_info.as_ref().unwrap().stride.clone() > chunk {
+          break;
+        }
+      } else {break;}
+      self.step();
+    }
+    self.owned.checksum_info.as_ref().unwrap().checksums.get (chunk as usize).cloned().unwrap_or (0)
   }
-  fn debug_dump(&self, which: i64) ->BTreeMap<ExtendedTime <B>, u64>{
-    let result = BTreeMap::new();
-    
+  fn debug_dump(&self, chunk: i64) ->BTreeMap<ExtendedTime <B>, u64>{
+    let mut result = BTreeMap::new();
+    let info = self.owned.checksum_info.as_ref().unwrap();
+    for (time, state) in self.owned.events.event_states.iter() {
+      if (time.base.clone() - info.start.clone())/info.stride.clone() == chunk {
+        if let Some (execution) = state.execution_state.as_ref() {
+          result.insert (time.clone(), execution.checksum);
+        }
+      }
+    }
     result
   }
   fn event_details (&self, time: & ExtendedTime <B>)->String {
-    let result = String::new();
-    
+    let mut result = String::new();
+    let state = self.owned.events.event_states.get (time).unwrap();
+    use std::fmt::Write;
+    write! (&mut result, "At {:?}:\n {:?}\n", time, &state.execution_state);
     result
   }
 }

@@ -630,8 +630,8 @@ pub trait SimpleSynchronizableTimeSteward: TimeSteward
 //where <<Self as TimeSteward>::Basics as Basics>::Time: Sub<Output = <<Self as TimeSteward>::Basics as Basics>::Time> + Mul<i64, Output = <<Self as TimeSteward>::Basics as Basics>::Time> + Div<<<Self as TimeSteward>::Basics as Basics>::Time, Output = i64>
 {
   fn begin_checks (&mut self, start: <<Self as TimeSteward>::Basics as Basics>::Time, stride: <<Self as TimeSteward>::Basics as Basics>::Time);
-  fn checksum(&self, which: i64)->u64;
-  fn debug_dump(&self, which: i64) ->BTreeMap<ExtendedTime <<Self as TimeSteward>::Basics>, u64>;
+  fn checksum(&mut self, chunk: i64)->u64;
+  fn debug_dump(&self, chunk: i64) ->BTreeMap<ExtendedTime <<Self as TimeSteward>::Basics>, u64>;
   fn event_details (&self, time: & ExtendedTime <<Self as TimeSteward>::Basics>)->String;
 }
 
