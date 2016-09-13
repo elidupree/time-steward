@@ -152,8 +152,10 @@ fn actuallytest() {
 fn local_synchronization_test() {
   use std::net::{TcpListener, TcpStream};
   use std::io::{BufReader, BufWriter};
-  ::std::thread::spawn (| | {
-    let end_0 = TcpListener::bind ("localhost:7324").unwrap().accept().unwrap().0;
+  let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+  let port = listener.local_addr().unwrap().port();
+  ::std::thread::spawn (move | | {
+    let end_0 = listener.accept().unwrap().0;
     let mut stew_0: simply_synchronized::Steward <Basics, amortized::Steward <Basics>> = simply_synchronized::Steward::new (DeterministicRandomId::new (&0u32), 0, 4, (), BufReader::new (end_0.try_clone().unwrap()), BufWriter::new (end_0));
     stew_0.insert_fiat_event(0, DeterministicRandomId::new(&0x32e1570766e768a7u64),
                        Initialize::new()).unwrap();
@@ -166,7 +168,7 @@ fn local_synchronization_test() {
     }
     stew_0.finish ();
   });
-  let end_1 = TcpStream::connect ("localhost:7324").unwrap();
+  let end_1 = TcpStream::connect(("127.0.0.1", port)).unwrap();
   let mut stew_1: simply_synchronized::Steward <Basics, amortized::Steward <Basics>> = simply_synchronized::Steward::new (DeterministicRandomId::new (&1u32), 0, 4, (), BufReader::new (end_1.try_clone().unwrap()), BufWriter::new (end_1));
 
   for increment in 1..21 {
@@ -183,8 +185,10 @@ fn local_synchronization_test() {
 fn local_synchronization_failure() {
   use std::net::{TcpListener, TcpStream};
   use std::io::{BufReader, BufWriter};
-  ::std::thread::spawn (| | {
-    let end_0 = TcpListener::bind ("localhost:7324").unwrap().accept().unwrap().0;
+  let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+  let port = listener.local_addr().unwrap().port();
+  ::std::thread::spawn (move | | {
+    let end_0 = listener.accept().unwrap().0;
     let mut stew_0: simply_synchronized::Steward <Basics, amortized::Steward <Basics>> = simply_synchronized::Steward::new (DeterministicRandomId::new (&0u32), 0, 4, (), BufReader::new (end_0.try_clone().unwrap()), BufWriter::new (end_0));
     stew_0.insert_fiat_event(0, DeterministicRandomId::new(&0x32e1570766e768a7u64),
                        Initialize::new()).unwrap();
@@ -197,7 +201,7 @@ fn local_synchronization_failure() {
     }
     stew_0.finish ();
   });
-  let end_1 = TcpStream::connect ("localhost:7324").unwrap();
+  let end_1 = TcpStream::connect(("127.0.0.1", port)).unwrap();
   let mut stew_1: simply_synchronized::Steward <Basics, amortized::Steward <Basics>> = simply_synchronized::Steward::new (DeterministicRandomId::new (&1u32), 0, 4, (), BufReader::new (end_1.try_clone().unwrap()), BufWriter::new (end_1));
 
   for increment in 1..21 {
