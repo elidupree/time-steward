@@ -1,10 +1,13 @@
 use std::cell::RefCell;
 use std::cmp::Ordering;
+use std::io::{Read, Write};
+use std::any::Any;
 use rand::{ChaChaRng, SeedableRng};
-use {DeterministicRandomId, PredictorId, TimeId, RowId, FieldId, SiphashIdGenerator,
-     IterationType, Basics, ExtendedTime, Predictor, Event,
-     PredictorAccessor, Mutator};
+use {DeterministicRandomId, PredictorId, EventId, TimeId, RowId, ColumnId, FieldId, SiphashIdGenerator,
+     IterationType, Basics, ExtendedTime, Column, Predictor, Event,
+     PredictorAccessor, Mutator, FieldRc, StewardRc,};
 use std::marker::PhantomData;
+//use implementation_support::list_of_types::
 
 // https://github.com/rust-lang/rfcs/issues/1485
 pub trait Filter<T> {
@@ -90,11 +93,11 @@ time_steward_common_dynamic_callback_structs! ($M, $PA, $DynamicEvent, $DynamicP
 
 mod __time_steward_make_dynamic_callbacks_impl {
 
-use $crate::{Basics, Column, Event, Predictor, RowId, ColumnId, EventId, PredictorId, StewardRc, PredictorList, predictor_list};
+use $crate::{Basics, Column, Event, Predictor, RowId, ColumnId, EventId, PredictorId, StewardRc};
 use std::collections::HashMap;
 use std::marker::PhantomData;
-
-use ::stewards::common::*;
+use $crate::implementation_support::common::*;
+use $crate::implementation_support::list_of_types::predictor_list;
 
 pub trait DynamicEventTrait <B: Basics>: for <'a, 'b> Fn(& 'a mut super:: $M<'b, B>) {
   fn event_id(&self)->EventId;
@@ -157,7 +160,7 @@ impl<B: Basics> StandardSettings <B> {
       predictors_by_id: HashMap::new(),
       predictors_by_column: HashMap::new(),
     };
-    B::IncludedTypes::apply (&mut result);
+    <B::IncludedTypes as predictor_list::List<B>>::apply (&mut result);
     result
   }
 }
@@ -319,3 +322,34 @@ pub fn next_extended_time_of_predicted_event<B: Basics>
     id: id,
   })
 }
+
+time_steward_dynamic_fn! (pub fn fields_are_equal <B: Basics> (id: ColumnId of <C: Column>, first: &FieldRc, second: &FieldRc)->bool {
+  ::unwrap_field::<C>(first) == ::unwrap_field::<C>(second)
+});
+
+pub fn field_options_are_equal<B: Basics>(column_id: ColumnId,
+                                          first: Option<&FieldRc>,
+                                          second: Option<&FieldRc>)
+                                          -> bool {
+  match (first, second) {
+    (None, None) => true,
+    (Some(first), Some(second)) => fields_are_equal::<B>(column_id, first, second),
+    _ => false,
+  }
+}
+
+use bincode;
+time_steward_dynamic_fn! (pub fn serialize_event <B: Basics, [W: Any + Write]> (id: EventId of <E: Event <Basics = B>>, writer: &mut W, data: & StewardRc <Any>, size_limit: bincode::SizeLimit) ->bincode::serde::SerializeResult <()> {
+  try! (bincode::serde::serialize_into (writer, &id, bincode::SizeLimit::Bounded (8)));
+  try! (bincode::serde::serialize_into (writer, data.downcast_ref::<E>().expect ("id and type don't match"), size_limit));
+  Ok (())
+});
+
+time_steward_dynamic_fn! (pub fn serialize_field <B: Basics, [W: Any + Write]> (id: ColumnId of <C: Column>, writer: &mut W, data: & FieldRc, size_limit: bincode::SizeLimit) ->bincode::serde::SerializeResult <()> {
+  try! (bincode::serde::serialize_into (writer, ::unwrap_field::<C>(data), size_limit));
+  Ok (())
+});
+
+time_steward_dynamic_fn! (pub fn deserialize_field <B: Basics, [R: Any + Read]> (id: ColumnId of <C: Column>, reader: &mut R, size_limit: bincode::SizeLimit) ->bincode::serde::DeserializeResult <FieldRc> {
+  Ok (StewardRc::new (try! (bincode::serde::deserialize_from::<R, C::FieldType> (reader, size_limit))))
+});

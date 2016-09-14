@@ -36,7 +36,7 @@
 use {DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, Column, StewardRc,
      FieldRc, ExtendedTime, Basics, Accessor, FiatEventOperationError, ValidSince, TimeSteward,
      IncrementalTimeSteward};
-use stewards::common::{self, DynamicEventFn};
+use implementation_support::common::{self, DynamicEventFn};
 use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet};
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::rc::Rc;

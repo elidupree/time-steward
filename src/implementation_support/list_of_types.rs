@@ -1,8 +1,6 @@
-use std::io::{Read, Write};
-use std::any::Any;
-use std::marker::PhantomData;
 
-use {StewardRc, FieldRc, ColumnId, EventId, Column, Event, Predictor, Basics};
+use std::marker::PhantomData;
+use {Column, Event, Predictor, Basics};
 
 macro_rules! type_list_definitions {
 ($module: ident, $Trait: ident, $IdType: ident, $get_id: ident) => {
@@ -140,12 +138,12 @@ all_list_definitions! (
 );
 // all_null_impls! (column_list event_list predictor_list);
 
-pub use column_list::List as ColumnList;
-pub use column_list::Item as ColumnType;
-pub use event_list::List as EventList;
-pub use event_list::Item as EventType;
-pub use predictor_list::List as PredictorList;
-pub use predictor_list::Item as PredictorType;
+pub use self::column_list::List as ColumnList;
+pub use self::column_list::Item as ColumnType;
+pub use self::event_list::List as EventList;
+pub use self::event_list::Item as EventType;
+pub use self::predictor_list::List as PredictorList;
+pub use self::predictor_list::Item as PredictorType;
 
 /*
 #[macro_export]
@@ -153,28 +151,28 @@ macro_rules! time_steward_make_function_table_type {
   ($module: ident, struct $Struct: ident, fn $memoized_function: ident, fn $function: ident <$T: ident: $Trait: ident [$($trait_parameters:tt)*]  $(, [$Parameter: ident $($bounds:tt)*])*> ($($argument_name: ident: $argument_type:ty),*)->$return_type:ty) => {
   
   
-pub struct $Struct <$($Parameter $($bounds)*),*> (HashMap<$crate::list_of_types::$module::Id, fn($($argument_name: $argument_type),*)-> $return_type>);
-impl<$($Parameter $($bounds)*),*> $crate::list_of_types::$module::User <$($trait_parameters)*> for $Struct<$($Parameter),*> {
+pub struct $Struct <$($Parameter $($bounds)*),*> (HashMap<$crate::implementation_support::list_of_types::$module::Id, fn($($argument_name: $argument_type),*)-> $return_type>);
+impl<$($Parameter $($bounds)*),*> $crate::implementation_support::list_of_types::$module::User <$($trait_parameters)*> for $Struct<$($Parameter),*> {
   fn apply<$T: $Trait>(&mut self) {
-    self.0.insert($crate::list_of_types::$module::get_id:: <$T>(), $function::<$T $(, $Parameter)*>);
+    self.0.insert($crate::implementation_support::list_of_types::$module::get_id:: <$T>(), $function::<$T $(, $Parameter)*>);
   }
 }
 impl<$($Parameter $($bounds)*),*> $Struct<$($Parameter),*> {
-  pub fn new <L: $crate::list_of_types::$module::List<$($trait_parameters)*> >()->$Struct<$($Parameter),*> {
+  pub fn new <L: $crate::implementation_support::list_of_types::$module::List<$($trait_parameters)*> >()->$Struct<$($Parameter),*> {
     let mut result = $Struct (::std::collections::HashMap::new());
     L::apply (&mut result);
     result
   }
-  pub fn get (&self, id: $crate::list_of_types::$module::Id)->fn ($($argument_type),*)->$return_type {
+  pub fn get (&self, id: $crate::implementation_support::list_of_types::$module::Id)->fn ($($argument_type),*)->$return_type {
     *(self.0.get (&id).expect ("Type missing from function table; did you forget to list it in Basics::IncludedTypes?"))
   }
-  pub fn call (&self, id: $crate::list_of_types::$module::Id $(, $argument_name: $argument_type)*)->$return_type {
+  pub fn call (&self, id: $crate::implementation_support::list_of_types::$module::Id $(, $argument_name: $argument_type)*)->$return_type {
     self.get (id)($($argument_name),*)
   }
 }
 
 #[allow (unused_imports)]
-pub fn $memoized_function <L: $crate::list_of_types::$module::List <$($trait_parameters)*> $(, $Parameter $($bounds)*)*> (id: $crate::list_of_types::$module::Id $(, $argument_name: $argument_type)*)-> $return_type where L: ::std::any::Any $(, $Parameter: ::std::any::Any)* {
+pub fn $memoized_function <L: $crate::implementation_support::list_of_types::$module::List <$($trait_parameters)*> $(, $Parameter $($bounds)*)*> (id: $crate::implementation_support::list_of_types::$module::Id $(, $argument_name: $argument_type)*)-> $return_type where L: ::std::any::Any $(, $Parameter: ::std::any::Any)* {
   use std::any::{Any, TypeId};
   use std::cell::RefCell;
   use std::collections::HashMap;
@@ -241,16 +239,16 @@ macro_rules! time_steward_dynamic_fn {
         {$($body)*}
 
       struct Table <$($Parameter $($bounds)*),*> (HashMap<$Id, fn($($argument_name: $argument_type),*)-> $return_type>,::std::marker::PhantomData <($($Parameter),*)>);
-      impl<$($Parameter $($bounds)*),*> $crate::list_of_types::$($User)* for Table <$($Parameter),*> {
+      impl<$($Parameter $($bounds)*),*> $crate::implementation_support::list_of_types::$($User)* for Table <$($Parameter),*> {
         fn apply<T: $($Trait)*>(&mut self) {
-          self.0.insert($crate::list_of_types::$module::get_id::<T>(), inner::<T $(, $Parameter)*>);
+          self.0.insert($crate::implementation_support::list_of_types::$module::get_id::<T>(), inner::<T $(, $Parameter)*>);
         }
       }
       impl<$($Parameter $($bounds)*),*> Table <$($Parameter),*> {
         fn new()-> Table <$($Parameter),*> {
-          $crate::list_of_types::audit_basics::<$B>();
+          $crate::implementation_support::list_of_types::audit_basics::<$B>();
           let mut result = Table (::std::collections::HashMap::new(),::std::marker::PhantomData);
-          <$B::IncludedTypes as $crate::list_of_types::$($List)*>::apply (&mut result);
+          <$B::IncludedTypes as $crate::implementation_support::list_of_types::$($List)*>::apply (&mut result);
           result
         }
         pub fn get (&self, id: $Id)->fn ($($argument_type),*)->$return_type {
@@ -269,37 +267,6 @@ macro_rules! time_steward_dynamic_fn {
     }
   }
 }
-
-time_steward_dynamic_fn! (pub fn fields_are_equal <B: Basics> (id: ColumnId of <C: Column>, first: &FieldRc, second: &FieldRc)->bool {
-  ::unwrap_field::<C>(first) == ::unwrap_field::<C>(second)
-});
-
-pub fn field_options_are_equal<B: Basics>(column_id: ColumnId,
-                                          first: Option<&FieldRc>,
-                                          second: Option<&FieldRc>)
-                                          -> bool {
-  match (first, second) {
-    (None, None) => true,
-    (Some(first), Some(second)) => fields_are_equal::<B>(column_id, first, second),
-    _ => false,
-  }
-}
-
-use bincode;
-time_steward_dynamic_fn! (pub fn serialize_event <B: Basics, [W: Any + Write]> (id: EventId of <E: Event <Basics = B>>, writer: &mut W, data: & StewardRc <Any>, size_limit: bincode::SizeLimit) ->bincode::serde::SerializeResult <()> {
-  try! (bincode::serde::serialize_into (writer, &id, bincode::SizeLimit::Bounded (8)));
-  try! (bincode::serde::serialize_into (writer, data.downcast_ref::<E>().expect ("id and type don't match"), size_limit));
-  Ok (())
-});
-
-time_steward_dynamic_fn! (pub fn serialize_field <B: Basics, [W: Any + Write]> (id: ColumnId of <C: Column>, writer: &mut W, data: & FieldRc, size_limit: bincode::SizeLimit) ->bincode::serde::SerializeResult <()> {
-  try! (bincode::serde::serialize_into (writer, ::unwrap_field::<C>(data), size_limit));
-  Ok (())
-});
-
-time_steward_dynamic_fn! (pub fn deserialize_field <B: Basics, [R: Any + Read]> (id: ColumnId of <C: Column>, reader: &mut R, size_limit: bincode::SizeLimit) ->bincode::serde::DeserializeResult <FieldRc> {
-  Ok (StewardRc::new (try! (bincode::serde::deserialize_from::<R, C::FieldType> (reader, size_limit))))
-});
 
 pub fn audit_basics<Q: Basics>() {
   use std::collections::HashMap;

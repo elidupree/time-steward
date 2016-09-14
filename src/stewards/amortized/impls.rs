@@ -3,7 +3,7 @@ use super::types::*;
 
 use {SiphashIdGenerator, RowId, FieldId, PredictorId,
      FieldRc, ExtendedTime, Basics};
-use stewards::common;
+use implementation_support::common::{self, field_options_are_equal};
 use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet, btree_map};
 use std::collections::hash_map::Entry;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
@@ -396,7 +396,7 @@ impl<B: Basics> StewardOwned<B> {
       match history.changes.binary_search_by_key(&time, |change| &change.last_change) {
         Ok(index) => {
           assert!(is_replacement);
-          if !::field_options_are_equal::<B>(id.column_id,
+          if !field_options_are_equal::<B>(id.column_id,
                                              history.changes[index].data.as_ref(),
                                              field.data.as_ref()) {
             self.discard_changes(id, &mut history, index, true, snapshots, shared);

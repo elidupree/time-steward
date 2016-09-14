@@ -20,6 +20,17 @@
 //
 //
 
+
+//! <div id="hack"></div>
+/*!
+<script>
+var array = new Uint32Array (2);
+window.crypto.getRandomValues (array);
+function display (u32) {return ("0000000" + u32.toString (16)).substr (-8)}
+document.getElementById ("hack").innerHTML = "PredictorId(0x" + display (array [0]) + display (array [1]) + ")"
+</script>
+*/
+
 #![feature(unboxed_closures, fn_traits, specialization)]
 #![feature(pub_restricted)]
 #![feature (plugin, custom_derive)]
@@ -42,29 +53,29 @@ macro_rules! printlnerr(
     } }
 );
 
-#[macro_use]
-mod api;
-pub use api::*;
-#[macro_use]
-mod list_of_types;
-pub use list_of_types::*;
-
-/// Custom data structures used by TimeSteward implementations.
+/// Used by TimeSteward implementations.
 ///
 /// These are public in case someone wants to try implementing a TimeSteward
-/// outside of this crate, borrowing some of details from my own implementations.
+/// outside of this crate, sharing some of the details with my own implementations.
 /// However, anything inside this module should be
 /// considered very unstable at present.
+#[macro_use]
 pub mod implementation_support {
+  #[macro_use]
+  pub mod list_of_types;
   pub mod insert_only;
   pub mod data_structures;
+  #[macro_use]
+  pub mod common;
 }
 
 #[macro_use]
-pub mod stewards {
-  #[macro_use]
-  pub mod common;
+mod api;
+pub use api::*;
+pub use implementation_support::list_of_types::{ColumnType, EventType, PredictorType};
 
+#[macro_use]
+pub mod stewards {
   pub mod inefficient_flat;
   pub mod memoized_flat;
   pub mod amortized;

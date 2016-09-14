@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::cmp::max;
 use std::marker::PhantomData;
 use Snapshot as SuperSnapshot;
+use implementation_support::common::fields_are_equal;
 
 pub struct Steward<B: Basics, Steward0: TimeSteward<Basics = B>, Steward1: TimeSteward<Basics = B> > (
   Steward0,
@@ -35,7 +36,7 @@ impl<B: Basics, Steward0: TimeSteward<Basics = B>, Steward1: TimeSteward<Basics 
       (None, None) => None,
       (Some (value_0), Some (value_1)) => {
         assert_eq!(value_0.1, value_1.1, "Snapshots returned different last change times for the same field; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
-        assert!(::fields_are_equal::<B> (id.column_id, value_0.0, value_1.0), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
+        assert!(fields_are_equal::<B> (id.column_id, value_0.0, value_1.0), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
         Some (value_0)
       },
       _=> panic! ("One snapshot returned a value and the other didn't; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types")
@@ -95,7 +96,7 @@ where & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>,
     for (id, data) in & self.1 {
       let other_data = fields.get (& id).expect ("field existed in Steward1 snapshot but not Steward0 snapshot");
       assert_eq!(*data .1, other_data .1, "Snapshots returned different last change times for the same field; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
-      assert!(::fields_are_equal::<B> (id.column_id, data .0, & other_data .0), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
+      assert!(fields_are_equal::<B> (id.column_id, data .0, & other_data .0), "Snapshots returned the same field with the same last change times but different data; one or both of the stewards is buggy, or the caller submitted very nondeterministic event/predictor types");
     }
     SnapshotIter:: <'a, B, Steward0, Steward1> {
       iter: (& self.0).into_iter(),

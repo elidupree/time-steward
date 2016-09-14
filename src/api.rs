@@ -32,7 +32,7 @@ use rand::{Rng, ChaChaRng};
 use serde::{Serialize, Deserialize};
 use bincode;
 
-use list_of_types::{ColumnList, EventList, PredictorList};
+use implementation_support::list_of_types::{ColumnList, EventList, PredictorList};
 
 // We need to make sure that DeterministicRandomIds
 // do not vary with CPU endianness.
@@ -442,7 +442,7 @@ pub fn serialize_snapshot<'a, B: Basics, Shot: Snapshot<Basics = B>, W: Any + Wr
   try! (serialize_into (writer, &snapshot.num_fields(), size_limit));
   for (id, (data, changed)) in snapshot {
     try! (serialize_into (writer, &id, size_limit));
-    try! (::list_of_types::serialize_field::<B, W> (id.column_id, writer, data, size_limit));
+    try! (::implementation_support::common::serialize_field::<B, W> (id.column_id, writer, data, size_limit));
     try! (serialize_into (writer, changed, size_limit));
   }
   Ok(())
@@ -461,7 +461,7 @@ pub fn deserialize_snapshot<B: Basics, R: Any + Read>
   for _ in 0..num_fields {
     let id: FieldId = try! (deserialize_from (reader, size_limit));
     let field =
-      try! (::list_of_types::deserialize_field::<B, R> (id.column_id, reader, size_limit));
+      try! (::implementation_support::common::deserialize_field::<B, R> (id.column_id, reader, size_limit));
     let changed = try! (deserialize_from(reader, size_limit));
     println! ("{:?}", (id, (&field, &changed)));
     fields.insert(id, (field, changed));

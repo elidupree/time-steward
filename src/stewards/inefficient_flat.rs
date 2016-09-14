@@ -7,7 +7,7 @@
 
 use ::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, Column, ExtendedTime, Basics,
        TimeSteward, FiatEventOperationError, ValidSince, StewardRc, FieldRc, Accessor};
-use stewards::common::{self, Filter, DynamicEventFn};
+use implementation_support::common::{self, Filter, DynamicEventFn};
 use std::collections::{HashMap, BTreeMap};
 use rand::Rng;
 use std::cmp::max;
