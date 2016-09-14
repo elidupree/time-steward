@@ -2,6 +2,8 @@
 name = "time_steward"
 version = "0.1.0"
 authors = ["Eli Dupree <vcs@elidupree.com>"]
+repository = "https://github.com/elidupree/time-steward"
+readme = "README.md"
 license = "MIT"
 
 [dependencies]
