@@ -279,8 +279,8 @@ time_steward_event! (
   }
 );
 
-time_steward_predictor! (struct CollisionPredictor, Basics, PredictorId(0x5375592f4da8682c), Nearness::column_id(), collision_predictor);
-time_steward_predictor! (struct BoundaryPredictor, Basics, PredictorId(0x87d8a4a095350d30), Circle::column_id(), boundary_predictor);
+time_steward_predictor! (struct CollisionPredictor, Basics, PredictorId(0x5375592f4da8682c), watching Nearness, collision_predictor);
+time_steward_predictor! (struct BoundaryPredictor, Basics, PredictorId(0x87d8a4a095350d30), watching Circle, boundary_predictor);
 
 time_steward_event! (
   struct Initialize {}, Basics, EventId (0xa2a17317b84f96e5),

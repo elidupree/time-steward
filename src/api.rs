@@ -177,12 +177,16 @@ pub trait Predictor
   type Basics: Basics;
   fn call<PA: PredictorAccessor<Basics = Self::Basics>>(accessor: &mut PA, id: RowId);
   fn predictor_id() -> PredictorId;
-  fn column_id() -> ColumnId;
+  type WatchedColumn: Column;
 }
 
 #[macro_export]
 macro_rules! time_steward_predictor {
-  ([$($privacy:tt)*] struct $Struct: ident <$([$Parameter: ident $($bounds:tt)*]),*>, $B: ty, $predictor_id: expr, $column_id: expr, | $accessor_name: ident, $row_name: ident | $contents: expr) => {
+  ([$($privacy:tt)*] struct $Struct: ident
+    <$([$Parameter: ident $($bounds:tt)*]),*>,
+    $B: ty, $predictor_id: expr, watching $Column: ty,
+    | $accessor_name: ident, $row_name: ident | $contents: expr) => {
+    
     #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
     $($privacy)* struct $Struct<$($Parameter $($bounds)*),*>(::std::marker::PhantomData <($($Parameter),*)>);
     impl<$($Parameter $($bounds)*),*> $crate::Predictor for $Struct <$($Parameter),*> {
@@ -191,14 +195,19 @@ macro_rules! time_steward_predictor {
         $contents
       }
       fn predictor_id()->$crate::PredictorId {$predictor_id}
-      fn column_id()->$crate::ColumnId {$column_id}
+      type WatchedColumn = $Column;
     }
   };
-  ([$($privacy:tt)*] struct $Struct: ident <$([$Parameter: ident $($bounds:tt)*]),*>, $B: ty, $predictor_id: expr, $column_id: expr, $generic_function: ident) => {
-    time_steward_predictor! ([$($privacy)*] struct $Struct <$([$Parameter $($bounds)*]),*>, $B, $predictor_id, $column_id, | accessor, id | $generic_function::<$($Parameter),*>(accessor, id));
+  ([$($privacy:tt)*] struct $Struct: ident
+    <$([$Parameter: ident $($bounds:tt)*]),*>,
+    $B: ty, $predictor_id: expr, watching $Column: ty,
+    $generic_function: ident) => {
+    time_steward_predictor! ([$($privacy)*] struct $Struct <$([$Parameter $($bounds)*]),*>, $B, $predictor_id, watching $Column, | accessor, id | $generic_function::<$($Parameter),*>(accessor, id));
   };
-  ([$($privacy:tt)*] struct $Struct: ident, $B: ty, $predictor_id: expr, $column_id: expr, $($rest:tt)*) => {
-    time_steward_predictor! ([$($privacy)*] struct $Struct <>, $B, $predictor_id, $column_id, $($rest)*);
+  ([$($privacy:tt)*] struct $Struct: ident,
+    $B: ty, $predictor_id: expr, watching $Column: ty,
+    $($rest:tt)*) => {
+    time_steward_predictor! ([$($privacy)*] struct $Struct <>, $B, $predictor_id, watching $Column, $($rest)*);
   };
   (pub struct $($rest:tt)*) => {
     time_steward_predictor! ([pub] struct $($rest)*);

@@ -34,7 +34,7 @@ impl<B: Basics> Column for Cell<B> {
 // (which are implementation details) are not visible elsewhere.
 mod hack {
   use super::*;
-  use {RowId, PredictorId, EventId, Column};
+  use {RowId, PredictorId, EventId};
   #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
   pub struct Member<B: Basics> {
     pub row: RowId,
@@ -47,25 +47,26 @@ mod hack {
     EventId (<B as super::super::Basics>::nearness_column_id().0 ^ 0x1be13fa07975f552),
     | &self, mutator | {
   // TODO: optimize remove-then-insert
-        remove::<B,_> (mutator, self.member.row, self.member.detector, self.id, self.member.bounds);
-        insert::<B,_> (mutator, self.member.row, self.member.detector);
-      });
-  time_steward_predictor! {
-  pub struct BoundsChangePredictor <[B: Basics]>,
-  <B as super::super::Basics>::StewardBasics,
-  PredictorId (<B as super::super::Basics>::nearness_column_id().0 ^ 0x3686689daa651bf3),
-  Member::<B>::column_id(),
-  | accessor, id | {
-    let member;
-    {
-      let member_reference = accessor.get::<Member <B>> (id).expect ("row is missing the field the predictor triggered on");
-      member = (*member_reference).clone();
+      remove::<B,_> (mutator, self.member.row, self.member.detector, self.id, self.member.bounds);
+      insert::<B,_> (mutator, self.member.row, self.member.detector);
     }
-    if let Some (time) = B::when_escapes (accessor, member.row, member.bounds, member.detector) {
-      accessor.predict_at_time (time, BoundsChange::new (id, member));
+  );
+  time_steward_predictor! {
+    pub struct BoundsChangePredictor <[B: Basics]>,
+    <B as super::super::Basics>::StewardBasics,
+    PredictorId (<B as super::super::Basics>::nearness_column_id().0 ^ 0x3686689daa651bf3),
+    watching Member<B>,
+    | accessor, id | {
+      let member;
+      {
+        let member_reference = accessor.get::<Member <B>> (id).expect ("row is missing the field the predictor triggered on");
+        member = (*member_reference).clone();
+      }
+      if let Some (time) = B::when_escapes (accessor, member.row, member.bounds, member.detector) {
+        accessor.predict_at_time (time, BoundsChange::new (id, member));
+      }
     }
   }
-}
 }
 use self::hack::{Member, BoundsChange, BoundsChangePredictor};
 

@@ -90,7 +90,7 @@ time_steward_common_dynamic_callback_structs! ($M, $PA, $DynamicEvent, $DynamicP
 
 mod __time_steward_make_dynamic_callbacks_impl {
 
-use $crate::{Basics, Event, Predictor, RowId, ColumnId, EventId, PredictorId, StewardRc, PredictorList, predictor_list};
+use $crate::{Basics, Column, Event, Predictor, RowId, ColumnId, EventId, PredictorId, StewardRc, PredictorList, predictor_list};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
@@ -110,7 +110,7 @@ pub trait DynamicPredictorTrait <B: Basics>: for <'a, 'b> Fn(& 'a mut super:: $P
 impl<B: Basics, P: Predictor<Basics = B >> DynamicPredictorTrait <B> for DynamicPredictorFn <P> {
 // Implementing these is redundant with restoring the ids in DynamicPredictor itself. TODO: resolve
   fn predictor_id(&self)->PredictorId {P::predictor_id()}
-  fn column_id(&self)->ColumnId {P::column_id()}
+  fn column_id(&self)->ColumnId {P::WatchedColumn::column_id()}
 }
 
 pub type DynamicEvent <B: Basics> = StewardRc <DynamicEventTrait <B, Output =()>>;
@@ -143,7 +143,7 @@ impl<B: Basics> predictor_list::User <B> for StandardSettings <B> {
   fn apply <P: Predictor <Basics = B>> (&mut self) {
     let predictor = DynamicPredictor {
       predictor_id: P::predictor_id(),
-      column_id: P::column_id(),
+      column_id: P::WatchedColumn::column_id(),
       function: StewardRc::new (DynamicPredictorFn::<P>::new ()),
       _marker: PhantomData,
     };

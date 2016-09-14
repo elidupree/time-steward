@@ -78,7 +78,7 @@ A Predictor is essentially a function that examines the current fields, then rep
 time_steward_predictor!{
   struct BallHitsWallPredictor,
   ...
-  Ball,
+  watching Ball,
   |accessor, ball_row_id| {
     let ball: &Ball = accessor.get::<Ball>(ball_row_id);
     ... // Examine various fields and compute the time when the ball hits the wall

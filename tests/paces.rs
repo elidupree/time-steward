@@ -43,7 +43,7 @@ impl steward::Basics for Basics {
     fn column_id()->ColumnId {ColumnId (0x8e07f5045b91d636)}
   }
   
-time_steward_predictor! (struct Predictor, Basics, PredictorId (0x59c5a4cce2789300), ColumnHack::column_id(), | accessor, id | {
+time_steward_predictor! (struct Predictor, Basics, PredictorId (0x59c5a4cce2789300), watching ColumnHack, | accessor, id | {
       let whatever = accessor.get::<ColumnHack> (id).unwrap().clone();
       for index in 0.. (id.data() [0] ^ accessor.constants().data() [0]).leading_zeros() {
         let data_0 = DeterministicRandomId::new (& (index, whatever, id));

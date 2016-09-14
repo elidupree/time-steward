@@ -57,7 +57,7 @@ fn display_snapshot<S: ::Snapshot<Basics = Basics>>(snapshot: &S) {
 }
 
 time_steward_predictor! (
-  struct Shaker, Basics, PredictorId(0x0e7f27c7643f8167), Philosopher::column_id(),
+  struct Shaker, Basics, PredictorId(0x0e7f27c7643f8167), watching Philosopher,
   | pa, whodunnit | {
 // println!("Planning {}", whodunnit);
   let me = pa.get::<Philosopher>(whodunnit).unwrap().clone();

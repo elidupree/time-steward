@@ -328,9 +328,9 @@ pub fn audit_basics<Q: Basics>() {
   impl<B: Basics> predictor_list::User<B> for Table<B> {
     fn apply<T: Predictor>(&mut self) {
       self.insert_id(T::predictor_id().0, 2);
-      match self.0.get(&T::column_id().0) {
+      match self.0.get(&T::WatchedColumn::column_id().0) {
         Some(&0) => (),
-        _=>panic! ("Predictor 0x{:016x} corresponds to column 0x{:016x}, but no such column is listed", T::predictor_id().0, T::column_id().0),
+        _=>panic! ("Predictor 0x{:016x} corresponds to column 0x{:016x}, but no such column is listed", T::predictor_id().0, T::WatchedColumn::column_id().0),
       }
     }
   }
