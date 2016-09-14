@@ -66,6 +66,8 @@ impl Column for Ball { ... }
 
 Thus, the field data only needs to change when the forces on the ball change, such as when it runs into an object.
 
+(In practice, the TimeSteward library provides implementations of a few trajectory types, so you may not have to implement this yourself. We will continue expanding the support libraries as development continues.)
+
 ### Predictors and Events
 
 If the fields don't normally change over time, how do we know when to make things happen?

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use rand::{ChaChaRng, SeedableRng};
 use {DeterministicRandomId, PredictorId, TimeId, RowId, FieldId, SiphashIdGenerator,
-     IterationType, Basics, ExtendedTime, GenericExtendedTime, Predictor, Event,
+     IterationType, Basics, ExtendedTime, Predictor, Event,
      PredictorAccessor, Mutator};
 use std::marker::PhantomData;
 
@@ -271,10 +271,10 @@ macro_rules! time_steward_common_rng_methods_for_mutator {
 
 
 
-pub fn extended_time_of_fiat_event<BaseTime: Ord>(time: BaseTime,
+pub fn extended_time_of_fiat_event<B: Basics>(time: B::Time,
                                                   id: TimeId)
-                                                  -> GenericExtendedTime<BaseTime> {
-  GenericExtendedTime {
+                                                  -> ExtendedTime<B> {
+  ExtendedTime {
     base: time,
     iteration: 0,
     id: id.for_fiat_event_internal(),
@@ -288,13 +288,13 @@ pub fn time_id_for_predicted_event(predictor_id: PredictorId,
                                    -> TimeId {
   TimeId::new(&(predictor_id, row_id, iteration, dependencies_hash))
 }
-pub fn next_extended_time_of_predicted_event<BaseTime: Ord>
+pub fn next_extended_time_of_predicted_event<B: Basics>
   (predictor_id: PredictorId,
    row_id: RowId,
    dependencies_hash: DeterministicRandomId,
-   event_base_time: BaseTime,
-   from: &GenericExtendedTime<BaseTime>)
-   -> Option<GenericExtendedTime<BaseTime>> {
+   event_base_time: B::Time,
+   from: &ExtendedTime<B>)
+   -> Option<ExtendedTime<B>> {
   let (iteration, id) = match event_base_time.cmp(&from.base) {
     Ordering::Less => return None, // short-circuit
     Ordering::Greater => {
@@ -313,7 +313,7 @@ pub fn next_extended_time_of_predicted_event<BaseTime: Ord>
       }
     }
   };
-  Some(GenericExtendedTime {
+  Some(ExtendedTime {
     base: event_base_time,
     iteration: iteration,
     id: id,

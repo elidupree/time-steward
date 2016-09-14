@@ -256,7 +256,7 @@ macro_rules! time_steward_event {
 This is intended to be implemented on an empty struct. Requiring Clone etc. is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 */
 pub trait Basics
-  : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug + Default {
+  : Any + Send + Sync + Clone + Ord + Hash + Serialize + Deserialize + Debug + Default {
   type Time: Any + Send + Sync + Clone + Ord + Hash + Serialize + Deserialize + Debug;
   type Constants: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug;
   type IncludedTypes: ColumnList + EventList<Self> + PredictorList<Self>;
@@ -264,12 +264,11 @@ pub trait Basics
     false
   }
 }
-pub type ExtendedTime<B: Basics> = GenericExtendedTime<B::Time>;
 
 pub type IterationType = u32;
 #[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
-pub struct GenericExtendedTime<Base: Ord> {
-  pub base: Base,
+pub struct ExtendedTime<B: Basics> {
+  pub base: B::Time,
   pub iteration: IterationType,
   pub id: TimeId,
 }

@@ -30,7 +30,7 @@ fn thingy <B, H: Hack <B>>() where for <'a> & 'a H::Whatever: IntoIterator <Item
 fn chunk() {thingy::<i32, Wrapper <i32, Wrapper <i32, Original<i32>>>>();}
 */
 
-#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug, Default)]
+#[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default)]
 struct Basics;
 impl steward::Basics for Basics {
   type Time = DeterministicRandomId;
