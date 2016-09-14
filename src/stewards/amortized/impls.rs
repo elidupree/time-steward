@@ -9,7 +9,7 @@ use std::collections::hash_map::Entry;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::cell::RefCell;
 use std::mem;
-use insert_only;
+use implementation_support::insert_only;
 
 pub fn invalidate_execution<B: Basics>(time: &ExtendedTime<B>,
                                        execution: &mut EventExecutionState,

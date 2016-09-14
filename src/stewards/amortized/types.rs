@@ -43,8 +43,8 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::ops::Drop;
 use rand::Rng;
-use insert_only;
-use data_structures::partially_persistent_nonindexed_set;
+use implementation_support::insert_only;
+use implementation_support::data_structures::partially_persistent_nonindexed_set;
 
 pub type SnapshotIdx = u64;
 

@@ -15,8 +15,8 @@ use std::cell::RefCell;
 use std::ops::Drop;
 use rand::Rng;
 use std::cmp::max;
-use insert_only;
-use data_structures::partially_persistent_nonindexed_set;
+use implementation_support::insert_only;
+use implementation_support::data_structures::partially_persistent_nonindexed_set;
 
 type SnapshotIdx = u64;
 

@@ -49,8 +49,16 @@ pub use api::*;
 mod list_of_types;
 pub use list_of_types::*;
 
-mod insert_only;
-pub mod data_structures;
+/// Custom data structures used by TimeSteward implementations.
+///
+/// These are public in case someone wants to try implementing a TimeSteward
+/// outside of this crate, borrowing some of details from my own implementations.
+/// However, anything inside this module should be
+/// considered very unstable at present.
+pub mod implementation_support {
+  pub mod insert_only;
+  pub mod data_structures;
+}
 
 #[macro_use]
 pub mod stewards {
