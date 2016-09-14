@@ -9,9 +9,11 @@ license = "MIT"
 [dependencies]
 rand = "0.3"
 nalgebra = "0.8.2"
-glium = "0.15"
 serde = "0.8"
 serde_macros = "0.8"
 quickcheck = "0.3"
 #quickcheck_macros = "0.2"
 bincode = "0.6"
+
+[dev-dependencies]
+glium = "0.15"

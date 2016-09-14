@@ -39,8 +39,6 @@ document.getElementById ("hack").innerHTML = "PredictorId(0x" + display (array [
 
 extern crate rand;
 extern crate nalgebra;
-#[macro_use]
-extern crate glium;
 extern crate serde;
 extern crate bincode;
 #[macro_use]
@@ -90,9 +88,4 @@ pub mod support {
   pub mod rounding_error_tolerant_math;
   pub mod time_functions;
   pub mod collision_detection;
-}
-
-pub mod examples {
-  pub mod handshakes;
-  pub mod bouncy_circles;
 }

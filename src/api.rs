@@ -251,12 +251,22 @@ macro_rules! time_steward_event {
 }
 
 
+#[macro_export]
+macro_rules! time_steward_basics {
+(struct $Basics: ident {$($contents:tt)*}) => {
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default)]
+struct $Basics;
+impl $crate::Basics for $Basics {
+$($contents)*
+}
+}}
+
 
 /**
 This is intended to be implemented on an empty struct. Requiring Clone etc. is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 */
 pub trait Basics
-  : Any + Send + Sync + Clone + Ord + Hash + Serialize + Deserialize + Debug + Default {
+  : Any + Send + Sync + Copy + Clone + Ord + Hash + Serialize + Deserialize + Debug + Default {
   type Time: Any + Send + Sync + Clone + Ord + Hash + Serialize + Deserialize + Debug;
   type Constants: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug;
   type IncludedTypes: ColumnList + EventList<Self> + PredictorList<Self>;
