@@ -78,6 +78,9 @@ impl<'a, P: Predictor, PA: PredictorAccessor <Basics = P::Basics>> FnOnce <(& 'a
   }
 }
 
+// Eventually, these implementation detail macros should not be hackily doc (hidden),
+// but instead be part of a different crate dedicated to time_steward implementation details.
+#[doc (hidden)]
 #[macro_export]
 macro_rules! time_steward_common_dynamic_callback_structs {
 
@@ -190,6 +193,7 @@ impl<B: Basics, E> GenericPredictorAccessor<B, E> {
     }
   }
 }
+#[doc (hidden)]
 #[macro_export]
 macro_rules! time_steward_common_accessor_methods_for_predictor_accessor {
   ($B: ty, $get: ident) => {
@@ -210,6 +214,7 @@ macro_rules! time_steward_common_accessor_methods_for_predictor_accessor {
     }
   }
 }
+#[doc (hidden)]
 #[macro_export]
 macro_rules! time_steward_common_predictor_accessor_methods_for_predictor_accessor {
   ($B: ty, $DynamicEventFn: ident) => {
@@ -241,12 +246,14 @@ impl<B: Basics> GenericMutator<B> {
     }
   }
 }
+#[doc (hidden)]
 #[macro_export]
 macro_rules! time_steward_common_accessor_methods_for_mutator {
   ($B: ty) => {
     fn unsafe_now(& self)->& <$B as $crate::Basics>::Time {& self.generic.now.base}
   }
 }
+#[doc (hidden)]
 #[macro_export]
 macro_rules! time_steward_common_mutator_methods_for_mutator {
   ($B: ty) => {
@@ -254,6 +261,7 @@ macro_rules! time_steward_common_mutator_methods_for_mutator {
     fn gen_id(&mut self) -> RowId {RowId::from_rng (&mut self.generic.generator)}
   }
 }
+#[doc (hidden)]
 #[macro_export]
 macro_rules! time_steward_common_rng_methods_for_mutator {
   ($B: ty) => {
