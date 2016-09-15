@@ -8,7 +8,7 @@ extern crate rand;
 extern crate bincode;
 
 use time_steward::stewards::crossverified as s;
-use time_steward::{TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, EventId,
+use time_steward::{TimeSteward, TimeStewardFromConstants, TimeStewardFromSnapshot, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, EventId,
      ColumnType, EventType, PredictorType};
 use time_steward::stewards::amortized;
 use time_steward::stewards::memoized_flat;
@@ -135,7 +135,7 @@ time_steward_event! (
 );
 
 pub fn testfunc() {
-  let mut stew: Steward = TimeSteward::new_empty(());
+  let mut stew: Steward = Steward::from_constants(());
 
   stew.insert_fiat_event(0,
                        DeterministicRandomId::new(&0x32e1570766e768a7u64),
@@ -145,7 +145,7 @@ pub fn testfunc() {
   let mut snapshots = Vec::new();
   for increment in 1..21 {
     snapshots.push(stew.snapshot_before(&(increment * 100i64)));
-    stew = TimeSteward::from_snapshot::<<Steward as TimeSteward>::Snapshot> (snapshots.last().unwrap().as_ref().unwrap());
+    stew = Steward::from_snapshot::<<Steward as TimeSteward>::Snapshot> (snapshots.last().unwrap().as_ref().unwrap());
   }
   for snapshot in snapshots.iter_mut()
     .map(|option| option.as_mut().expect("all these snapshots should have been valid")) {
@@ -160,7 +160,7 @@ pub fn testfunc() {
     println!("{:?}", deserialized);
     display_snapshot(&deserialized);
     use time_steward::MomentaryAccessor;
-    display_snapshot(&<Steward as TimeSteward>::from_snapshot::<time_steward::FiatSnapshot<Basics>>(&deserialized).snapshot_before(deserialized.now()).unwrap());
+    display_snapshot(&Steward::from_snapshot::<time_steward::FiatSnapshot<Basics>>(&deserialized).snapshot_before(deserialized.now()).unwrap());
   }
   // panic!("anyway")
 }

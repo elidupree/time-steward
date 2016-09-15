@@ -257,55 +257,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
           Some(ref time) => ValidSince::After(time.base.clone()),
         })
   }
-
-  fn new_empty(constants: B::Constants) -> Self {
-    StewardImpl {
-      state: StewardState {
-        last_event: None,
-        invalid_before: ValidSince::TheBeginning,
-        field_states: HashMap::new(),
-        fiat_events: BTreeMap::new(),
-      },
-      settings: StewardRc::new(StewardSettings {
-        settings: Settings::<B>::new(),
-        constants: constants,
-      }),
-    }
-  }
-
-  fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: &'a S) -> Self
-    where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
-  {
-    let mut result = StewardImpl {
-      state: StewardState {
-        last_event: None,
-        invalid_before: ValidSince::Before(snapshot.now().clone()),
-        field_states: HashMap::new(),
-        fiat_events: BTreeMap::new(),
-      },
-      settings: StewardRc::new(StewardSettings {
-        settings: Settings::<B>::new(),
-        constants: snapshot.constants().clone(),
-      }),
-    };
-    result.state.field_states = snapshot.into_iter()
-      .map(|(id, stuff)| {
-        if match result.state.last_event {
-          None => true,
-          Some(ref time) => stuff.1 > time,
-        } {
-          result.state.last_event = Some(stuff.1.clone());
-        }
-        (id,
-         Field {
-          data: stuff.0.clone(),
-          last_change: stuff.1.clone(),
-        })
-      })
-      .collect();
-    result
-  }
-
+  
   fn insert_fiat_event<E: ::Event<Basics = B>>(&mut self,
                                                time: B::Time,
                                                id: DeterministicRandomId,
@@ -346,3 +298,55 @@ impl<B: Basics> TimeSteward for Steward<B> {
     })
   }
 }
+
+impl<B: Basics> ::TimeStewardFromConstants for Steward<B> {
+  fn from_constants(constants: B::Constants) -> Self {
+    StewardImpl {
+      state: StewardState {
+        last_event: None,
+        invalid_before: ValidSince::TheBeginning,
+        field_states: HashMap::new(),
+        fiat_events: BTreeMap::new(),
+      },
+      settings: StewardRc::new(StewardSettings {
+        settings: Settings::<B>::new(),
+        constants: constants,
+      }),
+    }
+  }
+}
+impl<B: Basics> ::TimeStewardFromSnapshot for Steward<B> {
+  fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: &'a S) -> Self
+    where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
+  {
+    let mut result = StewardImpl {
+      state: StewardState {
+        last_event: None,
+        invalid_before: ValidSince::Before(snapshot.now().clone()),
+        field_states: HashMap::new(),
+        fiat_events: BTreeMap::new(),
+      },
+      settings: StewardRc::new(StewardSettings {
+        settings: Settings::<B>::new(),
+        constants: snapshot.constants().clone(),
+      }),
+    };
+    result.state.field_states = snapshot.into_iter()
+      .map(|(id, stuff)| {
+        if match result.state.last_event {
+          None => true,
+          Some(ref time) => stuff.1 > time,
+        } {
+          result.state.last_event = Some(stuff.1.clone());
+        }
+        (id,
+         Field {
+          data: stuff.0.clone(),
+          last_change: stuff.1.clone(),
+        })
+      })
+      .collect();
+    result
+  }
+}
+impl<B: Basics> ::CanonicalTimeSteward for Steward<B> {}

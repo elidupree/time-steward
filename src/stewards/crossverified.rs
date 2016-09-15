@@ -5,7 +5,7 @@
 
 
 use {DeterministicRandomId, FieldId, ExtendedTime, Basics, FieldRc, TimeSteward,
-     IncrementalTimeSteward, FiatEventOperationError, ValidSince};
+     IncrementalTimeSteward, TimeStewardFromConstants, TimeStewardFromSnapshot, FullTimeSteward, CanonicalTimeSteward, FiatEventOperationError, ValidSince};
 use std::collections::HashMap;
 use std::cmp::max;
 use std::marker::PhantomData;
@@ -112,29 +112,7 @@ impl<B: Basics, Steward0: TimeSteward<Basics = B> , Steward1: TimeSteward<Basics
   fn valid_since(&self) -> ValidSince<B::Time> {
     max (self.0.valid_since(), self.1.valid_since())
   }
-  fn new_empty(constants: B::Constants) -> Self {
-    let result = Steward::<B, Steward0, Steward1> (
-      TimeSteward::new_empty (constants.clone()),
-      TimeSteward::new_empty (constants),
-      PhantomData,
-    );
-    assert!(result.0.valid_since() == ValidSince::TheBeginning, "Steward0 broke the ValidSince rules");
-    assert!(result.1.valid_since() == ValidSince::TheBeginning, "Steward1 broke the ValidSince rules");
-    result
-  }
-
-  fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: & 'a S)
-                                              -> Self
-                                              where & 'a S: IntoIterator <Item = ::SnapshotEntry <'a, B>> {
-    let result = Steward (
-      Steward0::from_snapshot::<'a, S>(snapshot),
-      Steward1::from_snapshot::<'a, S>(snapshot),
-      PhantomData,
-    );
-    assert!(result.0.valid_since() == ValidSince::Before (snapshot.now().clone()), "Steward0 broke the ValidSince rules");
-    assert!(result.1.valid_since() == ValidSince::Before (snapshot.now().clone()), "Steward1 broke the ValidSince rules");
-    result
-  }
+  
   fn insert_fiat_event <E: ::Event <Basics = B>> (&mut self,
                        time: B::Time,
                        id: DeterministicRandomId,
@@ -199,6 +177,33 @@ impl<B: Basics, Steward0: TimeSteward<Basics = B> , Steward1: TimeSteward<Basics
   }
 }
 
+impl<B: Basics, Steward0: TimeStewardFromConstants <Basics = B> , Steward1: TimeStewardFromConstants <Basics = B> > TimeStewardFromConstants for Steward<B, Steward0, Steward1> {
+  fn from_constants(constants: B::Constants) -> Self {
+    let result = Steward::<B, Steward0, Steward1> (
+      Steward0::from_constants(constants.clone()),
+      Steward1::from_constants(constants),
+      PhantomData,
+    );
+    assert!(result.0.valid_since() == ValidSince::TheBeginning, "Steward0 broke the ValidSince rules");
+    assert!(result.1.valid_since() == ValidSince::TheBeginning, "Steward1 broke the ValidSince rules");
+    result
+  }
+}
+impl<B: Basics, Steward0: TimeStewardFromSnapshot <Basics = B> , Steward1: TimeStewardFromSnapshot <Basics = B> > TimeStewardFromSnapshot for Steward<B, Steward0, Steward1> {
+  fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: & 'a S)
+                                              -> Self
+                                              where & 'a S: IntoIterator <Item = ::SnapshotEntry <'a, B>> {
+    let result = Steward (
+      Steward0::from_snapshot::<'a, S>(snapshot),
+      Steward1::from_snapshot::<'a, S>(snapshot),
+      PhantomData,
+    );
+    assert!(result.0.valid_since() == ValidSince::Before (snapshot.now().clone()), "Steward0 broke the ValidSince rules");
+    assert!(result.1.valid_since() == ValidSince::Before (snapshot.now().clone()), "Steward1 broke the ValidSince rules");
+    result
+  }
+}
+
 
 impl<B: Basics, Steward0: IncrementalTimeSteward <Basics = B>, Steward1: IncrementalTimeSteward <Basics = B>> ::IncrementalTimeSteward for Steward<B, Steward0, Steward1> {
   fn step(&mut self) {
@@ -229,3 +234,6 @@ impl<B: Basics, Steward0: IncrementalTimeSteward <Basics = B>, Steward1: Increme
     }
   }
 }
+
+impl<B: Basics, Steward0: FullTimeSteward <Basics = B>, Steward1: FullTimeSteward <Basics = B>> FullTimeSteward for Steward<B, Steward0, Steward1> {}
+impl<B: Basics, Steward0: CanonicalTimeSteward <Basics = B>, Steward1: CanonicalTimeSteward <Basics = B>> CanonicalTimeSteward for Steward<B, Steward0, Steward1> {}

@@ -591,25 +591,10 @@ pub trait TimeSteward: Any {
   TimeSteward implementors are permitted, but not required, to discard old data in order to save memory. This may make the TimeSteward unusable at some points in its history.
   
   All implementors must obey certain restrictions on how other TimeSteward methods may change the result of valid_since(). Implementors may have their own methods that can alter this in customized ways, which should be documented with those individual methods.
+  
+
   */
   fn valid_since(&self) -> ValidSince<<<Self as TimeSteward>::Basics as Basics>::Time>;
-
-  /**
-  Creates a new, empty TimeSteward.
-  
-  new_empty().valid_since() must equal TheBeginning.
-  */
-  fn new_empty(constants: <<Self as TimeSteward>::Basics as Basics>::Constants) -> Self;
-
-  /**
-  Creates a new TimeSteward from a snapshot.
-  
-  from_snapshot().valid_since() must equal Before(snapshot.now()),
-  and must never go lower than that.
-  */
-  fn from_snapshot<'a, S: Snapshot<Basics = Self::Basics>>(snapshot: &'a S) -> Self
-    where &'a S: IntoIterator<Item = SnapshotEntry<'a, Self::Basics>>;
-
 
   /**
   Inserts a fiat event at some point in the history.
@@ -650,6 +635,28 @@ pub trait TimeSteward: Any {
   fn snapshot_before(&mut self, time: &<<Self as TimeSteward>::Basics as Basics>::Time) -> Option<Self::Snapshot>;
 }
 
+
+pub trait TimeStewardFromConstants: TimeSteward {
+  /**
+  Creates a new, empty TimeSteward.
+  
+  from_constants().valid_since() must equal TheBeginning.
+  */
+  fn from_constants(constants: <<Self as TimeSteward>::Basics as Basics>::Constants) -> Self;
+}
+  
+pub trait TimeStewardFromSnapshot: TimeSteward {
+  /**
+  Creates a new TimeSteward from a snapshot.
+  
+  from_snapshot(snapshot).valid_since() must equal Before(snapshot.now()),
+  and must never go lower than that.
+  */
+  fn from_snapshot<'a, S: Snapshot<Basics = Self::Basics>>(snapshot: &'a S) -> Self
+    where &'a S: IntoIterator<Item = SnapshotEntry<'a, Self::Basics>>;
+}
+
+
 pub trait IncrementalTimeSteward: TimeSteward {
   fn step(&mut self);
   fn updated_until_before(&self) -> Option<<<Self as TimeSteward>::Basics as Basics>::Time>;
@@ -657,7 +664,7 @@ pub trait IncrementalTimeSteward: TimeSteward {
 
 use std::collections::BTreeMap;
 
-pub trait SimpleSynchronizableTimeSteward: TimeSteward {
+pub trait SimpleSynchronizableTimeSteward: TimeStewardFromConstants + FullTimeSteward {
   fn begin_checks (&mut self, start: <<Self as TimeSteward>::Basics as Basics>::Time, stride: <<Self as TimeSteward>::Basics as Basics>::Time);
   fn checksum(&mut self, chunk: i64) -> u64;
   fn debug_dump(&self, chunk: i64) -> BTreeMap<ExtendedTime<<Self as TimeSteward>::Basics>, u64>;
@@ -666,6 +673,16 @@ pub trait SimpleSynchronizableTimeSteward: TimeSteward {
 
 /// A marker trait indicating that the TimeSteward promises that calling snapshot_before() or step() will not change valid_since()
 pub trait FullTimeSteward: TimeSteward {}
+/// A marker trait. Every CanonicalTimeSteward implementor must behave exactly the same way.
+///
+/// That is, given any Steward0: CanonicalTimeSteward and Steward1: CanonicalTimeSteward,
+/// and any sequence of inputs that is valid for both Steward0 and Steward1,
+/// all outputs of from_snapshot() must be identical.
+///
+/// A TimeSteward that does not implement CanonicalTimeSteward may behave differently.
+/// For example, simply_synchronized::Steward transforms its inputs and includes input
+/// from the remote client, without that input being explicitly passed to it by the local client.
+pub trait CanonicalTimeSteward: TimeSteward {}
 
 #[cfg (test)]
 mod tests {

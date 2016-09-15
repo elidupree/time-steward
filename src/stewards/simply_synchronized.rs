@@ -12,7 +12,7 @@ use std::io::{Read, Write};
 use std::any::Any;
 use std::ops::{Sub, Mul, Div};
 use {ExtendedTime, Basics, TimeSteward, SimpleSynchronizableTimeSteward, DeterministicRandomId,
-     EventId, Event, FiatEventOperationError};
+     EventId, Event, FiatEventOperationError, ValidSince};
 use std::sync::mpsc::{channel, Sender, Receiver};
 use bincode;
 
@@ -35,6 +35,7 @@ pub struct Steward<B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics =
   receiver: Receiver<Message<B>>,
   start: B::Time,
   stride: B::Time,
+  valid_since: ValidSince <B::Time>,
   settled_through: i64,
   other_settled_through: i64,
   checksums: Vec<u64>,
@@ -75,7 +76,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
         };
       }
     });
-    let mut steward: Steward0 = TimeSteward::new_empty (constants);
+    let mut steward: Steward0 = Steward0::from_constants (constants);
     steward.begin_checks (start.clone(), stride.clone());
     Steward {
       steward: steward,
@@ -83,6 +84,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
       sender: send_away,
       receiver: receive_back,
       start: start, stride: stride,
+      valid_since: ValidSince::TheBeginning,
       settled_through: -1, other_settled_through: -1,
       checksums: Vec::new(),
       dump: None,
@@ -158,6 +160,10 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
   }
 
   pub fn settle_before (&mut self, time: B::Time) {
+    if self.valid_since() > time {
+      return;
+    }
+    self.valid_since = ValidSince::Before (time.clone());
     let settled_chunk: i64 = (time - self. start.clone())/self.stride.clone() - 1;
     self.settled_through =::std::cmp::max (settled_chunk, self.settled_through);
     self.sender.send (Message::Settled (self.settled_through)).unwrap();
@@ -182,12 +188,25 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
       }
     }
   }
+}
 
-  pub fn insert_fiat_event<E: ::Event<Basics = B>>(&mut self,
+impl<B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics = B>> TimeSteward for Steward<B, Steward0>
+where  B::Time: Sub <Output = B::Time> + Mul<i64, Output = B::Time> + Div<B::Time, Output = i64> {
+  type Basics = B;
+  type Snapshot = Steward0::Snapshot;
+  
+  fn valid_since(&self) -> ValidSince<B::Time> {
+    self.valid_since.clone()
+  }
+    
+  fn insert_fiat_event<E: ::Event<Basics = B>>(&mut self,
                                         time: B::Time,
                                         id: DeterministicRandomId,
                                         event: E)
                                         -> Result<(), FiatEventOperationError> {
+    if self.valid_since() > time {
+      return Err(FiatEventOperationError::InvalidTime);
+    }
     let qualified_id = DeterministicRandomId::new (& (id, self .id));
     let result = self.steward.insert_fiat_event (time.clone(), qualified_id, event.clone());
     match result {
@@ -198,10 +217,13 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
     result
   }
 
-  pub fn remove_fiat_event(&mut self,
+  fn remove_fiat_event(&mut self,
                       time: &B::Time,
                       id: DeterministicRandomId)
                       -> Result<(), FiatEventOperationError> {
+    if self.valid_since() > *time {
+      return Err(FiatEventOperationError::InvalidTime);
+    }
     let qualified_id = DeterministicRandomId::new (& (id, self .id));
     let result = self.steward.remove_fiat_event (time, qualified_id);
     match result {
@@ -212,21 +234,20 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
     result
   }
 
-  pub fn snapshot_before<'b>(&'b mut self, time: &'b B::Time) -> Option<Steward0::Snapshot> {
+  fn snapshot_before<'b>(&'b mut self, time: &'b B::Time) -> Option<Steward0::Snapshot> {
     while self.receive_once() {}
     self.steward.snapshot_before (time)
   }
-
 }
 
 
-impl<B: Basics, Steward0: ::IncrementalTimeSteward + SimpleSynchronizableTimeSteward<Basics = B>> Steward<B, Steward0>
+impl<B: Basics, Steward0: ::IncrementalTimeSteward + SimpleSynchronizableTimeSteward<Basics = B>> ::IncrementalTimeSteward for Steward<B, Steward0>
 where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Steward0 as TimeSteward>::Basics as Basics>::Time> + Mul<i64, Output = << Steward0 as TimeSteward>::Basics as Basics>::Time> + Div<<<Steward0 as TimeSteward>::Basics as Basics>::Time, Output = i64>
 {
-  pub fn step(&mut self) {
+  fn step(&mut self) {
     if !self.receive_once() { self.steward.step(); }
   }
-  pub fn updated_until_before (&self)->Option <B::Time> {
+  fn updated_until_before (&self)->Option <B::Time> {
     self.steward.updated_until_before()
   }
 }

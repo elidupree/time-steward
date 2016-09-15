@@ -6,7 +6,7 @@
 
 
 use ::{DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, StewardRc, FieldRc,
-       Accessor, Column, ExtendedTime, Basics, TimeSteward, FiatEventOperationError, ValidSince};
+       Accessor, Column, ExtendedTime, Basics, TimeSteward, TimeStewardFromConstants, FiatEventOperationError, ValidSince};
 use implementation_support::common::{self, Filter, DynamicEventFn};
 use std::collections::{HashMap, BTreeMap, HashSet};
 use std::collections::hash_map::Entry;
@@ -458,67 +458,6 @@ impl<B: Basics> TimeSteward for Steward<B> {
         })
   }
 
-  fn new_empty(constants: B::Constants) -> Self {
-
-    Steward {
-      owned: StewardOwned {
-        last_event: None,
-        invalid_before: ValidSince::TheBeginning,
-        fiat_events: BTreeMap::new(),
-        next_snapshot: 0,
-        existent_fields: partially_persistent_nonindexed_set::Set::new(),
-        predictions_by_time: BTreeMap::new(),
-        predictions_by_id: HashMap::new(),
-        prediction_dependencies: HashMap::new(),
-      },
-      shared: Rc::new(StewardShared {
-        settings: Settings::<B>::new(),
-        constants: constants,
-        fields: RefCell::new(Fields {
-          field_states: HashMap::new(),
-          changed_since_snapshots: BTreeMap::new(),
-        }),
-      }),
-    }
-  }
-
-
-  fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: &'a S) -> Self
-    where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
-  {
-    let mut result = Self::new_empty(snapshot.constants().clone());
-    result.owned.invalid_before = ValidSince::Before(snapshot.now().clone());
-    let mut predictions_needed = HashSet::new();
-    result.shared.fields.borrow_mut().field_states = snapshot.into_iter()
-      .map(|(id, stuff)| {
-        if match result.owned.last_event {
-          None => true,
-          Some(ref time) => stuff.1 > time,
-        } {
-          result.owned.last_event = Some(stuff.1.clone());
-        }
-        result.shared.settings.predictors_by_column.get(&id.column_id).map(|predictors| {
-          for predictor in predictors {
-            predictions_needed.insert((id.row_id, predictor.predictor_id));
-          }
-        });
-        (id,
-         Field {
-          data: stuff.0.clone(),
-          last_change: stuff.1.clone(),
-          first_snapshot_not_updated: 0,
-        })
-      })
-      .collect();
-    for (row_id, predictor_id) in predictions_needed {
-      result.make_prediction(row_id, predictor_id);
-    }
-
-    result
-  }
-
-
-
   fn insert_fiat_event<E: ::Event<Basics = B>>(&mut self,
                                                time: B::Time,
                                                id: DeterministicRandomId,
@@ -574,6 +513,66 @@ impl<B: Basics> TimeSteward for Steward<B> {
   }
 }
 
+impl<B: Basics> TimeStewardFromConstants for Steward<B> {
+  fn from_constants(constants: B::Constants) -> Self {
+    Steward {
+      owned: StewardOwned {
+        last_event: None,
+        invalid_before: ValidSince::TheBeginning,
+        fiat_events: BTreeMap::new(),
+        next_snapshot: 0,
+        existent_fields: partially_persistent_nonindexed_set::Set::new(),
+        predictions_by_time: BTreeMap::new(),
+        predictions_by_id: HashMap::new(),
+        prediction_dependencies: HashMap::new(),
+      },
+      shared: Rc::new(StewardShared {
+        settings: Settings::<B>::new(),
+        constants: constants,
+        fields: RefCell::new(Fields {
+          field_states: HashMap::new(),
+          changed_since_snapshots: BTreeMap::new(),
+        }),
+      }),
+    }
+  }
+}
+impl<B: Basics> ::TimeStewardFromSnapshot for Steward<B> {
+  fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: &'a S) -> Self
+    where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
+  {
+    let mut result = Self::from_constants (snapshot.constants().clone());
+    result.owned.invalid_before = ValidSince::Before(snapshot.now().clone());
+    let mut predictions_needed = HashSet::new();
+    result.shared.fields.borrow_mut().field_states = snapshot.into_iter()
+      .map(|(id, stuff)| {
+        if match result.owned.last_event {
+          None => true,
+          Some(ref time) => stuff.1 > time,
+        } {
+          result.owned.last_event = Some(stuff.1.clone());
+        }
+        result.shared.settings.predictors_by_column.get(&id.column_id).map(|predictors| {
+          for predictor in predictors {
+            predictions_needed.insert((id.row_id, predictor.predictor_id));
+          }
+        });
+        (id,
+         Field {
+          data: stuff.0.clone(),
+          last_change: stuff.1.clone(),
+          first_snapshot_not_updated: 0,
+        })
+      })
+      .collect();
+    for (row_id, predictor_id) in predictions_needed {
+      result.make_prediction(row_id, predictor_id);
+    }
+
+    result
+  }
+}
+
 impl<B: Basics> ::IncrementalTimeSteward for Steward<B> {
   fn step(&mut self) {
     if let Some(ev) = self.next_event() {
@@ -585,15 +584,4 @@ impl<B: Basics> ::IncrementalTimeSteward for Steward<B> {
     self.next_event().map(|(time, _)| time.base)
   }
 }
-
-// Wait, we don't actually need to do this, because self.shared isn't dropped as long as the snapshot exist!
-// impl<B: Basics> Drop for Steward<B> {
-// fn drop(&mut self) {
-// let mut fields_guard = self.shared.fields.borrow_mut();
-// let fields = &mut*fields_guard;
-// for (id, field) in fields.field_states.iter_mut() {
-// field.update_snapshots (*id, & fields.changed_since_snapshots);
-// }
-// }
-// }
-//
+impl<B: Basics> ::CanonicalTimeSteward for Steward<B> {}

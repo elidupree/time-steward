@@ -35,7 +35,7 @@
 
 use {DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, Column, StewardRc,
      FieldRc, ExtendedTime, Basics, Accessor, FiatEventOperationError, ValidSince, TimeSteward,
-     IncrementalTimeSteward};
+     IncrementalTimeSteward, TimeStewardFromConstants};
 use implementation_support::common::{self, DynamicEventFn};
 use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet};
 // use std::collections::Bound::{Included, Excluded, Unbounded};
@@ -418,83 +418,6 @@ impl<B: Basics> TimeSteward for Steward<B> {
     self.owned.invalid_before.clone()
   }
 
-  fn new_empty(constants: B::Constants) -> Self {
-
-    Steward {
-      owned: StewardOwned {
-        events: StewardEventsInfo {
-          events_needing_attention: BTreeSet::new(),
-          event_states: HashMap::new(),
-          dependencies: HashMap::new(),
-        },
-        invalid_before: ValidSince::TheBeginning,
-        next_snapshot: 0,
-        existent_fields: partially_persistent_nonindexed_set::Set::new(),
-        predictions_missing_by_time: BTreeMap::new(),
-        predictions_by_id: HashMap::new(),
-        checksum_info: None,
-      },
-      shared: Rc::new(StewardShared {
-        settings: Settings::<B>::new(),
-        constants: constants,
-        fields: RefCell::new(Fields {
-          field_states: HashMap::new(),
-          changed_since_snapshots: BTreeMap::new(),
-        }),
-      }),
-    }
-  }
-
-
-  fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: &'a S) -> Self
-    where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
-  {
-    let mut result = Self::new_empty(snapshot.constants().clone());
-    result.owned.invalid_before = ValidSince::Before(snapshot.now().clone());
-    let mut predictions_needed = HashSet::new();
-    let mut last_event = None;
-    result.shared.fields.borrow_mut().field_states = snapshot.into_iter()
-      .map(|(id, stuff)| {
-        if match last_event {
-          None => true,
-          Some(ref time) => stuff.1 > time,
-        } {
-          last_event = Some(stuff.1.clone());
-        }
-        result.owned.existent_fields.insert(id);
-        result.shared.settings.predictors_by_column.get(&id.column_id).map(|predictors| {
-          for predictor in predictors {
-            predictions_needed.insert((id.row_id, predictor.predictor_id));
-          }
-        });
-        (id,
-         FieldHistory {
-          changes: vec![Field {
-                  data: Some (stuff.0.clone()),
-                  last_change: stuff.1.clone(),
-                }],
-          first_snapshot_not_updated: 0,
-        })
-      })
-      .collect();
-    for &(row_id, predictor_id) in predictions_needed.iter() {
-      result.owned.predictions_by_id.insert((row_id, predictor_id),
-                                            PredictionHistory {
-                                              next_needed: last_event.clone(),
-                                              predictions: Vec::new(),
-                                            });
-      result.owned
-        .predictions_missing_by_time
-        .entry(last_event.clone().unwrap())
-        .or_insert(Default::default())
-        .insert((row_id, predictor_id));
-    }
-    for (row_id, predictor_id) in predictions_needed {
-      result.make_prediction(row_id, predictor_id, last_event.as_ref().unwrap());
-    }
-
-    result
-  }
   fn insert_fiat_event<E: ::Event<Basics = B>>(&mut self,
                                                time: B::Time,
                                                id: DeterministicRandomId,
@@ -572,8 +495,86 @@ impl<B: Basics> IncrementalTimeSteward for Steward<B> {
     }
   }
 }
+impl<B: Basics> TimeStewardFromConstants for Steward<B> {
+  fn from_constants(constants: B::Constants) -> Self {
+    Steward {
+      owned: StewardOwned {
+        events: StewardEventsInfo {
+          events_needing_attention: BTreeSet::new(),
+          event_states: HashMap::new(),
+          dependencies: HashMap::new(),
+        },
+        invalid_before: ValidSince::TheBeginning,
+        next_snapshot: 0,
+        existent_fields: partially_persistent_nonindexed_set::Set::new(),
+        predictions_missing_by_time: BTreeMap::new(),
+        predictions_by_id: HashMap::new(),
+        checksum_info: None,
+      },
+      shared: Rc::new(StewardShared {
+        settings: Settings::<B>::new(),
+        constants: constants,
+        fields: RefCell::new(Fields {
+          field_states: HashMap::new(),
+          changed_since_snapshots: BTreeMap::new(),
+        }),
+      }),
+    }
+  }
+}
+impl<B: Basics> ::TimeStewardFromSnapshot for Steward<B> {
+  fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: &'a S) -> Self
+    where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
+  {
+    let mut result = Self::from_constants(snapshot.constants().clone());
+    result.owned.invalid_before = ValidSince::Before(snapshot.now().clone());
+    let mut predictions_needed = HashSet::new();
+    let mut last_event = None;
+    result.shared.fields.borrow_mut().field_states = snapshot.into_iter()
+      .map(|(id, stuff)| {
+        if match last_event {
+          None => true,
+          Some(ref time) => stuff.1 > time,
+        } {
+          last_event = Some(stuff.1.clone());
+        }
+        result.owned.existent_fields.insert(id);
+        result.shared.settings.predictors_by_column.get(&id.column_id).map(|predictors| {
+          for predictor in predictors {
+            predictions_needed.insert((id.row_id, predictor.predictor_id));
+          }
+        });
+        (id,
+         FieldHistory {
+          changes: vec![Field {
+                  data: Some (stuff.0.clone()),
+                  last_change: stuff.1.clone(),
+                }],
+          first_snapshot_not_updated: 0,
+        })
+      })
+      .collect();
+    for &(row_id, predictor_id) in predictions_needed.iter() {
+      result.owned.predictions_by_id.insert((row_id, predictor_id),
+                                            PredictionHistory {
+                                              next_needed: last_event.clone(),
+                                              predictions: Vec::new(),
+                                            });
+      result.owned
+        .predictions_missing_by_time
+        .entry(last_event.clone().unwrap())
+        .or_insert(Default::default())
+        .insert((row_id, predictor_id));
+    }
+    for (row_id, predictor_id) in predictions_needed {
+      result.make_prediction(row_id, predictor_id, last_event.as_ref().unwrap());
+    }
 
+    result
+  }
+}
 impl<B: Basics> ::FullTimeSteward for Steward<B> {}
+impl<B: Basics> ::CanonicalTimeSteward for Steward<B> {}
 
 use std::ops::{Add, Sub, Mul, Div};
 pub struct ChecksumInfo<B: Basics> {

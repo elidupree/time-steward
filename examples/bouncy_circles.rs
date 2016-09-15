@@ -10,7 +10,7 @@ extern crate glium;
 extern crate nalgebra;
 
 use time_steward::stewards::crossverified as s;
-use time_steward::{TimeSteward, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, EventId, Accessor,
+use time_steward::{TimeSteward, TimeStewardFromConstants, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, EventId, Accessor,
      MomentaryAccessor, PredictorAccessor, ColumnType, EventType, PredictorType};
 use time_steward::support::collision_detection::simple_grid as collisions;
 
@@ -325,7 +325,7 @@ implement_vertex!(Vertex, direction, center, radius);
 
 
 pub fn main() {
-  let mut stew: Steward = time_steward::TimeSteward::new_empty(());
+  let mut stew: Steward = Steward::from_constants(());
 
   stew.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new())
     .unwrap();

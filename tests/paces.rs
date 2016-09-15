@@ -6,7 +6,7 @@ extern crate time_steward as steward;
 extern crate rand;
 extern crate serde;
 
-use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, EventId, Column, ColumnType, PredictorType, EventType};
+use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, EventId, Column, ColumnType, PredictorType, EventType, TimeStewardFromConstants, TimeStewardFromSnapshot};
 use rand::{Rng, SeedableRng, ChaChaRng};
 
 
@@ -78,10 +78,10 @@ time_steward_predictor! (struct Predictor, Basics, PredictorId (0x59c5a4cce27893
 
 // As in, "putting it through its paces"
 #[allow (unused_must_use)]
-fn paces <Steward: steward::IncrementalTimeSteward <Basics = Basics>, G: Rng> (generator: &mut G)
+fn paces <Steward: steward::IncrementalTimeSteward + TimeStewardFromConstants + TimeStewardFromSnapshot <Basics = Basics>, G: Rng> (generator: &mut G)
 where for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEntry <'a, Basics>>
 {  
-  let mut stew: Steward = Steward::new_empty (RowId::new (& generator.gen::<u64>()));
+  let mut stew: Steward = Steward::from_constants (RowId::new (& generator.gen::<u64>()));
   let mut snapshots: Vec<Steward::Snapshot> = Vec::new();
   
   fn display_snapshot <S: steward::Snapshot <Basics = Basics>> (snapshot: & S)->(usize, DeterministicRandomId) {(snapshot.num_fields(), snapshot.now().clone())}

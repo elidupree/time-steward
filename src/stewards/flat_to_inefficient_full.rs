@@ -4,11 +4,11 @@
 //!
 
 
-use {DeterministicRandomId, Basics, TimeSteward, FiatEventOperationError, ValidSince,
+use {DeterministicRandomId, Basics, TimeSteward, TimeStewardFromConstants, TimeStewardFromSnapshot, FiatEventOperationError, ValidSince,
      MomentaryAccessor, FiatSnapshot};
 use std::collections::HashMap;
 
-pub struct Steward<B: Basics, Steward0: TimeSteward<Basics = B>> {
+pub struct Steward<B: Basics, Steward0: TimeStewardFromConstants + TimeStewardFromSnapshot <Basics = B>> {
   steward: Steward0,
   invalid_before: ValidSince<B::Time>,
   fiat_events: HashMap<DeterministicRandomId,
@@ -17,7 +17,7 @@ pub struct Steward<B: Basics, Steward0: TimeSteward<Basics = B>> {
   snapshots: Vec<Steward0::Snapshot>,
 }
 
-impl<B: Basics, Steward0: TimeSteward<Basics = B>> Steward<B, Steward0> {
+impl<B: Basics, Steward0: TimeStewardFromConstants + TimeStewardFromSnapshot <Basics = B>> Steward<B, Steward0> {
   fn reset_if_needed(&mut self, time: &B::Time) {
     if self.steward.valid_since() > *time {
       // println!("whoops");
@@ -39,41 +39,14 @@ impl<B: Basics, Steward0: TimeSteward<Basics = B>> Steward<B, Steward0> {
 }
 
 
-impl<B: Basics, Steward0: TimeSteward<Basics = B>> TimeSteward for Steward<B, Steward0> {
+impl<B: Basics, Steward0: TimeStewardFromConstants + TimeStewardFromSnapshot <Basics = B>> TimeSteward for Steward<B, Steward0> {
   type Basics = B;
   type Snapshot = Steward0::Snapshot;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     self.invalid_before.clone()
   }
-  fn new_empty(constants: B::Constants) -> Self {
-    let reset_constants = constants.clone();
-    let reset_to_original = Box::new(move || TimeSteward::new_empty(reset_constants.clone()));
-    Steward::<B, Steward0> {
-      steward: TimeSteward::new_empty(constants.clone()),
-      invalid_before: ValidSince::TheBeginning,
-      fiat_events: HashMap::new(),
-      reset_to_original: reset_to_original,
-      snapshots: Vec::new(),
-    }
-  }
-
-  fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: &'a S) -> Self
-    where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
-  {
-    let reset_snapshot = FiatSnapshot::<B>::from_snapshot::<'a, S>(snapshot);
-    let reset_to_original =
-      Box::new(move || TimeSteward::from_snapshot::<FiatSnapshot<B>>(&reset_snapshot));
-    let mut steward: Steward0 = reset_to_original();
-    let snapshot = steward.snapshot_before(snapshot.now()).unwrap();
-    Steward::<B, Steward0> {
-      steward: steward,
-      invalid_before: ValidSince::Before(snapshot.now().clone()),
-      fiat_events: HashMap::new(),
-      reset_to_original: reset_to_original,
-      snapshots: vec![snapshot],
-    }
-  }
+  
   fn insert_fiat_event<E: ::Event<Basics = B>>(&mut self,
                                                time: B::Time,
                                                id: DeterministicRandomId,
@@ -122,8 +95,39 @@ impl<B: Basics, Steward0: TimeSteward<Basics = B>> TimeSteward for Steward<B, St
   }
 }
 
+impl<B: Basics, Steward0: TimeStewardFromConstants + TimeStewardFromSnapshot <Basics = B>> TimeStewardFromConstants for Steward<B, Steward0> {
+  fn from_constants(constants: B::Constants) -> Self {
+    let reset_constants = constants.clone();
+    let reset_to_original = Box::new(move || Steward0::from_constants(reset_constants.clone()));
+    Steward::<B, Steward0> {
+      steward: Steward0::from_constants(constants.clone()),
+      invalid_before: ValidSince::TheBeginning,
+      fiat_events: HashMap::new(),
+      reset_to_original: reset_to_original,
+      snapshots: Vec::new(),
+    }
+  }
+}
+impl<B: Basics, Steward0: TimeStewardFromConstants + TimeStewardFromSnapshot <Basics = B>> TimeStewardFromSnapshot for Steward<B, Steward0> {
+  fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: &'a S) -> Self
+    where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
+  {
+    let reset_snapshot = FiatSnapshot::<B>::from_snapshot::<'a, S>(snapshot);
+    let reset_to_original =
+      Box::new(move || Steward0::from_snapshot::<FiatSnapshot<B>>(&reset_snapshot));
+    let mut steward: Steward0 = reset_to_original();
+    let snapshot = steward.snapshot_before(snapshot.now()).unwrap();
+    Steward::<B, Steward0> {
+      steward: steward,
+      invalid_before: ValidSince::Before(snapshot.now().clone()),
+      fiat_events: HashMap::new(),
+      reset_to_original: reset_to_original,
+      snapshots: vec![snapshot],
+    }
+  }
+}
 
-impl<B: Basics, Steward0: ::IncrementalTimeSteward <Basics = B>> ::IncrementalTimeSteward for Steward<B, Steward0>
+impl<B: Basics, Steward0: TimeStewardFromConstants + TimeStewardFromSnapshot + ::IncrementalTimeSteward <Basics = B>> ::IncrementalTimeSteward for Steward<B, Steward0>
 where for <'a> & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a, B>>{
   fn step(&mut self) {
     self.steward.step();
@@ -133,4 +137,4 @@ where for <'a> & 'a Steward0::Snapshot: IntoIterator <Item = ::SnapshotEntry <'a
   }
 }
 
-impl<B: Basics, Steward0: TimeSteward<Basics = B>> ::FullTimeSteward for Steward<B, Steward0> {}
+impl<B: Basics, Steward0: TimeStewardFromConstants + TimeStewardFromSnapshot <Basics = B>> ::FullTimeSteward for Steward<B, Steward0> {}
