@@ -390,24 +390,24 @@ fn main() {
     let stream = listener.accept().unwrap().0;
     let mut steward: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
-    run (steward);
+    run (steward, |a,b| (a.settle_before (b)));
   }
   else if arguments.flag_connect {
     let stream = TcpStream::connect ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
     let steward: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 1u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
-    run (steward);
+    run (steward, |a,b| (a.settle_before (b)));
   }
   else {
     let mut steward: s::Steward<Basics,
                                 inefficient_flat::Steward<Basics>,
                                 memoized_flat::Steward<Basics>> = s::Steward::from_constants(());
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
-    run (steward);
+    run (steward, |_,_|());
   }
 }
 
 
-fn run <Steward: TimeSteward <Basics = Basics>>(mut stew: Steward) {
+fn run <Steward: TimeSteward <Basics = Basics>,F: Fn (&mut Steward, Time)>(mut stew: Steward, settle:F) {
 
 
   let vertex_shader_source = r#"
@@ -476,7 +476,7 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
           },
           glium::glutin::Event::MouseInput (_,_) => {
             event_index += 1;
-            stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), Disturb::new ([mouse_coordinates [0], mouse_coordinates [1]]));
+            stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), Disturb::new ([mouse_coordinates [0], mouse_coordinates [1]])).unwrap();
           },
           _ => (),
         }
@@ -488,10 +488,9 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
 
       let snapshot = stew.snapshot_before(& time)
         .expect("steward failed to provide snapshot");
+      settle (&mut stew, time);
       for index in 0..HOW_MANY_CIRCLES {
-        let (circle, time) = snapshot.data_and_last_change::<Circle>(get_circle_id(index))
-          .expect("missing circle")
-          .clone();
+        if let Some ((circle, time)) = snapshot.data_and_last_change::<Circle>(get_circle_id(index)){
         let position = circle.position.updated_by(snapshot.now() - time).unwrap().evaluate();
         let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,
                       position[1] as f32 / ARENA_SIZE as f32 - 0.5];
@@ -527,7 +526,7 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
                             radius: radius,
                             direction: [0.0, -1.0],
                           }]);
-
+}
       }
       target.draw(&glium::VertexBuffer::new(&display, &vertices)
                 .expect("failed to generate glium Vertex buffer"),
