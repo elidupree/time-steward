@@ -36,7 +36,7 @@ struct Args {
 }
 
 
-use time_steward::stewards::crossverified as s;
+//use time_steward::stewards::crossverified as s;
 use time_steward::{TimeSteward, TimeStewardFromConstants, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, EventId, Accessor,
      MomentaryAccessor, PredictorAccessor, ColumnType, EventType, PredictorType};
 use time_steward::support::collision_detection::simple_grid as collisions;
@@ -48,7 +48,7 @@ use std::thread::sleep;
 use std::time::{Instant, Duration};
 use glium::{DisplayBuild, Surface};
 use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
-use time_steward::stewards::{inefficient_flat, memoized_flat, amortized, simply_synchronized};
+use time_steward::stewards::{amortized, simply_synchronized};
 
 
 type Time = i64;
@@ -399,9 +399,10 @@ fn main() {
     run (steward, |a,b| (a.settle_before (b)));
   }
   else {
-    let mut steward: s::Steward<Basics,
-                                inefficient_flat::Steward<Basics>,
-                                memoized_flat::Steward<Basics>> = s::Steward::from_constants(());
+    //let mut steward: s::Steward<Basics,
+                                //inefficient_flat::Steward<Basics>,
+                                //memoized_flat::Steward<Basics>> = s::Steward::from_constants(());
+    let mut steward: amortized::Steward<Basics> = amortized::Steward::from_constants(());
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
     run (steward, |_,_|());
   }
@@ -472,8 +473,9 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
         match ev {
           glium::glutin::Event::Closed => return,
           glium::glutin::Event::MouseMoved (x,y) => {
-            mouse_coordinates [0] = (x as SpaceCoordinate) * ARENA_SIZE / 600;
-            mouse_coordinates [1] = (600-(y as SpaceCoordinate)) * ARENA_SIZE / 600;
+            mouse_coordinates [0] = ((x as SpaceCoordinate) - 150) * ARENA_SIZE / 300;
+            mouse_coordinates [1] = (450-(y as SpaceCoordinate)) * ARENA_SIZE / 300;
+            //println!("mouse {} {} {:?}", x,y,mouse_coordinates);
           },
           glium::glutin::Event::MouseInput (_,_) => {
             event_index += 1;
