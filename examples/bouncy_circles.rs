@@ -18,8 +18,8 @@ Bouncy Circles, a simple TimeSteward test case.
 
 Usage:
   bouncy_circles
-  bouncy_circles (-l | --listen) host port
-  bouncy_circles (-c | --connect) host port
+  bouncy_circles (-l | --listen) <host> <port>
+  bouncy_circles (-c | --connect) <host> <port>
   
 Options:
   -l, --listen   Start a synchronized simulation by listening for TCP connections.

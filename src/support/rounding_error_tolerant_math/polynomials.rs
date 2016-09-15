@@ -21,7 +21,7 @@ TODO: instead of Vec<Range>, these should return a stack-allocated type.
 */
 
 pub fn roots_linear(coefficients: [Range; 2], min_input: i64, max_input: i64) -> Vec<Range> {
-  if coefficients[1].min() == 0 && coefficients[1].max() == 0 && !coefficients[0].includes_0() {
+  if coefficients[1] == Range::exactly(0) && !coefficients[0].includes_0() {
     return Vec::new();
   }
   if let Some(result) = ((-coefficients[0]) / coefficients[1]).clamp_to_0_exponent() {
@@ -210,7 +210,7 @@ fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
                                      max_value)
                       .0,
                     max))
-  } else if max_value.internal_min().signum() == min_value.internal_min().signum() {
+  } else if max_value.min_signum() == min_value.min_signum() {
     None
   } else {
     let (result_for_min, result_for_max) = find_root_search(terms,
@@ -302,10 +302,10 @@ pub fn roots(terms: &[Range], min: i64, max: i64) -> Vec<Range> {
     terms = &terms[..terms.len() - 1]
   }
   match terms.len() {
-    0 => vec![Range::everywhere()],
+    0 => vec![Range::new(min, max)],
     1 => {
-      if terms[0].min() <= 0 && terms[0].max() >= 0 {
-        vec![Range::everywhere()]
+      if terms[0].internal_min() <= 0 && terms[0].internal_max() >= 0 {
+        vec![Range::new(min, max)]
       } else {
         Vec::new()
       }

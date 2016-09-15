@@ -197,6 +197,12 @@ impl Range {
     assert!(self.exponent == 0);
     self.max
   }
+  pub fn min_signum(&self) -> i64 {
+    self.min.signum()
+  }
+  pub fn max_signum(&self) -> i64 {
+    self.max.signum()
+  }
   pub fn internal_min(&self) -> i64 {
     self.min
   }

@@ -623,7 +623,8 @@ impl<B: Basics> Steward<B> {
                                     &mut self.owned.predictions_missing_by_time);
 
       prediction = Prediction {
-        predictor_accessed: dependencies,
+        // unique the dependencies
+        predictor_accessed: dependencies.into_iter().collect::<HashSet <FieldId>>().into_iter().collect(),
         what_will_happen: what_will_happen,
         made_at: time.clone(),
         valid_until: results.valid_until,
