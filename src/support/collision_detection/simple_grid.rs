@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use super::Nearness;
 use {RowId, ColumnId, Column, Accessor, MomentaryAccessor, Mutator, ColumnType, EventType,
      PredictorType};
@@ -24,7 +24,7 @@ struct Cell<B: Basics> {
   _marker: PhantomData<B>,
 }
 impl<B: Basics> Column for Cell<B> {
-  type FieldType = HashSet<RowId>;
+  type FieldType = BTreeSet <RowId>;
   fn column_id() -> ColumnId {
     ColumnId(B::nearness_column_id().0 ^ 0x030fc8868af34f2c)
   }
@@ -105,7 +105,7 @@ pub fn insert<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
   for next in bounds.min[0]..bounds.max[0] + 1 {
     for what in bounds.min[1]..bounds.max[1] + 1 {
       let row = cell_row(next, what, me);
-      let mut members = mutator.get::<Cell<B>>(row).cloned().unwrap_or(HashSet::new());
+      let mut members = mutator.get::<Cell<B>>(row).cloned().unwrap_or(BTreeSet::new());
       for member in members.iter() {
         let (id, contents) = Nearness::new(who, member.clone(), me);
         // check first: no need to update last_change
@@ -129,7 +129,7 @@ pub fn remove<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
   for next in bounds.min[0]..bounds.max[0] + 1 {
     for what in bounds.min[1]..bounds.max[1] + 1 {
       let row = cell_row(next, what, me);
-      let mut members = mutator.get::<Cell<B>>(row).cloned().unwrap_or(HashSet::new());
+      let mut members = mutator.get::<Cell<B>>(row).cloned().unwrap_or(BTreeSet::new());
       for member in members.iter() {
         if *member != who {
           let (id, _) = Nearness::<B>::new(who, member.clone(), me);
