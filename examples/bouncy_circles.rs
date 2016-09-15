@@ -336,6 +336,38 @@ time_steward_event! (
   }
 );
 
+time_steward_event! (
+  struct Disturb {coordinates: [SpaceCoordinate; 2]}, Basics, EventId(0x058cb70d89116605),
+  | &self, mutator | {
+    let mut best_id = RowId::new (& 0u8);
+    let mut best_distance_squared = i64::max_value();
+    for i in 0..HOW_MANY_CIRCLES {
+      let id = get_circle_id(i);
+      let (circle, time) = mutator.data_and_last_change::<Circle>(id)
+          .expect("missing circle")
+          .clone();
+      let position = circle.position.updated_by(mutator.now() - time).unwrap().evaluate();
+      let distance_squared = (self.coordinates [0] - position [0]) * (self.coordinates [0] - position [0]) + (self.coordinates [1] - position [1]) * (self.coordinates [1] - position [1]);
+      if distance_squared <best_distance_squared {
+        best_distance_squared = distance_squared;
+        best_id = id;
+      }
+    }    let mut new;{
+    let (a, time) = mutator.data_and_last_change::<Circle>(best_id)
+              .expect("missing circle")
+              .clone();
+    new =a.clone();
+    new.position.update_by(mutator.now() - time);
+    let impulse = -(new.position.evaluate() -
+                            Vector2::new(ARENA_SIZE / 2,
+                                         ARENA_SIZE / 2)) *
+                          (ARENA_SIZE * 4 / (ARENA_SIZE ));
+    new.position.add_velocity(impulse);}
+    mutator.set::<Circle>(best_id, Some(new));
+  }
+);
+
+
 #[derive(Copy, Clone)]
 
 struct Vertex {
@@ -360,17 +392,18 @@ fn main() {
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
     run (steward);
   }
-  if arguments.flag_connect {
+  else if arguments.flag_connect {
     let stream = TcpStream::connect ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
     let steward: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 1u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
     run (steward);
   }
-  
-  let mut steward: s::Steward<Basics,
-                              inefficient_flat::Steward<Basics>,
-                              memoized_flat::Steward<Basics>> = s::Steward::from_constants(());
-  steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
-  run (steward);
+  else {
+    let mut steward: s::Steward<Basics,
+                                inefficient_flat::Steward<Basics>,
+                                memoized_flat::Steward<Basics>> = s::Steward::from_constants(());
+    steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
+    run (steward);
+  }
 }
 
 
@@ -408,6 +441,9 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
 "#;
 
   let mut snapshots = Vec::new();
+  
+  let mut event_index = 0u64;
+  let mut mouse_coordinates = [0,0];
 
   if true {
     let display = glium::glutin::WindowBuilder::new()
@@ -428,9 +464,20 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
     let start = Instant::now();
 
     loop {
+      let time =((start.elapsed().as_secs() as i64 * 1000000000i64) +
+                            start.elapsed().subsec_nanos() as i64) *
+                           SECOND / 1000000000i64;
       for ev in display.poll_events() {
         match ev {
           glium::glutin::Event::Closed => return,
+          glium::glutin::Event::MouseMoved (x,y) => {
+            mouse_coordinates [0] = (x as SpaceCoordinate) * ARENA_SIZE / 600;
+            mouse_coordinates [1] = (600-(y as SpaceCoordinate)) * ARENA_SIZE / 600;
+          },
+          glium::glutin::Event::MouseInput (_,_) => {
+            event_index += 1;
+            stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), Disturb::new ([mouse_coordinates [0], mouse_coordinates [1]]));
+          },
           _ => (),
         }
       }
@@ -439,9 +486,7 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
       target.clear_color(0.0, 0.0, 0.0, 1.0);
       let mut vertices = Vec::<Vertex>::new();
 
-      let snapshot = stew.snapshot_before(&(((start.elapsed().as_secs() as i64 * 1000000000i64) +
-                            start.elapsed().subsec_nanos() as i64) *
-                           SECOND / 1000000000i64))
+      let snapshot = stew.snapshot_before(& time)
         .expect("steward failed to provide snapshot");
       for index in 0..HOW_MANY_CIRCLES {
         let (circle, time) = snapshot.data_and_last_change::<Circle>(get_circle_id(index))

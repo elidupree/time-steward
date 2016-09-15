@@ -70,6 +70,10 @@ impl QuadraticTrajectory {
     self.data[0][2] += acceleration[0] * 2;
     self.data[1][2] += acceleration[1] * 2;
   }
+  pub fn add_velocity(&mut self, velocity: Vector2<Coordinate>) {
+    self.data[0][2] += velocity[0];
+    self.data[1][2] += velocity[1];
+  }
   pub fn evaluate(&self) -> Vector2<Coordinate> {
     Vector2::new(self.data[0][0], self.data[1][0])
 
