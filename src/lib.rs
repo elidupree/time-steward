@@ -20,17 +20,6 @@
 //
 //
 
-
-//! <div id="hack"></div>
-/*!
-<script>
-var array = new Uint32Array (2);
-window.crypto.getRandomValues (array);
-function display (u32) {return ("0000000" + u32.toString (16)).substr (-8)}
-document.getElementById ("hack").innerHTML = "PredictorId(0x" + display (array [0]) + display (array [1]) + ")"
-</script>
-*/
-
 #![feature(unboxed_closures, fn_traits, specialization)]
 #![feature(pub_restricted)]
 #![feature (plugin, custom_derive)]

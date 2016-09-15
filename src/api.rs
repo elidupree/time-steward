@@ -115,6 +115,9 @@ impl fmt::Display for DeterministicRandomId {
 pub type RowId = DeterministicRandomId;
 pub type TimeId = DeterministicRandomId;
 
+/// Test 
+///
+/// <div class="random_ids"></div>
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct ColumnId(pub u64);
 
