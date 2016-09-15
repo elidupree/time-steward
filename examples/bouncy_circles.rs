@@ -356,7 +356,8 @@ fn main() {
   if arguments.flag_listen {
     let listener = TcpListener::bind ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
     let stream = listener.accept().unwrap().0;
-    let steward: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+    let mut steward: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+    steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
     run (steward);
   }
   if arguments.flag_connect {
@@ -365,16 +366,16 @@ fn main() {
     run (steward);
   }
   
-  let steward: s::Steward<Basics,
+  let mut steward: s::Steward<Basics,
                               inefficient_flat::Steward<Basics>,
                               memoized_flat::Steward<Basics>> = s::Steward::from_constants(());
+  steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
   run (steward);
 }
 
 
 fn run <Steward: TimeSteward <Basics = Basics>>(mut stew: Steward) {
-  stew.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new())
-    .unwrap();
+
 
   let vertex_shader_source = r#"
 #version 140

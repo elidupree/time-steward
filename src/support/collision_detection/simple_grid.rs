@@ -90,8 +90,13 @@ fn get_bounds<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
 pub fn insert<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
                                                                 who: RowId,
                                                                 me: B::DetectorId) {
+  let member_id = RowId::new(&(who, me));
+  if mutator.get::<Member<B>>(member_id).is_some() {
+    // already a member – no need to do anything
+    return;
+  }
   let bounds = get_bounds::<B, M>(mutator, who, me);
-  mutator.set::<Member<B>>(RowId::new(&(who, me)),
+  mutator.set::<Member<B>>(member_id,
                            Some(Member {
                              row: who,
                              bounds: bounds,
