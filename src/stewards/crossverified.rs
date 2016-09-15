@@ -207,12 +207,28 @@ impl<B: Basics, Steward0: TimeStewardFromSnapshot <Basics = B> , Steward1: TimeS
 
 impl<B: Basics, Steward0: IncrementalTimeSteward <Basics = B>, Steward1: IncrementalTimeSteward <Basics = B>> ::IncrementalTimeSteward for Steward<B, Steward0, Steward1> {
   fn step(&mut self) {
-    if self.0.updated_until_before() <self.1.updated_until_before() {
+    let updated_0 = self.0.updated_until_before();
+    let updated_1 = self.1.updated_until_before();
+    if let Some (time_0) = updated_0 {
+      if updated_1.as_ref().map_or (true, | time_1 | time_0 < *time_1) {
 // println!("stepping 0");
-      self.0.step();
-    } else {
+        let old_valid_since = self.0.valid_since();
+        let strict = old_valid_since > time_0;
+        self.0.step();
+        let new_valid_since = self.0.valid_since();
+        assert!(new_valid_since <= ValidSince::After (time_0), "Steward0 broke the ValidSince rules");
+        if strict { assert!(new_valid_since <= old_valid_since, "Steward0 broke the ValidSince rules"); }
+        return;
+      }
+    }
+    if let Some (time_1) = updated_1 {
 // println!("stepping 1");
+      let old_valid_since = self.1.valid_since();
+      let strict = old_valid_since > time_1;
       self.1.step();
+      let new_valid_since = self.1.valid_since();
+      assert!(new_valid_since <= ValidSince::After (time_1), "Steward1 broke the ValidSince rules");
+      if strict { assert!(new_valid_since <= old_valid_since, "Steward1 broke the ValidSince rules"); }
     }
   }
   fn updated_until_before (&self)->Option <B::Time> {

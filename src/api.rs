@@ -12,7 +12,7 @@ use bincode;
 
 use implementation_support::list_of_types::{ColumnList, EventList, PredictorList};
 
-
+/// A 128-bit random ID used for rows and ExtendedTimes.
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct DeterministicRandomId {
   data: [u64; 2],
@@ -42,14 +42,27 @@ impl SiphashIdGenerator {
   }
 }
 impl DeterministicRandomId {
-  /// Generates a new DeterministicRandomId from any Serialize type.
+  /// Generates a new DeterministicRandomId from any Serialize type, using a cryptographic hash function.
   ///
+  /// Generally, calling this with unique inputs is guaranteed to give unique outputs.
+  /// However, take note: the serialization doesn't generally include any representation of the
+  /// *type* of data serialized, so (for instance) two different structs with the
+  /// same fields will produce the same result. If you want to make sure and ID is unique,
+  /// a good technique is to use a tuple containing a unique numeric literal
+  /// (randomly-generated to be unique to that part of your code):
+  ///
+  /// ```rust
+  /// # type YourDataType = Vec<u64>;
+  /// # use time_steward::DeterministicRandomId;
+  /// let id = DeterministicRandomId::new(&(0xdefacab1e_bad_1du64, YourDataType::new());
+  /// ```
+  /// 
+  /// Why do we use Serialize rather than Hash?
   /// We need to make sure that DeterministicRandomIds do not vary with CPU endianness.
   /// The trait [Hasher](https://doc.rust-lang.org/std/hash/trait.Hasher.html) "represents the ability to hash an arbitrary stream of bytes",
   /// and typical implementations of Hash submit the bytes in the order they appear
   /// on the current system, not in a standardized order.
-  /// Therefore, instead of generating ids from Hash implementors,
-  /// we generate them from Serialize implementors,
+  /// Therefore, we generate IDs from Serialize implementors,
   /// because Serialize IS meant to be compatible between platforms.
   pub fn new<T: Serialize>(data: &T) -> DeterministicRandomId {
     let mut writer = SiphashIdGenerator::new();
@@ -565,6 +578,7 @@ impl<T: Ord> PartialOrd for ValidSince<T> {
 //  }
 // }
 
+/// The core trait for the TimeSteward simulation interface.
 pub trait TimeSteward: Any {
   type Basics: Basics;
   type Snapshot: Snapshot<Basics = Self::Basics>;
@@ -620,7 +634,7 @@ pub trait TimeSteward: Any {
   fn snapshot_before(&mut self, time: &<<Self as TimeSteward>::Basics as Basics>::Time) -> Option<Self::Snapshot>;
 }
 
-
+/// A TimeSteward that can be constructed empty, given only the simulation constants.
 pub trait TimeStewardFromConstants: TimeSteward {
   /**
   Creates a new, empty TimeSteward.
@@ -629,7 +643,8 @@ pub trait TimeStewardFromConstants: TimeSteward {
   */
   fn from_constants(constants: <<Self as TimeSteward>::Basics as Basics>::Constants) -> Self;
 }
-  
+
+/// A TimeSteward that can be constructed from only a snapshot.
 pub trait TimeStewardFromSnapshot: TimeSteward {
   /**
   Creates a new TimeSteward from a snapshot.
@@ -641,14 +656,40 @@ pub trait TimeStewardFromSnapshot: TimeSteward {
     where &'a S: IntoIterator<Item = SnapshotEntry<'a, Self::Basics>>;
 }
 
-
+/// A TimeSteward that can be instructed to do a small amount of computation at a time.
+///
+/// This can be useful to avoid blocking the UI in single-threaded simulations.
 pub trait IncrementalTimeSteward: TimeSteward {
+  /// Does a single chunk of computation.
+  ///
+  /// The cost of this should generally be O(1). It may involve a callback
+  /// to a Predictor or Event, so it may be a more expensive operation if
+  /// you have very expensive individual Predictors or Events.
+  /// 
+  /// steward.step() may increase steward.valid_since() up to After(steward.updated_until_before()),
+  /// but not farther than that.
+  ///
+  /// If steward.valid since() is currently greater than steward.updated_until_before(), steward.step() may not increase steward.valid_since() at all. Thus, you can be assured of eventually being able to take out a snapshot inexpensively.
   fn step(&mut self);
+  
+  /// Returns the latest time for which the TimeSteward can provide a Snapshot immediately.
+  ///
+  /// steward.updated_until_before() is NOT necessarily guaranteed to be later than steward.valid_since().
+  /// A flat TimeSteward could be in the middle of processing a moment,
+  /// such that the beginning of the moment is already out of date,
+  /// but the end of the moment is not yet available.
+  /// However, for a FullTimeSteward constructed by from_constants() or from_snapshot(),
+  /// this will always return a valid time when a Snapshot can be taken.
   fn updated_until_before(&self) -> Option<<<Self as TimeSteward>::Basics as Basics>::Time>;
 }
 
 use std::collections::BTreeMap;
 
+/// A protocol used by stewards::simply_synchronized.
+///
+/// The current protocol only supports synchronizing two clients at a time, and
+/// has no resilience against malicious input. It will likely be replaced with something
+/// more refined, so it should be considered unstable.
 pub trait SimpleSynchronizableTimeSteward: TimeStewardFromConstants + FullTimeSteward {
   fn begin_checks (&mut self, start: <<Self as TimeSteward>::Basics as Basics>::Time, stride: <<Self as TimeSteward>::Basics as Basics>::Time);
   fn checksum(&mut self, chunk: i64) -> u64;

@@ -3,10 +3,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
 "use strict";
 
 function display (u32) {return ("0000000" + u32.toString (16)).substr (-8);}
-function generate_id () {
+function generate_id_unadorned () {
   var array = new Uint32Array (2);
   window.crypto.getRandomValues (array);
-  return "(0x" + display (array [0]) + display (array [1]) + ")";
+  return display (array [0]) + display (array [1]);
+}
+function generate_id () {
+  return "(0x" + generate_id_unadorned () + ")";
 }
 function replace_id_boxes() {
 $(".random_ids").each (function (element) {
@@ -15,6 +18,10 @@ $(".random_ids").each (function (element) {
 $(".inline_random_id").each (function (element) {
   $(this).html (", e.g. <code>" + $(this).data ("idtype") + generate_id() + "</code>");
 });
+$("span.number:contains('defacab1e_bad_1d')").each (function (element) {
+  $(this).text($(this).text().replace ('defacab1e_bad_1d', generate_id_unadorned()));
+});
+
 
 }
 replace_id_boxes();
