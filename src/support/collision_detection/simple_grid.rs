@@ -145,5 +145,6 @@ pub fn remove<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
 
 
 pub type TimeStewardTypes<B> = (ColumnType<Member<B>>,
+                                ColumnType<Nearness<B>>,
                                 EventType<BoundsChange<B>>,
                                 PredictorType<BoundsChangePredictor<B>>);

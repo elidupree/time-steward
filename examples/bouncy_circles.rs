@@ -8,6 +8,33 @@ extern crate time_steward;
 extern crate glium;
 
 extern crate nalgebra;
+extern crate rustc_serialize;
+extern crate docopt;
+
+use docopt::Docopt;
+
+const USAGE: &'static str = "
+Bouncy Circles, a simple TimeSteward test case.
+
+Usage:
+  bouncy_circles
+  bouncy_circles (-l | --listen) host port
+  bouncy_circles (-c | --connect) host port
+  
+Options:
+  -l, --listen   Start a synchronized simulation by listening for TCP connections.
+  -c, --connect  Start a synchronized simulation by making a TCP connection.
+";
+
+#[derive(Debug, RustcDecodable)]
+struct Args {
+  flag_listen: bool,
+  flag_connect: bool,
+    
+  arg_host: Option <String>,
+  arg_port: Option <u16>,
+}
+
 
 use time_steward::stewards::crossverified as s;
 use time_steward::{TimeSteward, TimeStewardFromConstants, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, EventId, Accessor,
@@ -21,8 +48,7 @@ use std::thread::sleep;
 use std::time::{Instant, Duration};
 use glium::{DisplayBuild, Surface};
 use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
-use time_steward::stewards::inefficient_flat;
-use time_steward::stewards::memoized_flat;
+use time_steward::stewards::{inefficient_flat, memoized_flat, amortized, simply_synchronized};
 
 
 type Time = i64;
@@ -137,10 +163,6 @@ type TimeStewardTypes = (ColumnType<Circle>,
                          EventType<Collision>,
                          EventType<BoundaryCollision>,
                          collisions::TimeStewardTypes<CollisionBasics>);
-
-type Steward = s::Steward<Basics,
-                          inefficient_flat::Steward<Basics>,
-                          memoized_flat::Steward<Basics>>;
 
 fn get_circle_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x86ccbeb2c140cc51u64, index))
@@ -323,10 +345,34 @@ struct Vertex {
 }
 implement_vertex!(Vertex, direction, center, radius);
 
+use std::net::{TcpListener, TcpStream};
+use std::io::{BufReader, BufWriter};
 
-pub fn main() {
-  let mut stew: Steward = Steward::from_constants(());
+fn main() {
+  let arguments: Args = Docopt::new(USAGE)
+                            .and_then(|d| d.decode())
+                            .unwrap_or_else(|e| e.exit());
+  
+  if arguments.flag_listen {
+    let listener = TcpListener::bind ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
+    let stream = listener.accept().unwrap().0;
+    let steward: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+    run (steward);
+  }
+  if arguments.flag_connect {
+    let stream = TcpStream::connect ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
+    let steward: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 1u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+    run (steward);
+  }
+  
+  let steward: s::Steward<Basics,
+                              inefficient_flat::Steward<Basics>,
+                              memoized_flat::Steward<Basics>> = s::Steward::from_constants(());
+  run (steward);
+}
 
+
+fn run <Steward: TimeSteward <Basics = Basics>>(mut stew: Steward) {
   stew.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new())
     .unwrap();
 

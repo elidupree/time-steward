@@ -17,3 +17,5 @@ bincode = "0.6"
 
 [dev-dependencies]
 glium = "0.15"
+docopt = "0.6"
+rustc-serialize = "0.3"
