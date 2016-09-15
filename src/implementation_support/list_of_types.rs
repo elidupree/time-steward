@@ -268,14 +268,24 @@ macro_rules! time_steward_dynamic_fn {
   }
 }
 
+fn id_suggestions()->String {
+  use rand::Rng;
+  if let Ok (mut rng) = ::rand::os::OsRng::new() {
+    format! ("Try using some of these newly generated IDs instead:\nColumnId(0x{:016x})\nColumnId(0x{:016x})\nColumnId(0x{:016x})\nEventId(0x{:016x})\nEventId(0x{:016x})\nEventId(0x{:016x})\nPredictorId(0x{:016x})\nPredictorId(0x{:016x})\nPredictorId(0x{:016x})", rng.gen::<u64>(), rng.gen::<u64>(), rng.gen::<u64>(), rng.gen::<u64>(), rng.gen::<u64>(), rng.gen::<u64>(), rng.gen::<u64>(), rng.gen::<u64>(), rng.gen::<u64>())
+  } else {String::new()}
+}
+
 pub fn audit_basics<Q: Basics>() {
   use std::collections::HashMap;
 
   struct Table<B: Basics>(HashMap<u64, u32>, PhantomData<B>);
   impl<B: Basics> Table<B> {
     fn insert_id(&mut self, id: u64, traitidx: u32) {
+      if id <= 9000 {
+        panic! ("This ID isn't random enough: 0x{:016x}\n{}", id, id_suggestions());
+      }
       if self.0.insert(id, traitidx).is_some() {
-        panic! ("Multiple IncludedTypes had the same id: 0x{:016x}", id);
+        panic! ("Multiple IncludedTypes had the same id: 0x{:016x}\n{}", id, id_suggestions());
       }
     }
   }
