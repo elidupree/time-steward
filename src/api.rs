@@ -1,25 +1,3 @@
-// Future TimeSteward API goals:
-//
-// – groups
-// I made up API functions for this before, but I'm not sure they were perfect.
-// We can use RowId's for group ids, but what kinds of things can be stored IN a group? Previously I said only RowId's could, which doesn't seem ideal. I think it would work to allow anything hashable. That would basically make a group behave like a HashSet. But then, why not make it behave like a HashMap instead? But accessor itself already behaves like a HashMap over RowId's – the essential thing groups do is to allow iterating particular subsets of that HashMap.
-//
-// – conveniences for serializing snapshots (not sure what)
-//
-// – be able to construct a new TimeSteward from any snapshot
-// Issues: should snapshots expose the predictors? Also, the predictors can't be serialized. So you'd probably actually have to construct a TimeSteward from snapshot + predictors. This requires a way to iterate all fields (and group data if we add groups) in a snapshot, which is similar to the previous 2 items (iterating the whole set, which is a special case of iterating a subset; and serializing requires you to iterate everything as well)
-//
-// – parallelism support for predictors and events
-// When an event or predictor gets invalidated while it is still running, it would be nice for it to save time by exiting early.
-// Moreover, it would probably be more efficient to discard invalidated fields than to preserve them for predictors/events that are in process. The natural way for the accessors to handle this is to have get() return None, which would mean that you can never safely unwrap() the result. We could provide a "unwrap or return" macro.
-//
-// – Optimization features
-// one possibility: user can provide a function FieldId->[(PredictorId, RowId)] that lists predictors you KNOW will be invalidated by a change to that field, then have that predictor run its get() calls with an input called "promise_inferred" or something so that we don't spend time and memory recording the dependency
-// another: a predictor might have a costly computation to find the exact time of a future event, which it won't need to do if it gets invalidated long before that time comes. For that, we can provide a defer_until(time) method
-//
-//
-//
-
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher, SipHasher};
 use std::any::Any;
@@ -34,15 +12,7 @@ use bincode;
 
 use implementation_support::list_of_types::{ColumnList, EventList, PredictorList};
 
-// We need to make sure that DeterministicRandomIds
-// do not vary with CPU endianness.
-// The trait Hasher "represents the ability to hash an arbitrary stream of bytes".
-// ( https://doc.rust-lang.org/std/hash/trait.Hasher.html )
-// but typical implementations of Hash submit the bytes in the order they appear
-// on the current system, not in a standardized order.
-// Therefore, instead of generating ids from Hash implementors,
-// we generate them from Serialize implementors,
-// because Serialize IS meant to be compatible between platforms.
+
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct DeterministicRandomId {
   data: [u64; 2],
@@ -72,6 +42,15 @@ impl SiphashIdGenerator {
   }
 }
 impl DeterministicRandomId {
+  /// Generates a new DeterministicRandomId from any Serialize type.
+  ///
+  /// We need to make sure that DeterministicRandomIds do not vary with CPU endianness.
+  /// The trait [Hasher](https://doc.rust-lang.org/std/hash/trait.Hasher.html) "represents the ability to hash an arbitrary stream of bytes",
+  /// and typical implementations of Hash submit the bytes in the order they appear
+  /// on the current system, not in a standardized order.
+  /// Therefore, instead of generating ids from Hash implementors,
+  /// we generate them from Serialize implementors,
+  /// because Serialize IS meant to be compatible between platforms.
   pub fn new<T: Serialize>(data: &T) -> DeterministicRandomId {
     let mut writer = SiphashIdGenerator::new();
     bincode::serde::serialize_into(&mut writer, data, bincode::SizeLimit::Infinite).unwrap();
@@ -82,16 +61,20 @@ impl DeterministicRandomId {
   pub fn from_rng(rng: &mut ChaChaRng) -> DeterministicRandomId {
     DeterministicRandomId { data: [rng.gen::<u64>(), rng.gen::<u64>()] }
   }
+  /// TimeSteward implementors use this internally to make sure fiat events have unique ids.
+  ///
   /// We combine fiat event ids with unique random data so that TimeSteward impls
-  /// can trust them not to collide with other ids.
+  /// can trust them not to collide with *other* TimeIds.
   /// We use + instead of XOR so that this won't fail if the user accidentally
   /// or maliciously calls this BEFORE passing the ids in, too.
+  #[doc (hidden)]
   pub fn for_fiat_event_internal(&self) -> DeterministicRandomId {
     DeterministicRandomId {
       data: [self.data[0].wrapping_add(0xc1d40daaee67461d),
              self.data[1].wrapping_add(0xb23ce1f459edefff)],
     }
   }
+  /// Returns the internal data of the DeterministicRandomId.
   pub fn data(&self) -> &[u64; 2] {
     &self.data
   }
@@ -102,28 +85,24 @@ impl fmt::Display for DeterministicRandomId {
   }
 }
 
-// Database analogy: time stewards kind of contain a database table.
-// Rows' ids are special; there isn't an "id" column.
-// Row ids are random 128 bit ids.
-// Rows aren't explicitly inserted and deleted.
-// Only the existence or nonexistence of a (row, column) pair
-// -- a field -- is meaningful.
-// Generally, space usage is proportional to the number of
-// existent fields.  For example, a row with only one existent field
-// only takes up the space of one field.
-
 pub type RowId = DeterministicRandomId;
 pub type TimeId = DeterministicRandomId;
 
-/// Test 
+/// The ID type for implementors of trait Column<span class="inline_random_id" data-idtype="ColumnId"></span>.
 ///
 /// <div class="random_ids"></div>
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct ColumnId(pub u64);
 
+/// The ID type for implementors of trait Predictor<span class="inline_random_id" data-idtype="PredictorId"></span>.
+///
+/// <div class="random_ids"></div>
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct PredictorId(pub u64);
 
+/// The ID type for implementors of trait Event<span class="inline_random_id" data-idtype="EventId"></span>.
+///
+/// <div class="random_ids"></div>
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct EventId(pub u64);
 
@@ -134,11 +113,9 @@ pub trait Column: Any {
   /**
   Returns a constant identifier for the type, which must be 64 bits of random data.
   
-  Thanks to the [birthday problem](https://en.wikipedia.org/wiki/Birthday_problem), this would have a >1% chance of a collision with a mere 700 million Column implementors. I don't think we need to worry about this. 128 bit IDs are necessary for rows, because computers can generate billions of them easily, but this isn't the same situation.
-  
-  It might seem desirable to default to a hash of the TypeId of Self, for the convenience of some implementations. However, Rust does not guarantee that the TypeId remains the same across different compilations or different compiler versions. And it certainly doesn't remain the same when you add or remove types from your code, which would be desirable for compatibility between different versions of your program. Also, the Rust interface for getting the TypeId is currently unstable. Using an explicit constant is simply better.
-  
   TODO: change this into an associated constant once associated constants become stable.
+  
+  <div class="random_ids"></div>
   */
   fn column_id() -> ColumnId;
 }
@@ -173,13 +150,30 @@ pub trait Event
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
   type Basics: Basics;
   fn call<M: Mutator<Basics = Self::Basics>>(&self, mutator: &mut M);
+  
+  /**
+  Returns a constant identifier for the type, which must be 64 bits of random data.
+  
+  TODO: change this into an associated constant once associated constants become stable.
+  
+  <div class="random_ids"></div>
+  */
   fn event_id() -> EventId;
 }
 pub trait Predictor
   : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
   type Basics: Basics;
   fn call<PA: PredictorAccessor<Basics = Self::Basics>>(accessor: &mut PA, id: RowId);
+  
+  /**
+  Returns a constant identifier for the type, which must be 64 bits of random data.
+  
+  TODO: change this into an associated constant once associated constants become stable.
+  
+  <div class="random_ids"></div>
+  */
   fn predictor_id() -> PredictorId;
+  
   type WatchedColumn: Column;
 }
 
@@ -197,6 +191,7 @@ macro_rules! time_steward_predictor {
       fn call <P: $crate::PredictorAccessor <Basics = $B>> ($accessor_name: &mut P, $row_name: RowId) {
         $contents
       }
+      #[inline (always)]
       fn predictor_id()->$crate::PredictorId {$predictor_id}
       type WatchedColumn = $Column;
     }
@@ -232,6 +227,7 @@ macro_rules! time_steward_event {
       fn call <M: $crate::Mutator <Basics = $B>> (&$self_name, $mutator_name: &mut M) {
         $contents
       }
+      #[inline (always)]
       fn event_id()->$crate::EventId {$event_id}
     }
     impl<$($Parameter $($bounds)*),*> $Struct <$($Parameter),*> {
@@ -289,20 +285,6 @@ pub struct ExtendedTime<B: Basics> {
 pub type StewardRc<T> = Arc<T>;
 pub type FieldRc = StewardRc<Any>;
 
-// Note: in the future, we expect we might use a custom hash table type that knows it can rely on DeterministicRandomId to already be random, so we don't need to hash it again. This also applies to FieldId, although there may be some complications in that case.
-// (for now, we need to be able to hash full siphash ids to create other siphash ids.)
-// ( Also -- do we ever try to hash GenericExtendedTime with id of 0 from beginning_of_moment.... )
-// impl Hash for DeterministicRandomId {
-//  fn hash<H: Hasher>(&self, state: &mut H) {
-//    self.data[0].hash(state);
-//  }
-// }
-// impl<Base: BaseTime> Hash for GenericExtendedTime<Base> {
-//  fn hash<H: Hasher>(&self, state: &mut H) {
-//    self.id.hash(state);
-//  }
-// }
-
 pub fn unwrap_field<'a, C: Column>(field: &'a FieldRc) -> &'a C::FieldType {
   field.downcast_ref::<C::FieldType>().expect("a field had the wrong type for its column").borrow()
 }
@@ -342,7 +324,7 @@ pub trait Accessor {
   However, in some cases, you may want to have a predictor that does something like
   "predict an event to happen at the beginning of any minute", which isn't technically
   time-dependent – but if you did it in a time-independent way, you'd have to predict
-  infinitely many events. Unsafe_now() is provided to enable you to only compute one of them.
+  infinitely many events. unsafe_now() is provided to enable you to only compute one of them.
   
   When you call unsafe_now() in a predictor, you promise that you will
   make the SAME predictions for ANY given return value of unsafe_now(), UNLESS:
@@ -676,6 +658,7 @@ pub trait SimpleSynchronizableTimeSteward: TimeStewardFromConstants + FullTimeSt
 
 /// A marker trait indicating that the TimeSteward promises that calling snapshot_before() or step() will not change valid_since()
 pub trait FullTimeSteward: TimeSteward {}
+
 /// A marker trait. Every CanonicalTimeSteward implementor must behave exactly the same way.
 ///
 /// That is, given any Steward0: CanonicalTimeSteward and Steward1: CanonicalTimeSteward,

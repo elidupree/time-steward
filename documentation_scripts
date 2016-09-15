@@ -12,6 +12,10 @@ function replace_id_boxes() {
 $(".random_ids").each (function (element) {
   $(this).html ("Here are some good random IDs you can use. They are regenerated whenever you load the page or copy one:<br/><pre>ColumnId" + generate_id() + "<br/>ColumnId" + generate_id() + "<br/>ColumnId" + generate_id() + "<br/>EventId" + generate_id() + "<br/>EventId" + generate_id() + "<br/>EventId" + generate_id() + "<br/>PredictorId" + generate_id() + "<br/>PredictorId" + generate_id() + "<br/>PredictorId" + generate_id()+"</pre>");
 });
+$(".inline_random_id").each (function (element) {
+  $(this).html (", e.g. <code>" + $(this).data ("idtype") + generate_id() + "</code>");
+});
+
 }
 replace_id_boxes();
 document.addEventListener("copy", function() {window.setTimeout (replace_id_boxes,30)});
