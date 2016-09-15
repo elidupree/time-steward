@@ -54,7 +54,7 @@ impl DeterministicRandomId {
   /// ```rust
   /// # type YourDataType = Vec<u64>;
   /// # use time_steward::DeterministicRandomId;
-  /// let id = DeterministicRandomId::new(&(0xdefacab1e_bad_1du64, YourDataType::new());
+  /// let id = DeterministicRandomId::new(&(0xdefacab1e_bad_1du64, YourDataType::new()));
   /// ```
   /// 
   /// Why do we use Serialize rather than Hash?
