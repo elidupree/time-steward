@@ -349,4 +349,16 @@ impl<B: Basics> ::TimeStewardFromSnapshot for Steward<B> {
     result
   }
 }
+
+impl<B: Basics> ::IncrementalTimeSteward for Steward<B> {
+  fn step(&mut self) {
+    if let Some(ev) = self.next_event() {
+      let (event_time, event) = ev;
+      self.execute_event(event_time, event);
+    }
+  }
+  fn updated_until_before(&self) -> Option<B::Time> {
+    self.next_event().map(|(time, _)| time.base)
+  }
+}
 impl<B: Basics> ::CanonicalTimeSteward for Steward<B> {}

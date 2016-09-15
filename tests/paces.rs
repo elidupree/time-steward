@@ -9,27 +9,6 @@ extern crate serde;
 use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, EventId, Column, ColumnType, PredictorType, EventType, TimeStewardFromConstants, TimeStewardFromSnapshot};
 use rand::{Rng, SeedableRng, ChaChaRng};
 
-
-macro_rules! printlnerr(
-    ($($arg:tt)*) => { {use std::io::Write;
-        let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
-        r.expect("failed printing to stderr");
-    } }
-);
-
-/*Tried to hunt an ICE, but failed
-trait Hack <B> {type Whatever;}
-use std::iter::{self, Empty};
-struct IntoIter; impl <'a> IntoIterator for & 'a IntoIter {type Item = i32; type IntoIter = Empty <i32>; fn into_iter(self)->Self::IntoIter {iter::empty()}}
-struct Original <B> {field: PhantomData <B>}
-impl <B> Hack <B> for Original <B> {type Whatever = IntoIter;}
-struct Wrapper <B, Inner: Hack <B>> {field: PhantomData <(B, Inner)>,}
-impl <B, Inner: Hack <B>> Hack <B> for Wrapper <B, Inner> {type Whatever = Inner::Whatever;}
-fn thingy <B, H: Hack <B>>() where for <'a> & 'a H::Whatever: IntoIterator <Item = i32> {}
-#[test]
-fn chunk() {thingy::<i32, Wrapper <i32, Wrapper <i32, Original<i32>>>>();}
-*/
-
 time_steward_basics!(struct Basics {
   type Time = DeterministicRandomId;
   type Constants = DeterministicRandomId;
@@ -83,6 +62,7 @@ where for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEnt
 {  
   let mut stew: Steward = Steward::from_constants (RowId::new (& generator.gen::<u64>()));
   let mut snapshots: Vec<Steward::Snapshot> = Vec::new();
+  let mut fiat_events: Vec<(DeterministicRandomId, DeterministicRandomId)> = Vec::new();
   
   fn display_snapshot <S: steward::Snapshot <Basics = Basics>> (snapshot: & S)->(usize, DeterministicRandomId) {(snapshot.num_fields(), snapshot.now().clone())}
   
@@ -97,11 +77,18 @@ where for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEnt
       }
     }*/
     match choice {
-      0 => { println!("inserting fiat event"); stew.insert_fiat_event (time, RowId::new (& index),
-      
-      FiatEvent::new()
-      
-      );},
+      0 => {
+        println!("inserting fiat event");
+        stew.insert_fiat_event (time, DeterministicRandomId::new (& index), FiatEvent::new());
+        fiat_events.push ((time, DeterministicRandomId::new (& index)));
+      },
+      5 => if !fiat_events.is_empty() {
+        println!("removing fiat event");
+        let choice = generator.gen_range (0, fiat_events.len());
+        let (time, id) = fiat_events [choice];
+        stew.remove_fiat_event (&time, id);
+        if generator.gen::<bool>() {fiat_events.remove (choice);}
+      },
       1 => if let Some (limit) = stew.updated_until_before () {if let Some (snapshot) = stew.snapshot_before (& limit) {println!("recording snapshot {:?}", display_snapshot::<Steward::Snapshot> (&snapshot)); 
       //(&snapshot).into_iter().count();
       snapshots.push (snapshot);}},
@@ -120,12 +107,25 @@ where for <'a> & 'a Steward::Snapshot: IntoIterator <Item = steward::SnapshotEnt
 }
 
 #[test]
-//#[ignore]
-fn main() {
-  let mut generator = ChaChaRng::from_seed(& [1337]);
-  use steward::stewards::{amortized, memoized_flat, flat_to_inefficient_full, crossverified};
-  paces:: <crossverified::Steward <Basics, 
-    amortized::Steward <Basics>,
-    flat_to_inefficient_full::Steward <Basics, memoized_flat::Steward <Basics>>
-  >,_> (&mut generator);
+fn memoized_flat_cross_inefficient_flat() {
+  for index in 0..10 {
+    let mut generator = ChaChaRng::from_seed(& [1337, index]);
+    use steward::stewards::{memoized_flat, inefficient_flat, crossverified};
+    paces:: <crossverified::Steward <Basics, 
+      memoized_flat::Steward <Basics>,
+      inefficient_flat::Steward <Basics>
+    >,_> (&mut generator);
+  }
+}
+
+#[test]
+fn amortized_cross_memoized_flat_to_inefficient_full() {
+  for index in 0..10 {
+    let mut generator = ChaChaRng::from_seed(& [1337, index]);
+    use steward::stewards::{amortized, memoized_flat, flat_to_inefficient_full, crossverified};
+    paces:: <crossverified::Steward <Basics, 
+      amortized::Steward <Basics>,
+      flat_to_inefficient_full::Steward <Basics, memoized_flat::Steward <Basics>>
+    >,_> (&mut generator);
+  }
 }
