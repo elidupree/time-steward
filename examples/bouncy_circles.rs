@@ -162,6 +162,7 @@ type TimeStewardTypes = (ColumnType<Circle>,
                          EventType<Initialize>,
                          EventType<Collision>,
                          EventType<BoundaryCollision>,
+                         EventType<Disturb>,
                          collisions::TimeStewardTypes<CollisionBasics>);
 
 fn get_circle_id(index: i32) -> RowId {
