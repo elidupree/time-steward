@@ -175,7 +175,7 @@ fn find_root_search_default (terms: &[Range], min_only: bool,
     & |input_1, input_2, _, value_2, value_1_metadata| {
     let mut input;
     let value_2 = floating (value_2);
-    let denominator = (value_2 - value_1_metadata);
+    let denominator = value_2 - value_1_metadata;
     input = ((input_2 as f64) -
              value_2 * ((input_2 as f64) - (input_1 as f64)) / denominator) as i64;
     if input.cmp(&input_2) != input.cmp(&input_1).reverse() {
