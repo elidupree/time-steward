@@ -104,6 +104,13 @@ impl Range {
   pub fn exactly(value: i64) -> Range {
     Range::new(value, value)
   }
+  pub fn zero() -> Range {
+    Range {
+      min: 0,
+      max: 0,
+      exponent: 0,
+    }
+  }
   pub fn error_sized(value: i64) -> Range {
     if value < 0 {
       Range::new(value, -value)
@@ -141,7 +148,8 @@ impl Range {
     self.exponent += increase;
   }
   fn minimize_exponent(&mut self) {
-    let confirm = self.clone();
+    let mut confirm = Range::zero();
+    if cfg! (debug_assertions) {confirm = self.clone();}
     if self.min == 0 && self.max == 0 {
       self.exponent = 0;
       return;
@@ -152,10 +160,19 @@ impl Range {
     self.min <<= change;
     self.max <<= change;
     self.exponent -= change;
-    assert! (self.exponent == 0 || self.min.checked_mul(2).map_or(true, | result | result == i64::min_value()) || self.max.checked_mul(2).map_or(true, | result | result == i64::min_value()));
-    let mut confirm_2 = self.clone();
-    confirm_2.increase_exponent_to(confirm.exponent);
-    assert!(confirm == confirm_2);
+    if cfg! (debug_assertions) {
+      if self.min <= self.max {
+        assert! (self.exponent_is_minimized());
+      }
+      assert! (self.exponent == 0 || self.min.checked_mul(2).map_or(true, | result | result == i64::min_value()) || self.max.checked_mul(2).map_or(true, | result | result == i64::min_value()));
+      let mut confirm_2 = self.clone();
+      confirm_2.increase_exponent_to(confirm.exponent);
+      assert!(confirm == confirm_2);
+    }
+  }
+  fn exponent_is_minimized(&self)->bool {
+    debug_assert!(self.min <= self.max);
+    self.exponent == 0 || self.min <= (-1i64 << 62) || self.max >= (1i64 << 62)
   }
   pub fn includes_0(&self) -> bool {
     self.min <= 0 && self.max >= 0
@@ -380,6 +397,7 @@ impl<'a> Mul for &'a Range {
       }
     }
     result.minimize_exponent();
+    //debug_assert! (result.exponent_is_minimized());
     result
   }
 }
@@ -411,6 +429,7 @@ impl<'a> Mul<&'a i64> for &'a Range {
       };
     }
     result.minimize_exponent();
+    //debug_assert! (result.exponent_is_minimized());
     result
   }
 }
@@ -590,13 +609,15 @@ impl Range {
     result.min = lower_bound;
     result.max = upper_bound;
     result.minimize_exponent();
-    let confirm = result.squared();
-    let mut confirmation = self.clone();
-    if confirmation.min < 0 {
-      confirmation.min = 0;
+    if cfg! (debug_assertions) {
+      let confirm = result.squared();
+      let mut confirmation = self.clone();
+      if confirmation.min < 0 {
+        confirmation.min = 0;
+      }
+      confirmation.minimize_exponent();
+      assert!(confirm.exponent > confirmation.exponent || confirm.includes(&confirmation));
     }
-    confirmation.minimize_exponent();
-    assert!(confirm.exponent > confirmation.exponent || confirm.includes(&confirmation));
     Some(result)
   }
 }

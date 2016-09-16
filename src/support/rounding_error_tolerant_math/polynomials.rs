@@ -355,7 +355,7 @@ pub fn max_error_for_distance_traveled(distance: i64) -> i64 {
   right_shift_round_up(distance, 24)
 }
 
-const DO_TESTS: bool = cfg!(test);
+const DO_TESTS: bool = cfg!(debug_assertions);
 
 // We require the user to pass in a max error value – specifically, the one that they use with
 // quadratic_trajectories_possible_distance_crossing_intervals –
