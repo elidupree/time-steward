@@ -294,7 +294,7 @@ time_steward_event! (
       let acceleration = -(new.position.evaluate() -
                             Vector2::new(ARENA_SIZE / 2,
                                          ARENA_SIZE / 2)) *
-                          (ARENA_SIZE * 4 / (ARENA_SIZE - me.0.radius));
+                          (ARENA_SIZE * 400 / (ARENA_SIZE - me.0.radius));
         new.position.add_acceleration(acceleration);
         new_relationship = Some(Intersection {
          induced_acceleration: SerializableVector2 ::new (acceleration),
