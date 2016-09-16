@@ -2,40 +2,8 @@ use std::marker::PhantomData;
 use {Column, Event, Predictor, Basics};
 
 macro_rules! type_list_definitions {
-($module: ident, $Trait: ident, $IdType: ident, $get_id: ident) => {
-pub mod $module {
-use std::any::Any;
-use std::marker::PhantomData;
-use {$Trait,$IdType};
 
-pub type Id = $IdType;
-pub use $Trait as Trait;
-pub fn get_id <T: $Trait>()->Id {T::$get_id()}
-
-enum Void {}
-pub struct Item <T: $Trait>(PhantomData <T>, Void);
-pub trait User {
-  fn apply<T: $Trait>(&mut self);
-}
-pub trait List: Any {
-  fn apply<U: User>(user: &mut U);
-}
-impl<T: Any> List for T {
-  #[inline]
-  default fn apply<U: User>(_: &mut U) {}
-}
-impl<T: $Trait> List for Item <T> {
-  #[inline]
-  fn apply<U: User>(user: &mut U) {
-    user.apply::<T>();
-  }
-}
-
-tuple_impls! (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
-}
-};
-
-($module: ident, $Trait: ident <B>, $IdType: ident, $get_id: ident) => {
+($module: ident, $Trait: ident, $IdType: ident, $get_id: ident, [$($BColonBasicsComma:tt)*][$($B:tt)*][$($BasicsEqualsB:tt)*]) => {
 pub mod $module {
 use std::any::Any;
 use std::marker::PhantomData;
@@ -47,53 +15,48 @@ pub fn get_id <T: $Trait>()->Id {T::$get_id()}
 
 enum Void {}
 pub struct Item <T: $Trait>(PhantomData <T>, Void);
-pub trait User <B: Basics> {
-  fn apply<T: $Trait <Basics = B>>(&mut self);
+pub trait User <$($BColonBasicsComma)*> {
+  fn apply<T: $Trait <$($BasicsEqualsB)*>>(&mut self);
 }
-pub trait List <B: Basics>: Any {
-  fn apply<U: User <B>>(user: &mut U);
+pub trait List <$($BColonBasicsComma)*>: Any {
+  fn apply<U: User <$($B)*>>(user: &mut U);
 }
-impl<B: Basics, T: Any> List <B> for T {
+impl<$($BColonBasicsComma)* T: Any> List <$($B)*> for T {
   #[inline]
-  default fn apply<U: User <B>>(_: &mut U) {}
+  default fn apply<U: User <$($B)*>>(_: &mut U) {}
 }
-impl<B: Basics, T: $Trait<Basics = B>> List <B> for Item <T> {
+impl<$($BColonBasicsComma)* T: $Trait<$($BasicsEqualsB)*>> List <$($B)*> for Item <T> {
   #[inline]
-  fn apply<U: User <B>>(user: &mut U) {
+  fn apply<U: User <$($B)*>>(user: &mut U) {
     user.apply::<T>();
   }
 }
-tuple_impls! (B: T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
+tuple_impls! ([$($BColonBasicsComma)*] [$($B)*] T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
 }
 };
 }
 macro_rules! tuple_impls {
-  ($TL: ident $(, $T: ident)*) => {
-    impl<$($T,)* $TL> List for ($($T,)* $TL,)
-      where $($T: List,)* $TL: List
+  ([$($BColonBasicsComma:tt)*][$($B:tt)*] $TL: ident $(, $T: ident)*) => {
+    tuple_impls! ([$($BColonBasicsComma)*] [$($B)*] $TL $(, $T)* [] [] []);
+    tuple_impls! ([$($BColonBasicsComma)*] [$($B)*] $($T),*);
+  };
+  ([$($BColonBasicsComma:tt)*][$($B:tt)*] $TL: ident $(, $T: ident)* [$($assembled_clauses:tt)*][$($individual_clauses:tt)*] [$($identifiers:ident)*]) => {
+    tuple_impls!([$($BColonBasicsComma)*] [$($B)*] $($T),*
+      [[$TL: List <$($B)*>] $($assembled_clauses:tt)*]
+      []
+      [$TL $($identifiers)*]);
+    
+  };
+  ([$($BColonBasicsComma:tt)*][$($B:tt)*] [$([$($assembled_clauses:tt)*])*][$( [$($individual_clauses:tt)*])*] [$($identifiers:ident)*]) => {
+    impl<$($BColonBasicsComma)* $($identifiers,)*> List <$($B)*> for ($($identifiers,)*)
+      where $($($assembled_clauses)*,)*
     {
       #[inline]
-      fn apply <U: User> (user: &mut U) {
-        $($T::apply(user);)*
-        $TL::apply(user);
+      fn apply <U: User <$($B)*>> (user: &mut U) {
+        $($identifiers::apply(user);)*
       }
     }
-    tuple_impls! ($($T),*);
   };
-  () => {};
-  (B: $TL: ident $(, $T: ident)*) => {
-    impl<B: Basics, $($T,)* $TL> List <B> for ($($T,)* $TL,)
-      where $($T: List <B>,)* $TL: List <B>
-    {
-      #[inline]
-      fn apply <U: User <B>> (user: &mut U) {
-        $($T::apply(user);)*
-        $TL::apply(user);
-      }
-    }
-    tuple_impls! (B: $($T),*);
-  };
-  (B:) => {};
 }
 macro_rules! pair_null_impls {
 ($module0: ident $module1: ident) => {
@@ -131,9 +94,9 @@ macro_rules! all_list_definitions {
 //
 
 all_list_definitions! (
-  [column_list, Column, ColumnId, column_id]
-  [event_list, Event <B>, EventId, event_id]
-  [predictor_list, Predictor <B>, PredictorId, predictor_id]
+  [column_list, Column, ColumnId, column_id, [][][]]
+  [event_list, Event, EventId, event_id, [B: Basics,][B][Basics = B]]
+  [predictor_list, Predictor, PredictorId, predictor_id, [B: Basics,][B][Basics = B]]
 );
 // all_null_impls! (column_list event_list predictor_list);
 
