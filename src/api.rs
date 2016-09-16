@@ -104,19 +104,19 @@ pub type TimeId = DeterministicRandomId;
 /// The ID type for implementors of trait Column<span class="inline_random_id" data-idtype="ColumnId"></span>.
 ///
 /// <div class="random_ids"></div>
-#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ColumnId(pub u64);
 
 /// The ID type for implementors of trait Predictor<span class="inline_random_id" data-idtype="PredictorId"></span>.
 ///
 /// <div class="random_ids"></div>
-#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PredictorId(pub u64);
 
 /// The ID type for implementors of trait Event<span class="inline_random_id" data-idtype="EventId"></span>.
 ///
 /// <div class="random_ids"></div>
-#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct EventId(pub u64);
 
 impl fmt::Debug for ColumnId {
