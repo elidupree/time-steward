@@ -355,7 +355,7 @@ pub fn max_error_for_distance_traveled(distance: i64) -> i64 {
   right_shift_round_up(distance, 24)
 }
 
-const DO_TESTS: bool = true;
+const DO_TESTS: bool = cfg!(test);
 
 // We require the user to pass in a max error value – specifically, the one that they use with
 // quadratic_trajectories_possible_distance_crossing_intervals –
@@ -373,14 +373,19 @@ pub fn quadratic_move_origin_rounding_change_towards_0(terms: &mut [i64],
                  exceeded the given max error");
     return false;
   }
-  let between_time = rand::thread_rng().gen_range(0, origin + 1);
-  let confirm =
-    quadratic_future_proxy_minimizing_error(terms, between_time, input_scale_shift, max_error);
+  let mut between_time = 0;
+  let mut confirm = [Range::exactly(0);3];
+  if DO_TESTS {
+    between_time = rand::thread_rng().gen_range(0, origin + 1);
+    confirm = quadratic_future_proxy_minimizing_error(terms, between_time, input_scale_shift, max_error);
+  }
   terms[0] += distance_traveled.rounded_towards_0();
   terms[1] += ((Range::exactly(terms[2]) * origin) >> (input_scale_shift - 1)).rounded_towards_0();
-  let experimented = evaluate(&confirm, origin - between_time) >> (input_scale_shift * 2);
-  // printlnerr!("experimented {}, actually {}", experimented, terms [0]);
-  assert!(experimented.includes(&Range::exactly(terms[0])));
+  if DO_TESTS {
+    let experimented = evaluate(&confirm, origin - between_time) >> (input_scale_shift * 2);
+    // printlnerr!("experimented {}, actually {}", experimented, terms [0]);
+    assert!(experimented.includes(&Range::exactly(terms[0])));
+  }
   true
 }
 
