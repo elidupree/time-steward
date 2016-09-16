@@ -2,15 +2,6 @@ use nalgebra::{Vector2, Dot};
 use std::cmp::max;
 use super::rounding_error_tolerant_math::*;
 
-
-use std::io::Write;
-macro_rules! printlnerr(
-    ($($arg:tt)*) => { {
-        let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
-        r.expect("failed printing to stderr");
-    } }
-);
-
 // TODO: polymorphic in number of dimensions, and numeric type
 // TODO: optimize away the pointless inefficiencies I introduced
 // note: the third time is not acceleration, but the coefficient of X squared, which is 2 times acceleration
@@ -106,7 +97,7 @@ impl QuadraticTrajectory {
     if (distance_squared_would_be(first, second, base)
       .expect("we shouldn't have already maxed out our distance traveled at the \
                BEGINNING of the test!") - distance * distance) * direction > 0 {
-      printlnerr!("rejefoo");
+      //printlnerr!("rejefoo");
       return Some(base);
     }
 

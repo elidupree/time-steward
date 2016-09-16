@@ -261,7 +261,7 @@ macro_rules! time_steward_event {
     }
     impl<$($Parameter $($bounds)*),*> $Struct <$($Parameter),*> {
       #[allow (dead_code)]
-      fn new($($field_name: $field_type),*)->Self {$Struct {$($field_name: $field_name),*}}
+      $($privacy)* fn new($($field_name: $field_type),*)->Self {$Struct {$($field_name: $field_name),*}}
     }
   };
   ([$($privacy:tt)*] struct $Struct: ident <$([$Parameter: ident $($bounds:tt)*]),*>{$($field_name: ident: $field_type: ty),*}, $B: ty, $event_id: expr, $generic_function: ident) => {
@@ -281,13 +281,20 @@ macro_rules! time_steward_event {
 
 #[macro_export]
 macro_rules! time_steward_basics {
-(struct $Basics: ident {$($contents:tt)*}) => {
-#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default)]
-struct $Basics;
-impl $crate::Basics for $Basics {
-$($contents)*
+  ([$($privacy:tt)*] struct $Basics: ident {$($contents:tt)*}) => {
+    #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default)]
+    $($privacy)* struct $Basics;
+    impl $crate::Basics for $Basics {
+      $($contents)*
+    }
+  };
+  (pub struct $($rest:tt)*) => {
+    time_steward_basics! ([pub] struct $($rest)*);
+  };
+  (struct $($rest:tt)*) => {
+    time_steward_basics! ([] struct $($rest)*);
+  };
 }
-}}
 
 
 /**
