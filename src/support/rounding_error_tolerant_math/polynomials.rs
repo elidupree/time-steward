@@ -79,14 +79,17 @@ pub fn roots_quadratic(terms: [Range; 3], min_input: i64, max_input: i64) -> Vec
 }
 
 
-fn find_root_search(terms: &[Range],
+fn find_root_search <Metadata: Copy, InputStrategy: Fn (i64, i64, Range, Range, Metadata)->i64, MetadataGenerator: Fn (Range)->Metadata, MetadataTransformer: Fn (Metadata, Range, Range)->Metadata> (terms: &[Range],
                     min_only: bool,
                     max_only: bool,
                     input_1: i64,
                     input_2: i64,
                     value_1: Range,
-                    adjusted_value_1: Range,
-                    value_2: Range)
+                    value_2: Range,
+                    value_1_metadata: Metadata,
+                    input_strategy: &InputStrategy,
+                    metadata_generator: &MetadataGenerator,
+                    metadata_transformer: &MetadataTransformer)
                     -> (i64, i64) {
   assert!(!(value_1.includes_0() && value_2.includes_0()));
   if !min_only {
@@ -99,25 +102,12 @@ fn find_root_search(terms: &[Range],
   let mut input_1: i64 = input_1;
   let mut input_2: i64 = input_2;
   let mut value_1: Range = value_1;
-  let mut adjusted_value_1: Range = adjusted_value_1;
+  let mut value_1_metadata = value_1_metadata;
   let mut value_2: Range = value_2;
   let mut result_for_other: i64 = 0;
   let mut min_only = min_only;
   loop {
-    let mut input;
-    let denominator = (value_2 - adjusted_value_1).rounded_to_middle_towards_neginf();
-    if denominator.includes_0() {
-      input = average_round_towards_neginf(input_1, input_2);
-    } else {
-      input = (Range::exactly(input_2) -
-               value_2 * (Range::exactly(input_2) - Range::exactly(input_1)) / denominator)
-        .clamp_to_0_exponent()
-        .unwrap()
-        .min();
-      if input.cmp(&input_2) != input.cmp(&input_1).reverse() {
-        input = average_round_towards_neginf(input_1, input_2);
-      }
-    }
+    let input = input_strategy (input_1, input_2, value_1, value_2, value_1_metadata);
     if input == input_1 || input == input_2 {
       break;
     }
@@ -137,7 +127,7 @@ fn find_root_search(terms: &[Range],
         min_only = true;
         if other_closer_to_1 {
           result_for_other =
-            find_root_search(terms, false, true, input_2, input, value_2, value_2, value).0;
+            find_root_search(terms, false, true, input_2, input, value_2, value, metadata_generator (value_2), input_strategy, metadata_generator, metadata_transformer).0;
         } else {
           // possible optimization: use a better factor, referring to "A Family of Regula Falsi Methods", Galdino
           result_for_other = find_root_search(terms,
@@ -146,8 +136,9 @@ fn find_root_search(terms: &[Range],
                                               input_1,
                                               input,
                                               value_1,
-                                              adjusted_value_1 >> 1,
-                                              value)
+                                              value,
+                                              metadata_transformer (value_1_metadata, value_2, value),
+                                              input_strategy, metadata_generator, metadata_transformer)
             .0;
         }
       }
@@ -155,10 +146,9 @@ fn find_root_search(terms: &[Range],
     if closer_to_1 {
       input_1 = input_2;
       value_1 = value_2;
-      adjusted_value_1 = value_2;
+      value_1_metadata = metadata_generator (value_2);
     } else {
-      // possible optimization: use a better factor, referring to "A Family of Regula Falsi Methods", Galdino
-      adjusted_value_1 = adjusted_value_1 >> 1;
+      value_1_metadata = metadata_transformer (value_1_metadata, value_2, value);
     }
     input_2 = input;
     value_2 = value;
@@ -170,9 +160,60 @@ fn find_root_search(terms: &[Range],
     assert!((value_1 > 0) != (value_2 > 0));
     (if value_1 > 0 { input_1 } else { input_2 }, result_for_other)
   }
-
 }
 
+fn find_root_search_default (terms: &[Range], min_only: bool,
+                    max_only: bool,
+                    input_1: i64,
+                    input_2: i64,
+                    value_1: Range,
+                    value_2: Range)
+                    -> (i64, i64) {
+  
+  let floating = | whatever: Range | (whatever.internal_min() as f64)*(2f64.powi (whatever.exponent() as i32));
+  let relaxed_result = find_root_search (terms, min_only, max_only, input_1, input_2, value_1, value_2, floating (value_1),
+    & |input_1, input_2, _, value_2, value_1_metadata| {
+    let mut input;
+    let value_2 = floating (value_2);
+    let denominator = (value_2 - value_1_metadata);
+    input = ((input_2 as f64) -
+             value_2 * ((input_2 as f64) - (input_1 as f64)) / denominator) as i64;
+    if input.cmp(&input_2) != input.cmp(&input_1).reverse() {
+      input = average_round_towards_neginf(input_1, input_2);
+    }
+    input
+    }, & floating, &| fa,fb,fx| {
+      // refer to "A Family of Regula Falsi Methods", Galdino
+      // this method is written down as generally slightly the best in number of function evaluations,
+      // but it profiled slightly worse, probably just because it uses more operations.
+      // let mut m = 1f64 - floating (fx)/floating (fb);
+      // if m <= 0f64 {m = 0.5;}
+      // fa*m
+      fa * 0.5
+    });
+  if cfg! (debug_assertions) {
+  let strict_result = find_root_search (terms, min_only, max_only, input_1, input_2, value_1, value_2, value_1,
+    & |input_1, input_2, _, value_2, value_1_metadata| {
+    let mut input;
+    let denominator = (value_2 - value_1_metadata).rounded_to_middle_towards_neginf();
+    if denominator.includes_0() {
+      input = average_round_towards_neginf(input_1, input_2);
+    } else {
+      input = (Range::exactly(input_2) -
+               value_2 * (Range::exactly(input_2) - Range::exactly(input_1)) / denominator)
+        .clamp_to_0_exponent()
+        .unwrap()
+        .min();
+      if input.cmp(&input_2) != input.cmp(&input_1).reverse() {
+        input = average_round_towards_neginf(input_1, input_2);
+      }
+    }
+    input
+    }, & | whatever: Range | whatever, & | value,_,_ | value >> 1);
+  assert! (relaxed_result == strict_result);
+  }
+  relaxed_result
+}
 
 fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
   if min >= max {
@@ -188,24 +229,22 @@ fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
     } else {
       let search_by_min = max_value > 0;
       Some(Range::new(min,
-                      find_root_search(terms,
+                      find_root_search_default(terms,
                                        search_by_min,
                                        !search_by_min,
                                        min,
                                        max,
-                                       min_value,
                                        min_value,
                                        max_value)
                         .0))
     }
   } else if max_value.includes_0() {
     let search_by_min = min_value > 0;
-    Some(Range::new(find_root_search(terms,
+    Some(Range::new(find_root_search_default(terms,
                                      search_by_min,
                                      !search_by_min,
                                      min,
                                      max,
-                                     min_value,
                                      min_value,
                                      max_value)
                       .0,
@@ -213,12 +252,11 @@ fn find_root(terms: &[Range], min: i64, max: i64) -> Option<Range> {
   } else if max_value.min_signum() == min_value.min_signum() {
     None
   } else {
-    let (result_for_min, result_for_max) = find_root_search(terms,
+    let (result_for_min, result_for_max) = find_root_search_default(terms,
                                                             false,
                                                             false,
                                                             min,
                                                             max,
-                                                            min_value,
                                                             min_value,
                                                             max_value);
     Some(Range::new_either_order(result_for_min, result_for_max))
