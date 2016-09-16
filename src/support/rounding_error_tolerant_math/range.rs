@@ -4,15 +4,6 @@ use std::iter::Sum;
 use std::fmt;
 use quickcheck::{Arbitrary, Gen};
 
-
-macro_rules! printlnerr(
-    ($($arg:tt)*) => { {use std::io::Write;
-        let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
-        r.expect("failed printing to stderr");
-    } }
-);
-
-
 /**
 
 A numeric-ish type for dealing with integer math that has possible rounding error.
@@ -129,6 +120,7 @@ impl Range {
   fn increase_exponent_to(&mut self, new: u32) {
     assert!(new >= self.exponent);
     let increase = new - self.exponent;
+    if increase == 0 {return;}
     self.increase_exponent_by(increase);
   }
   fn increase_exponent_by(&mut self, increase: u32) {
@@ -150,6 +142,7 @@ impl Range {
   fn minimize_exponent(&mut self) {
     let mut confirm = Range::zero();
     if cfg! (debug_assertions) {confirm = self.clone();}
+    if self.exponent == 0 {return;}
     if self.min == 0 && self.max == 0 {
       self.exponent = 0;
       return;
