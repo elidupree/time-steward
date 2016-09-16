@@ -119,6 +119,22 @@ pub struct PredictorId(pub u64);
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub struct EventId(pub u64);
 
+impl fmt::Debug for ColumnId {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "ColumnId(0x{:016x})", self.0)
+  }
+}
+impl fmt::Debug for PredictorId {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "PredictorId(0x{:016x})", self.0)
+  }
+}
+impl fmt::Debug for EventId {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "EventId(0x{:016x})", self.0)
+  }
+}
+
 
 pub trait Column: Any {
   type FieldType: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug;// = Self;
