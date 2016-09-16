@@ -182,7 +182,7 @@ fn find_root_search_default (terms: &[Range], min_only: bool,
       input = average_round_towards_neginf(input_1, input_2);
     }
     input
-    }, & floating, &| fa,fb,fx| {
+    }, & floating, &| fa,_,_| {
       // refer to "A Family of Regula Falsi Methods", Galdino
       // this method is written down as generally slightly the best in number of function evaluations,
       // but it profiled slightly worse, probably just because it uses more operations.
