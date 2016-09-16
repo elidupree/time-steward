@@ -20,9 +20,7 @@ pub trait Basics: super::Basics {
 
 
 
-struct Cell<B: Basics> {
-  _marker: PhantomData<B>,
-}
+
 impl<B: Basics> Column for Cell<B> {
   type FieldType = BTreeSet <RowId>;
   fn column_id() -> ColumnId {
@@ -35,6 +33,10 @@ impl<B: Basics> Column for Cell<B> {
 mod hack {
   use super::*;
   use {RowId, PredictorId, EventId};
+  use std::marker::PhantomData;
+  pub struct Cell<B: Basics> {
+    _marker: PhantomData<B>,
+  }
   #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
   pub struct Member<B: Basics> {
     pub row: RowId,
@@ -68,7 +70,7 @@ mod hack {
     }
   }
 }
-use self::hack::{Member, BoundsChange, BoundsChangePredictor};
+use self::hack::{Cell, Member, BoundsChange, BoundsChangePredictor};
 
 impl<B: Basics> Column for Member<B> {
   type FieldType = Member<B>;
@@ -149,7 +151,8 @@ pub fn remove<B: Basics, M: Mutator<Basics = B::StewardBasics>>(mutator: &mut M,
 
 
 
-pub type TimeStewardTypes<B> = (ColumnType<Member<B>>,
-                                ColumnType<Nearness<B>>,
+pub type TimeStewardTypes<B> = (ColumnType<Nearness<B>>,
+                                ColumnType<Member<B>>,
+                                ColumnType<Cell<B>>,
                                 EventType<BoundsChange<B>>,
                                 PredictorType<BoundsChangePredictor<B>>);
