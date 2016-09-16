@@ -1,4 +1,3 @@
-
 use std::marker::PhantomData;
 use {Column, Event, Predictor, Basics};
 
@@ -252,7 +251,7 @@ macro_rules! time_steward_dynamic_fn {
           result
         }
         pub fn get (&self, id: $Id)->fn ($($argument_type),*)->$return_type {
-          *(self.0.get (&id).expect ("Type missing from function table; did you forget to list it in Basics::IncludedTypes?"))
+          *(self.0.get (&id).unwrap_or_else (|| panic! ("Type with {:?} missing from function table; did you forget to list it in Basics::IncludedTypes?", id)))
         }
       }
 
