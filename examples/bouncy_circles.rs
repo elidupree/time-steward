@@ -37,7 +37,7 @@ struct Args {
 
 
 //use time_steward::stewards::crossverified as s;
-use time_steward::{TimeSteward, TimeStewardFromConstants, DeterministicRandomId, Accessor,
+use time_steward::{TimeSteward, TimeStewardFromConstants, IncrementalTimeSteward, DeterministicRandomId, Accessor,
      MomentaryAccessor};
 use std::thread::sleep;
 use std::time::{Instant, Duration};
@@ -88,7 +88,7 @@ fn main() {
 }
 
 
-fn run <Steward: TimeSteward <Basics = Basics>,F: Fn (&mut Steward, Time)>(mut stew: Steward, settle:F) {
+fn run <Steward: IncrementalTimeSteward <Basics = Basics>,F: Fn (&mut Steward, Time)>(mut stew: Steward, settle:F) {
 
 
   let vertex_shader_source = r#"
@@ -145,6 +145,7 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
     let start = Instant::now();
 
     loop {
+      let frame_begin = Instant::now();
       let time =((start.elapsed().as_secs() as i64 * 1000000000i64) +
                             start.elapsed().subsec_nanos() as i64) *
                            SECOND / 1000000000i64;
@@ -219,6 +220,10 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
         .expect("failed target.draw");
 
       target.finish().expect("failed to finish drawing");
+      
+      while frame_begin.elapsed() < Duration::from_millis (10) && stew.updated_until_before().map_or (false, | limitation | limitation < time + SECOND) {
+        for _ in 0..8 {stew.step();}
+      }
       sleep(Duration::from_millis(10));
     }
   }

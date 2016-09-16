@@ -242,13 +242,18 @@ impl<B: Basics> StewardOwned<B> {
                                   &mut self.events.events_needing_attention,
                                   &mut self.events.dependencies)
       }
+      let mut already_handled = HashSet::with_capacity(bounded.len());
       for (_, list) in bounded {
         for (row_id, predictor_id) in list {
-          self.invalidate_prediction_dependency(row_id, predictor_id, Some(id), time, false);
+          if already_handled.insert ((row_id, predictor_id)) {
+            self.invalidate_prediction_dependency(row_id, predictor_id, Some(id), time, false);
+          }
         }
       }
       for (row_id, predictor_id) in unbounded {
-        self.invalidate_prediction_dependency(row_id, predictor_id, Some(id), time, false);
+        if !already_handled.contains (&(row_id, predictor_id)) {
+          self.invalidate_prediction_dependency(row_id, predictor_id, Some(id), time, false);
+        }
       }
     }
   }
