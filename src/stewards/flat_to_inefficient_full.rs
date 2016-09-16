@@ -52,9 +52,7 @@ impl<B: Basics, Steward0: TimeStewardFromConstants + TimeStewardFromSnapshot <Ba
                                                id: DeterministicRandomId,
                                                event: E)
                                                -> Result<(), FiatEventOperationError> {
-    if self.valid_since() > time {
-      return Err(FiatEventOperationError::InvalidTime);
-    }
+    time_steward_common_insert_fiat_event_prefix!(B, self, time, E);
     self.reset_if_needed(&time);
     if self.fiat_events.contains_key(&id) {
       return Err(FiatEventOperationError::InvalidInput);

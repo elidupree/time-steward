@@ -118,9 +118,7 @@ impl<B: Basics, Steward0: TimeSteward<Basics = B> , Steward1: TimeSteward<Basics
                        id: DeterministicRandomId,
                        event: E)
                        -> Result<(), FiatEventOperationError> {
-    if self.valid_since() > time {
-      return Err(FiatEventOperationError::InvalidTime);
-    }
+    time_steward_common_insert_fiat_event_prefix!(B, self, time, E);
     let old_valid_since = (self.0.valid_since(), self.1.valid_since());
     let result = match (
       self.0.insert_fiat_event (time.clone(), id, event.clone()),

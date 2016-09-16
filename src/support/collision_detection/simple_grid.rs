@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 use super::Nearness;
 use {RowId, ColumnId, Column, Accessor, MomentaryAccessor, Mutator, ColumnType, EventType,
      PredictorType};
-use std::marker::PhantomData;
 use serde::Serialize;
 
 #[derive (Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]

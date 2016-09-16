@@ -219,6 +219,7 @@ macro_rules! time_steward_common_accessor_methods_for_predictor_accessor {
 macro_rules! time_steward_common_predictor_accessor_methods_for_predictor_accessor {
   ($B: ty, $DynamicEventFn: ident) => {
     fn predict_at_time <E: $crate::Event <Basics = $B>> (&mut self, time: <$B as $crate::Basics>::Time, event: E) {
+      $crate::implementation_support::list_of_types::assert_contains_event::<$B, E>();
       if time < *self.unsafe_now() {
         return;
       }
@@ -277,6 +278,27 @@ macro_rules! time_steward_common_rng_methods_for_mutator {
     }
   }
 }
+
+#[doc (hidden)]
+#[macro_export]
+macro_rules! time_steward_common_mutator_set_prefix {
+  ($B: ty, $C: ty, $self_hack: ident, $id: ident, $data: ident) => {
+    $crate::implementation_support::list_of_types::assert_contains_column::<$B, $C>();
+  }
+}
+
+
+#[doc (hidden)]
+#[macro_export]
+macro_rules! time_steward_common_insert_fiat_event_prefix {
+  ($B: ty, $self_hack: ident, $time: ident, $E: ty) => {
+    $crate::implementation_support::list_of_types::assert_contains_event::<$B, $E>();
+    if $self_hack.valid_since() > $time {
+      return Err(FiatEventOperationError::InvalidTime);
+    }
+  }
+}
+
 
 
 

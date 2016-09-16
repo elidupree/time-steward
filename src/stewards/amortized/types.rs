@@ -340,6 +340,7 @@ impl<'a, B: Basics> IntoIterator for &'a Snapshot<B> {
 
 impl<'a, B: Basics> ::Mutator for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
+    time_steward_common_mutator_set_prefix!(B, C, self, id, data);
     let field_id = FieldId::new(id, C::column_id());
     ::bincode::serde::serialize_into(&mut *self.results.checksum_generator.borrow_mut(),
                                      &id,
@@ -423,9 +424,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
                                                id: DeterministicRandomId,
                                                event: E)
                                                -> Result<(), FiatEventOperationError> {
-    if self.valid_since() > time {
-      return Err(FiatEventOperationError::InvalidTime);
-    }
+    time_steward_common_insert_fiat_event_prefix!(B, self, time, E);
     match self.owned.events.schedule_event(common::extended_time_of_fiat_event(time, id),
                                            StewardRc::new(DynamicEventFn::new(event))) {
       Err(_) => Err(FiatEventOperationError::InvalidInput),

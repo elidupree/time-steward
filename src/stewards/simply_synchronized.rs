@@ -204,9 +204,7 @@ where  B::Time: Sub <Output = B::Time> + Mul<i64, Output = B::Time> + Div<B::Tim
                                         id: DeterministicRandomId,
                                         event: E)
                                         -> Result<(), FiatEventOperationError> {
-    if self.valid_since() > time {
-      return Err(FiatEventOperationError::InvalidTime);
-    }
+    time_steward_common_insert_fiat_event_prefix!(B, self, time, E);
     let qualified_id = DeterministicRandomId::new (& (id, self .id));
     let result = self.steward.insert_fiat_event (time.clone(), qualified_id, event.clone());
     match result {

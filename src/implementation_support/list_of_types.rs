@@ -1,6 +1,11 @@
 use std::marker::PhantomData;
 use {Column, Event, Predictor, Basics};
 
+//pub trait Contains <T> {}
+pub trait AmI <T> {fn am_i()->bool;}
+impl <T, U> AmI <T> for U {default fn am_i()->bool {false}}
+impl <T> AmI <T> for T {fn am_i()->bool {true}}
+
 macro_rules! type_list_definitions {
 ($module: ident, $Trait: ident, $IdType: ident, $get_id: ident) => {
 pub mod $module {
@@ -21,15 +26,16 @@ pub trait List: Any {
   fn apply<U: User>(user: &mut U);
 }
 impl<T: Any> List for T {
-  #[inline]
+  #[inline(always)]
   default fn apply<U: User>(_: &mut U) {}
 }
 impl<T: $Trait> List for Item <T> {
-  #[inline]
+  #[inline(always)]
   fn apply<U: User>(user: &mut U) {
     user.apply::<T>();
   }
 }
+//impl <T: $Trait> super::Contains <T> for Item <T> {}
 
 tuple_impls! (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
 }
@@ -63,6 +69,8 @@ impl<B: Basics, T: $Trait<Basics = B>> List <B> for Item <T> {
     user.apply::<T>();
   }
 }
+//impl <T: $Trait> super::Contains <T> for Item <T> {}
+
 tuple_impls! (B: T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
 }
 };
@@ -72,7 +80,7 @@ macro_rules! tuple_impls {
     impl<$($T,)* $TL> List for ($($T,)* $TL,)
       where $($T: List,)* $TL: List
     {
-      #[inline]
+      #[inline(always)]
       fn apply <U: User> (user: &mut U) {
         $($T::apply(user);)*
         $TL::apply(user);
@@ -85,7 +93,7 @@ macro_rules! tuple_impls {
     impl<B: Basics, $($T,)* $TL> List <B> for ($($T,)* $TL,)
       where $($T: List <B>,)* $TL: List <B>
     {
-      #[inline]
+      #[inline(always)]
       fn apply <U: User <B>> (user: &mut U) {
         $($T::apply(user);)*
         $TL::apply(user);
@@ -95,6 +103,25 @@ macro_rules! tuple_impls {
   };
   (B:) => {};
 }
+/*
+macro_rules! contains_tuple_impls {
+  (@0 [$L0: ident $($L: ident)*][$R0: ident $($R: ident)*]) => {
+    contains_tuple_impls! (@0 [$($L)*] [$($R)*]);
+    contains_tuple_impls! (@1 [$L0 $($L)*] [$R0 $($R)*]);
+  };
+  (@0 [][]) => {};
+  (@1 [$L0: ident $($L: ident)*][$($R: ident)*]) => {
+    contains_tuple_impls! (@1 [$($L)*] [$($R)*]);
+    
+    impl<Contained, $($R,)*> Contains <Contained> for ($($R,)*)
+      where $L0: Contains <Contained> {}
+  };
+  (@1 [][$($R: ident)*]) => {};
+  ($($T:ident),*) => {
+    contains_tuple_impls! (@0 [$($T)*] [$($T)*]);
+  };
+}
+
 macro_rules! pair_null_impls {
 ($module0: ident $module1: ident) => {
 impl<T: $module0::Trait> $module1::List for $module0::Item <T> {
@@ -114,6 +141,7 @@ macro_rules! all_null_impls {
 };
 () => {};
 }
+*/
 macro_rules! all_list_definitions {
 ($([$($info:tt)*])*) => {
   $(type_list_definitions! ($($info)*);)*
@@ -136,6 +164,7 @@ all_list_definitions! (
   [predictor_list, Predictor <B>, PredictorId, predictor_id]
 );
 // all_null_impls! (column_list event_list predictor_list);
+//contains_tuple_impls! (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
 
 pub use self::column_list::List as ColumnList;
 pub use self::column_list::Item as ColumnType;
@@ -290,12 +319,14 @@ pub fn audit_basics<Q: Basics>() {
   }
 
   impl<B: Basics> column_list::User for Table<B> {
+    #[inline (always)]
     fn apply<T: Column>(&mut self) {
       self.insert_id(T::column_id().0, 0);
     }
   }
 
   impl<B: Basics> event_list::User<B> for Table<B> {
+    #[inline (always)]
     fn apply<T: Event>(&mut self) {
       self.insert_id(T::event_id().0, 1);
     }
@@ -314,5 +345,65 @@ pub fn audit_basics<Q: Basics>() {
   <Q::IncludedTypes as ColumnList>::apply(&mut checker);
   <Q::IncludedTypes as EventList<Q>>::apply(&mut checker);
   <Q::IncludedTypes as PredictorList<Q>>::apply(&mut checker);
-
 }
+
+#[inline (always)]
+pub fn contains_column<B: Basics, C: Column>()->bool {
+  struct Checker <B: Basics, C: Column>(bool, PhantomData<(B, C)>);
+  
+  impl<B: Basics, C: Column> column_list::User for Checker <B, C> {
+    #[inline (always)]
+    fn apply<T: Column>(&mut self) {
+      if <T as AmI<C>>::am_i() {self.0 = true;}
+    }
+  }
+
+  let mut checker = Checker::<B, C>(false, PhantomData);
+  <B::IncludedTypes as ColumnList>::apply(&mut checker);
+  checker.0
+}
+
+#[inline (always)]
+pub fn contains_event <B: Basics, E: Event>()->bool {
+  struct Checker <B: Basics, E: Event>(bool, PhantomData<(B, E)>);
+  
+  impl<B: Basics, E: Event> event_list::User <B> for Checker <B, E> {
+    #[inline (always)]
+    fn apply<T: Event>(&mut self) {
+      if <T as AmI<E>>::am_i() {self.0 = true;}
+    }
+  }
+
+  let mut checker = Checker::<B, E>(false, PhantomData);
+  <B::IncludedTypes as EventList <B>>::apply(&mut checker);
+  checker.0
+}
+
+#[inline (always)]
+pub fn contains_predictor <B: Basics, P: Predictor>()->bool {
+  struct Checker <B: Basics, P: Predictor>(bool, PhantomData<(B, P)>);
+  
+  impl<B: Basics, P: Predictor> predictor_list::User <B> for Checker <B, P> {
+    #[inline (always)]
+    fn apply<T: Predictor>(&mut self) {
+      if <T as AmI<P>>::am_i() {self.0 = true;}
+    }
+  }
+
+  let mut checker = Checker::<B, P>(false, PhantomData);
+  <B::IncludedTypes as PredictorList <B>>::apply(&mut checker);
+  checker.0
+}
+
+pub fn assert_contains_column<B: Basics, T: Column>() {
+  assert! (contains_column::<B, T>(), "Type with {:?} missing from Basics::IncludedTypes", T::column_id());
+}
+
+pub fn assert_contains_event <B: Basics, T: Event>() {
+  assert! (contains_event::<B, T>(), "Type with {:?} missing from Basics::IncludedTypes", T::event_id());
+}
+
+pub fn assert_contains_predictor <B: Basics, T: Predictor>() {
+  assert! (contains_predictor::<B, T>(), "Type with {:?} missing from Basics::IncludedTypes", T::predictor_id());
+}
+

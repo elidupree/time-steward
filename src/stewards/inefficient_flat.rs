@@ -142,6 +142,7 @@ impl<'a, B: Basics> IntoIterator for &'a Snapshot<B> {
 
 impl<'a, B: Basics> ::Mutator for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
+    time_steward_common_mutator_set_prefix!(B, C, self, id, data);
     self.steward.state.set_opt::<C>(id, data, &self.generic.now);
   }
   time_steward_common_mutator_methods_for_mutator!(B);
@@ -263,9 +264,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
                                                id: DeterministicRandomId,
                                                event: E)
                                                -> Result<(), FiatEventOperationError> {
-    if self.valid_since() > time {
-      return Err(FiatEventOperationError::InvalidTime);
-    }
+    time_steward_common_insert_fiat_event_prefix!(B, self, time, E);
     match self.state.fiat_events.insert(common::extended_time_of_fiat_event(time, id),
                                         StewardRc::new(DynamicEventFn::new(event))) {
       None => Ok(()),
