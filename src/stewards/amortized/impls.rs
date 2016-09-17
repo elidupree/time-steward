@@ -726,7 +726,7 @@ impl<B: Basics> Steward<B> {
     
     for (& (row_id, predictor_id), history) in self.owned.predictions_by_id.iter() {
       for index in 0..(history.predictions.len()-1) {
-        assert!(history.predictions [index].valid_until.as_ref().expect("internal TimeSteward error: non-final prediction had unbounded valid_until") < &history.predictions [index + 1].made_at, "internal TimeSteward error: predictions out of order");
+        assert!(history.predictions [index].valid_until.as_ref().expect("internal TimeSteward error: non-final prediction had unbounded valid_until") <= &history.predictions [index + 1].made_at, "internal TimeSteward error: predictions out of order");
       }
       for prediction in history.predictions.iter() {
         prediction.valid_until.as_ref().map(| limit | assert!(*limit > prediction.made_at, "internal TimeSteward error: prediction had negative validity duration"));
