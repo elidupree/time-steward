@@ -43,3 +43,16 @@ fn bouncy_circles_disturbed (bencher: &mut Bencher) {
     steward.snapshot_before(& SECOND).expect("steward failed to provide snapshot");
   })
 }
+
+#[bench]
+fn bouncy_circles_disturbed_retroactive (bencher: &mut Bencher) {
+  bencher.iter(|| {
+    let mut steward: amortized::Steward<Basics> = amortized::Steward::from_constants(());
+    steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
+    steward.snapshot_before(& SECOND).expect("steward failed to provide snapshot");
+    for index in 1..10 {
+      steward.insert_fiat_event (index*SECOND/10, DeterministicRandomId::new (& index), Disturb::new ([ARENA_SIZE/3,ARENA_SIZE/3])).unwrap();
+      steward.snapshot_before(& SECOND).expect("steward failed to provide snapshot");
+    }
+  })
+}
