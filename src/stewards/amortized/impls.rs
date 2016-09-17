@@ -2,7 +2,7 @@ use super::types::*;
 // use stewards::amortized::{EventExecutionState, StewardOwned, StewardShared, FieldHistory, StewardEventsInfo, EventValidity, Field, limit_option_by_value_with_none_representing_positive_infinity, split_off_greater, split_off_greater_set, SnapshotsData, Prediction, PredictionHistory, PredictorAccessorResults, DependenciesMap, DynamicEvent, EventState};
 
 use {SiphashIdGenerator, RowId, FieldId, PredictorId, TimeId,
-     FieldRc, ExtendedTime, Basics};
+     FieldRc, ExtendedTime, Basics, TimeSteward};
 use implementation_support::common::{self, field_options_are_equal};
 use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet, btree_map};
 use std::collections::hash_map::Entry;
@@ -725,8 +725,8 @@ impl<B: Basics> Steward<B> {
     let mut accounted_events = HashMap::new();
     
     for (& (row_id, predictor_id), history) in self.owned.predictions_by_id.iter() {
-      for index in 0..(history.predictions.len()-1) {
-        assert!(history.predictions [index].valid_until.as_ref().expect("internal TimeSteward error: non-final prediction had unbounded valid_until") <= &history.predictions [index + 1].made_at, "internal TimeSteward error: predictions out of order");
+      for index in 1..(history.predictions.len()) {
+        assert!(history.predictions [index-1].valid_until.as_ref().expect("internal TimeSteward error: non-final prediction had unbounded valid_until") <= &history.predictions [index].made_at, "internal TimeSteward error: predictions out of order");
       }
       for prediction in history.predictions.iter() {
         prediction.valid_until.as_ref().map(| limit | assert!(*limit > prediction.made_at, "internal TimeSteward error: prediction had negative validity duration"));
@@ -750,10 +750,11 @@ impl<B: Basics> Steward<B> {
         if let Some (predictors) = self.shared.settings.predictors_by_column.get (&id.column_id) {
           for predictor in predictors.iter() {
             let prediction_history = self.owned.predictions_by_id.get (&(id.row_id, predictor.predictor_id)).unwrap();
-            if prediction_history.next_needed.as_ref().map_or (true, | threshold | *threshold >change.last_change) {
+            if prediction_history.next_needed.as_ref().map_or (true, | threshold | *threshold >change.last_change && self.valid_since() < threshold.base) {
               let mut satisfied = false;
               for prediction in prediction_history.predictions.iter() {
-                if prediction.made_at <= change.last_change && prediction.valid_until.as_ref().map_or (true, | limit | *limit >change.last_change) {
+                if (prediction.made_at <= change.last_change ||
+                (self.valid_since() > prediction.made_at.base && self.valid_since() > change.last_change.base)) && prediction.valid_until.as_ref().map_or (true, | limit | *limit >change.last_change) {
                   satisfied = true;
                 }
               }
