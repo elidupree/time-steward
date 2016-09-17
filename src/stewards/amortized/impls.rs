@@ -725,7 +725,11 @@ impl<B: Basics> Steward<B> {
     let mut accounted_events = HashMap::new();
     
     for (& (row_id, predictor_id), history) in self.owned.predictions_by_id.iter() {
+      for index in 0..(history.predictions.len()-1) {
+        assert!(history.predictions [index].valid_until.as_ref().expect("internal TimeSteward error: non-final prediction had unbounded valid_until") < &history.predictions [index + 1].made_at, "internal TimeSteward error: predictions out of order");
+      }
       for prediction in history.predictions.iter() {
+        prediction.valid_until.as_ref().map(| limit | assert!(*limit > prediction.made_at, "internal TimeSteward error: prediction had negative validity duration"));
         self.test_prediction (row_id, predictor_id, &prediction.made_at, & prediction);
         if let Some (& (ref event_time,_)) = prediction.what_will_happen.as_ref() {
           if prediction.valid_until.as_ref().map_or (true, | limit | limit >= event_time) {
