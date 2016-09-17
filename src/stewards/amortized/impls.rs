@@ -553,17 +553,10 @@ impl<B: Basics> Steward<B> {
                               .expect("a null event state was left lying around"));
     }
   }
-  pub(super) fn make_prediction(&mut self,
+  pub(super) fn make_prediction(&self,
                                 row_id: RowId,
                                 predictor_id: PredictorId,
-                                time: &ExtendedTime<B>) {
-    let prediction;
-    let mut history = self.owned
-      .predictions_by_id
-      .get_mut(&(row_id, predictor_id))
-      .expect(" prediction needed records are inconsistent");
-    {
-      assert_eq!(history.next_needed, Some (time.clone()));
+                                time: &ExtendedTime<B>)->(Prediction <B>, Option <ExtendedTime <B>>) {
       let predictor = self.shared.settings.predictors_by_id.get(&predictor_id).unwrap().clone();
       let fields = self.shared.fields.borrow();
       assert! ( fields.get (FieldId::new (row_id, predictor.column_id), time, true).is_some());
@@ -621,20 +614,32 @@ impl<B: Basics> Steward<B> {
         results.valid_until.clone()
       };
 
-      change_needed_prediction_time(row_id,
-                                    predictor_id,
-                                    &mut history,
-                                    next_needed,
-                                    &mut self.owned.predictions_missing_by_time);
-
-      prediction = Prediction {
+      (Prediction {
         // unique the dependencies
         predictor_accessed: dependencies.into_iter().collect::<HashSet <FieldId>>().into_iter().collect(),
         what_will_happen: what_will_happen,
         made_at: time.clone(),
         valid_until: results.valid_until,
-      };
-    }
+      }, next_needed)
+  }
+
+  pub(super) fn do_prediction(&mut self,
+                                row_id: RowId,
+                                predictor_id: PredictorId,
+                                time: &ExtendedTime<B>) {
+    let (prediction, next_needed) = self.make_prediction (row_id, predictor_id, time);
+    let mut history = self.owned
+      .predictions_by_id
+      .get_mut(&(row_id, predictor_id))
+      .expect(" prediction needed records are inconsistent");
+    assert_eq!(history.next_needed, Some (time.clone()));
+    
+    change_needed_prediction_time(row_id,
+                                  predictor_id,
+                                  &mut history,
+                                  next_needed,
+                                  &mut self.owned.predictions_missing_by_time);
+    
     self.owned.events.record_prediction_dependencies(row_id, predictor_id, &prediction);
     if let Some((ref event_time, ref event)) = prediction.what_will_happen {
       if prediction.valid_until.as_ref().map_or(true, |limit| event_time <= limit) {
@@ -664,7 +669,7 @@ impl<B: Basics> Steward<B> {
         Some(event_time)
       }
       (None, Some((prediction_time, row_id, predictor_id))) => {
-        self.make_prediction(row_id, predictor_id, &prediction_time);
+        self.do_prediction(row_id, predictor_id, &prediction_time);
         Some(prediction_time)
       }
       (Some(event_time), Some((prediction_time, row_id, predictor_id))) => {
@@ -672,7 +677,7 @@ impl<B: Basics> Steward<B> {
           self.do_event(&event_time);
           Some(event_time)
         } else {
-          self.make_prediction(row_id, predictor_id, &prediction_time);
+          self.do_prediction(row_id, predictor_id, &prediction_time);
           Some(prediction_time)
         }
       }

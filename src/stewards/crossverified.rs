@@ -214,7 +214,7 @@ impl<B: Basics, Steward0: IncrementalTimeSteward <Basics = B>, Steward1: Increme
         let strict = old_valid_since > time_0;
         self.0.step();
         let new_valid_since = self.0.valid_since();
-        assert!(new_valid_since <= ValidSince::After (time_0), "Steward0 broke the ValidSince rules");
+        assert!(new_valid_since <= old_valid_since || new_valid_since <= ValidSince::After (time_0), "Steward0 broke the ValidSince rules");
         if strict { assert!(new_valid_since <= old_valid_since, "Steward0 broke the ValidSince rules"); }
         return;
       }
@@ -225,7 +225,7 @@ impl<B: Basics, Steward0: IncrementalTimeSteward <Basics = B>, Steward1: Increme
       let strict = old_valid_since > time_1;
       self.1.step();
       let new_valid_since = self.1.valid_since();
-      assert!(new_valid_since <= ValidSince::After (time_1), "Steward1 broke the ValidSince rules");
+      assert!(new_valid_since <= old_valid_since || new_valid_since <= ValidSince::After (time_1), "Steward1 broke the ValidSince rules");
       if strict { assert!(new_valid_since <= old_valid_since, "Steward1 broke the ValidSince rules"); }
     }
   }
