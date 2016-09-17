@@ -152,6 +152,16 @@ pub struct PredictionHistory<B: Basics> {
   pub predictions: Vec<Prediction<B>>,
 }
 
+use std::fmt;
+impl <B: Basics> fmt::Debug for Prediction <B> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    try! (write!(f, "Prediction {{ made_at: {:?}, valid_until: {:?}", self.made_at, self.valid_until));
+    if let Some (&(ref event_time, ref event)) = self.what_will_happen.as_ref() {
+      try! (write!(f, ", what_will_happen: ({:?}, DynamicEvent with {:?}", event_time, event.event_id()));
+    }
+    write!(f, " }}")
+  }
+}
 
 pub struct StewardShared<B: Basics> {
   pub settings: Settings<B>,
@@ -202,6 +212,7 @@ pub struct Mutator<'a, B: Basics> {
 }
 pub struct PredictorAccessorResults<B: Basics> {
   pub valid_until: Option<ExtendedTime<B>>,
+  pub used_unsafe_now: bool,
 }
 pub struct PredictorAccessor<'a, B: Basics> {
   // predictor_id: PredictorId,
@@ -295,6 +306,7 @@ impl<'a, B: Basics> ::Accessor for PredictorAccessor<'a, B> {
     &self.shared.constants
   }
   fn unsafe_now(&self) -> &B::Time {
+    self.results.borrow_mut().used_unsafe_now = true;
     &self.internal_now.base
   }
 }

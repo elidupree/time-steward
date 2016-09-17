@@ -1,7 +1,7 @@
 use super::types::*;
 // use stewards::amortized::{EventExecutionState, StewardOwned, StewardShared, FieldHistory, StewardEventsInfo, EventValidity, Field, limit_option_by_value_with_none_representing_positive_infinity, split_off_greater, split_off_greater_set, SnapshotsData, Prediction, PredictionHistory, PredictorAccessorResults, DependenciesMap, DynamicEvent, EventState};
 
-use {SiphashIdGenerator, RowId, FieldId, PredictorId,
+use {SiphashIdGenerator, RowId, FieldId, PredictorId, TimeId,
      FieldRc, ExtendedTime, Basics};
 use implementation_support::common::{self, field_options_are_equal};
 use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet, btree_map};
@@ -556,7 +556,7 @@ impl<B: Basics> Steward<B> {
   pub(super) fn make_prediction(&self,
                                 row_id: RowId,
                                 predictor_id: PredictorId,
-                                time: &ExtendedTime<B>)->(Prediction <B>, Option <ExtendedTime <B>>) {
+                                time: &ExtendedTime<B>)->(Prediction <B>, Option <ExtendedTime <B>>, bool) {
       let predictor = self.shared.settings.predictors_by_id.get(&predictor_id).unwrap().clone();
       let fields = self.shared.fields.borrow();
       assert! ( fields.get (FieldId::new (row_id, predictor.column_id), time, true).is_some());
@@ -571,7 +571,7 @@ impl<B: Basics> Steward<B> {
           shared: &self.shared,
           fields: field_ref,
           generic: common::GenericPredictorAccessor::new(),
-          results: RefCell::new(PredictorAccessorResults { valid_until: None }),
+          results: RefCell::new(PredictorAccessorResults { valid_until: None, used_unsafe_now: false, }),
         };
         (predictor.function)(&mut pa, row_id);
         results = pa.results.into_inner();
@@ -620,14 +620,47 @@ impl<B: Basics> Steward<B> {
         what_will_happen: what_will_happen,
         made_at: time.clone(),
         valid_until: results.valid_until,
-      }, next_needed)
+      }, next_needed, results.used_unsafe_now)
   }
-
+  
+  pub(super) fn test_prediction(&self,
+                                row_id: RowId,
+                                predictor_id: PredictorId,
+                                time: &ExtendedTime<B>, compare_with: &Prediction <B>) {
+    let (prediction, _, _) = self.make_prediction (row_id, predictor_id, time);
+    match (prediction.what_will_happen.as_ref(), compare_with.what_will_happen.as_ref()) {
+      (None, None) =>(),
+      (Some (&(ref event_time, ref event)), Some (&(ref original_event_time, ref original_event)))
+        if event_time.base == original_event_time.base && event.event_id() == original_event.event_id()
+        // TODO: also check the event data equality
+        =>(),
+      _=> if compare_with.made_at.base == time.base {
+        panic!("predictor {:?} gave different results when given the same inputs:\n{:?}\nversus\n{:?}", predictor_id, compare_with, & prediction)
+      } else {
+        panic!("predictor {:?} gave different results with different values of unsafe_now():\n{:?}\nversus\n{:?}", predictor_id, compare_with, & prediction)
+      },
+    }
+  }
+  
   pub(super) fn do_prediction(&mut self,
                                 row_id: RowId,
                                 predictor_id: PredictorId,
                                 time: &ExtendedTime<B>) {
-    let (prediction, next_needed) = self.make_prediction (row_id, predictor_id, time);
+    let (prediction, next_needed, used_unsafe_now) = self.make_prediction (row_id, predictor_id, time);
+    
+    if cfg! (debug_assertions) {
+      self.test_prediction (row_id, predictor_id, time, &prediction);
+      if used_unsafe_now {
+        if let Some (limit) = prediction.valid_until.clone() {
+          let mut hack_time = limit.clone();
+          assert!(limit > *time);
+          for index in 0.. {hack_time.id = TimeId::new (& index); if hack_time < limit && hack_time > *time {break;}}
+          assert!(hack_time < limit);
+          self.test_prediction (row_id, predictor_id, & hack_time, &prediction);
+        }
+      }
+    }
+    
     let mut history = self.owned
       .predictions_by_id
       .get_mut(&(row_id, predictor_id))

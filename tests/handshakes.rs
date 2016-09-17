@@ -118,14 +118,22 @@ time_steward_event! (
                              }));
   }
 );
+
+use rand::{Rng, SeedableRng, ChaChaRng};
+thread_local! {static INCONSISTENT: u32 = rand::thread_rng().gen::<u32>();}
+
 time_steward_event! (
   struct TweakUnsafe {}, Basics, EventId (0xa1618440808703da),
   | &self, m | {
     println!(" TweakUnsafe !!!!!");
     let now = *m.now();
     let friend_id = get_philosopher_id(m.gen_range(0, HOW_MANY_PHILOSOPHERS));
-    use rand::{self, Rng};
-    let awaken_time = now + rand::thread_rng().gen_range(-1, 7);
+
+    let inconsistent = INCONSISTENT.with (| value | {
+      *value
+    });
+    let mut rng = ChaChaRng::from_seed (& [inconsistent, m. next_u32()]);
+    let awaken_time = now + rng.gen_range(-1, 7);
 
     m.set::<Philosopher>(friend_id,
                              Some(Philosopher {
