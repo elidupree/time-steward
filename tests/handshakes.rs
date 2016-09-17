@@ -7,11 +7,9 @@ extern crate time_steward;
 extern crate rand;
 extern crate bincode;
 
-use time_steward::stewards::crossverified as s;
 use time_steward::{TimeSteward, TimeStewardFromConstants, TimeStewardFromSnapshot, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, EventId,
      ColumnType, EventType, PredictorType};
-use time_steward::stewards::amortized;
-use time_steward::stewards::memoized_flat;
+use time_steward::stewards::{inefficient_flat, memoized_flat, amortized, flat_to_inefficient_full, crossverified};
 
 
 type Time = i64;
@@ -37,8 +35,7 @@ impl Column for Philosopher {
     ColumnId(0x4084d1501468b6dd)
   }
 }
-
-type Steward = s::Steward<Basics, amortized::Steward<Basics>, memoized_flat::Steward<Basics>>;
+ 
 
 fn get_philosopher_id(index: i32) -> RowId {
   DeterministicRandomId::new(&(0x2302c38efb47e0d0u64, index))
@@ -142,7 +139,25 @@ time_steward_event! (
   }
 );
 
-pub fn testfunc() {
+#[test]
+pub fn handshakes_simple() {
+  type Steward = crossverified::Steward<Basics, inefficient_flat::Steward<Basics>, memoized_flat::Steward<Basics>>;
+  let mut stew: Steward = Steward::from_constants(());
+
+  stew.insert_fiat_event(0,
+                       DeterministicRandomId::new(&0x32e1570766e768a7u64),
+                       Initialize::new())
+    .unwrap();
+    
+  for increment in 1..21 {
+    let snapshot: <Steward as TimeSteward>::Snapshot = stew.snapshot_before(&(increment * 100i64)).unwrap();
+    display_snapshot(&snapshot);
+  }
+}
+
+#[test]
+pub fn handshakes_reloading() {
+  type Steward = crossverified::Steward<Basics, amortized::Steward<Basics>, memoized_flat::Steward<Basics>>;
   let mut stew: Steward = Steward::from_constants(());
 
   stew.insert_fiat_event(0,
@@ -174,8 +189,22 @@ pub fn testfunc() {
 }
 
 #[test]
-fn actuallytest() {
-  testfunc();
+fn handshakes_retroactive() {
+  type Steward = crossverified::Steward<Basics, amortized::Steward<Basics>, flat_to_inefficient_full::Steward<Basics, memoized_flat::Steward <Basics> >>;
+  let mut stew: Steward = Steward::from_constants(());
+
+  stew.insert_fiat_event(0,
+                       DeterministicRandomId::new(&0x32e1570766e768a7u64),
+                       Initialize::new())
+    .unwrap();
+
+  stew.snapshot_before(&(2000i64));
+  for increment in 1..21 {
+    stew.insert_fiat_event(increment * 100i64, DeterministicRandomId::new(&increment), Tweak::new()).unwrap();
+    let snapshot: <Steward as TimeSteward>::Snapshot = stew.snapshot_before(&(2000i64)).unwrap();
+    display_snapshot(&snapshot);
+  }
+
 }
 
 #[test]
