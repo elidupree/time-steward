@@ -183,11 +183,11 @@ impl<B: Basics> StewardOwned<B> {
           }
         }
 
-        if prediction.made_at <= *time && !field_is_none_now {
+        if !field_is_none_now {
           change_needed_prediction_time(row_id,
                                         predictor_id,
                                         &mut history,
-                                        Some(time.clone()),
+                                        Some(::std::cmp::max (prediction.made_at.clone(), time.clone())),
                                         &mut self.predictions_missing_by_time);
         }
 
@@ -201,7 +201,7 @@ impl<B: Basics> StewardOwned<B> {
         }
       }
       if let Some(next) = history.next_needed.clone() {
-        if next > *time || (field_is_none_now && next >= *time) {
+        if field_is_none_now && next >= *time {
           change_needed_prediction_time(row_id,
                                         predictor_id,
                                         &mut history,
