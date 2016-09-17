@@ -13,12 +13,16 @@ use implementation_support::insert_only;
 
 pub fn invalidate_execution<B: Basics>(time: &ExtendedTime<B>,
                                        execution: &mut EventExecutionState,
+                                       already_dealt_with: Option<FieldId>,
                                        events_needing_attention: &mut BTreeSet<ExtendedTime<B>>,
                                        steward_dependencies: &mut DependenciesMap<B>) {
   if let EventValidity::ValidWithDependencies(dependencies) =
          mem::replace(&mut execution.validity, EventValidity::Invalid) {
     events_needing_attention.insert(time.clone());
     for dependency in dependencies {
+      if Some(dependency) == already_dealt_with {
+        continue;
+      }
       match steward_dependencies.entry(dependency) {
         Entry::Vacant(_) => panic!("dependency records are inconsistent"),
         Entry::Occupied(mut entry) => {
@@ -73,7 +77,7 @@ impl<B: Basics> StewardEventsInfo<B> {
         entry.get_mut().scheduled_by = None;
         if let Some(ref mut execution_state) = entry.get_mut().execution_state {
           invalidate_execution::<B>(time,
-                                    execution_state,
+                                    execution_state, None,
                                     &mut self.events_needing_attention,
                                     &mut self.dependencies);
         }
@@ -243,6 +247,7 @@ impl<B: Basics> StewardOwned<B> {
                                     .execution_state
                                     .as_mut()
                                     .expect("event that accessed this field not marked executed"),
+                                  Some(id),
                                   &mut self.events.events_needing_attention,
                                   &mut self.events.dependencies)
       }
@@ -305,6 +310,7 @@ impl<B: Basics> StewardOwned<B> {
                                   .execution_state
                                   .as_mut()
                                   .expect("event that created this change not marked executed"),
+                                None,
                                 &mut self.events.events_needing_attention,
                                 &mut self.events.dependencies);
     }
