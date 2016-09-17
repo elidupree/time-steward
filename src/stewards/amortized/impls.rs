@@ -35,12 +35,14 @@ pub fn invalidate_execution<B: Basics>(time: &ExtendedTime<B>,
 impl<B: Basics> StewardEventsInfo<B> {
   pub fn schedule_event(&mut self,
                         time: ExtendedTime<B>,
-                        event: DynamicEvent<B>)
+                        event: DynamicEvent<B>,
+                        scheduled_by: Option <(RowId, PredictorId)>)
                         -> Result<(), ()> {
     match self.event_states.entry(time.clone()) {
       Entry::Vacant(entry) => {
         entry.insert(EventState {
           schedule: Some(event),
+          scheduled_by: scheduled_by,
           execution_state: None,
         });
         self.events_needing_attention.insert(time);
@@ -51,6 +53,7 @@ impl<B: Basics> StewardEventsInfo<B> {
           return Err(());
         }
         state.schedule = Some(event);
+        state.scheduled_by = scheduled_by;
         if state.execution_state.is_none() {
           self.events_needing_attention.insert(time);
         }
@@ -67,6 +70,7 @@ impl<B: Basics> StewardEventsInfo<B> {
           return Err(());
         }
         entry.get_mut().schedule = None;
+        entry.get_mut().scheduled_by = None;
         if let Some(ref mut execution_state) = entry.get_mut().execution_state {
           invalidate_execution::<B>(time,
                                     execution_state,
@@ -648,7 +652,7 @@ impl<B: Basics> Steward<B> {
                                 time: &ExtendedTime<B>) {
     let (prediction, next_needed, used_unsafe_now) = self.make_prediction (row_id, predictor_id, time);
     
-    if cfg! (debug_assertions) {
+    if cfg! (debug_assertions) && false {
       self.test_prediction (row_id, predictor_id, time, &prediction);
       if used_unsafe_now {
         if let Some (limit) = prediction.valid_until.clone() {
@@ -676,7 +680,7 @@ impl<B: Basics> Steward<B> {
     self.owned.events.record_prediction_dependencies(row_id, predictor_id, &prediction);
     if let Some((ref event_time, ref event)) = prediction.what_will_happen {
       if prediction.valid_until.as_ref().map_or(true, |limit| event_time <= limit) {
-        self.owned.events.schedule_event(event_time.clone(), event.clone()).unwrap();
+        self.owned.events.schedule_event(event_time.clone(), event.clone(), Some ((row_id, predictor_id))).unwrap();
       }
     }
     history.predictions.push(prediction);
@@ -712,6 +716,46 @@ impl<B: Basics> Steward<B> {
         } else {
           self.do_prediction(row_id, predictor_id, &prediction_time);
           Some(prediction_time)
+        }
+      }
+    }
+  }
+  
+  pub(super) fn test_lots (&self) {
+    let mut accounted_events = HashMap::new();
+    
+    for (& (row_id, predictor_id), history) in self.owned.predictions_by_id.iter() {
+      for prediction in history.predictions.iter() {
+        self.test_prediction (row_id, predictor_id, &prediction.made_at, & prediction);
+        if let Some (& (ref event_time,_)) = prediction.what_will_happen.as_ref() {
+          if prediction.valid_until.as_ref().map_or (true, | limit | limit >= event_time) {
+            assert!(accounted_events.insert (event_time.clone(), (row_id, predictor_id)).is_none(), "internal TimeSteward error: 2 predictors predicted an event of the same time");
+          }
+        }
+      }
+    }
+    
+    for (time, state) in self.owned.events.event_states.iter() {
+      if let Some (ids) = state.scheduled_by.as_ref() {
+        assert!(accounted_events.get (time).expect("internal TimeSteward error: an event claims to have been predicted, but nothing predicted it") == ids, "internal TimeSteward error: an event claims to have been predicted by a certain predictor, but it was predicted by a different predictor");
+      }
+    }
+    
+    for (id, history) in self.shared.fields.borrow().field_states.iter() {
+      for change in history.changes.iter() {
+        if let Some (predictors) = self.shared.settings.predictors_by_column.get (&id.column_id) {
+          for predictor in predictors.iter() {
+            let prediction_history = self.owned.predictions_by_id.get (&(id.row_id, predictor.predictor_id)).unwrap();
+            if prediction_history.next_needed.as_ref().map_or (true, | threshold | *threshold >change.last_change) {
+              let mut satisfied = false;
+              for prediction in prediction_history.predictions.iter() {
+                if prediction.made_at <= change.last_change && prediction.valid_until.as_ref().map_or (true, | limit | *limit >change.last_change) {
+                  satisfied = true;
+                }
+              }
+              assert_eq!(satisfied, change.data.is_some(), "internal TimeSteward error: prediction existences are inconsistent with field existences");
+            }
+          }
         }
       }
     }

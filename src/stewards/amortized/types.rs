@@ -62,6 +62,7 @@ pub struct EventExecutionState {
 
 pub struct EventState<B: Basics> {
   pub schedule: Option<DynamicEvent<B>>,
+  pub scheduled_by: Option <(RowId, PredictorId)>,
   pub execution_state: Option<EventExecutionState>,
 }
 
@@ -438,7 +439,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
                                                -> Result<(), FiatEventOperationError> {
     time_steward_common_insert_fiat_event_prefix!(B, self, time, E);
     match self.owned.events.schedule_event(common::extended_time_of_fiat_event(time, id),
-                                           StewardRc::new(DynamicEventFn::new(event))) {
+                                           StewardRc::new(DynamicEventFn::new(event)), None) {
       Err(_) => Err(FiatEventOperationError::InvalidInput),
       Ok(_) => Ok(()),
     }
@@ -613,6 +614,7 @@ where B::Time: Add <Output = B::Time> + Sub<Output = B::Time> + Mul<i64, Output 
     self.owned.checksum_info.as_ref().unwrap().checksums.get (chunk as usize).cloned().unwrap_or (0)
   }
   fn debug_dump(&self, chunk: i64) ->BTreeMap<ExtendedTime <B>, u64>{
+    self.test_lots();
     let mut result = BTreeMap::new();
     let info = self.owned.checksum_info.as_ref().unwrap();
     for (time, state) in self.owned.events.event_states.iter() {
