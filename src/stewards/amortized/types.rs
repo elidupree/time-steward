@@ -145,6 +145,7 @@ pub struct Prediction<B: Basics> {
   pub what_will_happen: Option<(ExtendedTime<B>, DynamicEvent<B>)>,
   pub made_at: ExtendedTime<B>,
   pub valid_until: Option<ExtendedTime<B>>,
+  pub checksum: u64,
 }
 #[derive (Default)]
 pub struct PredictionHistory<B: Basics> {
@@ -600,23 +601,46 @@ where B::Time: Add <Output = B::Time> + Sub<Output = B::Time> + Mul<i64, Output 
     }
     self.owned.checksum_info.as_ref().unwrap().checksums.get (chunk as usize).cloned().unwrap_or (0)
   }
-  fn debug_dump(&self, chunk: i64) ->BTreeMap<ExtendedTime <B>, u64>{
+  fn debug_dump(&self, chunk: i64) ->BTreeMap<(ExtendedTime <B>, PredictorId, RowId), u64>{
     let mut result = BTreeMap::new();
     let info = self.owned.checksum_info.as_ref().unwrap();
     for (time, state) in self.owned.events.event_states.iter() {
       if (time.base.clone() - info.start.clone())/info.stride.clone() == chunk {
         if let Some (execution) = state.execution_state.as_ref() {
-          result.insert (time.clone(), execution.checksum);
+          result.insert ((time.clone(), PredictorId (0), RowId::new (&0)), execution.checksum);
+        }
+      }
+    }
+    for (& (row_id, predictor_id), history) in self.owned.predictions_by_id.iter() {
+      for prediction in history.predictions.iter() {
+        if (prediction.made_at.base.clone() - info.start.clone())/info.stride.clone() == chunk {
+          let mut checksum_generator = SiphashIdGenerator::new();
+          if let Some ((ref event_time, ref event)) = prediction.what_will_happen {
+            ::bincode::serde::serialize_into (&mut checksum_generator, event_time, ::bincode::SizeLimit::Infinite).unwrap();
+            //common::serialize_event::<B, _, SiphashIdGenerator> (event.event_id(), &mut checksum_generator, event, ::bincode::SizeLimit::Infinite).unwrap();
+          }
+          result.insert ((prediction.made_at.clone(), predictor_id, row_id), checksum_generator.generate().data()[0]);
         }
       }
     }
     result
   }
-  fn event_details (&self, time: & ExtendedTime <B>)->String {
-    let mut result = String::new();
-    let state = self.owned.events.event_states.get (time).unwrap();
+  fn callback_details (&self, time: & ExtendedTime <B>, predictor_id: PredictorId, row_id: RowId)->String {
     use std::fmt::Write;
-    write! (&mut result, "At {:?}:\n EventId: {:?}\n {:?}\n", time, state.schedule.as_ref().unwrap().event_id(), &state.execution_state).unwrap();
+    let mut result = String::new();
+    if predictor_id.0 == 0 {
+      let state = self.owned.events.event_states.get (time).unwrap();
+      write! (&mut result, "At {:?}:\n{:?}\n {:?}\n", time, state.schedule.as_ref().unwrap().event_id(), &state.execution_state).unwrap();
+    }
+    else {
+      let history = self.owned.predictions_by_id.get (&(row_id, predictor_id)).unwrap();
+      let index = match history.predictions.binary_search_by_key(&time, | prediction | & prediction.made_at) {
+        Ok(index) => index,
+        Err(_) => panic!("missing prediction"),
+      };
+      let prediction = &history.predictions [index];
+      write! (&mut result, "At {:?}:\n{:?}, {:?}\n {:?}\n", time, row_id, predictor_id, & prediction.predictor_accessed).unwrap();
+    }
     result
   }
 }

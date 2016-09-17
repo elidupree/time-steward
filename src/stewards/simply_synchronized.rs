@@ -12,7 +12,7 @@ use std::io::{Read, Write};
 use std::any::Any;
 use std::ops::{Sub, Mul, Div};
 use {ExtendedTime, Basics, TimeSteward, SimpleSynchronizableTimeSteward, DeterministicRandomId,
-     EventId, Event, FiatEventOperationError, ValidSince};
+     EventId, RowId, PredictorId, Event, FiatEventOperationError, ValidSince};
 use std::sync::mpsc::{channel, Sender, Receiver};
 use bincode;
 
@@ -23,7 +23,7 @@ enum Message<B: Basics> {
   RemoveFiatEvent(B::Time, DeterministicRandomId),
   Settled(i64),
   Checksum(i64, u64),
-  DebugDump(BTreeMap<ExtendedTime<B>, u64>),
+  DebugDump(BTreeMap<(ExtendedTime<B>, PredictorId, RowId), u64>),
   EventDetails(String),
   Finished(u32),
 }
@@ -39,7 +39,7 @@ pub struct Steward<B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics =
   settled_through: i64,
   other_settled_through: i64,
   checksums: Vec<u64>,
-  dump: Option<BTreeMap<ExtendedTime<B>, u64>>,
+  dump: Option<BTreeMap<(ExtendedTime<B>, PredictorId, RowId), u64>>,
   finishes_received: u32,
 }
 
@@ -123,33 +123,35 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
             }
           },
           Message::DebugDump (events) => {
-            let mut my_iter = self.dump.as_ref().unwrap().iter();
-            let mut other_iter = events.iter();
+            let mut my_iter = ::std::mem::replace (&mut self.dump, Default::default()).unwrap().into_iter();
+            let mut other_iter = events.into_iter();
             loop {
               match (my_iter.next(), other_iter.next()) {
                 (None, None) => panic!("both debug dumps are the same, even though the checksums were different?"),
-                (Some ((my_time, my_checksum)), Some ((other_time, other_checksum))) => {
-                  if my_time < other_time {
-                    let event_details = self.steward.event_details (my_time);
+                (Some ((      info,    my_checksum)),
+                 Some ((other_info, other_checksum)))
+                 => {
+                  if info < other_info {
+                    let event_details = self.steward.callback_details (&info.0, info.1, info.2);
                     self.sender.send (Message::EventDetails (event_details.clone())).unwrap();
-                    panic!("event only occurred locally:\n {}", event_details);
+                    panic!("Callback only occurred locally. This is an internal TimeSteward error:\n {}", event_details);
                   }
-                  if my_time > other_time {
-                    panic!("event only occurred remotely:\n {}", self.receive_event_details());
+                  if info > other_info {
+                    panic!("Callback only occurred remotely. This is an internal TimeSteward error:\n {}", self.receive_event_details());
                   }
                   if my_checksum != other_checksum {
-                    let event_details = self.steward.event_details (my_time);
+                    let event_details = self.steward.callback_details (&info.0, info.1, info.2);
                     self.sender.send (Message::EventDetails (event_details.clone())).unwrap();
                     panic!("event occurred this way locally:\n {}\n\nbut this way remotely: {}", event_details, self.receive_event_details());
                   }
                 },
-                (Some ((my_time, _)), None) => {
-                  let event_details = self.steward.event_details (my_time);
+                (Some ((info, _)), None) => {
+                  let event_details = self.steward.callback_details (&info.0, info.1, info.2);
                   self.sender.send (Message::EventDetails (event_details.clone())).unwrap();
-                  panic!("event only occurred locally:\n {}", event_details);
-                },
+                  panic!("Callback only occurred locally. This is an internal TimeSteward error:\n {}", event_details);
+                }, 
                 (None, Some ((_, _))) => {
-                  panic!("event only occurred remotely:\n {}", self.receive_event_details());
+                  panic!("Callback only occurred remotely. This is an internal TimeSteward error:\n {}", self.receive_event_details());
                 },
               }
             }

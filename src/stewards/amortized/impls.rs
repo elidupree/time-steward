@@ -641,6 +641,9 @@ impl<B: Basics> Steward<B> {
         self.owned.events.schedule_event(event_time.clone(), event.clone()).unwrap();
       }
     }
+    if let Some(checksum_info) = self.owned.checksum_info.as_mut() {
+      checksum_info.add_event_checksum(prediction.checksum.wrapping_neg(), &time.base);
+    }
     history.predictions.push(prediction);
   }
 

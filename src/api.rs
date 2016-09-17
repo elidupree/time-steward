@@ -716,8 +716,8 @@ use std::collections::BTreeMap;
 pub trait SimpleSynchronizableTimeSteward: TimeStewardFromConstants + FullTimeSteward {
   fn begin_checks (&mut self, start: <<Self as TimeSteward>::Basics as Basics>::Time, stride: <<Self as TimeSteward>::Basics as Basics>::Time);
   fn checksum(&mut self, chunk: i64) -> u64;
-  fn debug_dump(&self, chunk: i64) -> BTreeMap<ExtendedTime<<Self as TimeSteward>::Basics>, u64>;
-  fn event_details(&self, time: &ExtendedTime<<Self as TimeSteward>::Basics>) -> String;
+  fn debug_dump(&self, chunk: i64) -> BTreeMap<(ExtendedTime<<Self as TimeSteward>::Basics>, PredictorId, RowId), u64>;
+  fn callback_details(&self, time: &ExtendedTime<<Self as TimeSteward>::Basics>, predictor_id: PredictorId, row_id: RowId) -> String;
 }
 
 /// A marker trait indicating that the TimeSteward promises that calling snapshot_before() or step() will not change valid_since()
