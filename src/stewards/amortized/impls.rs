@@ -372,6 +372,7 @@ impl<B: Basics> StewardOwned<B> {
                                                   predictor.predictor_id,
                                                   None,
                                                   &change.last_change,
+                                                  true,
                                                   true);
           }
         }
