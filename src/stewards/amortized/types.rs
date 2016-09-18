@@ -112,6 +112,7 @@ pub type SnapshotField<B: Basics> = (FieldRc, ExtendedTime<B>);
 //  EventAccess,
 //  PredictionAccess(RowId, PredictorId),
 // }
+#[derive (Debug)]
 pub struct FieldHistory<B: Basics> {
   pub changes: Vec<Field<B>>,
   pub first_snapshot_not_updated: SnapshotIdx,
@@ -147,7 +148,7 @@ pub struct Prediction<B: Basics> {
   pub made_at: ExtendedTime<B>,
   pub valid_until: Option<ExtendedTime<B>>,
 }
-#[derive (Default)]
+#[derive (Default, Debug)]
 pub struct PredictionHistory<B: Basics> {
   pub next_needed: Option<ExtendedTime<B>>,
   pub predictions: Vec<Prediction<B>>,
@@ -161,6 +162,11 @@ impl <B: Basics> fmt::Debug for Prediction <B> {
       try! (write!(f, ", what_will_happen: ({:?}, DynamicEvent with {:?}", event_time, event.event_id()));
     }
     write!(f, " }}")
+  }
+}
+impl <B: Basics> fmt::Debug for Field <B> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "Field {{ last_change: {:?} }}", self.last_change)
   }
 }
 

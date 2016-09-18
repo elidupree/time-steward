@@ -168,6 +168,7 @@ impl<B: Basics> StewardOwned<B> {
                                           predictor_id: PredictorId,
                                           already_dealt_with: Option<FieldId>,
                                           time: &ExtendedTime<B>,
+                                          field_changes_removed: bool,
                                           field_is_none_now: bool) {
 
     let mut remove = false;
@@ -187,11 +188,13 @@ impl<B: Basics> StewardOwned<B> {
           }
         }
 
-        if !field_is_none_now {
+        if !field_changes_removed {
+          let new_needed = ::std::cmp::max (prediction.made_at.clone(), time.clone());
+          assert!(history.next_needed.as_ref().map_or(true, |next| new_needed < *next));
           change_needed_prediction_time(row_id,
                                         predictor_id,
                                         &mut history,
-                                        Some(::std::cmp::max (prediction.made_at.clone(), time.clone())),
+                                        Some(new_needed),
                                         &mut self.predictions_missing_by_time);
         }
 
@@ -204,12 +207,28 @@ impl<B: Basics> StewardOwned<B> {
           history.predictions.push(prediction);
         }
       }
-      if let Some(next) = history.next_needed.clone() {
-        if field_is_none_now && next >= *time {
+      if field_changes_removed {
+        if let Some(next) = history.next_needed.clone() {
+          if field_is_none_now && next >= *time {
+            change_needed_prediction_time(row_id,
+                                          predictor_id,
+                                          &mut history,
+                                          None,
+                                          &mut self.predictions_missing_by_time);
+          }
+          if !field_is_none_now && next > *time {
+            change_needed_prediction_time(row_id,
+                                          predictor_id,
+                                          &mut history,
+                                          Some(time.clone()),
+                                          &mut self.predictions_missing_by_time);
+          }
+        }
+        else if !field_is_none_now {
           change_needed_prediction_time(row_id,
                                         predictor_id,
                                         &mut history,
-                                        None,
+                                        Some(time.clone()),
                                         &mut self.predictions_missing_by_time);
         }
       }
@@ -255,13 +274,13 @@ impl<B: Basics> StewardOwned<B> {
       for (_, list) in bounded {
         for (row_id, predictor_id) in list {
           if already_handled.insert ((row_id, predictor_id)) {
-            self.invalidate_prediction_dependency(row_id, predictor_id, Some(id), time, false);
+            self.invalidate_prediction_dependency(row_id, predictor_id, Some(id), time, false, false);
           }
         }
       }
       for (row_id, predictor_id) in unbounded {
         if !already_handled.contains (&(row_id, predictor_id)) {
-          self.invalidate_prediction_dependency(row_id, predictor_id, Some(id), time, false);
+          self.invalidate_prediction_dependency(row_id, predictor_id, Some(id), time, false, false);
         }
       }
     }
@@ -287,13 +306,14 @@ impl<B: Basics> StewardOwned<B> {
     // This check could be a bit less aggressive, but this is just the simplest
     if let Some(predictors) = shared.settings.predictors_by_column.get(&id.column_id) {
       for predictor in predictors {
-        if self.predictions_by_id.contains_key(&(id.row_id, predictor.predictor_id)) {
+        //if self.predictions_by_id.contains_key(&(id.row_id, predictor.predictor_id)) {
           self.invalidate_prediction_dependency(id.row_id,
                                                 predictor.predictor_id,
                                                 None,
                                                 &history.changes[index].last_change,
+                                                true,
                                                 is_none_previously);
-        }
+        //}
       }
     }
 
@@ -616,10 +636,14 @@ impl<B: Basics> Steward<B> {
                                field.changes.get(next_change_index) {
         limit_option_by_value_with_none_representing_positive_infinity(&mut results.valid_until,
                                                                        &next_change_time);
+        if results.valid_until.as_ref().unwrap() < next_change_time {
+          results.valid_until.clone()
+        }else{
         field.changes.get(next_change_index + 1).map(|next_creation| {
             assert!(next_creation.data.is_some(), "there is no need to store multiple deletions in a row");
             next_creation.last_change.clone()
           })
+        }
       } else {
         results.valid_until.clone()
       };
@@ -751,6 +775,9 @@ impl<B: Basics> Steward<B> {
       }
     }
     
+    self.test_prediction_existences();
+  }
+  pub(super) fn test_prediction_existences (&self) {
     for (id, history) in self.shared.fields.borrow().field_states.iter() {
       for change in history.changes.iter() {
         if let Some (predictors) = self.shared.settings.predictors_by_column.get (&id.column_id) {
@@ -764,7 +791,7 @@ impl<B: Basics> Steward<B> {
                   satisfied = true;
                 }
               }
-              assert_eq!(satisfied, change.data.is_some(), "internal TimeSteward error: prediction existences are inconsistent with field existences");
+              assert_eq!(satisfied, change.data.is_some(), "internal TimeSteward error: prediction existences are inconsistent with field existences{:?}{:?}",id,predictor.predictor_id);
             }
           }
         }
