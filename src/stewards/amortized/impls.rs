@@ -4,6 +4,7 @@ use super::types::*;
 use {SiphashIdGenerator, RowId, FieldId, PredictorId, TimeId,
      FieldRc, ExtendedTime, Basics, TimeSteward};
 use implementation_support::common::{self, field_options_are_equal};
+use implementation_support::data_structures::BuildTrivialU64Hasher;
 use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet, btree_map};
 use std::collections::hash_map::Entry;
 // use std::collections::Bound::{Included, Excluded, Unbounded};
@@ -42,9 +43,10 @@ impl<B: Basics> StewardEventsInfo<B> {
                         event: DynamicEvent<B>,
                         scheduled_by: Option <(RowId, PredictorId)>)
                         -> Result<(), ()> {
-    match self.event_states.entry(time.clone()) {
+    match self.event_states.entry(time.id) {
       Entry::Vacant(entry) => {
         entry.insert(EventState {
+          time: time.clone(),
           schedule: Some(event),
           scheduled_by: scheduled_by,
           execution_state: None,
@@ -67,7 +69,7 @@ impl<B: Basics> StewardEventsInfo<B> {
   }
 
   pub fn unschedule_event(&mut self, time: &ExtendedTime<B>) -> Result<(), ()> {
-    match self.event_states.entry(time.clone()) {
+    match self.event_states.entry(time.id) {
       Entry::Vacant(_) => return Err(()),
       Entry::Occupied(mut entry) => {
         if entry.get_mut().schedule.is_none() {
@@ -144,7 +146,7 @@ impl<B: Basics> StewardEventsInfo<B> {
   }
 }
 
-pub fn change_needed_prediction_time <B: Basics> (row_id: RowId, predictor_id: PredictorId, history: &mut PredictionHistory <B>, time: Option <ExtendedTime <B>>, predictions_missing_by_time: &mut BTreeMap<ExtendedTime <B>, HashSet <(RowId, PredictorId)>>) {
+pub fn change_needed_prediction_time <B: Basics> (row_id: RowId, predictor_id: PredictorId, history: &mut PredictionHistory <B>, time: Option <ExtendedTime <B>>, predictions_missing_by_time: &mut BTreeMap<ExtendedTime <B>, HashSet <(RowId, PredictorId), BuildTrivialU64Hasher >>) {
   if let Some(previous) = mem::replace(&mut history.next_needed, time) {
     let mut entry = match predictions_missing_by_time.entry(previous) {
       btree_map::Entry::Vacant(_) => panic!("prediction needed records are inconsistent"),
@@ -261,7 +263,7 @@ impl<B: Basics> StewardOwned<B> {
         invalidate_execution::<B>(&access_time,
                                   &mut self.events
                                     .event_states
-                                    .get_mut(&access_time)
+                                    .get_mut(&access_time.id)
                                     .expect("event that accessed this field was missing")
                                     .execution_state
                                     .as_mut()
@@ -325,7 +327,7 @@ impl<B: Basics> StewardOwned<B> {
       invalidate_execution::<B>(&discarded.last_change,
                                 &mut self.events
                                   .event_states
-                                  .get_mut(&discarded.last_change)
+                                  .get_mut(&discarded.last_change.id)
                                   .expect("event that created this change was missing")
                                   .execution_state
                                   .as_mut()
@@ -384,7 +386,7 @@ impl<B: Basics> StewardOwned<B> {
   pub fn discard_event_change(&mut self,
                               id: FieldId,
                               time: &ExtendedTime<B>,
-                              field_states: &mut HashMap<FieldId, FieldHistory<B>>,
+                              field_states: &mut HashMap<FieldId, FieldHistory<B>, BuildTrivialU64Hasher>,
                               snapshots: &mut SnapshotsData<B>,
                               shared: &StewardShared<B>) {
     if let Entry::Occupied(mut entry) = field_states.entry(id) {
@@ -407,9 +409,9 @@ impl<B: Basics> StewardOwned<B> {
                           field: Field<B>,
                           time: &ExtendedTime<B>,
                           is_replacement: bool,
-                          new_dependencies: &mut HashSet<FieldId>,
-                          new_fields_changed: &mut HashSet<FieldId>,
-                          field_states: &mut HashMap<FieldId, FieldHistory<B>>,
+                          new_dependencies: &mut HashSet<FieldId, BuildTrivialU64Hasher>,
+                          new_fields_changed: &mut HashSet<FieldId, BuildTrivialU64Hasher>,
+                          field_states: &mut HashMap<FieldId, FieldHistory<B>, BuildTrivialU64Hasher>,
                           snapshots: &mut SnapshotsData<B>,
                           shared: &StewardShared<B>) {
     new_dependencies.insert(id);
@@ -462,8 +464,8 @@ impl<B: Basics> Steward<B> {
     let fields = &mut *fields_guard;
     let field_states = &mut fields.field_states;
     let changed_since_snapshots = &mut fields.changed_since_snapshots;
-    let mut new_fields_changed = HashSet::new();
-    let mut new_dependencies = HashSet::with_capacity(new_results.fields.len());
+    let mut new_fields_changed = HashSet::default();
+    let mut new_dependencies = HashSet::with_capacity_and_hasher (new_results.fields.len(), Default::default());
     for (id, field) in new_results.fields {
       self.owned.add_event_change(id,
                                   field,
@@ -511,8 +513,8 @@ impl<B: Basics> Steward<B> {
     let fields = &mut *fields_guard;
     let field_states = &mut fields.field_states;
     let changed_since_snapshots = &mut fields.changed_since_snapshots;
-    let mut new_fields_changed = HashSet::new();
-    let mut new_dependencies = HashSet::with_capacity(new_results.fields.len());
+    let mut new_fields_changed = HashSet::default();
+    let mut new_dependencies = HashSet::with_capacity_and_hasher (new_results.fields.len(), Default::default());
     for (id, field) in new_results.fields {
       self.owned.add_event_change(id,
                                   field,
@@ -548,7 +550,7 @@ impl<B: Basics> Steward<B> {
     let mut state = self.owned
       .events
       .event_states
-      .remove(time)
+      .remove(&time.id)
       .expect("You can't do an event that wasn't scheduled");
     if let Some(event) = state.schedule {
       let results;
@@ -564,7 +566,7 @@ impl<B: Basics> Steward<B> {
           fields: field_ref,
           generic: common::GenericMutator::new(time.clone()),
           results: MutatorResults {
-            fields: insert_only::HashMap::with_capacity(16),
+            fields: insert_only::HashMap::with_capacity_and_hasher (16, Default::default()),
             checksum_generator: RefCell::new(checksum_generator),
           },
         };
@@ -577,7 +579,7 @@ impl<B: Basics> Steward<B> {
       } else {
         state.execution_state = Some(self.create_execution(time, results));
       }
-      self.owned.events.event_states.insert(time.clone(), state);
+      self.owned.events.event_states.insert(time.id, state);
     } else {
       self.remove_execution(time,
                             state.execution_state
@@ -770,9 +772,9 @@ impl<B: Basics> Steward<B> {
       }
     }
     
-    for (time, state) in self.owned.events.event_states.iter() {
+    for (_, state) in self.owned.events.event_states.iter() {
       if let Some (ids) = state.scheduled_by.as_ref() {
-        assert!(accounted_events.get (time).expect("internal TimeSteward error: an event claims to have been predicted, but nothing predicted it") == ids, "internal TimeSteward error: an event claims to have been predicted by a certain predictor, but it was predicted by a different predictor");
+        assert!(accounted_events.get (&state.time).expect("internal TimeSteward error: an event claims to have been predicted, but nothing predicted it") == ids, "internal TimeSteward error: an event claims to have been predicted by a certain predictor, but it was predicted by a different predictor");
       }
     }
     

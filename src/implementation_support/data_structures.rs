@@ -1,8 +1,23 @@
+use std::hash::{Hasher, BuildHasherDefault};
+
+#[derive (Clone, Default)]
+pub struct TrivialU64Hasher {
+  state: u64,
+}
+impl Hasher for TrivialU64Hasher {
+  fn finish (&self)->u64 {self.state}
+  fn write (&mut self, _: & [u8]) {panic! ("TrivialU64Hasher can only hash u64!");}
+  fn write_u64 (&mut self, value: u64) {self.state ^= value;}
+}
+
+pub type BuildTrivialU64Hasher = BuildHasherDefault<TrivialU64Hasher>;
+
+
 pub mod partially_persistent_nonindexed_set {
   use std::sync::Arc;
   use std::cmp::min;
   use std::collections::HashSet;
-  use std::hash::Hash;
+  use std::hash::{Hash, BuildHasher};
   use std::mem;
   use std::cell::UnsafeCell;
   use std::fmt::Debug;
@@ -47,13 +62,14 @@ pub mod partially_persistent_nonindexed_set {
   }
 
   #[derive (Debug)]
-  pub struct Set<K: Clone + Eq + Hash> {
+  pub struct Set<K: Clone + Eq + Hash, S: BuildHasher + Clone> {
     live_buffer: Buffer<K>,
     next_buffer: Buffer<K>,
-    live_members: HashSet<K>,
-    next_members: HashSet<K>,
+    live_members: HashSet<K, S>,
+    next_members: HashSet<K, S>,
     next_transfer_index: usize,
     potential_next_buffer_usage: usize,
+    hash_builder: S,
   }
   unsafe impl<K: Clone + Eq + Sync> Send for Snapshot<K> {}
   unsafe impl<K: Clone + Eq + Sync> Sync for Snapshot<K> {}
@@ -93,8 +109,11 @@ pub mod partially_persistent_nonindexed_set {
       }
     }
   }
-  impl<K: Clone + Eq + Hash + Debug> Set<K> {
-    pub fn new() -> Set<K> {
+  impl<K: Clone + Eq + Hash + Debug, S: BuildHasher + Clone + Default> Default for Set <K, S> {
+    fn default()->Set <K, S> {Set::with_hasher (Default::default())}
+  }
+  impl<K: Clone + Eq + Hash + Debug, S: BuildHasher + Clone> Set<K, S> {
+    pub fn with_hasher (hash_builder: S) -> Set<K, S> {
       Set {
         live_buffer: Buffer {
           data: Arc::new(UnsafeCell::new(BufferInner { data: Vec::new() })),
@@ -104,11 +123,12 @@ pub mod partially_persistent_nonindexed_set {
           data: Arc::new(UnsafeCell::new(BufferInner { data: Vec::with_capacity(2) })),
           deletions: 0,
         },
-        live_members: HashSet::new(),
-        next_members: HashSet::with_capacity(2),
+        live_members: HashSet::with_hasher(hash_builder.clone()),
+        next_members: HashSet::with_capacity_and_hasher (2, hash_builder.clone()),
 
         next_transfer_index: 0,
         potential_next_buffer_usage: 0,
+        hash_builder: hash_builder
       }
     }
 
@@ -269,7 +289,7 @@ pub mod partially_persistent_nonindexed_set {
           data: Arc::new(UnsafeCell::new(BufferInner { data: Vec::with_capacity(next_capacity) })),
           deletions: 0,
         };
-        self.next_members = HashSet::with_capacity(next_capacity);
+        self.next_members = HashSet::with_capacity_and_hasher (next_capacity, self.hash_builder.clone());
       }
 
       unsafe {
@@ -291,7 +311,7 @@ pub mod partially_persistent_nonindexed_set {
     type Key = u8;
     fn test_operation_sequence(operations: Vec<(Key, bool)>) -> bool {
       let mut existences: HashSet<Key> = HashSet::new();
-      let mut set: Set<Key> = Set::new();
+      let mut set: Set<Key, ::std::collections::hash_map::RandomState> = Set::with_hasher(Default::default());
 
       let (send_snapshot, receive_snapshot) = channel::<Option<(Snapshot<Key>, HashSet<Key>)>>();
       let (send_results, receive_results) = channel();

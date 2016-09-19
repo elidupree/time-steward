@@ -33,7 +33,7 @@
 //!
 //!
 
-use {DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, Column, StewardRc,
+use {DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, TimeId, Column, StewardRc,
      FieldRc, ExtendedTime, Basics, Accessor, FiatEventOperationError, ValidSince, TimeSteward,
      IncrementalTimeSteward, TimeStewardFromConstants};
 use implementation_support::common::{self, DynamicEventFn};
@@ -44,23 +44,24 @@ use std::cell::RefCell;
 use std::ops::Drop;
 use rand::Rng;
 use implementation_support::insert_only;
-use implementation_support::data_structures::partially_persistent_nonindexed_set;
+use implementation_support::data_structures::{partially_persistent_nonindexed_set, BuildTrivialU64Hasher};
 
 pub type SnapshotIdx = u64;
 
 #[derive (Debug)]
 pub enum EventValidity {
   Invalid,
-  ValidWithDependencies(HashSet<FieldId>),
+  ValidWithDependencies(HashSet<FieldId, BuildTrivialU64Hasher>),
 }
 #[derive (Debug)]
 pub struct EventExecutionState {
-  pub fields_changed: HashSet<FieldId>,
+  pub fields_changed: HashSet<FieldId, BuildTrivialU64Hasher>,
   pub checksum: u64,
   pub validity: EventValidity,
 }
 
 pub struct EventState<B: Basics> {
+  pub time: ExtendedTime <B>,
   pub schedule: Option<DynamicEvent<B>>,
   pub scheduled_by: Option <(RowId, PredictorId)>,
   pub execution_state: Option<EventExecutionState>,
@@ -120,10 +121,10 @@ pub struct FieldHistory<B: Basics> {
 
 pub type SnapshotsData<B: Basics> = BTreeMap<SnapshotIdx,
                                              (B::Time,
-                                              Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>)>;
+                                              Rc<insert_only::HashMap<FieldId, SnapshotField<B>, BuildTrivialU64Hasher>>)>;
 
 pub struct Fields<B: Basics> {
-  pub field_states: HashMap<FieldId, FieldHistory<B>>,
+  pub field_states: HashMap<FieldId, FieldHistory<B>, BuildTrivialU64Hasher>,
   pub changed_since_snapshots: SnapshotsData<B>,
 }
 
@@ -131,7 +132,7 @@ pub struct Fields<B: Basics> {
 pub struct Dependencies<B: Basics> {
   pub events: BTreeSet<ExtendedTime<B>>,
   pub bounded_predictions: BTreeMap<ExtendedTime<B>, HashSet<(RowId, PredictorId)>>,
-  pub unbounded_predictions: HashSet<(RowId, PredictorId)>,
+  pub unbounded_predictions: HashSet<(RowId, PredictorId), BuildTrivialU64Hasher>,
 }
 impl<B: Basics> Dependencies<B> {
   pub fn is_empty(&self) -> bool {
@@ -139,7 +140,7 @@ impl<B: Basics> Dependencies<B> {
     self.unbounded_predictions.is_empty()
   }
 }
-pub type DependenciesMap<B: Basics> = HashMap<FieldId, Dependencies<B>>;
+pub type DependenciesMap<B: Basics> = HashMap<FieldId, Dependencies<B>, BuildTrivialU64Hasher>;
 
 #[derive (Clone)]
 pub struct Prediction<B: Basics> {
@@ -177,7 +178,7 @@ pub struct StewardShared<B: Basics> {
 }
 
 pub struct StewardEventsInfo<B: Basics> {
-  pub event_states: HashMap<ExtendedTime<B>, EventState<B>>,
+  pub event_states: HashMap<TimeId, EventState<B>, BuildTrivialU64Hasher>,
   pub events_needing_attention: BTreeSet<ExtendedTime<B>>,
   pub dependencies: DependenciesMap<B>,
 }
@@ -187,10 +188,10 @@ pub struct StewardOwned<B: Basics> {
 
   pub invalid_before: ValidSince<B::Time>,
   pub next_snapshot: SnapshotIdx,
-  pub existent_fields: partially_persistent_nonindexed_set::Set<FieldId>,
+  pub existent_fields: partially_persistent_nonindexed_set::Set<FieldId, BuildTrivialU64Hasher>,
 
   pub predictions_by_id: HashMap<(RowId, PredictorId), PredictionHistory<B>>,
-  pub predictions_missing_by_time: BTreeMap<ExtendedTime<B>, HashSet<(RowId, PredictorId)>>,
+  pub predictions_missing_by_time: BTreeMap<ExtendedTime<B>, HashSet<(RowId, PredictorId), BuildTrivialU64Hasher>>,
 
   pub checksum_info: Option<ChecksumInfo<B>>,
 }
@@ -202,13 +203,13 @@ pub struct Steward<B: Basics> {
 pub struct Snapshot<B: Basics> {
   pub(super) now: B::Time,
   pub(super) index: SnapshotIdx,
-  pub(super) field_states: Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>,
+  pub(super) field_states: Rc<insert_only::HashMap<FieldId, SnapshotField<B>, BuildTrivialU64Hasher>>,
   pub(super) shared: Rc<StewardShared<B>>,
   pub(super) num_fields: usize,
   pub(super) field_ids: partially_persistent_nonindexed_set::Snapshot<FieldId>,
 }
 pub struct MutatorResults<B: Basics> {
-  pub fields: insert_only::HashMap<FieldId, Field<B>>,
+  pub fields: insert_only::HashMap<FieldId, Field<B>, BuildTrivialU64Hasher>,
   pub checksum_generator: RefCell<SiphashIdGenerator>,
 }
 pub struct Mutator<'a, B: Basics> {
@@ -477,7 +478,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
       .borrow_mut()
       .changed_since_snapshots
       .entry(self.owned.next_snapshot)
-      .or_insert((time.clone(), Rc::new(insert_only::HashMap::new())))
+      .or_insert((time.clone(), Rc::new(insert_only::HashMap::default())))
       .1
       .clone();
     let result = Some(Snapshot {
@@ -519,12 +520,12 @@ impl<B: Basics> TimeStewardFromConstants for Steward<B> {
       owned: StewardOwned {
         events: StewardEventsInfo {
           events_needing_attention: BTreeSet::new(),
-          event_states: HashMap::new(),
-          dependencies: HashMap::new(),
+          event_states: HashMap::default(),
+          dependencies: HashMap::default(),
         },
         invalid_before: ValidSince::TheBeginning,
         next_snapshot: 0,
-        existent_fields: partially_persistent_nonindexed_set::Set::new(),
+        existent_fields: partially_persistent_nonindexed_set::Set::default(),
         predictions_missing_by_time: BTreeMap::new(),
         predictions_by_id: HashMap::new(),
         checksum_info: None,
@@ -533,7 +534,7 @@ impl<B: Basics> TimeStewardFromConstants for Steward<B> {
         settings: Settings::<B>::new(),
         constants: constants,
         fields: RefCell::new(Fields {
-          field_states: HashMap::new(),
+          field_states: HashMap::default(),
           changed_since_snapshots: BTreeMap::new(),
         }),
       }),
@@ -623,10 +624,10 @@ where B::Time: Add <Output = B::Time> + Sub<Output = B::Time> + Mul<i64, Output 
     self.test_lots();
     let mut result = BTreeMap::new();
     let info = self.owned.checksum_info.as_ref().unwrap();
-    for (time, state) in self.owned.events.event_states.iter() {
-      if (time.base.clone() - info.start.clone())/info.stride.clone() == chunk {
+    for (_, state) in self.owned.events.event_states.iter() {
+      if (state.time.base.clone() - info.start.clone())/info.stride.clone() == chunk {
         if let Some (execution) = state.execution_state.as_ref() {
-          result.insert (time.clone(), execution.checksum);
+          result.insert (state.time.clone(), execution.checksum);
         }
       }
     }
@@ -634,7 +635,7 @@ where B::Time: Add <Output = B::Time> + Sub<Output = B::Time> + Mul<i64, Output 
   }
   fn event_details (&self, time: & ExtendedTime <B>)->String {
     let mut result = String::new();
-    let state = self.owned.events.event_states.get (time).unwrap();
+    let state = self.owned.events.event_states.get (&time .id).unwrap();
     use std::fmt::Write;
     write! (&mut result, "At {:?}:\n EventId: {:?}\n {:?}\n", time, state.schedule.as_ref().unwrap().event_id(), &state.execution_state).unwrap();
     result

@@ -56,6 +56,8 @@ pub mod implementation_support {
   pub mod common;
 }
 
+mod deterministic_random_id;
+pub use deterministic_random_id::*;
 #[macro_use]
 mod api;
 pub use api::*;

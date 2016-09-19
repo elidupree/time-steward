@@ -16,7 +16,7 @@ use std::ops::Drop;
 use rand::Rng;
 use std::cmp::max;
 use implementation_support::insert_only;
-use implementation_support::data_structures::partially_persistent_nonindexed_set;
+use implementation_support::data_structures::{partially_persistent_nonindexed_set, BuildTrivialU64Hasher};
 
 type SnapshotIdx = u64;
 
@@ -29,9 +29,9 @@ struct Field<B: Basics> {
 type SnapshotField<B: Basics> = (FieldRc, ExtendedTime<B>);
 
 
-type FieldsMap<B: Basics> = HashMap<FieldId, Field<B>>;
+type FieldsMap<B: Basics> = HashMap<FieldId, Field<B>, BuildTrivialU64Hasher>;
 type SnapshotsData<B: Basics> = BTreeMap<SnapshotIdx,
-                                         Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>>;
+                                         Rc<insert_only::HashMap<FieldId, SnapshotField<B>, BuildTrivialU64Hasher>>>;
 
 struct Fields<B: Basics> {
   field_states: FieldsMap<B>,
@@ -58,11 +58,11 @@ struct StewardOwned<B: Basics> {
   invalid_before: ValidSince<B::Time>,
   fiat_events: BTreeMap<ExtendedTime<B>, DynamicEvent<B>>,
   next_snapshot: SnapshotIdx,
-  existent_fields: partially_persistent_nonindexed_set::Set<FieldId>,
+  existent_fields: partially_persistent_nonindexed_set::Set<FieldId, BuildTrivialU64Hasher>,
 
   predictions_by_time: BTreeMap<ExtendedTime<B>, Rc<Prediction<B>>>,
-  predictions_by_id: HashMap<(RowId, PredictorId), Rc<Prediction<B>>>,
-  prediction_dependencies: HashMap<FieldId, HashSet<(RowId, PredictorId)>>,
+  predictions_by_id: HashMap<(RowId, PredictorId), Rc<Prediction<B>>, BuildTrivialU64Hasher>,
+  prediction_dependencies: HashMap<FieldId, HashSet<(RowId, PredictorId), BuildTrivialU64Hasher>, BuildTrivialU64Hasher>,
 }
 
 pub struct Steward<B: Basics> {
@@ -72,7 +72,7 @@ pub struct Steward<B: Basics> {
 pub struct Snapshot<B: Basics> {
   now: B::Time,
   index: SnapshotIdx,
-  field_states: Rc<insert_only::HashMap<FieldId, SnapshotField<B>>>,
+  field_states: Rc<insert_only::HashMap<FieldId, SnapshotField<B>, BuildTrivialU64Hasher>>,
   shared: Rc<StewardShared<B>>,
   num_fields: usize,
   field_ids: partially_persistent_nonindexed_set::Snapshot<FieldId>,
@@ -82,7 +82,7 @@ pub struct Mutator<'a, B: Basics> {
   steward: &'a mut StewardOwned<B>,
   shared: &'a StewardShared<B>,
   fields: &'a mut Fields<B>,
-  predictions_needed: HashSet<(RowId, PredictorId)>,
+  predictions_needed: HashSet<(RowId, PredictorId), BuildTrivialU64Hasher>,
 }
 pub struct PredictorAccessor<'a, B: Basics> {
   predictor_id: PredictorId,
@@ -150,7 +150,7 @@ impl<'a, B: Basics> PredictorAccessor<'a, B> {
       .borrow_mut()
       .prediction_dependencies
       .entry(id)
-      .or_insert(HashSet::new())
+      .or_insert(HashSet::default())
       .insert((self.about_row_id, self.predictor_id));
     self.fields.get(id)
   }
@@ -424,7 +424,7 @@ impl<B: Basics> Steward<B> {
         steward: &mut self.owned,
         shared: &self.shared,
         fields: field_ref,
-        predictions_needed: HashSet::new(),
+        predictions_needed: HashSet::default(),
       };
       event(&mut mutator);
       predictions_needed = mutator.predictions_needed;
@@ -496,7 +496,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
       .borrow_mut()
       .changed_since_snapshots
       .entry(self.owned.next_snapshot)
-      .or_insert(Rc::new(insert_only::HashMap::new()))
+      .or_insert(Rc::new(insert_only::HashMap::default()))
       .clone();
     let result = Some(Snapshot {
       now: time.clone(),
@@ -520,16 +520,16 @@ impl<B: Basics> TimeStewardFromConstants for Steward<B> {
         invalid_before: ValidSince::TheBeginning,
         fiat_events: BTreeMap::new(),
         next_snapshot: 0,
-        existent_fields: partially_persistent_nonindexed_set::Set::new(),
+        existent_fields: partially_persistent_nonindexed_set::Set::default(),
         predictions_by_time: BTreeMap::new(),
-        predictions_by_id: HashMap::new(),
-        prediction_dependencies: HashMap::new(),
+        predictions_by_id: HashMap::default(),
+        prediction_dependencies: HashMap::default(),
       },
       shared: Rc::new(StewardShared {
         settings: Settings::<B>::new(),
         constants: constants,
         fields: RefCell::new(Fields {
-          field_states: HashMap::new(),
+          field_states: HashMap::default(),
           changed_since_snapshots: BTreeMap::new(),
         }),
       }),

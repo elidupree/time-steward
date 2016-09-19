@@ -1,26 +1,26 @@
 use std::boxed::Box;
 use std::collections::HashMap as Interior;
-use std::hash::Hash;
+use std::hash::{Hash, BuildHasher};
 use std::cmp::Eq;
 use std::borrow::Borrow;
 use std::cell::{Cell, UnsafeCell};
 use std::collections::hash_map::{self, Entry};
 
-pub struct HashMap<K: Eq + Hash, V> {
-  data: UnsafeCell<Interior<K, Box<V>>>,
+pub struct HashMap<K: Eq + Hash, V, S: BuildHasher> {
+  data: UnsafeCell<Interior<K, Box<V>, S>>,
   inserting: Cell<bool>,
 }
 
-impl<K: Eq + Hash, V> HashMap<K, V> {
-  pub fn new() -> HashMap<K, V> {
+impl<K: Eq + Hash, V, S: BuildHasher> HashMap<K, V, S> {
+  pub fn with_hasher(hash_builder: S) -> HashMap<K, V, S> {
     HashMap {
-      data: UnsafeCell::new(Interior::new()),
+      data: UnsafeCell::new(Interior::with_hasher(hash_builder)),
       inserting: Cell::new(false),
     }
   }
-  pub fn with_capacity(capacity: usize) -> HashMap<K, V> {
+  pub fn with_capacity_and_hasher (capacity: usize, hash_builder: S) -> HashMap<K, V, S> {
     HashMap {
-      data: UnsafeCell::new(Interior::with_capacity(capacity)),
+      data: UnsafeCell::new(Interior::with_capacity_and_hasher (capacity, hash_builder)),
       inserting: Cell::new(false),
     }
   }
@@ -57,6 +57,10 @@ impl<K: Eq + Hash, V> HashMap<K, V> {
   }
 }
 
+impl<K: Eq + Hash, V, S: BuildHasher + Default> Default for HashMap<K, V, S> {
+  fn default()->HashMap <K, V, S> {HashMap::with_hasher (Default::default())}
+}
+
 pub struct IntoIter<K, V> {
   data: hash_map::IntoIter<K, Box<V>>,
 }
@@ -70,7 +74,7 @@ impl<K, V> Iterator for IntoIter<K, V> {
   }
 }
 
-impl<K: Eq + Hash, V> IntoIterator for HashMap<K, V> {
+impl<K: Eq + Hash, V, S: BuildHasher> IntoIterator for HashMap<K, V, S> {
   type Item = (K, V);
   type IntoIter = IntoIter<K, V>;
   fn into_iter(self) -> Self::IntoIter {

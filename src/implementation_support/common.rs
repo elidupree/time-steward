@@ -7,7 +7,6 @@ use {DeterministicRandomId, PredictorId, EventId, TimeId, RowId, ColumnId, Field
      IterationType, Basics, ExtendedTime, Column, Predictor, Event,
      PredictorAccessor, Mutator, FieldRc, StewardRc,};
 use std::marker::PhantomData;
-//use implementation_support::list_of_types::
 
 // https://github.com/rust-lang/rfcs/issues/1485
 pub trait Filter<T> {
@@ -101,6 +100,7 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use $crate::implementation_support::common::*;
 use $crate::implementation_support::list_of_types::predictor_list;
+use $crate::implementation_support::data_structures::BuildTrivialU64Hasher;
 
 pub trait DynamicEventTrait <B: Basics>: for <'a, 'b> Fn(& 'a mut super:: $M<'b, B>) {
   fn event_id(&self)->EventId;
@@ -142,8 +142,8 @@ impl<B: Basics> Clone for DynamicPredictor<B> {
 
 #[derive (Clone)]
 pub struct StandardSettings <B: Basics> {
-  pub predictors_by_column: HashMap<ColumnId, Vec<DynamicPredictor <B>>>,
-  pub predictors_by_id: HashMap<PredictorId, DynamicPredictor <B>>,
+  pub predictors_by_column: HashMap<ColumnId, Vec<DynamicPredictor <B>>, BuildTrivialU64Hasher>,
+  pub predictors_by_id: HashMap<PredictorId, DynamicPredictor <B>, BuildTrivialU64Hasher>,
 }
 impl<B: Basics> predictor_list::User <B> for StandardSettings <B> {
   fn apply <P: Predictor <Basics = B>> (&mut self) {
@@ -160,8 +160,8 @@ impl<B: Basics> predictor_list::User <B> for StandardSettings <B> {
 impl<B: Basics> StandardSettings <B> {
   pub fn new()->Self {
     let mut result = StandardSettings {
-      predictors_by_id: HashMap::new(),
-      predictors_by_column: HashMap::new(),
+      predictors_by_id: HashMap::default(),
+      predictors_by_column: HashMap::default(),
     };
     <B::IncludedTypes as predictor_list::List<B>>::apply (&mut result);
     result
