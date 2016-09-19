@@ -611,7 +611,7 @@ impl<B: Basics> Steward<B> {
       let (dependencies, hasher) = generic.dependencies.into_inner();
       let dependencies_hash = hasher.generate();
 
-      let what_will_happen = generic.soonest_prediction.and_then(|(event_base_time, event)| {
+      let what_will_happen = generic.soonest_prediction.into_inner().and_then(|(event_base_time, event)| {
         common::next_extended_time_of_predicted_event(predictor_id,
                                                       row_id,
                                                       dependencies_hash,

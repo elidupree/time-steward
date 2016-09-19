@@ -89,7 +89,7 @@ time_steward_predictor!{
 })
 ```
 
-Each Predictor has an associated Column – in this case, Ball. BallHitsWallPredictor will automatically be called whenever a Ball exists, for every Ball that exists. Furthermore, if there is any change to a field that was *examined* by the Predictor, this invalidates the prediction, so the system reruns the Predictor to determine the new collision time.
+Each Predictor "watches" a specific associated Column – in this case, Ball. BallHitsWallPredictor will automatically be called whenever a Ball exists, for every Ball that exists. Furthermore, if there is any change to a field that was *examined* by the Predictor, this invalidates the prediction, so the system reruns the Predictor to determine the new collision time.
 
 If the prediction time arrives while the prediction is still valid, the **Event** happens. An Event is the only thing allowed to **change** field data.
 

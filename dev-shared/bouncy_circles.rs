@@ -265,8 +265,8 @@ time_steward_event! (
   }
 );
 
-time_steward_predictor! (pub struct CollisionPredictor, Basics, PredictorId(0x5375592f4da8682c), watching Nearness, collision_predictor);
-time_steward_predictor! (pub struct BoundaryPredictor, Basics, PredictorId(0x87d8a4a095350d30), watching Circle, boundary_predictor);
+time_steward_predictor! (pub struct CollisionPredictor, Basics, PredictorId(0x5375592f4da8682c), watching Nearness, fn collision_predictor);
+time_steward_predictor! (pub struct BoundaryPredictor, Basics, PredictorId(0x87d8a4a095350d30), watching Circle, fn boundary_predictor);
 
 time_steward_event! (
   pub struct Initialize {}, Basics, EventId (0xa2a17317b84f96e5),

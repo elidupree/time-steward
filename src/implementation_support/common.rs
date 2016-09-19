@@ -182,13 +182,13 @@ $($privacy)* use self::__time_steward_make_dynamic_callbacks_impl::StandardSetti
 }
 
 pub struct GenericPredictorAccessor<B: Basics, E> {
-  pub soonest_prediction: Option<(B::Time, E)>,
+  pub soonest_prediction: RefCell<Option<(B::Time, E)>>,
   pub dependencies: RefCell<(Vec<FieldId>, SiphashIdGenerator)>,
 }
 impl<B: Basics, E> GenericPredictorAccessor<B, E> {
   pub fn new() -> Self {
     GenericPredictorAccessor {
-      soonest_prediction: None,
+      soonest_prediction: RefCell::new (None),
       dependencies: RefCell::new((Vec::new(), SiphashIdGenerator::new())),
     }
   }
@@ -218,17 +218,18 @@ macro_rules! time_steward_common_accessor_methods_for_predictor_accessor {
 #[macro_export]
 macro_rules! time_steward_common_predictor_accessor_methods_for_predictor_accessor {
   ($B: ty, $DynamicEventFn: ident) => {
-    fn predict_at_time <E: $crate::Event <Basics = $B>> (&mut self, time: <$B as $crate::Basics>::Time, event: E) {
+    fn predict_at_time <E: $crate::Event <Basics = $B>> (&self, time: <$B as $crate::Basics>::Time, event: E) {
       $crate::implementation_support::list_of_types::assert_contains_event::<$B, E>();
       if time < *self.unsafe_now() {
         return;
       }
-      if let Some((ref old_time, _)) = self.generic.soonest_prediction {
+      let mut guard = self.generic.soonest_prediction.borrow_mut();
+      if let Some((ref old_time, _)) = *guard {
         if old_time <= &time {
           return;
         }
       }
-      self.generic.soonest_prediction = Some((time, StewardRc::new ($DynamicEventFn ::new (event))));
+      *guard = Some((time, StewardRc::new ($DynamicEventFn ::new (event))));
     }
   }
 }
@@ -338,7 +339,7 @@ pub fn next_extended_time_of_predicted_event<B: Basics>
       if id > from.id {
         (from.iteration, id)
       } else {
-        if from.iteration == IterationType::max_value() {
+        if from.iteration >= B::max_iteration() {
           panic!("Too many iterations at the same base time; probably an infinite loop")
         }
         (from.iteration + 1,

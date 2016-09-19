@@ -140,8 +140,8 @@ color = vec4 (0.0, 0.0, 0.0, 0.0);
     };
     let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
 
-    // take care of the quadratic initial predictions before starting the timer
-    stew.snapshot_before(&0);
+    // take care of the expensive initial predictions before starting the timer
+    stew.snapshot_before(&1);
     let start = Instant::now();
 
     loop {

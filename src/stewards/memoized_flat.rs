@@ -394,7 +394,7 @@ impl<B: Basics> Steward<B> {
       predictor_id: predictor_id,
       prediction_is_about_row_id: row_id,
       predictor_accessed: dependencies,
-      what_will_happen: generic.soonest_prediction.and_then(|(event_base_time, event)| {
+      what_will_happen: generic.soonest_prediction.into_inner().and_then(|(event_base_time, event)| {
         common::next_extended_time_of_predicted_event(predictor_id,
                                                       row_id,
                                                       dependencies_hash,

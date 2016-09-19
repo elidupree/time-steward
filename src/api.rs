@@ -228,7 +228,7 @@ macro_rules! time_steward_predictor {
   ([$($privacy:tt)*] struct $Struct: ident
     <$([$Parameter: ident $($bounds:tt)*]),*>,
     $B: ty, $predictor_id: expr, watching $Column: ty,
-    $generic_function: ident) => {
+    fn $generic_function: ident) => {
     time_steward_predictor! ([$($privacy)*] struct $Struct <$([$Parameter $($bounds)*]),*>, $B, $predictor_id, watching $Column, | accessor, id | $generic_function::<$($Parameter),*>(accessor, id));
   };
   ([$($privacy:tt)*] struct $Struct: ident,
@@ -264,8 +264,8 @@ macro_rules! time_steward_event {
       $($privacy)* fn new($($field_name: $field_type),*)->Self {$Struct {$($field_name: $field_name),*}}
     }
   };
-  ([$($privacy:tt)*] struct $Struct: ident <$([$Parameter: ident $($bounds:tt)*]),*>{$($field_name: ident: $field_type: ty),*}, $B: ty, $event_id: expr, $generic_function: ident) => {
-    time_steward_event! ([$($privacy)*] struct $Struct <$([$Parameter $($bounds)*]),*>{$($field_name: $field_type),*}, $B, $event_id, | &self, mutator | $generic_function::<$($Parameter),*>(self, mutator, $Struct));
+  ([$($privacy:tt)*] struct $Struct: ident <$([$Parameter: ident $($bounds:tt)*]),*>{$($field_name: ident: $field_type: ty),*}, $B: ty, $event_id: expr, fn $generic_function: ident) => {
+    time_steward_event! ([$($privacy)*] struct $Struct <$([$Parameter $($bounds)*]),*>{$($field_name: $field_type),*}, $B, $event_id, | &self, mutator | $generic_function::<$($Parameter),*>(mutator, self));
   };
   ([$($privacy:tt)*] struct $Struct: ident{$($field_name: ident: $field_type: ty),*}, $B: ty, $event_id: expr, $($rest:tt)*) => {
     time_steward_event! ([$($privacy)*] struct $Struct <>{$($field_name: $field_type),*}, $B, $event_id, $($rest)*);
@@ -305,6 +305,9 @@ pub trait Basics
   type Time: Any + Send + Sync + Clone + Ord + Hash + Serialize + Deserialize + Debug;
   type Constants: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug;
   type IncludedTypes: ColumnList + EventList<Self> + PredictorList<Self>;
+  fn max_iteration() -> IterationType {
+    65535
+  }
   fn allow_floats_unsafe() -> bool {
     false
   }
@@ -384,10 +387,10 @@ pub trait Mutator: MomentaryAccessor + Rng {
   fn gen_id(&mut self) -> RowId;
 }
 pub trait PredictorAccessor: Accessor {
-  fn predict_at_time<E: Event<Basics = Self::Basics >>(&mut self, time: <<Self as Accessor>::Basics as Basics>::Time, event: E);
+  fn predict_at_time<E: Event<Basics = Self::Basics >>(&self, time: <<Self as Accessor>::Basics as Basics>::Time, event: E);
 
   /// A specific use of unsafe_now() that is guaranteed to be safe
-  fn predict_immediately<E: Event<Basics = <Self as Accessor>::Basics>>(&mut self, event: E) {
+  fn predict_immediately<E: Event<Basics = <Self as Accessor>::Basics>>(&self, event: E) {
     let time = self.unsafe_now().clone();
     self.predict_at_time(time, event)
   }
@@ -733,6 +736,8 @@ pub trait FullTimeSteward: TimeSteward {}
 /// For example, simply_synchronized::Steward transforms its inputs and includes input
 /// from the remote client, without that input being explicitly passed to it by the local client.
 pub trait CanonicalTimeSteward: TimeSteward {}
+
+pub use stewards::amortized::Steward as DefaultSteward;
 
 #[cfg (test)]
 mod tests {

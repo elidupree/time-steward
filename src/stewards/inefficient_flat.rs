@@ -207,7 +207,7 @@ impl<B: Basics> StewardImpl<B> {
             generic = pa.generic;
           }
           let dependencies_hash = generic.dependencies.borrow().1.generate();
-          generic.soonest_prediction.map(|(event_base_time, event)| {
+          generic.soonest_prediction.into_inner().map(|(event_base_time, event)| {
             let extended =
               common::next_extended_time_of_predicted_event(predictor.predictor_id,
                                                             field_id.row_id,
