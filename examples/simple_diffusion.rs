@@ -113,10 +113,10 @@ fn transfer_change_predictor <PA: PredictorAccessor <Basics = Basics>> (accessor
   // (as a generic parameter) and the RowId (as a function argument).
   let (me, my_last_change) = accessor.data_and_last_change::<Cell>(id).unwrap();
   let my_accumulation_rate: i64 = get_accumulation_rate (accessor, me.coordinates);
-  for dimension in 0..1 {
+  for dimension in 0..2 {
     // This call to the Predictor is only in charge of the transfers to the cells
     // in the positive x and y directions. The other transfers will be handled by
-    // the Predictor calls for the cells in the negative x and by directions.
+    // the Predictor calls for the cells in the negative x and y directions.
     let mut neighbor_coordinates = me.coordinates;
     neighbor_coordinates [dimension] += 1;
     if neighbor_coordinates [dimension] >= accessor.constants().size [dimension] {continue;}
@@ -140,7 +140,7 @@ fn transfer_change_predictor <PA: PredictorAccessor <Basics = Basics>> (accessor
     // After a little algebra...
     let (min_difference, max_difference) = (
       (current_transfer_rate - accessor.constants().max_inaccuracy)*(2*SECOND),
-      (current_transfer_rate - accessor.constants().max_inaccuracy)*(2*SECOND)
+      (current_transfer_rate + accessor.constants().max_inaccuracy)*(2*SECOND)
     );
     if current_difference < min_difference || current_difference > max_difference {
       accessor.predict_at_time (*last_change, TransferChange::new (id, dimension));
@@ -169,7 +169,7 @@ fn transfer_change_predictor <PA: PredictorAccessor <Basics = Basics>> (accessor
 fn get_accumulation_rate <A: Accessor <Basics = Basics>> (accessor: &A, coordinates: [i32; 2])->i64 {
   let mut result = 0;
   let me: &Cell = accessor.get::<Cell>(RowId::new (& coordinates)).unwrap();  
-  for dimension in 0..1 {
+  for dimension in 0..2 {
     result -= me.ink_transfers [dimension];
     
     let mut neighbor_coordinates = me.coordinates;
@@ -217,20 +217,23 @@ fn transfer_change <M: Mutator <Basics = Basics>> (mutator: &mut M, data: &Trans
   // immutable reference into the mutator when we try to
   // call the mutable method set().
   let mut me;
+  let neighbor_id;
+  let mut neighbor;
   {
     let (me_ref, my_last_change) = mutator.data_and_last_change::<Cell>(data.id).unwrap();
     me = me_ref.clone();
     let mut neighbor_coordinates = me.coordinates;
     neighbor_coordinates [data.dimension] += 1;
-    let neighbor_id = RowId::new (& neighbor_coordinates);
-    let (neighbor, neighbor_last_change) = mutator.data_and_last_change::<Cell>(neighbor_id).unwrap();
-  
+    neighbor_id = RowId::new (& neighbor_coordinates);
+    let (neighbor_ref, neighbor_last_change) = mutator.data_and_last_change::<Cell>(neighbor_id).unwrap();
+    neighbor = neighbor_ref.clone();
+    
     let my_current_ink = me.ink_at_last_change + get_accumulation_rate (mutator, me.coordinates)*(mutator.now() - my_last_change);
-    let current_difference =
-      my_current_ink -
-      (neighbor.ink_at_last_change + get_accumulation_rate (mutator, neighbor_coordinates)*(mutator.now() - neighbor_last_change));
+    let neighbor_current_ink = neighbor.ink_at_last_change + get_accumulation_rate (mutator, neighbor_coordinates)*(mutator.now() - neighbor_last_change);
+    let current_difference = my_current_ink - neighbor_current_ink;
  
     me.ink_at_last_change = my_current_ink;
+    neighbor.ink_at_last_change = neighbor_current_ink;
     me.ink_transfers [data.dimension] = current_difference/(2*SECOND);
   }
   
@@ -239,6 +242,7 @@ fn transfer_change <M: Mutator <Basics = Basics>> (mutator: &mut M, data: &Trans
   // and the new contents of the field (as a Option <FieldType>).
   // Passing None deletes the field.
   mutator.set::<Cell> (data.id, Some (me));
+  mutator.set::<Cell> (neighbor_id, Some (neighbor));
 }
 
 
@@ -296,6 +300,8 @@ time_steward_basics!(struct Basics {
     EventType <Initialize>,
     EventType <AddInk>,
   );
+  
+  fn max_iteration()->u32 {8}
 });
 
 
@@ -345,7 +351,7 @@ fn main() {
   
   let constants = Constants {
     size: [60, 60],
-    max_inaccuracy: 100,
+    max_inaccuracy: 100_00,
   };
   
   if arguments.flag_listen {
@@ -390,7 +396,7 @@ in float ink_transfer;
 out vec4 color;
 
 void main() {
-color = vec4 (vec3(1.0 - ink_transfer/1000000000000.0), 1.0);
+color = vec4 (vec3(0.9 - ink_transfer/100000000000.0), 1.0);
 }
 
 "#;
@@ -425,7 +431,7 @@ color = vec4 (vec3(1.0 - ink_transfer/1000000000000.0), 1.0);
         glium::glutin::Event::Closed => return,
         glium::glutin::Event::MouseMoved (x,y) => {
           mouse_coordinates [0] = (x as i32) * 60 / display.get_window().unwrap().get_inner_size_pixels().unwrap().0 as i32;
-          mouse_coordinates [1] = (y as i32) * 60 / display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32;
+          mouse_coordinates [1] = (display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32-(y as i32)) * 60 / display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32;
         },
         glium::glutin::Event::MouseInput (_,_) => {
           event_index += 1;
@@ -442,6 +448,7 @@ color = vec4 (vec3(1.0 - ink_transfer/1000000000000.0), 1.0);
     target.clear_color(1.0, 1.0, 1.0, 1.0);
     let mut vertices = Vec::<Vertex>::new();
 
+    
     let snapshot = stew.snapshot_before(& time)
       .expect("steward failed to provide snapshot");
     settle (&mut stew, time);
