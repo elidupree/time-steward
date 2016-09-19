@@ -105,6 +105,7 @@ mod tests {
   use serde::Serialize;
   use std::fmt::Debug;
   
+  #[test]
   fn index_1_is_lower_bits() {
     assert! (DeterministicRandomId {data: [1, 0]} > DeterministicRandomId {data: [0, 1]});
   }

@@ -10,6 +10,8 @@
 #[macro_use]
 extern crate time_steward;
 
+extern crate fnv;
+
 // Imports for the UI
 #[macro_use]
 extern crate glium;
@@ -24,7 +26,7 @@ macro_rules! printlnerr(
 );
 
 
-use std::cmp::max;
+use std::cmp::{min, max};
 use time_steward::{DefaultSteward, Accessor, MomentaryAccessor, PredictorAccessor, Mutator, DeterministicRandomId, TimeSteward, TimeStewardFromConstants, IncrementalTimeSteward, Column, ColumnId, RowId, EventId, PredictorId, ColumnType, PredictorType, EventType};
 use time_steward::stewards::simply_synchronized;
 
@@ -127,7 +129,7 @@ fn transfer_change_predictor <PA: PredictorAccessor <Basics = Basics>> (accessor
     let mut neighbor_coordinates = me.coordinates;
     neighbor_coordinates [dimension] += 1;
     if neighbor_coordinates [dimension] >= accessor.constants().size [dimension] {continue;}
-    let neighbor_id = RowId::new (& neighbor_coordinates);
+    let neighbor_id = cell_id(neighbor_coordinates);
     let neighbor_accumulation_rate = get_accumulation_rate (accessor, neighbor_coordinates);
     let (neighbor, neighbor_last_change) = accessor.data_and_last_change::<Cell>(neighbor_id).unwrap();
     
@@ -149,21 +151,22 @@ fn transfer_change_predictor <PA: PredictorAccessor <Basics = Basics>> (accessor
       (current_transfer_rate - accessor.constants().max_inaccuracy)*(2*SECOND),
       (current_transfer_rate + accessor.constants().max_inaccuracy)*(2*SECOND)
     );
-    if current_difference < min_difference || current_difference > max_difference {      printlnerr!( "predict wow! {:?} ! {:?}", me, neighbor);
+    if current_difference < min_difference || current_difference > max_difference {
+      printlnerr!( "predict wow! {:?} ! {:?}", me, neighbor);
       accessor.predict_at_time (*last_change, TransferChange::new (id, dimension));
     }
     else if current_difference_change_rate > 0 {
-      printlnerr!( "predict {}/{}",max_difference-current_difference, current_difference_change_rate);
+      //printlnerr!( "predict {}/{}",max_difference-current_difference, current_difference_change_rate);
       accessor.predict_at_time (
-        last_change + (max_difference-current_difference)/current_difference_change_rate,
+        last_change + min (SECOND/4, (max_difference-current_difference)/current_difference_change_rate),
         TransferChange::new (id, dimension)
       );
     }
     else if current_difference_change_rate < 0 {
-      printlnerr!( "predict {}/{}",min_difference-current_difference, current_difference_change_rate);
+      //printlnerr!( "predict {}/{}",min_difference-current_difference, current_difference_change_rate);
       
       accessor.predict_at_time (
-        last_change + (min_difference-current_difference)/current_difference_change_rate,
+        last_change + min (SECOND/4, (min_difference-current_difference)/current_difference_change_rate),
         TransferChange::new (id, dimension)
       );
     }
@@ -178,7 +181,7 @@ fn transfer_change_predictor <PA: PredictorAccessor <Basics = Basics>> (accessor
 /// and with Snapshots, if needed.
 fn get_accumulation_rate <A: Accessor <Basics = Basics>> (accessor: &A, coordinates: [i32; 2])->i64 {
   let mut result = 0;
-  let me: &Cell = accessor.get::<Cell>(RowId::new (& coordinates)).unwrap();  
+  let me: &Cell = accessor.get::<Cell>(cell_id(coordinates)).unwrap();  
   for dimension in 0..2 {
     result -= me.ink_transfers [dimension];
     
@@ -187,11 +190,21 @@ fn get_accumulation_rate <A: Accessor <Basics = Basics>> (accessor: &A, coordina
     
     // Adjacent cells might NOT exist (they could be out of bounds).
     // We could also have just done a bounds check on the coordinates, like above.
-    if let Some (neighbor) = accessor.get::<Cell>(RowId::new (& neighbor_coordinates)) {
+    if let Some (neighbor) = accessor.get::<Cell>(cell_id(neighbor_coordinates)) {
       result += neighbor.ink_transfers [dimension];
     }
   }
   result
+}
+
+/// Tragically, RowId::new() is actually slower than caching the ids and looking them up using a faster hash function.
+fn cell_id (coordinates: [i32; 2])->RowId {
+  use fnv::FnvHashMap;
+  use std::cell::RefCell;
+  thread_local! {
+    static CACHE: RefCell<FnvHashMap <[i32; 2], RowId>> = Default::default();
+  }
+  CACHE.with (|map| map.borrow_mut().entry (coordinates).or_insert_with (|| RowId::new(&coordinates)).clone())
 }
 
 
@@ -234,7 +247,7 @@ fn transfer_change <M: Mutator <Basics = Basics>> (mutator: &mut M, data: &Trans
     me = me_ref.clone();
     let mut neighbor_coordinates = me.coordinates;
     neighbor_coordinates [data.dimension] += 1;
-    neighbor_id = RowId::new (& neighbor_coordinates);
+    neighbor_id = cell_id(neighbor_coordinates);
     let (neighbor_ref, neighbor_last_change) = mutator.data_and_last_change::<Cell>(neighbor_id).unwrap();
     neighbor = neighbor_ref.clone();
     
@@ -269,7 +282,7 @@ time_steward_event!{
   |&self, mutator| {
     for x in 0..mutator.constants().size [0] {
       for y in 0..mutator.constants().size [1] {
-        mutator.set::<Cell> (RowId::new (& [x,y]), Some (Cell {coordinates: [x, y], ink_at_last_change: 0, ink_transfers: [0, 0]}));
+        mutator.set::<Cell> (cell_id([x,y]), Some (Cell {coordinates: [x, y], ink_at_last_change: 0, ink_transfers: [0, 0]}));
       }
     }
   }
@@ -280,7 +293,7 @@ time_steward_event!{
   EventId(0xe96a5a842a47295a),
   
   |&self, mutator| {
-    let my_id =RowId::new (& self.coordinates);
+    let my_id =cell_id(self.coordinates);
     let mut me;
     {
       let (me_ref, my_last_change) = mutator.data_and_last_change::<Cell>(my_id).unwrap();
@@ -465,7 +478,7 @@ color = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
     
     for x in 0.. snapshot.constants().size [0] {
       for y in 0.. snapshot.constants().size [1] {
-        let (me, my_last_change) = snapshot.data_and_last_change::<Cell>(RowId::new (& [x,y])).unwrap().clone();
+        let (me, my_last_change) = snapshot.data_and_last_change::<Cell>(cell_id([x,y])).unwrap().clone();
         let my_current_ink = (me.ink_at_last_change + get_accumulation_rate (&snapshot, me.coordinates)*(snapshot.now() - my_last_change)) as f32;
         
         vertices.extend(&[Vertex {

@@ -19,6 +19,7 @@ bincode = "0.6"
 glium = "0.15"
 docopt = "0.6"
 rustc-serialize = "0.3"
+fnv = "1.0"
 
 [profile.bench]
 debug = true
