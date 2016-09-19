@@ -16,6 +16,13 @@ extern crate glium;
 extern crate rustc_serialize;
 extern crate docopt;
 
+macro_rules! printlnerr(
+    ($($arg:tt)*) => { {use std::io::Write;
+        let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
+        r.expect("failed printing to stderr");
+    } }
+);
+
 
 use std::cmp::max;
 use time_steward::{DefaultSteward, Accessor, MomentaryAccessor, PredictorAccessor, Mutator, DeterministicRandomId, TimeSteward, TimeStewardFromConstants, IncrementalTimeSteward, Column, ColumnId, RowId, EventId, PredictorId, ColumnType, PredictorType, EventType};
@@ -142,16 +149,19 @@ fn transfer_change_predictor <PA: PredictorAccessor <Basics = Basics>> (accessor
       (current_transfer_rate - accessor.constants().max_inaccuracy)*(2*SECOND),
       (current_transfer_rate + accessor.constants().max_inaccuracy)*(2*SECOND)
     );
-    if current_difference < min_difference || current_difference > max_difference {
+    if current_difference < min_difference || current_difference > max_difference {      printlnerr!( "predict wow! {:?} ! {:?}", me, neighbor);
       accessor.predict_at_time (*last_change, TransferChange::new (id, dimension));
     }
     else if current_difference_change_rate > 0 {
+      printlnerr!( "predict {}/{}",max_difference-current_difference, current_difference_change_rate);
       accessor.predict_at_time (
         last_change + (max_difference-current_difference)/current_difference_change_rate,
         TransferChange::new (id, dimension)
       );
     }
     else if current_difference_change_rate < 0 {
+      printlnerr!( "predict {}/{}",min_difference-current_difference, current_difference_change_rate);
+      
       accessor.predict_at_time (
         last_change + (min_difference-current_difference)/current_difference_change_rate,
         TransferChange::new (id, dimension)
@@ -396,7 +406,7 @@ in float ink_transfer;
 out vec4 color;
 
 void main() {
-color = vec4 (vec3(0.9 - ink_transfer/100000000000.0), 1.0);
+color = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
 }
 
 "#;
@@ -423,7 +433,7 @@ color = vec4 (vec3(0.9 - ink_transfer/100000000000.0), 1.0);
 
   loop {
     let frame_begin = Instant::now();
-    let time =((start.elapsed().as_secs() as i64 * 1000000000i64) +
+    let time = 1 + ((start.elapsed().as_secs() as i64 * 1000000000i64) +
                           start.elapsed().subsec_nanos() as i64) *
                          SECOND / 1000000000i64;
     for ev in display.poll_events() {
