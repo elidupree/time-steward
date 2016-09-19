@@ -18,6 +18,12 @@ impl<K: Eq + Hash, V> HashMap<K, V> {
       inserting: Cell::new(false),
     }
   }
+  pub fn with_capacity(capacity: usize) -> HashMap<K, V> {
+    HashMap {
+      data: UnsafeCell::new(Interior::with_capacity(capacity)),
+      inserting: Cell::new(false),
+    }
+  }
   pub fn get_default<F>(&self, key: K, default_function: F) -> Option<&V>
     where F: FnOnce() -> Option<V>
   {

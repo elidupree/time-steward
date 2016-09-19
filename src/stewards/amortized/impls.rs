@@ -564,7 +564,7 @@ impl<B: Basics> Steward<B> {
           fields: field_ref,
           generic: common::GenericMutator::new(time.clone()),
           results: MutatorResults {
-            fields: insert_only::HashMap::new(),
+            fields: insert_only::HashMap::with_capacity(16),
             checksum_generator: RefCell::new(checksum_generator),
           },
         };
