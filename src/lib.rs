@@ -30,6 +30,7 @@ extern crate rand;
 extern crate nalgebra;
 extern crate serde;
 extern crate bincode;
+extern crate crossbeam;
 #[macro_use]
 extern crate quickcheck;
 
