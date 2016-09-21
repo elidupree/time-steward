@@ -26,11 +26,11 @@ struct Field<B: Basics> {
   last_change: ExtendedTime<B>,
   first_snapshot_not_updated: SnapshotIdx,
 }
-type SnapshotField<B: Basics> = (FieldRc, ExtendedTime<B>);
+type SnapshotField<B> = (FieldRc, ExtendedTime<B>);
 
 
-type FieldsMap<B: Basics> = HashMap<FieldId, Field<B>, BuildTrivialU64Hasher>;
-type SnapshotsData<B: Basics> = BTreeMap<SnapshotIdx,
+type FieldsMap<B> = HashMap<FieldId, Field<B>, BuildTrivialU64Hasher>;
+type SnapshotsData<B> = BTreeMap<SnapshotIdx,
                                          Rc<insert_only::HashMap<FieldId, SnapshotField<B>, BuildTrivialU64Hasher>>>;
 
 struct Fields<B: Basics> {

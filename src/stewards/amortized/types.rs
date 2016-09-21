@@ -106,7 +106,7 @@ pub struct Field<B: Basics> {
   pub last_change: ExtendedTime<B>,
   pub data: Option<FieldRc>,
 }
-pub type SnapshotField<B: Basics> = (FieldRc, ExtendedTime<B>);
+pub type SnapshotField<B> = (FieldRc, ExtendedTime<B>);
 
 // #[derive (Clone)]
 // enum AccessInfo {
@@ -140,7 +140,7 @@ impl<B: Basics> Dependencies<B> {
     self.unbounded_predictions.is_empty()
   }
 }
-pub type DependenciesMap<B: Basics> = HashMap<FieldId, Dependencies<B>, BuildTrivialU64Hasher>;
+pub type DependenciesMap<B> = HashMap<FieldId, Dependencies<B>, BuildTrivialU64Hasher>;
 
 #[derive (Clone)]
 pub struct Prediction<B: Basics> {

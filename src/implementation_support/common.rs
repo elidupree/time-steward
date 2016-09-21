@@ -119,7 +119,7 @@ impl<B: Basics, P: Predictor<Basics = B >> DynamicPredictorTrait <B> for Dynamic
   fn column_id(&self)->ColumnId {P::WatchedColumn::column_id()}
 }
 
-pub type DynamicEvent <B: Basics> = StewardRc <DynamicEventTrait <B, Output =()>>;
+pub type DynamicEvent <B> = StewardRc <DynamicEventTrait <B, Output =()>>;
 
 // #[derive (Clone)]
 pub struct DynamicPredictor <B: Basics> {

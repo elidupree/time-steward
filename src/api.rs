@@ -311,7 +311,7 @@ pub trait PredictorAccessor: Accessor {
     self.predict_at_time(time, event)
   }
 }
-pub type SnapshotEntry<'a, B: Basics> = (FieldId, (&'a FieldRc, &'a ExtendedTime<B>));
+pub type SnapshotEntry<'a, B> = (FieldId, (&'a FieldRc, &'a ExtendedTime<B>));
 // where for <'a> & 'a Self: IntoIterator <Item = SnapshotEntry <'a, B>>
 pub trait Snapshot: MomentaryAccessor + Any {
   fn num_fields(&self) -> usize;
