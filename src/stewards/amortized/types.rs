@@ -119,8 +119,8 @@ pub struct FieldHistory<B: Basics> {
   pub first_snapshot_not_updated: SnapshotIdx,
 }
 
-pub type SnapshotsData<B: Basics> = BTreeMap<SnapshotIdx,
-                                             (B::Time,
+pub type SnapshotsData<B> = BTreeMap<SnapshotIdx,
+                                             (<B as Basics>::Time,
                                               Rc<insert_only::HashMap<FieldId, SnapshotField<B>, BuildTrivialU64Hasher>>)>;
 
 pub struct Fields<B: Basics> {
