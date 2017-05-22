@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::cmp::min;
 use {FieldId, ColumnId, RowId, PredictorId, Basics, Column, ExtendedTime};
 use crossbeam::mem::epoch::{self, Atomic};
+use super::data_structures::{FieldsMap, BackBiasedTreeDeque, AtomicBag};
 
 struct AtomicFieldInner <B: Basics, C: Column> {
   data: Option <C::FieldType>,
@@ -52,7 +53,7 @@ enum Task {
 
 
 struct Core <B: Basics> {
-  fields: ConcurrentHashMap <FieldId, FieldHistory <B>, BuildTrivialU64Hasher>,
+  fields: FieldsMap <FieldId, FieldHistory <B>, BuildTrivialU64Hasher>,
   
   available_memory: AtomicUsize,
   
