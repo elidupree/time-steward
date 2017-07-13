@@ -22,13 +22,15 @@
 
 #![feature(unboxed_closures, fn_traits, specialization)]
 #![feature(pub_restricted)]
-#![feature (plugin, custom_derive)]
-#![plugin (serde_macros)]
+// #![feature (plugin, custom_derive)]
+// #![plugin (serde_macros)]
 // #![plugin (quickcheck_macros)]
 
 extern crate rand;
 extern crate nalgebra;
 extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 extern crate bincode;
 extern crate crossbeam;
 #[macro_use]
