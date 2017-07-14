@@ -362,10 +362,10 @@ impl<'a, B: Basics> ::Mutator for Mutator<'a, B> {
   fn set<C: Column>(&mut self, id: RowId, data: Option<C::FieldType>) {
     time_steward_common_mutator_set_prefix!(B, C, self, id, data);
     let field_id = FieldId::new(id, C::column_id());
-    ::bincode::serde::serialize_into(&mut *self.results.checksum_generator.borrow_mut(),
+    ::bincode::serialize_into(&mut *self.results.checksum_generator.borrow_mut(),
                                      &id,
                                      ::bincode::SizeLimit::Infinite).unwrap();
-    ::bincode::serde::serialize_into(&mut *self.results.checksum_generator.borrow_mut(),
+    ::bincode::serialize_into(&mut *self.results.checksum_generator.borrow_mut(),
                                      &data,
                                      ::bincode::SizeLimit::Infinite).unwrap();
     self.results.fields.insert(field_id,

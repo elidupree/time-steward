@@ -206,7 +206,7 @@ macro_rules! time_steward_common_accessor_methods_for_predictor_accessor {
         {
           use bincode;
           use serde::Serialize;
-          let mut serializer = bincode::serde::Serializer::new (&mut dependencies.1);
+          let mut serializer = bincode::Serializer::new (&mut dependencies.1);
           p.1.id.serialize (&mut serializer).unwrap();
         }
         p
@@ -370,17 +370,17 @@ pub fn field_options_are_equal<B: Basics>(column_id: ColumnId,
 }
 
 use bincode;
-time_steward_dynamic_fn! (pub fn serialize_event <B: Basics, [W: Any + Write]> (id: EventId of <E: Event <Basics = B>>, writer: &mut W, data: & StewardRc <Any>, size_limit: bincode::SizeLimit) ->bincode::serde::SerializeResult <()> {
-  try! (bincode::serde::serialize_into (writer, &id, bincode::SizeLimit::Bounded (8)));
-  try! (bincode::serde::serialize_into (writer, data.downcast_ref::<E>().expect ("id and type don't match"), size_limit));
+time_steward_dynamic_fn! (pub fn serialize_event <B: Basics, [W: Any + Write]> (id: EventId of <E: Event <Basics = B>>, writer: &mut W, data: & StewardRc <Any>, size_limit: bincode::SizeLimit) ->bincode::SerializeResult <()> {
+  try! (bincode::serialize_into (writer, &id, bincode::SizeLimit::Bounded (8)));
+  try! (bincode::serialize_into (writer, data.downcast_ref::<E>().expect ("id and type don't match"), size_limit));
   Ok (())
 });
 
-time_steward_dynamic_fn! (pub fn serialize_field <B: Basics, [W: Any + Write]> (id: ColumnId of <C: Column>, writer: &mut W, data: & FieldRc, size_limit: bincode::SizeLimit) ->bincode::serde::SerializeResult <()> {
-  try! (bincode::serde::serialize_into (writer, ::unwrap_field::<C>(data), size_limit));
+time_steward_dynamic_fn! (pub fn serialize_field <B: Basics, [W: Any + Write]> (id: ColumnId of <C: Column>, writer: &mut W, data: & FieldRc, size_limit: bincode::SizeLimit) ->bincode::SerializeResult <()> {
+  try! (bincode::serialize_into (writer, ::unwrap_field::<C>(data), size_limit));
   Ok (())
 });
 
-time_steward_dynamic_fn! (pub fn deserialize_field <B: Basics, [R: Any + Read]> (id: ColumnId of <C: Column>, reader: &mut R, size_limit: bincode::SizeLimit) ->bincode::serde::DeserializeResult <FieldRc> {
-  Ok (StewardRc::new (try! (bincode::serde::deserialize_from::<R, C::FieldType> (reader, size_limit))))
+time_steward_dynamic_fn! (pub fn deserialize_field <B: Basics, [R: Any + Read]> (id: ColumnId of <C: Column>, reader: &mut R, size_limit: bincode::SizeLimit) ->bincode::DeserializeResult <FieldRc> {
+  Ok (StewardRc::new (try! (bincode::deserialize_from::<R, C::FieldType> (reader, size_limit))))
 });

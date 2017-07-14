@@ -387,10 +387,10 @@ pub fn serialize_snapshot<'a, B: Basics, Shot: Snapshot<Basics = B>, W: Any + Wr
   (snapshot: &'a Shot,
    writer: &mut W,
    size_limit: bincode::SizeLimit)
-   -> bincode::serde::SerializeResult<()>
+   -> bincode::SerializeResult<()>
   where &'a Shot: IntoIterator<Item = SnapshotEntry<'a, B>>
 {
-  use bincode::serde::serialize_into;
+  use bincode::serialize_into;
   try! (serialize_into (writer, snapshot.now(), size_limit));
   try! (serialize_into (writer, snapshot.constants(), size_limit));
   try! (serialize_into (writer, &snapshot.num_fields(), size_limit));
@@ -405,8 +405,8 @@ pub fn serialize_snapshot<'a, B: Basics, Shot: Snapshot<Basics = B>, W: Any + Wr
 pub fn deserialize_snapshot<B: Basics, R: Any + Read>
   (reader: &mut R,
    size_limit: bincode::SizeLimit)
-   -> bincode::serde::DeserializeResult<FiatSnapshot<B>> {
-  use bincode::serde::deserialize_from;
+   -> bincode::DeserializeResult<FiatSnapshot<B>> {
+  use bincode::deserialize_from;
   let now = try! (deserialize_from (reader, size_limit));
   let constants = try! (deserialize_from(reader, size_limit));
   let num_fields = try! (deserialize_from::<R, usize> (reader, size_limit));

@@ -46,7 +46,7 @@ pub struct Steward<B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics =
 }
 
 time_steward_dynamic_fn! (fn do_fiat_event_message <B: Basics, [Steward0: Any + SimpleSynchronizableTimeSteward<Basics = B>]> (event_id: EventId of <E: Event <Basics = B>>, steward: &mut Steward <B, Steward0>, time: B::Time, qualified_id: DeterministicRandomId, data: Vec <u8>)->() {
-  steward.steward.insert_fiat_event (time, qualified_id, bincode::serde::deserialize:: <E> (data.as_slice()).unwrap()).unwrap();
+  steward.steward.insert_fiat_event (time, qualified_id, bincode::deserialize:: <E> (data.as_slice()).unwrap()).unwrap();
 });
 
 impl <B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics = B>> Steward <B, Steward0>
@@ -57,7 +57,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
     let (send_back, receive_back) = channel();
     ::std::thread::spawn (move | | {
       loop {
-        let message: Message <B> = match bincode::serde::deserialize_from (&mut reader, bincode::SizeLimit::Infinite) {
+        let message: Message <B> = match bincode::deserialize_from (&mut reader, bincode::SizeLimit::Infinite) {
           Err (_) => return,
           Ok (message) => message,
         };
@@ -69,7 +69,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
       loop {
         match receive_away.recv() {
           Err (_) => return,
-          Ok (message) => {match bincode::serde::serialize_into (&mut writer, &message, bincode::SizeLimit::Infinite) {
+          Ok (message) => {match bincode::serialize_into (&mut writer, &message, bincode::SizeLimit::Infinite) {
             Err (_) => return,
             Ok (_) => {writer.flush().unwrap()},
           }
@@ -210,7 +210,7 @@ where  B::Time: Sub <Output = B::Time> + Mul<i64, Output = B::Time> + Div<B::Tim
     let qualified_id = DeterministicRandomId::new (& (id, self .id));
     let result = self.steward.insert_fiat_event (time.clone(), qualified_id, event.clone());
     match result {
-      Ok (_) => self.sender.send (Message::InsertFiatEvent (time, qualified_id, E::event_id(), bincode::serde::serialize (&event, bincode::SizeLimit::Infinite).unwrap())).unwrap(),
+      Ok (_) => self.sender.send (Message::InsertFiatEvent (time, qualified_id, E::event_id(), bincode::serialize (&event, bincode::SizeLimit::Infinite).unwrap())).unwrap(),
       Err (FiatEventOperationError::InvalidInput) => (),
       Err (FiatEventOperationError::InvalidTime) => (),
     }

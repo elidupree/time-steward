@@ -557,7 +557,7 @@ impl<B: Basics> Steward<B> {
       {
         let mut checksum_generator = SiphashIdGenerator::new();
         let field_ref = &*self.shared.fields.borrow();
-        ::bincode::serde::serialize_into(&mut checksum_generator,
+        ::bincode::serialize_into(&mut checksum_generator,
                                          &(time, event.event_id()),
                                          ::bincode::SizeLimit::Infinite).unwrap();
         let mut mutator = Mutator {
