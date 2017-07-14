@@ -8,6 +8,7 @@ use std::borrow::Borrow;
 use std::io::{Write, Read};
 use rand::{Rng};
 use serde::{Serialize, Deserialize};
+use serde::de::DeserializeOwned;
 use bincode;
 
 use implementation_support::list_of_types::{ColumnList, EventList, PredictorList};
@@ -53,7 +54,7 @@ impl fmt::Debug for EventId {
 
 
 pub trait Column: Any {
-  type FieldType: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug;// = Self;
+  type FieldType: Any + Send + Sync + Clone + Eq + Serialize + DeserializeOwned + Debug;// = Self;
 
   /**
   Returns a constant identifier for the type, which must be 64 bits of random data.
@@ -83,16 +84,16 @@ impl FieldId {
 // I'm not sure exactly what synchronization properties we will need for these callbacks,
 // so I'm requiring both Send and Sync for now to future-proof them.
 // Serialize is required for synchronization checking.
-// Serialize + Deserialize is needed for fiat events in order to transmit them.
+// Serialize + DeserializeOwned is needed for fiat events in order to transmit them.
 // Clone makes things easier for crossverified time stewards, and
-//   shouldn't be too hard for a Serialize + Deserialize type.
-// I don't have plans to use Deserialize for other events/predictors,
+//   shouldn't be too hard for a Serialize + DeserializeOwned type.
+// I don't have plans to use DeserializeOwned for other events/predictors,
 // but it's possible that I might, so I included it for more future-proofing.
 // I'm not sure if 'static (from Any) is strictly necessary, but it makes things easier, and
 // wanting a non-'static callback (which still must live at least as long as the TimeSteward)
 // seems like a very strange situation.
 pub trait Event
-  : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
+  : Any + Send + Sync + Clone + Eq + Serialize + DeserializeOwned + Debug {
   type Basics: Basics;
   fn call<M: Mutator<Basics = Self::Basics>>(&self, mutator: &mut M);
   
@@ -106,7 +107,7 @@ pub trait Event
   fn event_id() -> EventId;
 }
 pub trait Predictor
-  : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
+  : Any + Send + Sync + Clone + Eq + Serialize + DeserializeOwned + Debug {
   type Basics: Basics;
   fn call<PA: PredictorAccessor<Basics = Self::Basics>>(accessor: &mut PA, id: RowId);
   
@@ -217,9 +218,9 @@ macro_rules! time_steward_basics {
 This is intended to be implemented on an empty struct. Requiring Clone etc. is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 */
 pub trait Basics
-  : Any + Send + Sync + Copy + Clone + Ord + Hash + Serialize + Deserialize + Debug + Default {
-  type Time: Any + Send + Sync + Clone + Ord + Hash + Serialize + Deserialize + Debug;
-  type Constants: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug;
+  : Any + Send + Sync + Copy + Clone + Ord + Hash + Serialize + DeserializeOwned + Debug + Default {
+  type Time: Any + Send + Sync + Clone + Ord + Hash + Serialize + DeserializeOwned + Debug;
+  type Constants: Any + Send + Sync + Clone + Eq + Serialize + DeserializeOwned + Debug;
   type IncludedTypes: ColumnList + EventList<Self> + PredictorList<Self>;
   fn max_iteration() -> IterationType {
     65535

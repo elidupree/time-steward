@@ -2,14 +2,15 @@ use {RowId, ColumnId, Column, Accessor};
 use std::any::Any;
 use std::fmt::Debug;
 use serde::{Serialize, Deserialize};
+use serde::de::DeserializeOwned;
 
 pub mod inefficient;
 pub mod simple_grid;
 
 pub trait Basics
-  : Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {
+  : Any + Send + Sync + Clone + Eq + Serialize + DeserializeOwned + Debug {
   type StewardBasics: ::Basics;
-  type DetectorId: Copy + Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug;//=()
+  type DetectorId: Copy + Any + Send + Sync + Clone + Eq + Serialize + DeserializeOwned + Debug;//=()
   fn nearness_column_id() -> ColumnId;
 }
 
