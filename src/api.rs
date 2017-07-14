@@ -164,9 +164,12 @@ macro_rules! time_steward_predictor {
 #[macro_export]
 macro_rules! time_steward_event {
   ([$($privacy:tt)*] struct $Struct: ident <$([$Parameter: ident $($bounds:tt)*]),*>{$($field_name: ident: $field_type: ty),*}, $B: ty, $event_id: expr, | &$self_name: ident, $mutator_name: ident | $contents: expr) => {
+    // Hack: using this absolute path in the deserialize_with directive itself didn't work, so I use it out here. TODO: is this namespace pollution on the macro invoker that I need to avoid?
+    use $crate::serde::Deserialize;
     #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
     $($privacy)* struct $Struct<$($Parameter $($bounds)*),*>{
-      $($field_name: $field_type),*
+      // Hacky workaround for https://github.com/rust-lang/rust/issues/41617 (see https://github.com/serde-rs/serde/issues/943)
+      $(#[serde(deserialize_with = "Deserialize::deserialize")] $field_name: $field_type),*
     }
     impl<$($Parameter $($bounds)*),*> $crate::Event for $Struct <$($Parameter),*> {
       type Basics = $B;

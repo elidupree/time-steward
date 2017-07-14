@@ -15,17 +15,19 @@ use {ExtendedTime, Basics, TimeSteward, SimpleSynchronizableTimeSteward, Determi
      EventId, Event, FiatEventOperationError, ValidSince};
 use std::sync::mpsc::{channel, Sender, Receiver};
 use bincode;
+use serde::Deserialize;
 
 
+// serde(deserialize_with is a hacky workaround for https://github.com/rust-lang/rust/issues/41617 (see https://github.com/serde-rs/serde/issues/943)
 #[derive (Clone, Serialize, Deserialize)]
 enum Message<B: Basics> {
-  InsertFiatEvent(B::Time, DeterministicRandomId, EventId, Vec<u8>),
-  RemoveFiatEvent(B::Time, DeterministicRandomId),
-  Settled(i64),
-  Checksum(i64, u64),
-  DebugDump(BTreeMap<ExtendedTime<B>, u64>),
-  EventDetails(String),
-  Finished(u32),
+  InsertFiatEvent(#[serde(deserialize_with = "Deserialize::deserialize")] B::Time, #[serde(deserialize_with = "Deserialize::deserialize")] DeterministicRandomId, #[serde(deserialize_with = "Deserialize::deserialize")] EventId, #[serde(deserialize_with = "Deserialize::deserialize")] Vec<u8>),
+  RemoveFiatEvent(#[serde(deserialize_with = "Deserialize::deserialize")] B::Time, #[serde(deserialize_with = "Deserialize::deserialize")] DeterministicRandomId),
+  Settled(#[serde(deserialize_with = "Deserialize::deserialize")] i64),
+  Checksum(#[serde(deserialize_with = "Deserialize::deserialize")] i64, #[serde(deserialize_with = "Deserialize::deserialize")] u64),
+  DebugDump(#[serde(deserialize_with = "Deserialize::deserialize")] BTreeMap<ExtendedTime<B>, u64>),
+  EventDetails(#[serde(deserialize_with = "Deserialize::deserialize")] String),
+  Finished(#[serde(deserialize_with = "Deserialize::deserialize")] u32),
 }
 
 pub struct Steward<B: Basics, Steward0: SimpleSynchronizableTimeSteward<Basics = B>> {
