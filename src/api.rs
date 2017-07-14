@@ -382,12 +382,12 @@ impl<'a, B: Basics> IntoIterator for &'a FiatSnapshot<B> {
   }
 }
 
-
-pub fn serialize_snapshot<'a, B: Basics, Shot: Snapshot<Basics = B>, W: Any + Write, S: bincode::SizeLimit>
+// TODO: handle the size limits on these functions correctly
+pub fn serialize_snapshot<'a, B: Basics, Shot: Snapshot<Basics = B>, W: Any + Write, S: Any + Copy + bincode::SizeLimit>
   (snapshot: &'a Shot,
    writer: &mut W,
    size_limit: S)
-   -> bincode::SerializeResult<()>
+   -> bincode::internal::Result<()>
   where &'a Shot: IntoIterator<Item = SnapshotEntry<'a, B>>
 {
   use bincode::serialize_into;
@@ -402,10 +402,10 @@ pub fn serialize_snapshot<'a, B: Basics, Shot: Snapshot<Basics = B>, W: Any + Wr
   Ok(())
 }
 
-pub fn deserialize_snapshot<B: Basics, R: Any + Read, S: bincode::SizeLimit>
+pub fn deserialize_snapshot<B: Basics, R: Any + Read, S: Any + Copy + bincode::SizeLimit>
   (reader: &mut R,
    size_limit: S)
-   -> bincode::DeserializeResult<FiatSnapshot<B>> {
+   -> bincode::internal::Result<FiatSnapshot<B>> {
   use bincode::deserialize_from;
   let now = try! (deserialize_from (reader, size_limit));
   let constants = try! (deserialize_from(reader, size_limit));

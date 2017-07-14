@@ -370,17 +370,17 @@ pub fn field_options_are_equal<B: Basics>(column_id: ColumnId,
 }
 
 use bincode;
-time_steward_dynamic_fn! (pub fn serialize_event <B: Basics, [W: Any + Write], [S: Any + bincode::SizeLimit]> (id: EventId of <E: Event <Basics = B>>, writer: &mut W, data: & StewardRc <Any>, size_limit: S) ->bincode::SerializeResult <()> {
+time_steward_dynamic_fn! (pub fn serialize_event <B: Basics, [W: Any + Write], [S: Any + bincode::SizeLimit]> (id: EventId of <E: Event <Basics = B>>, writer: &mut W, data: & StewardRc <Any>, size_limit: S) ->bincode::internal::Result<()> {
   try! (bincode::serialize_into (writer, &id, bincode::Bounded (8)));
   try! (bincode::serialize_into (writer, data.downcast_ref::<E>().expect ("id and type don't match"), size_limit));
   Ok (())
 });
 
-time_steward_dynamic_fn! (pub fn serialize_field <B: Basics, [W: Any + Write], [S: Any + bincode::SizeLimit]> (id: ColumnId of <C: Column>, writer: &mut W, data: & FieldRc, size_limit: S) ->bincode::SerializeResult <()> {
+time_steward_dynamic_fn! (pub fn serialize_field <B: Basics, [W: Any + Write], [S: Any + bincode::SizeLimit]> (id: ColumnId of <C: Column>, writer: &mut W, data: & FieldRc, size_limit: S) ->bincode::internal::Result<()> {
   try! (bincode::serialize_into (writer, ::unwrap_field::<C>(data), size_limit));
   Ok (())
 });
 
-time_steward_dynamic_fn! (pub fn deserialize_field <B: Basics, [R: Any + Read], [S: Any + bincode::SizeLimit]> (id: ColumnId of <C: Column>, reader: &mut R, size_limit: S) ->bincode::DeserializeResult <FieldRc> {
+time_steward_dynamic_fn! (pub fn deserialize_field <B: Basics, [R: Any + Read], [S: Any + bincode::SizeLimit]> (id: ColumnId of <C: Column>, reader: &mut R, size_limit: S) ->bincode::internal::Result<FieldRc> {
   Ok (StewardRc::new (try! (bincode::deserialize_from::<R, C::FieldType, S> (reader, size_limit))))
 });
