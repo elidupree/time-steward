@@ -15,6 +15,7 @@ quickcheck = "0.3"
 #quickcheck_macros = "0.2"
 bincode = "0.8"
 crossbeam = "0.2"
+siphasher = "0.2.2"
 
 [dev-dependencies]
 glium = "0.15"

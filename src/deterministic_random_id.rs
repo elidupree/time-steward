@@ -1,4 +1,5 @@
-use std::hash::{Hash, Hasher, SipHasher};
+use std::hash::{Hash, Hasher};
+use siphasher::sip::SipHasher;
 use std::fmt;
 use std::io::{self, Write};
 use rand::{Rng, ChaChaRng};
