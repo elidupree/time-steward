@@ -1,11 +1,12 @@
-#![feature (plugin, custom_derive)]
-#![plugin (serde_macros)]
-
 #[macro_use]
 extern crate time_steward;
 
 extern crate rand;
 extern crate bincode;
+
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 
 use time_steward::{TimeSteward, TimeStewardFromConstants, TimeStewardFromSnapshot, DeterministicRandomId, Column, ColumnId, RowId, PredictorId, EventId,
      ColumnType, EventType, PredictorType};
@@ -174,12 +175,12 @@ pub fn handshakes_reloading() {
     .map(|option| option.as_mut().expect("all these snapshots should have been valid")) {
     display_snapshot(snapshot);
     let mut writer: Vec<u8> = Vec::with_capacity(128);
-    time_steward::serialize_snapshot:: <Basics, <Steward as TimeSteward>::Snapshot,_> (snapshot, &mut writer, bincode::SizeLimit::Infinite).unwrap();
+    time_steward::serialize_snapshot:: <Basics, <Steward as TimeSteward>::Snapshot,_,_> (snapshot, &mut writer, bincode::Infinite).unwrap();
     // let serialized = String::from_utf8 (serializer.into_inner()).unwrap();
     println!("{:?}", writer);
     use std::io::Cursor;
     let mut reader = Cursor::new(writer);
-    let deserialized = time_steward::deserialize_snapshot:: <Basics, _> (&mut reader, bincode::SizeLimit::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/).unwrap();
+    let deserialized = time_steward::deserialize_snapshot:: <Basics, _,_> (&mut reader, bincode::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/).unwrap();
     println!("{:?}", deserialized);
     display_snapshot(&deserialized);
     use time_steward::MomentaryAccessor;

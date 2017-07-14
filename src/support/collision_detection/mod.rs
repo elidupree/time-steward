@@ -1,7 +1,7 @@
 use {RowId, ColumnId, Column, Accessor};
 use std::any::Any;
 use std::fmt::Debug;
-use serde::{Serialize, Deserialize};
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 pub mod inefficient;

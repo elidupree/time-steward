@@ -4,8 +4,9 @@
 
 // All field data types must implement serde::Serialize and serde::Deserialize,
 // so we include the features for deriving them.
-#![feature (plugin, custom_derive)]
-#![plugin (serde_macros)]
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 
 #[macro_use]
 extern crate time_steward;

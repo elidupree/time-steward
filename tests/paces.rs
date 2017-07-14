@@ -1,10 +1,10 @@
-#![feature (plugin, custom_derive)]
-#![plugin (serde_macros)]
 
 #[macro_use]
 extern crate time_steward as steward;
 extern crate rand;
 extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 
 use steward::{RowId, DeterministicRandomId, ColumnId, PredictorId, EventId, Column, ColumnType, PredictorType, EventType, TimeStewardFromConstants, TimeStewardFromSnapshot};
 use rand::{Rng, SeedableRng, ChaChaRng};
