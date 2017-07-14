@@ -118,13 +118,15 @@ mod tests {
 
   #[test]
   fn test_id_endianness() {
+    // note: these values should be correct if bincode serializes in little-endian order,
+    // which is the current default.
     test_id_endianness_impl((),
                             DeterministicRandomId {
                               data: [18033283813966546569, 10131395250899649866],
                             });
     test_id_endianness_impl(1337,
                             DeterministicRandomId {
-                              data: [3453333590764588377, 1257515737963236726],
+                              data: [13768737740279017279, 4442460339052638143],
                             });
     let a: (Option<Option<i32>>,) = (Some(None),);
     test_id_endianness_impl(a,
@@ -133,7 +135,7 @@ mod tests {
                             });
     test_id_endianness_impl(DeterministicRandomId::new(&0x70f7b85b08ba4fd5u64),
                             DeterministicRandomId {
-                              data: [12393903562314107346, 11644372085838480024],
+                              data: [15806623539012513099, 2804789490945853517],
                             });
   }
 }
