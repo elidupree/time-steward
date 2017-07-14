@@ -559,7 +559,7 @@ impl<B: Basics> Steward<B> {
         let field_ref = &*self.shared.fields.borrow();
         ::bincode::serialize_into(&mut checksum_generator,
                                          &(time, event.event_id()),
-                                         ::bincode::SizeLimit::Infinite).unwrap();
+                                         ::bincode::Infinite).unwrap();
         let mut mutator = Mutator {
           // steward: &mut self.owned,
           shared: &self.shared,

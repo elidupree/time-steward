@@ -383,10 +383,10 @@ impl<'a, B: Basics> IntoIterator for &'a FiatSnapshot<B> {
 }
 
 
-pub fn serialize_snapshot<'a, B: Basics, Shot: Snapshot<Basics = B>, W: Any + Write>
+pub fn serialize_snapshot<'a, B: Basics, Shot: Snapshot<Basics = B>, W: Any + Write, S: bincode::SizeLimit>
   (snapshot: &'a Shot,
    writer: &mut W,
-   size_limit: bincode::SizeLimit)
+   size_limit: S)
    -> bincode::SerializeResult<()>
   where &'a Shot: IntoIterator<Item = SnapshotEntry<'a, B>>
 {
@@ -396,26 +396,26 @@ pub fn serialize_snapshot<'a, B: Basics, Shot: Snapshot<Basics = B>, W: Any + Wr
   try! (serialize_into (writer, &snapshot.num_fields(), size_limit));
   for (id, (data, changed)) in snapshot {
     try! (serialize_into (writer, &id, size_limit));
-    try! (::implementation_support::common::serialize_field::<B, W> (id.column_id, writer, data, size_limit));
+    try! (::implementation_support::common::serialize_field::<B, W, S> (id.column_id, writer, data, size_limit));
     try! (serialize_into (writer, changed, size_limit));
   }
   Ok(())
 }
 
-pub fn deserialize_snapshot<B: Basics, R: Any + Read>
+pub fn deserialize_snapshot<B: Basics, R: Any + Read, S: bincode::SizeLimit>
   (reader: &mut R,
-   size_limit: bincode::SizeLimit)
+   size_limit: S)
    -> bincode::DeserializeResult<FiatSnapshot<B>> {
   use bincode::deserialize_from;
   let now = try! (deserialize_from (reader, size_limit));
   let constants = try! (deserialize_from(reader, size_limit));
-  let num_fields = try! (deserialize_from::<R, usize> (reader, size_limit));
+  let num_fields = try! (deserialize_from::<R, usize, S> (reader, size_limit));
   println! ("{}", num_fields);
   let mut fields = HashMap::default();
   for _ in 0..num_fields {
     let id: FieldId = try! (deserialize_from (reader, size_limit));
     let field =
-      try! (::implementation_support::common::deserialize_field::<B, R> (id.column_id, reader, size_limit));
+      try! (::implementation_support::common::deserialize_field::<B, R, S> (id.column_id, reader, size_limit));
     let changed = try! (deserialize_from(reader, size_limit));
     println! ("{:?}", (id, (&field, &changed)));
     fields.insert(id, (field, changed));

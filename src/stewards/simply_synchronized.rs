@@ -57,7 +57,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
     let (send_back, receive_back) = channel();
     ::std::thread::spawn (move | | {
       loop {
-        let message: Message <B> = match bincode::deserialize_from (&mut reader, bincode::SizeLimit::Infinite) {
+        let message: Message <B> = match bincode::deserialize_from (&mut reader, bincode::Infinite) {
           Err (_) => return,
           Ok (message) => message,
         };
@@ -69,7 +69,7 @@ where << Steward0 as TimeSteward>::Basics as Basics>::Time: Sub <Output = << Ste
       loop {
         match receive_away.recv() {
           Err (_) => return,
-          Ok (message) => {match bincode::serialize_into (&mut writer, &message, bincode::SizeLimit::Infinite) {
+          Ok (message) => {match bincode::serialize_into (&mut writer, &message, bincode::Infinite) {
             Err (_) => return,
             Ok (_) => {writer.flush().unwrap()},
           }
@@ -210,7 +210,7 @@ where  B::Time: Sub <Output = B::Time> + Mul<i64, Output = B::Time> + Div<B::Tim
     let qualified_id = DeterministicRandomId::new (& (id, self .id));
     let result = self.steward.insert_fiat_event (time.clone(), qualified_id, event.clone());
     match result {
-      Ok (_) => self.sender.send (Message::InsertFiatEvent (time, qualified_id, E::event_id(), bincode::serialize (&event, bincode::SizeLimit::Infinite).unwrap())).unwrap(),
+      Ok (_) => self.sender.send (Message::InsertFiatEvent (time, qualified_id, E::event_id(), bincode::serialize (&event, bincode::Infinite).unwrap())).unwrap(),
       Err (FiatEventOperationError::InvalidInput) => (),
       Err (FiatEventOperationError::InvalidTime) => (),
     }

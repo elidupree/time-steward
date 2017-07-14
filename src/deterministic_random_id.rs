@@ -59,7 +59,7 @@ impl DeterministicRandomId {
   /// because Serialize IS meant to be compatible between platforms.
   pub fn new<T: Serialize>(data: &T) -> DeterministicRandomId {
     let mut writer = SiphashIdGenerator::new();
-    bincode::serialize_into(&mut writer, data, bincode::SizeLimit::Infinite).unwrap();
+    bincode::serialize_into(&mut writer, data, bincode::Infinite).unwrap();
     writer.generate()
   }
   /// Rather than implement Rand for this type, we make sure that it can

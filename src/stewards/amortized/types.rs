@@ -364,10 +364,10 @@ impl<'a, B: Basics> ::Mutator for Mutator<'a, B> {
     let field_id = FieldId::new(id, C::column_id());
     ::bincode::serialize_into(&mut *self.results.checksum_generator.borrow_mut(),
                                      &id,
-                                     ::bincode::SizeLimit::Infinite).unwrap();
+                                     ::bincode::Infinite).unwrap();
     ::bincode::serialize_into(&mut *self.results.checksum_generator.borrow_mut(),
                                      &data,
-                                     ::bincode::SizeLimit::Infinite).unwrap();
+                                     ::bincode::Infinite).unwrap();
     self.results.fields.insert(field_id,
                                Field {
                                  last_change: self.generic.now.clone(),
