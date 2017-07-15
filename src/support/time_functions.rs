@@ -1,4 +1,4 @@
-use nalgebra::{Vector2, Dot};
+use nalgebra::Vector2;
 use std::cmp::max;
 use super::rounding_error_tolerant_math::*;
 

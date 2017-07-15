@@ -8,6 +8,7 @@ use time_steward::support::time_functions::QuadraticTrajectory;
 use nalgebra::Vector2;
 use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
 
+use std::fmt::Debug;
 
 pub type Time = i64;
 pub type SpaceCoordinate = i64;
@@ -23,11 +24,11 @@ pub const TIME_SHIFT: u32 = 20;
 pub const SECOND: Time = 1 << TIME_SHIFT;
 
 #[derive (Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-pub struct SerializableVector2<Coordinate> {
+pub struct SerializableVector2<Coordinate: Copy + PartialEq + Debug + 'static> {
   pub x: Coordinate,
   pub y: Coordinate,
 }
-impl<Coordinate> SerializableVector2<Coordinate> {
+impl<Coordinate: Copy + PartialEq + Debug + 'static> SerializableVector2<Coordinate> {
   pub fn new(source: Vector2<Coordinate>) -> Self {
     SerializableVector2 {
       x: source.x,
