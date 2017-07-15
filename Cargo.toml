@@ -21,8 +21,7 @@ features = ["serde-serialize"]
 
 [dev-dependencies]
 glium = "0.15"
-docopt = "0.6"
-rustc-serialize = "0.3"
+docopt = "0.8"
 fnv = "1.0"
 
 [profile.bench]

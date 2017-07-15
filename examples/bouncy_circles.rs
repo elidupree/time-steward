@@ -5,7 +5,6 @@ extern crate time_steward;
 extern crate glium;
 
 extern crate nalgebra;
-extern crate rustc_serialize;
 extern crate docopt;
 
 extern crate serde;
@@ -27,7 +26,7 @@ Options:
   -c, --connect  Start a synchronized simulation by making a TCP connection.
 ";
 
-#[derive(Debug, RustcDecodable)]
+#[derive(Debug, Deserialize)]
 struct Args {
   flag_listen: bool,
   flag_connect: bool,
@@ -63,7 +62,7 @@ use std::io::{BufReader, BufWriter};
 
 fn main() {
   let arguments: Args = Docopt::new(USAGE)
-                            .and_then(|d| d.decode())
+                            .and_then(|d| d.deserialize())
                             .unwrap_or_else(|e| e.exit());
   
   if arguments.flag_listen {
