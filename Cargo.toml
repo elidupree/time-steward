@@ -26,3 +26,6 @@ fnv = "1.0"
 
 [profile.bench]
 debug = true
+
+[replace]
+"backtrace:0.2.3" = { git = "https://github.com/badboy/backtrace-rs", branch = "emscripten-fix" }
