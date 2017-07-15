@@ -8,7 +8,6 @@ use time_steward::support::time_functions::QuadraticTrajectory;
 use nalgebra::Vector2;
 use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
 
-use std::fmt::Debug;
 
 pub type Time = i64;
 pub type SpaceCoordinate = i64;
@@ -22,23 +21,6 @@ pub const GRID_SIZE_SHIFT: u32 = ARENA_SIZE_SHIFT - 3;
 pub const MAX_DISTANCE_TRAVELED_AT_ONCE: SpaceCoordinate = ARENA_SIZE << 4;
 pub const TIME_SHIFT: u32 = 20;
 pub const SECOND: Time = 1 << TIME_SHIFT;
-
-#[derive (Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-pub struct SerializableVector2<Coordinate: Copy + PartialEq + Debug + 'static> {
-  pub x: Coordinate,
-  pub y: Coordinate,
-}
-impl<Coordinate: Copy + PartialEq + Debug + 'static> SerializableVector2<Coordinate> {
-  pub fn new(source: Vector2<Coordinate>) -> Self {
-    SerializableVector2 {
-      x: source.x,
-      y: source.y,
-    }
-  }
-  pub fn get(self) -> Vector2<Coordinate> {
-    Vector2::new(self.x, self.y)
-  }
-}
 
 time_steward_basics!(pub struct Basics {
   type Time = Time;
@@ -104,7 +86,7 @@ impl Column for Circle {
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Intersection {
-  pub induced_acceleration: SerializableVector2<SpaceCoordinate>,
+  pub induced_acceleration: Vector2<SpaceCoordinate>,
 }
 impl Column for Intersection {
   type FieldType = Self;
@@ -181,10 +163,10 @@ time_steward_event! (
       if let Some(intersection) = relationship {
         new.0
           .position
-          .add_acceleration(-intersection.induced_acceleration.get());
+          .add_acceleration(-intersection.induced_acceleration);
         new.1
           .position
-          .add_acceleration(intersection.induced_acceleration.get());
+          .add_acceleration(intersection.induced_acceleration);
         new_relationship = None;
         //println!("Parted {} At {}", self.id, mutator.now());
       } else {
@@ -195,7 +177,7 @@ time_steward_event! (
         new.0.position.add_acceleration(acceleration);
         new.1.position.add_acceleration(-acceleration);
         new_relationship = Some(Intersection {
-         induced_acceleration: SerializableVector2 ::new (acceleration),
+         induced_acceleration: acceleration,
         });
 
         //println!("Joined {} At {}", self.id, mutator.now());
@@ -247,7 +229,7 @@ time_steward_event! (
       new.position.update_by(mutator.now() - me.1);
       if let Some(intersection) = relationship {
         new.position
-          .add_acceleration(-intersection.induced_acceleration.get());
+          .add_acceleration(-intersection.induced_acceleration);
         new_relationship = None;
       } else {
       let acceleration = -(new.position.evaluate() -
@@ -256,7 +238,7 @@ time_steward_event! (
                           (ARENA_SIZE * 400 / (ARENA_SIZE - me.0.radius));
         new.position.add_acceleration(acceleration);
         new_relationship = Some(Intersection {
-         induced_acceleration: SerializableVector2 ::new (acceleration),
+         induced_acceleration: acceleration,
       });
 
       }
