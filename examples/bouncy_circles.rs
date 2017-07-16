@@ -61,23 +61,28 @@ use std::net::{TcpListener, TcpStream};
 use std::io::{BufReader, BufWriter};
 
 fn main() {
-  let arguments: Args = Docopt::new(USAGE)
+  // For some reason, docopt checking the arguments caused build_glium() to fail in emscripten.
+  if !cfg!(target_os = "emscripten") {
+    let arguments: Args = Docopt::new(USAGE)
                             .and_then(|d| d.deserialize())
                             .unwrap_or_else(|e| e.exit());
-  
-  if arguments.flag_listen {
-    let listener = TcpListener::bind ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
-    let stream = listener.accept().unwrap().0;
-    let mut steward: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
-    steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
-    run (steward, |a,b| (a.settle_before (b)));
+    
+    if arguments.flag_listen {
+      let listener = TcpListener::bind ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
+      let stream = listener.accept().unwrap().0;
+      let mut steward: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+      steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
+      run (steward, |a,b| (a.settle_before (b)));
+      return;
+    }
+    else if arguments.flag_connect {
+      let stream = TcpStream::connect ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
+      let steward: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 1u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+      run (steward, |a,b| (a.settle_before (b)));
+      return;
+    }
   }
-  else if arguments.flag_connect {
-    let stream = TcpStream::connect ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
-    let steward: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 1u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
-    run (steward, |a,b| (a.settle_before (b)));
-  }
-  else {
+  {
     //let mut steward: s::Steward<Basics,
                                 //inefficient_flat::Steward<Basics>,
                                 //memoized_flat::Steward<Basics>> = s::Steward::from_constants(());
@@ -92,11 +97,11 @@ fn run <Steward: IncrementalTimeSteward <Basics = Basics>,F: Fn (&mut Steward, T
 
 
   let vertex_shader_source = r#"
-#version 140
-in vec2 direction;
-in vec2 center;
-in float radius;
-out vec2 direction_transfer;
+#version 100
+attribute lowp vec2 direction;
+attribute lowp vec2 center;
+attribute lowp float radius;
+varying lowp vec2 direction_transfer;
 
 void main() {
 direction_transfer = direction*1.5;
@@ -106,15 +111,14 @@ gl_Position = vec4 ( center + direction*1.5*radius, 0.0, 1.0);
 "#;
 
   let fragment_shader_source = r#"
-#version 140
-in vec2 direction_transfer;
-out vec4 color;
+#version 100
+varying lowp vec2 direction_transfer;
 
 void main() {
 if (dot (direction_transfer,direction_transfer) <1.0) {
-color = vec4 (1.0, 0.0, 0.0, 1.0);
+gl_FragColor = vec4 (1.0, 0.0, 0.0, 1.0);
 } else {
-color = vec4 (0.0, 0.0, 0.0, 0.0);
+gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
 
 }
 }
