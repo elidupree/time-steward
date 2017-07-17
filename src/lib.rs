@@ -63,6 +63,8 @@ mod deterministic_random_id;
 pub use deterministic_random_id::*;
 #[macro_use]
 mod api;
+#[macro_use]
+mod api_macros;
 pub use api::*;
 pub use implementation_support::list_of_types::{ColumnType, EventType, PredictorType};
 
