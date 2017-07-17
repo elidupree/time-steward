@@ -148,7 +148,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
     stew.snapshot_before(&1);
     let start = Instant::now();
 
-    loop {
+    let mut frame = || {
       let frame_begin = Instant::now();
       let time =((start.elapsed().as_secs() as i64 * 1000000000i64) +
                             start.elapsed().subsec_nanos() as i64) *
@@ -228,8 +228,15 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
       while frame_begin.elapsed() < Duration::from_millis (10) && stew.updated_until_before().map_or (false, | limitation | limitation < time + SECOND) {
         for _ in 0..8 {stew.step();}
       }
-      sleep(Duration::from_millis(10));
+    };
+    
+    if cfg!(target_os = "emscripten") {
+      set_main_loop_callback(frame);
     }
+    else {loop {
+      frame();
+      sleep(Duration::from_millis(10));
+    }}
   }
 
 
@@ -244,4 +251,33 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
     // }
   }
   // panic!("anyway")
+}
+
+
+
+use std::cell::RefCell;
+use std::ptr::null_mut;
+use std::os::raw::{c_int, c_void};
+
+#[allow(non_camel_case_types)]
+type em_callback_func = unsafe extern fn();
+extern {
+    fn emscripten_set_main_loop(func : em_callback_func, fps : c_int, simulate_infinite_loop : c_int);
+}
+
+thread_local!(static MAIN_LOOP_CALLBACK: RefCell<*mut c_void> = RefCell::new(null_mut()));
+
+pub fn set_main_loop_callback<F>(callback : F) where F : FnMut() {
+    MAIN_LOOP_CALLBACK.with(|log| {
+            *log.borrow_mut() = &callback as *const _ as *mut c_void;
+            });
+
+    unsafe { emscripten_set_main_loop(wrapper::<F>, 0, 1); }
+
+    unsafe extern "C" fn wrapper<F>() where F : FnMut() {
+        MAIN_LOOP_CALLBACK.with(|z| {
+            let closure = *z.borrow_mut() as *mut F;
+            (*closure)();
+        });
+    }
 }
