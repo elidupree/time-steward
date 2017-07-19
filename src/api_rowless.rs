@@ -37,13 +37,17 @@ struct OperationResult <Timeline: DataTimeline> {
   created_predictors: Vec<PredictorHandle>;
   deleted_predictors: Vec<PredictorHandle>;
 }
-struct CreationResult <Timeline: DataTimeline> {
+struct FromSnapshotResult <Timeline: DataTimeline> {
   created_predictors: Vec<PredictorHandle>;
 }
-trait DataTimeline {
+// DataTimeline handles serialize to DataTimelineId
+//but the id probably won't be stored in the trait implementor
+ // fn id (&self)->DataTimelineId;
+trait DataTimeline: UniquelyIdentifiedType {
   
   
   type Steward: TimeSteward;
+  type Constants: StewardData;
   
   // All inputs are required to have a standard format, so that the structure can be audited.
   type Query: StewardData;
@@ -51,7 +55,7 @@ trait DataTimeline {
   type Operation: StewardData;
   type Snapshot: StewardData;
   
-  fn with_steward (steward: StewardHandle <Self::Steward>)->Self;
+  fn from_constants (steward: StewardHandle <Self::Steward>, constants: Self::Constants)->Self;
   fn from_snapshot (steward: StewardHandle <Self::Steward>, snapshot: &Self::Snapshot)->Self;
   
   
