@@ -43,7 +43,7 @@ struct FromSnapshotResult <Timeline: DataTimeline> {
 // DataTimeline handles serialize to DataTimelineId
 //but the id probably won't be stored in the trait implementor
  // fn id (&self)->DataTimelineId;
-trait DataTimeline: UniquelyIdentifiedType {
+trait DataTimeline: Any + UniquelyIdentifiedType {
   
   
   type Steward: TimeSteward;
@@ -59,6 +59,7 @@ trait DataTimeline: UniquelyIdentifiedType {
   fn from_snapshot (steward: StewardHandle <Self::Steward>, snapshot: &Self::Snapshot)->Self;
   
   
+  fn constants (&self)->Result <QueryResult<Self>,>;
   fn query <A: Accessor> (&self, query: Self::Query, accessor: &A)->Result <QueryResult<Self>,>;
   
   // note: I'm not sure this needs an error mode, because having a snapshot prior to the valid_since of a data timeline might be a caller error in a TimeSteward
@@ -69,9 +70,10 @@ trait DataTimeline: UniquelyIdentifiedType {
   fn insert_operation (&mut self, time: ExtendedTime <Self::Steward::Basics>, operation: Self::Operation, & Steward)->Result <,>;
   
   fn valid_since (&self, & Steward)->ValidSince <ExtendedTime <Self::Steward::Basics>>;
+  
+  
   fn forget_before (&mut self, time: ExtendedTime <Self::Steward::Basics>, & Steward);
   fn forget_snapshot (&mut self, StewardRc <Steward::Snapshot>);
-
 
   // query functions, which take an accessor and possibly a prediction handle, which may be stored in self for future invalidation
   // modify functions, which take a mutator and
@@ -96,15 +98,12 @@ impl <Steward: TimeSteward> SnapshotTree <Steward> {
 
 
 
+type DataTimelineHandle = ThinRc<(DataTimelineId, DataTimeline)>;
 
-trait EntityHistory {
-  type Steward: Steward;
-  fn get (m: & Steward::Mutator) {
+struct TypedDataTimelineHandle<T: DataTimeline> {
+  data: DataTimelineHandle;
 }
-struct TypedEntityHistory<E:Entity, S: Steward> {
-  data: Steward::EntityHistory;
-}
-impl TypedEntityHistory {
+impl<T: DataTimeline> TypedDataTimelineHandle<T> {
   fn get (m: & S::Mutator) {self.data.get (m).downcast_ref().expect()}
 }
 
@@ -116,8 +115,8 @@ trait Entity {
 
 trait Mutator : ??? + Rng {
   type Steward: Steward;
-  fn create <E: Entity> (&mut self, constants: E::Constants)->TypedEntityHistory <E, B::S>;
-  fn get <E: Entity> (&self, t: TypedEntityHistory <E, B::S>)->E::Varying {t.data.get (...).downcast_ref().expect()}
+  fn create <T: DataTimeline> (&mut self, constants: T::Constants)->DataTimelineHandle <E, B::S>;
+  fn query <T: DataTimeline> (&self, t: TypedDataTimelineHandle<T>, query: T::Query)->????{t.data.get (...).downcast_ref().expect().query(), }
   ;
 }
 
