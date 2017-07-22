@@ -42,8 +42,14 @@ macro_rules! time_steward_make_sublist {
     
     pub struct Representative <GlobalList: SubList> (PhantomData <GlobalList>,!);
     unsafe impl <GlobalList: SubList> SubListRepresentative for Representative <GlobalList> {
-      fn count()->usize {GlobalList::count()}
-      fn count_before<T>()->usize {GlobalList::count_before::<T>()}
+      fn count()->usize {
+        $crate::dynamic::list_of_types::assert_unique_global_list::<GlobalList>();
+        GlobalList::count()
+      }
+      fn count_before<T>()->usize {
+        $crate::dynamic::list_of_types::assert_unique_global_list::<GlobalList>();
+        GlobalList::count_before::<T>()
+      }
     }/*{
       fn visit_all<V: Visitor>(visitor: &mut V) {
         GlobalList::visit_all(visitor);
@@ -154,21 +160,32 @@ macro_rules! time_steward_sublist_fn {
         fn visit<$T>(&mut $self_hack) where  {$visitation_effect}
       }
       thread_local! {
-        static LIST_ID: TypeId = TypeId::of::<GlobalList>();
         static DATA: $VisitorData = {
           let mut visitor = Visitor ($initial_value);
           <GlobalList as DeterministicallyRandomlyIdentifiedTypesList>::visit_all (&mut visitor);
           visitor.0
         };
       }
-      LIST_ID.with (| id | {
-        assert!(id, TypeId::of::<GlobalList>(), "invoked dynamic function with two different global lists (see the list_of_types documentation for why this is wrong")
-      });
       DATA.with (| $visitor_data | {$($body)*})
   }
 }
   */
-  
+
+
+#[macro_export]
+macro_rules! time_steward_visit_sublist {
+  (&mut $object: ident: $Object: ty, $GlobalList: ident, $mod: ident, $($method: tt)*) => {
+    /*struct Visitor <'a> (&mut 'a $Object);
+    impl <'a> $mod::Visitor for Visitor <'a> {
+      $method
+    }*/
+    impl $mod::Visitor for $Object {
+      $($method)*
+    }
+    <$GlobalList as $mod::SubList>::visit_all (&mut $object);
+  }
+}
+
 use std::any::Any ;
   
 fn listed_type_id <GlobalList: whatever::SubList> (index: usize)->Option <DeterministicallyRandomlyIdentifiedTypeId> {
@@ -186,9 +203,9 @@ fn listed_type_id <GlobalList: whatever::SubList> (index: usize)->Option <Determ
     let mut guard = table.borrow_mut();
     if guard.is_empty() {
       mem::replace (&mut*guard, {
-        let mut visitor = Visitor (Vec::with_capacity(whatever::Representative::<GlobalList>::count()));
-        <GlobalList as whatever::SubList>::visit_all (&mut visitor);
-        visitor.0
+        let mut result = Vec::with_capacity(whatever::Representative::<GlobalList>::count());
+        time_steward_visit_sublist! (&mut result: Vec<DeterministicallyRandomlyIdentifiedTypeId>, GlobalList, whatever, fn visit<T>(&mut self) where T: DeterministicallyRandomlyIdentifiedType {self.push (T::ID);});
+        result
       });
     }
     guard.get (index).cloned()
