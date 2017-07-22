@@ -184,7 +184,7 @@ macro_rules! time_steward_visit_sublist {
 #[macro_export]
 macro_rules! time_steward_with_sublist_table {
   (<$GlobalList: ident as $mod: ident::SubList>, Vec<$Entry: ty> [$T: ident => {$entry: expr} where $($where: tt)*], | $table: ident | $($closure: tt)*) => {{
-    assert_unique_global_list::<GlobalList>();
+    assert_unique_global_list::<$GlobalList>();
     use std::cell::RefCell;
     use std::mem;
     thread_local! {
@@ -194,10 +194,10 @@ macro_rules! time_steward_with_sublist_table {
       let mut guard = table.borrow_mut();
       if guard.is_empty() {
         mem::replace (&mut*guard, {
-          let mut result = Vec::with_capacity(whatever::Representative::<GlobalList>::count());
+          let mut result = Vec::with_capacity($mod::Representative::<$GlobalList>::count());
           time_steward_visit_sublist! (
             &mut result: Vec<$Entry>,
-            <GlobalList as whatever::SubList>,
+            <$GlobalList as $mod::SubList>,
             fn visit<$T>(&mut self) where $($where)* {self.push ($entry);}
           );
           result
