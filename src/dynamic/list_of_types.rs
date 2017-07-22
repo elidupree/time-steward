@@ -11,7 +11,7 @@ macro_rules! time_steward_make_sublist {
   (mod $mod: ident visits $T: ident where $($where:tt)*) => {mod $mod {
     use std::marker::PhantomData;
     use std::any::Any;
-    use $crate::dynamic::list_of_types::{List, SubListRepresentative, ListedType};
+    use $crate::dynamic::list_of_types::{List, ListedType, SubListRepresentative, GlobalListConscious};
     pub trait Visitor {
       fn visit<$T>(&mut self) where $($where)*;
     }
@@ -41,6 +41,9 @@ macro_rules! time_steward_make_sublist {
     __time_steward_internal_sublist_tuple_impls! (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
     
     pub struct Representative <GlobalList: SubList> (PhantomData <GlobalList>,!);
+    impl <GlobalList: SubList> GlobalListConscious for Representative <GlobalList> {
+      type GlobalList = GlobalList;
+    }
     unsafe impl <GlobalList: SubList> SubListRepresentative for Representative <GlobalList> {
       fn count()->usize {
         $crate::dynamic::list_of_types::assert_unique_global_list::<GlobalList>();
@@ -91,6 +94,9 @@ macro_rules! __time_steward_internal_sublist_tuple_impls {
 
 pub unsafe trait List: Any {
   fn includes <T> ()->bool;
+}
+pub trait GlobalListConscious {
+  type GlobalList: List;
 }
 pub unsafe trait SubListRepresentative {
   fn count()->usize;
@@ -219,4 +225,19 @@ fn index_to_id <GlobalList: whatever::SubList> (index: usize)->Option <Determini
     | table | table.get (index).cloned()
   )
 }
+
+#[macro_export]
+macro_rules! time_steward_dynamic_sublist_fn {
+  (fn $function_name: ident <GlobalList as $mod: ident::SubList> (index: usize)->{$inner_function: ident::<Type(index)> ($($arguments: tt)*)->$Return:ty} where $($where: tt)*) => {
+    fn $function_name <GlobalList: $mod::SubList> (index: usize)->fn ($($arguments)*)->$Return {
+      time_steward_with_sublist_table! (
+        <GlobalList as whatever::SubList>,
+        Vec<DeterministicallyRandomlyIdentifiedTypeId> [T => {$inner_function::<T>} where $($where)*],
+        | table | *table.get (index).expect("invoked dynamic sublist fn with an invalid index")
+      )
+    }
+  }
+}
+
+
 
