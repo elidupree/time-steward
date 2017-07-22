@@ -8,42 +8,42 @@ use std::marker::PhantomData;
 
 #[macro_export]
 macro_rules! time_steward_make_sublist {
-  (pub trait $SubList; pub trait $Visitor: ident visits $T: ident where $($where:tt)*) => {
+  (pub trait $SubList: ident; pub trait $Visitor: ident visits $T: ident where $($where:tt)*) => {
     pub trait $Visitor {
       fn visit<$T>(&mut self) where $($where)*;
     }
-    pub unsafe trait $SubList {
+    pub unsafe trait $SubList: List {
       fn visit_all<V: $Visitor>(visitor: &mut V);
       fn count()->usize;
       fn count_before<T>()->usize;
     }
-    unsafe impl <T> $SubList for ListedType<T> {
+    unsafe impl <T: Any> $SubList for ListedType<T> {
       #[inline(always)]
-      default fn visit_all<V: $Visitor>(visitor: &mut V) {}
+      default fn visit_all<V: $Visitor>(_: &mut V) {}
       #[inline(always)]
       default fn count()->usize {0}
       #[inline(always)]
-      default fn count_before<T>()->usize {panic!("invoked count_before on a list that doesn't contain the type")}
+      default fn count_before<U>()->usize {panic!("invoked count_before on a list that doesn't contain the type")}
     }
-    unsafe impl <$T> $SubList for ListedType<$T> where $($where)* {
+    unsafe impl <$T: Any> $SubList for ListedType<$T> where $($where)* {
       #[inline(always)]
       fn visit_all<V: $Visitor>(visitor: &mut V) {
-        visitor.visit<$T>();
+        visitor.visit::<$T>();
       }
       #[inline(always)]
       fn count()->usize {1}
       #[inline(always)]
-      fn count_before<T>()->usize {0}
+      fn count_before<U>()->usize {0}
     }
-    __time_steward_internal_sublist_tuple_impls! ($SubList tuples T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
+    __time_steward_internal_sublist_tuple_impls! ($SubList $Visitor tuples T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
   }
 }
-pub struct ListedType<T>(PhantomData <T>, !);
+pub struct ListedType<T: Any>(PhantomData <T>, !);
 
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __time_steward_internal_sublist_tuple_impls {
-  ($SubList: ident tuples $TL: ident $(, $T: ident)*) => {
+  ($SubList: ident $Visitor: ident tuples $TL: ident $(, $T: ident)*) => {
     unsafe impl<$($T,)* $TL> $SubList for ($($T,)* $TL,)
       where $($T: $SubList,)* $TL: $SubList
     {
@@ -54,24 +54,23 @@ macro_rules! __time_steward_internal_sublist_tuple_impls {
       }
       #[inline(always)]
       fn count()->usize {
-        $($T::count() + )* $TL::count();
+        $($T::count() + )* $TL::count()
       }
       #[inline(always)]
       fn count_before<T>()->usize {
-        let mut count = 0;
-        if $TL::includes::<T> () {return count + $TL::count_before::<T>()}
-        count += $TL::count();
+        let count = 0;
         $(if $T::includes::<T> () {return count + $T::count_before::<T>()}
-        count += $T::count();)*
+        let count = count + $T::count();)*
+        if $TL::includes::<T> () {return count + $TL::count_before::<T>()}
         panic!("invoked count_before on a list that doesn't contain the type")
       }
     }
-    __time_steward_internal_sublist_tuple_impls! ($SubList tuples $($T),*);
+    __time_steward_internal_sublist_tuple_impls! ($SubList $Visitor tuples $($T),*);
   };
-  () => {};
+  ($SubList: ident $Visitor: ident tuples) => {};
 }
 
-pub unsafe trait List {
+pub unsafe trait List: Any {
   fn includes <T> ()->bool;
 }
 
@@ -79,7 +78,7 @@ pub unsafe trait AmI <T> {fn am_i()->bool;}
 unsafe impl <T, U> AmI <T> for U {default fn am_i()->bool {false}}
 unsafe impl <T> AmI <T> for T {fn am_i()->bool {true}}
 
-unsafe impl <T> List for ListedType<T> {
+unsafe impl <T: Any> List for ListedType<T> {
   #[inline(always)]
   fn includes<U>()->bool {<T as AmI<U>>::am_i()}
 }
@@ -102,31 +101,74 @@ macro_rules! tuple_impls {
 
 tuple_impls! (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
 
-#[derive (Copy, Clone, Hash, Serialize,
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct DeterministicallyRandomlyIdentifiedTypeId(u64);
 pub trait DeterministicallyRandomlyIdentifiedType {
   const ID: DeterministicallyRandomlyIdentifiedTypeId;
 }
 
 
-time_steward_make_sublist! (DeterministicallyRandomlyIdentifiedTypesList, DeterministicallyRandomlyIdentifiedTypesVisitor visits T where T: DeterministicallyRandomlyIdentifiedType);
-
-fn listed_type_id <GlobalList> (index: usize)->Option <DeterministicallyRandomlyIdentifiedTypeId> {
+time_steward_make_sublist! (
+  pub trait DeterministicallyRandomlyIdentifiedTypesList;
+  pub trait DeterministicallyRandomlyIdentifiedTypesVisitor visits T where T: DeterministicallyRandomlyIdentifiedType);
+/*
+#[macro_export]
+macro_rules! time_steward_sublist_fn {
+  (static $visitor_data: ident: $VisitorData: ty: $VisitorTrait: ident = $initial_value: expr followed by visit<$T> (&mut $self_hack) $visitation_effect: expr; fn $function_name: ident <$GlobalList: $SubList: ident> ($($argument_name: ident: $argument_type:ty),*)->$return_type:ty $($body:tt)*) => {
+  
+    fn $function_name <GlobalList: $List> $($argument_name: $argument_type),*)->$return_type:ty {
+      struct Visitor ($VisitorData);
+      impl VisitorTrait for Visitor {
+        fn visit<$T>(&mut $self_hack) where  {$visitation_effect}
+      }
+      thread_local! {
+        static LIST_ID: TypeId = TypeId::of::<GlobalList>();
+        static DATA: $VisitorData = {
+          let mut visitor = Visitor ($initial_value);
+          <GlobalList as DeterministicallyRandomlyIdentifiedTypesList>::visit_all (&mut visitor);
+          visitor.0
+        };
+      }
+      LIST_ID.with (| id | {
+        assert!(id, TypeId::of::<GlobalList>(), "invoked dynamic function with two different global lists (see the list_of_types documentation for why this is wrong")
+      });
+      DATA.with (| $visitor_data | {$($body)*})
+  }
+}
+  */
+  
+use std::any::Any ;
+  
+fn listed_type_id <GlobalList: DeterministicallyRandomlyIdentifiedTypesList> (index: usize)->Option <DeterministicallyRandomlyIdentifiedTypeId> {
+  use std::any::TypeId;
+  use std::cell::{Cell, RefCell};
+  use std::mem;
   struct Visitor (Vec<DeterministicallyRandomlyIdentifiedTypeId>);
   impl DeterministicallyRandomlyIdentifiedTypesVisitor for Visitor {
     fn visit<T>(&mut self) where T: DeterministicallyRandomlyIdentifiedType {self.0.push (T::ID);}
   }
   thread_local! {
-    static LIST_ID: TypeId = TypeId::of::<GlobalList>();
-    static TABLE: Vec<DeterministicallyRandomlyIdentifiedTypeId> = {
-      let mut visitor = Visitor (Vec::with_capacity(<GlobalList as DeterministicallyRandomlyIdentifiedTypesList>::count()));
-      <GlobalList as DeterministicallyRandomlyIdentifiedTypesList>::visit_all (&mut visitor);
-      visitor.0
-    };
+    static LIST_ID: Cell<Option <TypeId>> =Cell::new (None);
+    static TABLE: RefCell<Vec<DeterministicallyRandomlyIdentifiedTypeId>> = RefCell::new(Vec::new());
   }
-  LIST_ID.with (| id | {
-    assert!(id, TypeId::of::<GlobalList>(), "invoked dynamic function with two different global lists (see the list_of_types documentation for why this is wrong")
+  LIST_ID.with (| id_cell | {
+    let id = TypeId::of::<GlobalList>();
+    if let Some (existing) = id_cell.get() {
+      assert!(id == existing, "invoked dynamic function with two different global lists (see the list_of_types documentation for why this is wrong");
+      return
+    }
+    id_cell.set (Some(id));
   });
-  TABLE.with (| table | {table.get (index)})
+  TABLE.with (| table | {
+    let mut guard = table.borrow_mut();
+    if guard.is_empty() {
+      mem::replace (&mut*guard, {
+        let mut visitor = Visitor (Vec::with_capacity(<GlobalList as DeterministicallyRandomlyIdentifiedTypesList>::count()));
+        <GlobalList as DeterministicallyRandomlyIdentifiedTypesList>::visit_all (&mut visitor);
+        visitor.0
+      });
+    }
+    guard.get (index).cloned()
+  })
 }
 
