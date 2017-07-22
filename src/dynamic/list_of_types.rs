@@ -174,41 +174,50 @@ macro_rules! time_steward_sublist_fn {
 
 #[macro_export]
 macro_rules! time_steward_visit_sublist {
-  (&mut $object: ident: $Object: ty, $GlobalList: ident, $mod: ident, $($method: tt)*) => {
-    /*struct Visitor <'a> (&mut 'a $Object);
-    impl <'a> $mod::Visitor for Visitor <'a> {
-      $method
-    }*/
+  (&mut $object: ident: $Object: ty, <$GlobalList: ident as $mod: ident::SubList>, $($method: tt)*) => {
     impl $mod::Visitor for $Object {
       $($method)*
     }
     <$GlobalList as $mod::SubList>::visit_all (&mut $object);
   }
 }
+#[macro_export]
+macro_rules! time_steward_with_sublist_table {
+  (Vec<$Entry: ty>, <$GlobalList: ident as $mod: ident::SubList>, {$($method: tt)*} | $table: ident | $($closure: tt)*) => {{
+    assert_unique_global_list::<GlobalList>();
+    use std::cell::RefCell;
+    use std::mem;
+    thread_local! {
+      static TABLE: RefCell<Vec<DeterministicallyRandomlyIdentifiedTypeId>> = RefCell::new(Vec::new());
+    }
+    TABLE.with (| table | {
+      let mut guard = table.borrow_mut();
+      if guard.is_empty() {
+        mem::replace (&mut*guard, {
+          let mut result = Vec::with_capacity(whatever::Representative::<GlobalList>::count());
+          time_steward_visit_sublist! (
+            &mut result: Vec<$Entry>,
+            <GlobalList as whatever::SubList>,
+            $($method)*
+          );
+          result
+        });
+      }
+      let $table = &*guard;
+      $($closure)*
+    })
+  }}
+}
+
 
 use std::any::Any ;
   
-fn listed_type_id <GlobalList: whatever::SubList> (index: usize)->Option <DeterministicallyRandomlyIdentifiedTypeId> {
-  assert_unique_global_list::<GlobalList>();
-  use std::cell::RefCell;
-  use std::mem;
-  struct Visitor (Vec<DeterministicallyRandomlyIdentifiedTypeId>);
-  impl whatever::Visitor for Visitor {
-    fn visit<T>(&mut self) where T: DeterministicallyRandomlyIdentifiedType {self.0.push (T::ID);}
-  }
-  thread_local! {
-    static TABLE: RefCell<Vec<DeterministicallyRandomlyIdentifiedTypeId>> = RefCell::new(Vec::new());
-  }
-  TABLE.with (| table | {
-    let mut guard = table.borrow_mut();
-    if guard.is_empty() {
-      mem::replace (&mut*guard, {
-        let mut result = Vec::with_capacity(whatever::Representative::<GlobalList>::count());
-        time_steward_visit_sublist! (&mut result: Vec<DeterministicallyRandomlyIdentifiedTypeId>, GlobalList, whatever, fn visit<T>(&mut self) where T: DeterministicallyRandomlyIdentifiedType {self.push (T::ID);});
-        result
-      });
-    }
-    guard.get (index).cloned()
-  })
+fn index_to_id <GlobalList: whatever::SubList> (index: usize)->Option <DeterministicallyRandomlyIdentifiedTypeId> {
+  time_steward_with_sublist_table! (
+    Vec<DeterministicallyRandomlyIdentifiedTypeId>,
+    <GlobalList as whatever::SubList>,
+    { fn visit<T>(&mut self) where T: DeterministicallyRandomlyIdentifiedType {self.push (T::ID);}}
+    | table | table.get (index).cloned()
+  )
 }
 
