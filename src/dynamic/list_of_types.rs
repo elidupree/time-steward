@@ -6,6 +6,9 @@
 
 use std::marker::PhantomData;
 
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ListedTypeIndex (usize);
+
 #[macro_export]
 macro_rules! time_steward_make_sublist {
   (mod $mod: ident visits $T: ident where $($where:tt)*) => {mod $mod {
@@ -49,9 +52,9 @@ macro_rules! time_steward_make_sublist {
         $crate::dynamic::list_of_types::assert_unique_global_list::<GlobalList>();
         GlobalList::count()
       }
-      fn count_before<T>()->usize {
+      fn index<T>()->$crate::dynamic::list_of_types::ListedTypeIndex {
         $crate::dynamic::list_of_types::assert_unique_global_list::<GlobalList>();
-        GlobalList::count_before::<T>()
+        $crate::dynamic::list_of_types::ListedTypeIndex(GlobalList::count_before::<T>())
       }
     }/*{
       fn visit_all<V: Visitor>(visitor: &mut V) {
@@ -71,6 +74,7 @@ macro_rules! __time_steward_internal_sublist_tuple_impls {
     {
       #[inline(always)]
       fn visit_all<V: Visitor>(visitor: &mut V) {
+        // note: visiting order must be the same as the order of count_before()
         $($T::visit_all(visitor);)*
         $TL::visit_all(visitor);
       }
@@ -80,6 +84,7 @@ macro_rules! __time_steward_internal_sublist_tuple_impls {
       }
       #[inline(always)]
       fn count_before<T>()->usize {
+        // note: visiting order must be the same as the order of count_before()
         let count = 0;
         $(if $T::includes::<T> () {return count + $T::count_before::<T>()}
         let count = count + $T::count();)*
@@ -100,7 +105,7 @@ pub trait GlobalListConscious {
 }
 pub unsafe trait SubListRepresentative {
   fn count()->usize;
-  fn count_before<T>()->usize;
+  fn index<T>()->ListedTypeIndex;
 }
 
 pub unsafe trait AmI <T> {fn am_i()->bool;}
@@ -188,8 +193,8 @@ macro_rules! time_steward_visit_sublist {
   }
 }
 #[macro_export]
-macro_rules! time_steward_with_sublist_table {
-  (<$GlobalList: ident as $mod: ident::SubList>, Vec<$Entry: ty> [$T: ident => {$entry: expr} where $($where: tt)*], | $table: ident | $($closure: tt)*) => {{
+macro_rules! time_steward_with_sublist_table_entry {
+  (<$GlobalList: ident as $mod: ident::SubList>, Vec<$Entry: ty> [$T: ident => {$entry: expr} where $($where: tt)*] [$index: expr], | $entry_variable: ident | $($closure: tt)*) => {{
     assert_unique_global_list::<$GlobalList>();
     use std::cell::RefCell;
     use std::mem;
@@ -209,7 +214,7 @@ macro_rules! time_steward_with_sublist_table {
           result
         });
       }
-      let $table = &*guard;
+      let $entry_variable = guard.get ($index.0);
       $($closure)*
     })
   }}
@@ -218,22 +223,22 @@ macro_rules! time_steward_with_sublist_table {
 
 use std::any::Any ;
   
-fn index_to_id <GlobalList: whatever::SubList> (index: usize)->Option <DeterministicallyRandomlyIdentifiedTypeId> {
-  time_steward_with_sublist_table! (
+fn index_to_id <GlobalList: whatever::SubList> (index: ListedTypeIndex)->Option <DeterministicallyRandomlyIdentifiedTypeId> {
+  time_steward_with_sublist_table_entry! (
     <GlobalList as whatever::SubList>,
-    Vec<DeterministicallyRandomlyIdentifiedTypeId> [T => {T::ID} where T: DeterministicallyRandomlyIdentifiedType],
-    | table | table.get (index).cloned()
+    Vec<DeterministicallyRandomlyIdentifiedTypeId> [T => {T::ID} where T: DeterministicallyRandomlyIdentifiedType] [index],
+    | entry | entry.cloned()
   )
 }
 
 #[macro_export]
 macro_rules! time_steward_dynamic_sublist_fn {
-  (fn $function_name: ident <GlobalList as $mod: ident::SubList> (index: usize)->{$inner_function: ident::<Type(index)> ($($arguments: tt)*)->$Return:ty} where $($where: tt)*) => {
-    fn $function_name <GlobalList: $mod::SubList> (index: usize)->fn ($($arguments)*)->$Return {
-      time_steward_with_sublist_table! (
+  (fn $function_name: ident <GlobalList as $mod: ident::SubList> (index: ListedTypeIndex)->{$inner_function: ident::<Type(index)> ($($arguments: tt)*)->$Return:ty} where $($where: tt)*) => {
+    fn $function_name <GlobalList: $mod::SubList> (index: ListedTypeIndex)->fn ($($arguments)*)->$Return {
+      time_steward_with_sublist_table_entry! (
         <GlobalList as whatever::SubList>,
-        Vec<DeterministicallyRandomlyIdentifiedTypeId> [T => {$inner_function::<T>} where $($where)*],
-        | table | *table.get (index).expect("invoked dynamic sublist fn with an invalid index")
+        Vec<DeterministicallyRandomlyIdentifiedTypeId> [T => {$inner_function::<T>} where $($where)*] [index],
+        | entry | *entry.expect("invoked dynamic sublist fn with an invalid index")
       )
     }
   }
