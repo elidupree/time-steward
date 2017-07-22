@@ -124,6 +124,22 @@ pub trait DeterministicallyRandomlyIdentifiedType {
   const ID: DeterministicallyRandomlyIdentifiedTypeId;
 }
 
+fn assert_unique_global_list <GlobalList: List>() {
+  use std::any::TypeId;
+  use std::cell::Cell;
+  thread_local! {
+    static LIST_ID: Cell<Option <TypeId>> = Cell::new (None);
+  }
+  LIST_ID.with (| id_cell | {
+    let id = TypeId::of::<GlobalList>();
+    if let Some (existing) = id_cell.get() {
+      assert!(id == existing, "invoked dynamic function with two different global lists (see the list_of_types documentation for why this is wrong");
+      return
+    }
+    id_cell.set (Some(id));
+  });
+}
+
 
 time_steward_make_sublist! (
 mod whatever visits T where T: super::DeterministicallyRandomlyIdentifiedType);
@@ -156,25 +172,16 @@ macro_rules! time_steward_sublist_fn {
 use std::any::Any ;
   
 fn listed_type_id <GlobalList: whatever::SubList> (index: usize)->Option <DeterministicallyRandomlyIdentifiedTypeId> {
-  use std::any::TypeId;
-  use std::cell::{Cell, RefCell};
+  assert_unique_global_list::<GlobalList>();
+  use std::cell::RefCell;
   use std::mem;
   struct Visitor (Vec<DeterministicallyRandomlyIdentifiedTypeId>);
   impl whatever::Visitor for Visitor {
     fn visit<T>(&mut self) where T: DeterministicallyRandomlyIdentifiedType {self.0.push (T::ID);}
   }
   thread_local! {
-    static LIST_ID: Cell<Option <TypeId>> =Cell::new (None);
     static TABLE: RefCell<Vec<DeterministicallyRandomlyIdentifiedTypeId>> = RefCell::new(Vec::new());
   }
-  LIST_ID.with (| id_cell | {
-    let id = TypeId::of::<GlobalList>();
-    if let Some (existing) = id_cell.get() {
-      assert!(id == existing, "invoked dynamic function with two different global lists (see the list_of_types documentation for why this is wrong");
-      return
-    }
-    id_cell.set (Some(id));
-  });
   TABLE.with (| table | {
     let mut guard = table.borrow_mut();
     if guard.is_empty() {
