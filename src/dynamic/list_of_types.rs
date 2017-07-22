@@ -183,7 +183,7 @@ macro_rules! time_steward_visit_sublist {
 }
 #[macro_export]
 macro_rules! time_steward_with_sublist_table {
-  (Vec<$Entry: ty>, <$GlobalList: ident as $mod: ident::SubList>, {$($method: tt)*} | $table: ident | $($closure: tt)*) => {{
+  (Vec<$Entry: ty> [$T: ident => {$entry: expr} where $($where: tt)*], <$GlobalList: ident as $mod: ident::SubList>, {$($method: tt)*} | $table: ident | $($closure: tt)*) => {{
     assert_unique_global_list::<GlobalList>();
     use std::cell::RefCell;
     use std::mem;
@@ -198,7 +198,7 @@ macro_rules! time_steward_with_sublist_table {
           time_steward_visit_sublist! (
             &mut result: Vec<$Entry>,
             <GlobalList as whatever::SubList>,
-            $($method)*
+            fn visit<$T>(&mut self) where $($where)* {self.push ($entry);}
           );
           result
         });
@@ -214,7 +214,7 @@ use std::any::Any ;
   
 fn index_to_id <GlobalList: whatever::SubList> (index: usize)->Option <DeterministicallyRandomlyIdentifiedTypeId> {
   time_steward_with_sublist_table! (
-    Vec<DeterministicallyRandomlyIdentifiedTypeId>,
+    Vec<DeterministicallyRandomlyIdentifiedTypeId> [T => {T::ID} where T: DeterministicallyRandomlyIdentifiedType],
     <GlobalList as whatever::SubList>,
     { fn visit<T>(&mut self) where T: DeterministicallyRandomlyIdentifiedType {self.push (T::ID);}}
     | table | table.get (index).cloned()
