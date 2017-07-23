@@ -6,8 +6,8 @@
 
 use std::marker::PhantomData;
 
-#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct ListedTypeIndex (usize);
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ListedTypeIndex <Representative: SubListRepresentative> (usize, PhantomData <Representative>);
 
 #[macro_export]
 macro_rules! time_steward_make_sublist {
@@ -52,9 +52,9 @@ macro_rules! time_steward_make_sublist {
         $crate::dynamic::list_of_types::assert_unique_global_list::<GlobalList>();
         GlobalList::count()
       }
-      fn index<T>()->$crate::dynamic::list_of_types::ListedTypeIndex {
+      fn index <T>()->$crate::dynamic::list_of_types::ListedTypeIndex <Self> {
         $crate::dynamic::list_of_types::assert_unique_global_list::<GlobalList>();
-        $crate::dynamic::list_of_types::ListedTypeIndex(GlobalList::count_before::<T>())
+        $crate::dynamic::list_of_types::ListedTypeIndex::<Self>(GlobalList::count_before::<T>(), PhantomData)
       }
     }/*{
       fn visit_all<V: Visitor>(visitor: &mut V) {
@@ -103,9 +103,9 @@ pub unsafe trait List: Any {
 pub trait GlobalListConscious {
   type GlobalList: List;
 }
-pub unsafe trait SubListRepresentative {
+pub unsafe trait SubListRepresentative: GlobalListConscious + Sized {
   fn count()->usize;
-  fn index<T>()->ListedTypeIndex;
+  fn index<T>()->ListedTypeIndex <Self>;
 }
 
 pub unsafe trait AmI <T> {fn am_i()->bool;}
@@ -185,16 +185,16 @@ macro_rules! time_steward_sublist_fn {
 
 #[macro_export]
 macro_rules! time_steward_visit_sublist {
-  (&mut $object: ident: $Object: ty, <$GlobalList: ident as $mod: ident::SubList>, $($method: tt)*) => {
-    impl $mod::Visitor for $Object {
+  (&mut $object: ident: $Object: ty, $GlobalList: ident, [$($mod: tt)*], $($method: tt)*) => {
+    impl $($mod)*::Visitor for $Object {
       $($method)*
     }
-    <$GlobalList as $mod::SubList>::visit_all (&mut $object);
+    <$GlobalList as $($mod)*::SubList>::visit_all (&mut $object);
   }
 }
 #[macro_export]
 macro_rules! time_steward_with_sublist_table_entry {
-  (<$GlobalList: ident as $mod: ident::SubList>, Vec<$Entry: ty> [$T: ident => {$entry: expr} where $($where: tt)*] [$index: expr], | $entry_variable: ident | $($closure: tt)*) => {{
+  ($GlobalList: ident, [$($mod: tt)*], Vec<$Entry: ty> [$T: ident => {$entry: expr} where $($where: tt)*] [$index: expr], | $entry_variable: ident | $($closure: tt)*) => {{
     assert_unique_global_list::<$GlobalList>();
     use std::cell::RefCell;
     use std::mem;
@@ -205,16 +205,16 @@ macro_rules! time_steward_with_sublist_table_entry {
       let mut guard = table.borrow_mut();
       if guard.is_empty() {
         mem::replace (&mut*guard, {
-          let mut result = Vec::with_capacity($mod::Representative::<$GlobalList>::count());
+          let mut result = Vec::with_capacity($($mod)*::Representative::<$GlobalList>::count());
           time_steward_visit_sublist! (
             &mut result: Vec<$Entry>,
-            <$GlobalList as $mod::SubList>,
+            $GlobalList, [$($mod)*],
             fn visit<$T>(&mut self) where $($where)* {self.push ($entry);}
           );
           result
         });
       }
-      let $entry_variable = guard.get ($index.0);
+      let $entry_variable = guard.get ($index.0).expect("an invalid ListedTypeIndex exists");
       $($closure)*
     })
   }}
@@ -223,26 +223,34 @@ macro_rules! time_steward_with_sublist_table_entry {
 
 use std::any::Any ;
   
-fn index_to_id <GlobalList: whatever::SubList> (index: ListedTypeIndex)->Option <DeterministicallyRandomlyIdentifiedTypeId> {
+fn index_to_id <GlobalList: whatever::SubList> (index: ListedTypeIndex <whatever::Representative<GlobalList>>)->DeterministicallyRandomlyIdentifiedTypeId {
   time_steward_with_sublist_table_entry! (
-    <GlobalList as whatever::SubList>,
+    GlobalList, [whatever],
     Vec<DeterministicallyRandomlyIdentifiedTypeId> [T => {T::ID} where T: DeterministicallyRandomlyIdentifiedType] [index],
-    | entry | entry.cloned()
+    | entry | *entry
   )
 }
 
 #[macro_export]
 macro_rules! time_steward_dynamic_sublist_fn {
-  (fn $function_name: ident <GlobalList as $mod: ident::SubList> (index: ListedTypeIndex)->{$inner_function: ident::<Type(index)> ($($arguments: tt)*)->$Return:ty} where $($where: tt)*) => {
-    fn $function_name <GlobalList: $mod::SubList> (index: ListedTypeIndex)->fn ($($arguments)*)->$Return {
+  (fn $function_name: ident, GlobalList, [$($mod: tt)*], (index: ListedTypeIndex <...>)->{$inner_function: ident::<Type(index)> ($($arguments: tt)*)->$Return:ty} where $($where: tt)*) => {
+    fn $function_name <GlobalList: $($mod)*::SubList> (index: ListedTypeIndex <$($mod)*::Representative>)->fn ($($arguments)*)->$Return {
       time_steward_with_sublist_table_entry! (
         <GlobalList as whatever::SubList>,
         Vec<DeterministicallyRandomlyIdentifiedTypeId> [T => {$inner_function::<T>} where $($where)*] [index],
-        | entry | *entry.expect("invoked dynamic sublist fn with an invalid index")
+        | entry | *entry
       )
     }
   }
 }
 
 
+
+use serde::{Serialize, Deserialize, Serializer, Deserializer};
+
+/*impl <Representative: SubListRepresentative> Serialize for ListedTypeIndex <Representative> {
+  fn serialize <S: Serializer> (&self, serializer: S)->Result <S::Ok, S::Error> {
+    index_to_id::<Representative::GlobalList> (*self).serialize (serializer);
+  }
+}*/
 
