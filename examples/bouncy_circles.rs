@@ -39,13 +39,13 @@ struct Args {
 //use time_steward::stewards::crossverified as s;
 use time_steward::{TimeSteward, TimeStewardFromConstants, IncrementalTimeSteward, DeterministicRandomId, Accessor,
      MomentaryAccessor};
-use std::thread::sleep;
 use std::time::{Instant, Duration};
 use glium::{DisplayBuild, Surface};
 use time_steward::stewards::{amortized, simply_synchronized};
 
 #[path = "../dev-shared/bouncy_circles.rs"] mod bouncy_circles;
 use bouncy_circles::*;
+#[path = "../dev-shared/emscripten_compatibility.rs"] mod emscripten_compatibility;
 
 
 #[derive(Copy, Clone)]
@@ -125,7 +125,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
 
 "#;
 
-  let mut snapshots = Vec::new();
+  //let mut snapshots = Vec::new();
   
   let mut event_index = 0u64;
   let mut mouse_coordinates = [0,0];
@@ -148,14 +148,14 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
     stew.snapshot_before(&1);
     let start = Instant::now();
 
-    let mut frame = || {
+    let frame = || {
       let frame_begin = Instant::now();
       let time =((start.elapsed().as_secs() as i64 * 1000000000i64) +
                             start.elapsed().subsec_nanos() as i64) *
                            SECOND / 1000000000i64;
       for ev in display.poll_events() {
         match ev {
-          glium::glutin::Event::Closed => return,
+          glium::glutin::Event::Closed => return true,
           glium::glutin::Event::MouseMoved (x,y) => {
             mouse_coordinates [0] = ((x as SpaceCoordinate) - 150) * ARENA_SIZE / 300;
             mouse_coordinates [1] = (450-(y as SpaceCoordinate)) * ARENA_SIZE / 300;
@@ -228,18 +228,13 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
       while frame_begin.elapsed() < Duration::from_millis (10) && stew.updated_until_before().map_or (false, | limitation | limitation < time + SECOND) {
         for _ in 0..8 {stew.step();}
       }
+      false
     };
     
-    if cfg!(target_os = "emscripten") {
-      set_main_loop_callback(frame);
-    }
-    else {loop {
-      frame();
-      sleep(Duration::from_millis(10));
-    }}
+    emscripten_compatibility::main_loop (frame);
   }
 
-
+  /*
   for increment in 1..21 {
     snapshots.push(stew.snapshot_before(&(increment * SECOND * 2)));
   }
@@ -249,35 +244,6 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
     // for index in 0..HOW_MANY_CIRCLES {
     // println!("{}", snapshot.get::<Circle> (get_circle_id (index)).expect("missing circle").position);
     // }
-  }
+  }*/
   // panic!("anyway")
-}
-
-
-
-use std::cell::RefCell;
-use std::ptr::null_mut;
-use std::os::raw::{c_int, c_void};
-
-#[allow(non_camel_case_types)]
-type em_callback_func = unsafe extern fn();
-extern {
-    fn emscripten_set_main_loop(func : em_callback_func, fps : c_int, simulate_infinite_loop : c_int);
-}
-
-thread_local!(static MAIN_LOOP_CALLBACK: RefCell<*mut c_void> = RefCell::new(null_mut()));
-
-pub fn set_main_loop_callback<F>(callback : F) where F : FnMut() {
-    MAIN_LOOP_CALLBACK.with(|log| {
-            *log.borrow_mut() = &callback as *const _ as *mut c_void;
-            });
-
-    unsafe { emscripten_set_main_loop(wrapper::<F>, 0, 1); }
-
-    unsafe extern "C" fn wrapper<F>() where F : FnMut() {
-        MAIN_LOOP_CALLBACK.with(|z| {
-            let closure = *z.borrow_mut() as *mut F;
-            (*closure)();
-        });
-    }
 }
