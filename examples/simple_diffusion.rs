@@ -355,7 +355,7 @@ struct Args {
 
 use std::thread::sleep;
 use std::time::{Instant, Duration};
-use glium::{DisplayBuild, Surface};
+use glium::{glutin, Surface};
 
 #[derive(Copy, Clone)]
 struct Vertex {
@@ -427,10 +427,10 @@ color = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
   let mut event_index = 0u64;
   let mut mouse_coordinates = [0,0];
 
-  let display = glium::glutin::WindowBuilder::new()
-    .with_dimensions(600, 600)
-    .build_glium()
-    .expect("failed to create window");
+  let mut events_loop = glutin::EventsLoop::new();
+  let window = glutin::WindowBuilder::new().with_dimensions(600, 600);
+  let context = glutin::ContextBuilder::new();
+  let display = glium::Display::new (window, context, &events_loop).expect("failed to create window");
   let program =
     glium::Program::from_source(&display, vertex_shader_source, fragment_shader_source, None)
       .expect("glium program generation failed");
@@ -444,28 +444,32 @@ color = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
   stew.snapshot_before(&1);
   let start = Instant::now();
 
-  loop {
+  let mut closed = false;
+  while !closed {
     let frame_begin = Instant::now();
     let time = 1 + ((start.elapsed().as_secs() as i64 * 1000000000i64) +
                           start.elapsed().subsec_nanos() as i64) *
                          SECOND / 1000000000i64;
-    for ev in display.poll_events() {
+    events_loop.poll_events(|ev| {
       match ev {
-        glium::glutin::Event::Closed => return,
-        glium::glutin::Event::MouseMoved (x,y) => {
-          mouse_coordinates [0] = (x as i32) * 60 / display.get_window().unwrap().get_inner_size_pixels().unwrap().0 as i32;
-          mouse_coordinates [1] = (display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32-(y as i32)) * 60 / display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32;
-        },
-        glium::glutin::Event::MouseInput (_,_) => {
-          event_index += 1;
-          stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk::new (
-            [mouse_coordinates [0], mouse_coordinates [1]],
-            (DeterministicRandomId::new (& event_index).data() [0] & ((1u64<<40)-1)) as i64 - (1<<39)
-          )).unwrap();
+        glutin::Event::WindowEvent {event, ..} => match event {
+          glutin::WindowEvent::Closed => {closed = true},
+          glutin::WindowEvent::MouseMoved {position: (x,y), ..} => {
+            mouse_coordinates [0] = (x as i32) * 60 / display.gl_window().get_inner_size_pixels().unwrap().0 as i32;
+            mouse_coordinates [1] = (display.gl_window().get_inner_size_pixels().unwrap().1 as i32-(y as i32)) * 60 / display.gl_window().get_inner_size_pixels().unwrap().1 as i32;
+          },
+          glutin::WindowEvent::MouseInput {..} => {
+            event_index += 1;
+            stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk::new (
+              [mouse_coordinates [0], mouse_coordinates [1]],
+              (DeterministicRandomId::new (& event_index).data() [0] & ((1u64<<40)-1)) as i64 - (1<<39)
+            )).unwrap();
+          },
+          _ => (),
         },
         _ => (),
       }
-    }
+    });
 
     let mut target = display.draw();
     target.clear_color(1.0, 1.0, 1.0, 1.0);
