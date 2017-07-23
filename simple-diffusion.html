@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <title>Simple diffusion</title>
+    <link rel="stylesheet" type="text/css" href="emscripten-examples.css">
+  </head>
+  <body>
+    <div class="spinner" id='spinner'></div>
+    <div class="emscripten" id="status">Downloading...</div>
+
+    <div class="emscripten">
+      <progress value="0" max="100" id="progress" hidden=1></progress>
+    </div>
+
+    
+    <div class="emscripten_border">
+      <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+    </div>
+    <textarea id="output" rows="8"></textarea>
+
+    <script type='text/javascript' src="emscripten-examples.js"></script>
+    <script async type="text/javascript"  src="target/asmjs-unknown-emscripten/release/examples/simple_diffusion.js"></script>
+  </body>
+</html>
+  

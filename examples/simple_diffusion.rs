@@ -17,6 +17,7 @@ extern crate fnv;
 #[macro_use]
 extern crate glium;
 extern crate docopt;
+#[path = "../dev-shared/emscripten_compatibility.rs"] mod emscripten_compatibility;
 
 macro_rules! printlnerr(
     ($($arg:tt)*) => { {use std::io::Write;
@@ -353,7 +354,6 @@ struct Args {
   arg_port: Option <u16>,
 }
 
-use std::thread::sleep;
 use std::time::{Instant, Duration};
 use glium::{DisplayBuild, Surface};
 
@@ -368,28 +368,33 @@ use std::net::{TcpListener, TcpStream};
 use std::io::{BufReader, BufWriter};
 
 fn main() {
-  let arguments: Args = Docopt::new(USAGE)
-                            .and_then(|d| d.deserialize())
-                            .unwrap_or_else(|e| e.exit());
-  
   let constants = Constants {
     size: [60, 60],
     max_inaccuracy: 100_00,
   };
-  
-  if arguments.flag_listen {
-    let listener = TcpListener::bind ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
-    let stream = listener.accept().unwrap().0;
-    let mut steward: simply_synchronized::Steward<Basics, DefaultSteward <Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3, constants, BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
-    steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
-    run (steward, |a,b| (a.settle_before (b)));
+
+  // For some reason, docopt checking the arguments caused build_glium() to fail in emscripten.
+  if !cfg!(target_os = "emscripten") {
+    let arguments: Args = Docopt::new(USAGE)
+                            .and_then(|d| d.deserialize())
+                            .unwrap_or_else(|e| e.exit());
+    
+    if arguments.flag_listen {
+      let listener = TcpListener::bind ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
+      let stream = listener.accept().unwrap().0;
+      let mut steward: simply_synchronized::Steward<Basics, DefaultSteward <Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3, constants, BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+      steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
+      run (steward, |a,b| (a.settle_before (b)));
+      return;
+    }
+    else if arguments.flag_connect {
+      let stream = TcpStream::connect ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
+      let steward: simply_synchronized::Steward<Basics, DefaultSteward <Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 1u32), 0, SECOND>>3, constants, BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+      run (steward, |a,b| (a.settle_before (b)));
+      return;
+    }
   }
-  else if arguments.flag_connect {
-    let stream = TcpStream::connect ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
-    let steward: simply_synchronized::Steward<Basics, DefaultSteward <Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 1u32), 0, SECOND>>3, constants, BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
-    run (steward, |a,b| (a.settle_before (b)));
-  }
-  else {
+  {
     let mut steward: DefaultSteward <Basics> = DefaultSteward ::from_constants(constants);
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
     run (steward, |_,_|());
@@ -401,10 +406,10 @@ fn run <Steward: IncrementalTimeSteward <Basics = Basics>, F: Fn (&mut Steward, 
 
 
   let vertex_shader_source = r#"
-#version 140
-in vec2 location;
-in float ink;
-out float ink_transfer;
+#version 100
+attribute lowp vec2 location;
+attribute lowp float ink;
+varying lowp float ink_transfer;
 
 void main() {
 gl_Position = vec4 (location, 0.0, 1.0);
@@ -414,12 +419,11 @@ ink_transfer = ink;
 "#;
 
   let fragment_shader_source = r#"
-#version 140
-in float ink_transfer;
-out vec4 color;
+#version 100
+varying lowp float ink_transfer;
 
 void main() {
-color = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
+gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
 }
 
 "#;
@@ -444,14 +448,14 @@ color = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
   stew.snapshot_before(&1);
   let start = Instant::now();
 
-  loop {
+  let frame = || {
     let frame_begin = Instant::now();
     let time = 1 + ((start.elapsed().as_secs() as i64 * 1000000000i64) +
                           start.elapsed().subsec_nanos() as i64) *
                          SECOND / 1000000000i64;
     for ev in display.poll_events() {
       match ev {
-        glium::glutin::Event::Closed => return,
+        glium::glutin::Event::Closed => return true,
         glium::glutin::Event::MouseMoved (x,y) => {
           mouse_coordinates [0] = (x as i32) * 60 / display.get_window().unwrap().get_inner_size_pixels().unwrap().0 as i32;
           mouse_coordinates [1] = (display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32-(y as i32)) * 60 / display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32;
@@ -522,6 +526,8 @@ color = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
     while frame_begin.elapsed() < Duration::from_millis (10) && stew.updated_until_before().map_or (false, | limitation | limitation < time + SECOND) {
         for _ in 0..8 {stew.step();}
     }
-    sleep(Duration::from_millis(10));
-  }
+    false
+  };
+  
+  emscripten_compatibility::main_loop(frame);
 }
