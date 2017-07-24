@@ -18,6 +18,7 @@ extern crate fnv;
 extern crate glium;
 extern crate docopt;
 #[path = "../dev-shared/emscripten_compatibility.rs"] mod emscripten_compatibility;
+pub use emscripten_compatibility::canvas_click;
 
 macro_rules! printlnerr(
     ($($arg:tt)*) => { {use std::io::Write;
@@ -469,6 +470,16 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
         },
         _ => (),
       }
+    }
+    while let Some ((x,y)) = emscripten_compatibility::pop_click() {
+      // TODO duplicate code
+      mouse_coordinates [0] = (x*60.0) as i32;
+      mouse_coordinates [1] = ((1.0-y)*60.0) as i32;
+      event_index += 1;
+      stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk::new (
+            [mouse_coordinates [0], mouse_coordinates [1]],
+            (DeterministicRandomId::new (& event_index).data() [0] & ((1u64<<40)-1)) as i64 - (1<<39)
+          )).unwrap();
     }
 
     let mut target = display.draw();
