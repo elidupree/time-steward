@@ -1,5 +1,8 @@
 use std::thread::sleep;
 use std::time::Duration;
+use std::cell::RefCell;
+use std::ptr::null_mut;
+use std::os::raw::{c_int, c_void};
 
 pub fn main_loop <Frame: FnMut()->bool> (mut frame: Frame) {
   if cfg!(target_os = "emscripten") {
@@ -14,10 +17,16 @@ pub fn main_loop <Frame: FnMut()->bool> (mut frame: Frame) {
   }
 }
 
+thread_local!(static CLICKS: RefCell<Vec<(f64, f64)>> = RefCell::new(Vec::new()));
 
-use std::cell::RefCell;
-use std::ptr::null_mut;
-use std::os::raw::{c_int, c_void};
+#[no_mangle]
+pub fn canvas_click (x: f64, y: f64) {
+  CLICKS.with (| vector | vector.borrow_mut().push ((x,y)));
+}
+pub fn pop_click()->Option <(f64, f64)> {
+  CLICKS.with (| vector | vector.borrow_mut().pop ())
+}
+
 
 #[allow(non_camel_case_types)]
 type em_callback_func = unsafe extern fn();

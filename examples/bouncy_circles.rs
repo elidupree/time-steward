@@ -46,6 +46,7 @@ use time_steward::stewards::{amortized, simply_synchronized};
 #[path = "../dev-shared/bouncy_circles.rs"] mod bouncy_circles;
 use bouncy_circles::*;
 #[path = "../dev-shared/emscripten_compatibility.rs"] mod emscripten_compatibility;
+pub use emscripten_compatibility::canvas_click;
 
 
 #[derive(Copy, Clone)]
@@ -167,6 +168,13 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
           },
           _ => (),
         }
+      }
+      while let Some ((x,y)) = emscripten_compatibility::pop_click() {
+        // TODO duplicate code
+        mouse_coordinates [0] = (((x*600.0) as SpaceCoordinate) - 150) * ARENA_SIZE / 300;
+        mouse_coordinates [1] = (450-((y*600.0) as SpaceCoordinate)) * ARENA_SIZE / 300;
+        event_index += 1;
+        stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), Disturb::new ([mouse_coordinates [0], mouse_coordinates [1]])).unwrap();
       }
 
       let mut target = display.draw();

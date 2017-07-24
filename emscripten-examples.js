@@ -4,6 +4,15 @@
       var Module = {
         preRun: [function() {
           ENV.RUST_BACKTRACE = 1;
+          
+          var canvas_click = Module.cwrap ("canvas_click", null, ["number", "number"]) ;
+          canvas.addEventListener("click", function (event) {
+            var offset = canvas.getBoundingClientRect();
+            var x = (event.pageX - offset.left) /offset.width;
+            var y = (event.pageY - offset.top) /offset.height;
+            console.log (x, y);
+            canvas_click (x, y);
+          });
         }],
         postRun: [],
         TOTAL_MEMORY: 537395200,
@@ -75,3 +84,4 @@
           if (text) Module.printErr('[post-exception status] ' + text);
         };
       };
+      
