@@ -1,19 +1,20 @@
 //! 
 
-use super::list_of_types::{ListedTypeIndex, SubListRepresentative};
+use super::list_of_types::{ListedTypeIndex, Sublist};
 use std::ptr::{self, Shared};
 use std::sync::atomic::AtomicUsize;
+use std::any::Any;
 
-struct ThinArcInnerAlways <List: SubListRepresentative, AlwaysData: Any> {
+struct ThinArcInnerAlways <List: Sublist, AlwaysData: Any> {
   index: ListedTypeIndex <List>,
-  references: atomic::AtomicUsize;
+  references: AtomicUsize,
   data: AlwaysData,
 }
 #[repr(C)]
-struct ThinArcInner <List: SubListRepresentative, AlwaysData: Any, SpecificData: Any> {
-  always: ThinArcInnerAlways <List>,
+struct ThinArcInner <List: Sublist, AlwaysData: Any, SpecificData: Any> {
+  always: ThinArcInnerAlways <List, AlwaysData>,
   data: SpecificData,
 }
-pub struct ThinArc <List: SubListRepresentative, AlwaysData: Any> {
-  pointer: Shared <ThinArcInnerAlways <List, AlwaysData>>;
+pub struct ThinArc <List: Sublist, AlwaysData: Any> {
+  pointer: Shared <ThinArcInnerAlways <List, AlwaysData>>,
 }

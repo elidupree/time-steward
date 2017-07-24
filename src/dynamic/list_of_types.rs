@@ -5,23 +5,23 @@
 use std::marker::PhantomData;
 
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ListedTypeIndex <Representative: SubListRepresentative> (usize, PhantomData <Representative>);
+pub struct ListedTypeIndex <S: Sublist> (usize, PhantomData <S>);
 
 #[macro_export]
 macro_rules! time_steward_make_sublist {
   (mod $mod: ident visits $T: ident where $($where:tt)*) => {mod $mod {
     use std::marker::PhantomData;
     use std::any::Any;
-    use $crate::dynamic::list_of_types::{List, ListedType, SubListRepresentative, GlobalListConscious};
+    use $crate::dynamic::list_of_types::{ListTrait, ListedType, Sublist, GlobalListConscious};
     pub trait Visitor {
       fn visit<$T>(&mut self) where $($where)*;
     }
-    pub unsafe trait SubList: List {
+    pub unsafe trait SublistTrait: ListTrait {
       fn visit_all<V: Visitor>(visitor: &mut V);
       fn count()->usize;
       fn count_before<T>()->usize;
     }
-    unsafe impl <T: Any> SubList for ListedType<T> {
+    unsafe impl <T: Any> SublistTrait for ListedType<T> {
       #[inline(always)]
       default fn visit_all<V: Visitor>(_: &mut V) {}
       #[inline(always)]
@@ -29,7 +29,7 @@ macro_rules! time_steward_make_sublist {
       #[inline(always)]
       default fn count_before<U>()->usize {panic!("invoked count_before on a list that doesn't contain the type")}
     }
-    unsafe impl <$T: Any> SubList for ListedType<$T> where $($where)* {
+    unsafe impl <$T: Any> SublistTrait for ListedType<$T> where $($where)* {
       #[inline(always)]
       fn visit_all<V: Visitor>(visitor: &mut V) {
         visitor.visit::<$T>();
@@ -41,11 +41,11 @@ macro_rules! time_steward_make_sublist {
     }
     __time_steward_internal_sublist_tuple_impls! (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
     
-    pub struct Representative <GlobalList: SubList> (PhantomData <GlobalList>,!);
-    impl <GlobalList: SubList> GlobalListConscious for Representative <GlobalList> {
+    pub struct Representative <GlobalList: SublistTrait> (PhantomData <GlobalList>,!);
+    impl <GlobalList: SublistTrait> GlobalListConscious for Representative <GlobalList> {
       type GlobalList = GlobalList;
     }
-    unsafe impl <GlobalList: SubList> SubListRepresentative for Representative <GlobalList> {
+    unsafe impl <GlobalList: SublistTrait> Sublist for Representative <GlobalList> {
       fn count()->usize {
         $crate::dynamic::list_of_types::assert_unique_global_list::<GlobalList>();
         GlobalList::count()
@@ -67,8 +67,8 @@ pub struct ListedType<T: Any>(PhantomData <T>, !);
 #[doc(hidden)]
 macro_rules! __time_steward_internal_sublist_tuple_impls {
   ($TL: ident $(, $T: ident)*) => {
-    unsafe impl<$($T,)* $TL> SubList for ($($T,)* $TL,)
-      where $($T: SubList,)* $TL: SubList
+    unsafe impl<$($T,)* $TL> SublistTrait for ($($T,)* $TL,)
+      where $($T: SublistTrait,)* $TL: SublistTrait
     {
       #[inline(always)]
       fn visit_all<V: Visitor>(visitor: &mut V) {
@@ -95,13 +95,13 @@ macro_rules! __time_steward_internal_sublist_tuple_impls {
   () => {};
 }
 
-pub unsafe trait List: Any {
+pub unsafe trait ListTrait: Any {
   fn includes <T> ()->bool;
 }
 pub trait GlobalListConscious {
-  type GlobalList: List;
+  type GlobalList: ListTrait;
 }
-pub unsafe trait SubListRepresentative: GlobalListConscious + Sized {
+pub unsafe trait Sublist: GlobalListConscious + Sized {
   fn count()->usize;
   fn index<T>()->ListedTypeIndex <Self>;
 }
@@ -110,15 +110,15 @@ pub unsafe trait AmI <T> {fn am_i()->bool;}
 unsafe impl <T, U> AmI <T> for U {default fn am_i()->bool {false}}
 unsafe impl <T> AmI <T> for T {fn am_i()->bool {true}}
 
-unsafe impl <T: Any> List for ListedType<T> {
+unsafe impl <T: Any> ListTrait for ListedType<T> {
   #[inline(always)]
   fn includes<U>()->bool {<T as AmI<U>>::am_i()}
 }
 
 macro_rules! tuple_impls {
   ($TL: ident $(, $T: ident)*) => {
-    unsafe impl<$($T,)* $TL> List for ($($T,)* $TL,)
-      where $($T: List,)* $TL: List
+    unsafe impl<$($T,)* $TL> ListTrait for ($($T,)* $TL,)
+      where $($T: ListTrait,)* $TL: ListTrait
     {
       #[inline(always)]
       fn includes<T>()->bool {
@@ -139,7 +139,7 @@ pub trait DeterministicallyRandomlyIdentifiedType {
   const ID: DeterministicallyRandomlyIdentifiedTypeId;
 }
 
-fn assert_unique_global_list <GlobalList: List>() {
+fn assert_unique_global_list <GlobalList: ListTrait>() {
   use std::any::TypeId;
   use std::cell::Cell;
   thread_local! {
@@ -161,9 +161,9 @@ mod whatever visits T where T: super::DeterministicallyRandomlyIdentifiedType);
 /*
 #[macro_export]
 macro_rules! time_steward_sublist_fn {
-  (static $visitor_data: ident: $VisitorData: ty: $VisitorTrait: ident = $initial_value: expr followed by visit<$T> (&mut $self_hack) $visitation_effect: expr; fn $function_name: ident <$GlobalList: $SubList: ident> ($($argument_name: ident: $argument_type:ty),*)->$return_type:ty $($body:tt)*) => {
+  (static $visitor_data: ident: $VisitorData: ty: $VisitorTrait: ident = $initial_value: expr followed by visit<$T> (&mut $self_hack) $visitation_effect: expr; fn $function_name: ident <$GlobalList: $SublistTrait: ident> ($($argument_name: ident: $argument_type:ty),*)->$return_type:ty $($body:tt)*) => {
   
-    fn $function_name <GlobalList: $List> $($argument_name: $argument_type),*)->$return_type:ty {
+    fn $function_name <GlobalList: $SublistTrait> $($argument_name: $argument_type),*)->$return_type:ty {
       struct Visitor ($VisitorData);
       impl VisitorTrait for Visitor {
         fn visit<$T>(&mut $self_hack) where  {$visitation_effect}
@@ -187,7 +187,7 @@ macro_rules! time_steward_visit_sublist {
     impl $($mod)*::Visitor for $Object {
       $($method)*
     }
-    <$GlobalList as $($mod)*::SubList>::visit_all (&mut $object);
+    <$GlobalList as $($mod)*::SublistTrait>::visit_all (&mut $object);
   }
 }
 #[macro_export]
@@ -221,7 +221,7 @@ macro_rules! time_steward_with_sublist_table_entry {
 
 use std::any::Any ;
   
-fn index_to_id <GlobalList: whatever::SubList> (index: ListedTypeIndex <whatever::Representative<GlobalList>>)->DeterministicallyRandomlyIdentifiedTypeId {
+fn index_to_id <GlobalList: whatever::SublistTrait> (index: ListedTypeIndex <whatever::Representative<GlobalList>>)->DeterministicallyRandomlyIdentifiedTypeId {
   time_steward_with_sublist_table_entry! (
     GlobalList, [whatever],
     Vec<DeterministicallyRandomlyIdentifiedTypeId> [T => {T::ID} where T: DeterministicallyRandomlyIdentifiedType] [index],
@@ -232,9 +232,9 @@ fn index_to_id <GlobalList: whatever::SubList> (index: ListedTypeIndex <whatever
 #[macro_export]
 macro_rules! time_steward_dynamic_sublist_fn {
   (fn $function_name: ident, GlobalList, [$($mod: tt)*], (index: ListedTypeIndex <...>)->{$inner_function: ident::<Type(index)> ($($arguments: tt)*)->$Return:ty} where $($where: tt)*) => {
-    fn $function_name <GlobalList: $($mod)*::SubList> (index: ListedTypeIndex <$($mod)*::Representative>)->fn ($($arguments)*)->$Return {
+    fn $function_name <GlobalList: $($mod)*::SublistTrait> (index: ListedTypeIndex <$($mod)*::Representative>)->fn ($($arguments)*)->$Return {
       time_steward_with_sublist_table_entry! (
-        <GlobalList as whatever::SubList>,
+        <GlobalList as whatever::SublistTrait>,
         Vec<DeterministicallyRandomlyIdentifiedTypeId> [T => {$inner_function::<T>} where $($where)*] [index],
         | entry | *entry
       )
@@ -246,9 +246,9 @@ macro_rules! time_steward_dynamic_sublist_fn {
 
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
 
-/*impl <Representative: SubListRepresentative> Serialize for ListedTypeIndex <Representative> {
+/*impl <S: Sublist> Serialize for ListedTypeIndex <S> {
   fn serialize <S: Serializer> (&self, serializer: S)->Result <S::Ok, S::Error> {
-    index_to_id::<Representative::GlobalList> (*self).serialize (serializer);
+    index_to_id::<S::GlobalList> (*self).serialize (serializer);
   }
 }*/
 
