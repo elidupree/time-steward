@@ -4,7 +4,8 @@
 
 use std::marker::PhantomData;
 
-#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive (Derivative)]
+#[derivative (Copy, Clone, PartialEq, Eq, Hash)] //  PartialOrd, Ord,
 pub struct ListedTypeIndex <S: Sublist> (usize, PhantomData <S>);
 
 #[macro_export]
