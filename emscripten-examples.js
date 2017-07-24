@@ -84,4 +84,10 @@
           if (text) Module.printErr('[post-exception status] ' + text);
         };
       };
-      
+      function resize_canvas () {
+        var size = Math.min (window.innerHeight, window.innerWidth, 600);
+        canvas.setAttribute ("width", size);
+        canvas.setAttribute ("height", size);
+      }
+      window.addEventListener("resize", resize_canvas);
+      resize_canvas ();
