@@ -60,9 +60,11 @@ pub mod implementation_support {
 }
 
 /*#[macro_use]
+/// Allows dynamic dispatch to object-unsafe traits, with some caveats.
 pub mod dynamic {
   #[macro_use]
   pub mod list_of_types;
+  pub mod thin_arc;
 }*/
 
 mod deterministic_random_id;
