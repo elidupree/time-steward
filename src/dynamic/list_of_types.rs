@@ -47,10 +47,10 @@ macro_rules! time_steward_make_sublist {
     }
     type MakeSublist <List: SublistGeneratable> = List::Result;
     
-    pub struct Sublist <GlobalList: ListTrait> (PhantomData <GlobalList>,!);
+    /*pub struct Sublist <GlobalList: ListTrait> (PhantomData <GlobalList>,!);
     impl <GlobalList: ListTrait> GlobalListConscious for Sublist <GlobalList> {
       type GlobalList = GlobalList;
-    }
+    }*/
 
   }}
 }
@@ -134,7 +134,7 @@ macro_rules! Canonicalizable_tuple_impls {
 Canonicalizable_tuple_impls!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
 
 
-unsafe trait Contains <Test> {
+/*unsafe trait Contains <Test> {
   type Result;
 }
 
@@ -148,7 +148,7 @@ unsafe impl <Test, List: Uniquable> Contains <Test> for List {
 }
 unsafe impl <Test: Any, Tail: Uniquable> Contains <Test> for (ListedType<Test>, Tail) {
   type Result = Yes;
-}
+}*/
 
 unsafe trait IfContainsThenTailElseBoth<Test, Head, Tail> {
   type Result;
@@ -216,12 +216,12 @@ mod tests {
   fn test_unique() {
     use std::intrinsics::type_name;
     unsafe {
-      assert_eq! (type_name::<<Test as Contains<u64>>::Result>(), "dynamic::list_of_types::Yes");
+      /*assert_eq! (type_name::<<Test as Contains<u64>>::Result>(), "dynamic::list_of_types::Yes");
       assert_eq! (type_name::<<Test as Contains<usize>>::Result>(), "dynamic::list_of_types::Yes");
       assert_eq! (type_name::<<Test as Contains<f64>>::Result>(), "dynamic::list_of_types::No");
       assert_eq! (type_name::<<<Test as Uniquable>::UnprocessedTail as Contains<usize>>::Result>(), "dynamic::list_of_types::Yes");
       assert_eq! (type_name::<<<<Test as Uniquable>::UnprocessedTail as Uniquable>::UnprocessedTail as Contains<usize>>::Result>(), "dynamic::list_of_types::No");
-      assert_eq! (type_name::<<(ListedType <u64>, !) as Contains<usize>>::Result>(), "dynamic::list_of_types::No");
+      assert_eq! (type_name::<<(ListedType <u64>, !) as Contains<usize>>::Result>(), "dynamic::list_of_types::No");*/
       
       assert_eq! (type_name::<<(ListedType <usize>, (ListedType <u64>, !)) as Uniquable>::Result>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<u64>, !))");
       
