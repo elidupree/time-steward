@@ -6,135 +6,90 @@ use std::marker::PhantomData;
 
 #[derive (Derivative)]
 #[derivative (Copy, Clone, PartialEq, Eq, Hash)] //  PartialOrd, Ord,
-pub struct ListedTypeIndex <S: Sublist> (usize, PhantomData <S>);
+pub struct ListedTypeIndex <S: ListTrait> (usize, PhantomData <S>);
 
 #[macro_export]
 macro_rules! time_steward_make_sublist {
   (mod $mod: ident visits $T: ident where $($where:tt)*) => {mod $mod {
     use std::marker::PhantomData;
     use std::any::Any;
-    use $crate::dynamic::list_of_types::{ListTrait, ListedType, Sublist, GlobalListConscious};
+    use $crate::dynamic::list_of_types::{ListTrait, ListedType, GlobalListConscious};
+    
+    unsafe trait SublistGeneratable {
+      type Result: SublistTrait;
+    }
+    unsafe impl <$T: Any, Tail: SublistGeneratable> SublistGeneratable for (ListedType<$T>, Tail) {
+      default type Result = <Tail as SublistGeneratable>::Result;
+    }
+    unsafe impl <$T: Any, Tail: SublistGeneratable> SublistGeneratable for (ListedType<$T>, Tail) where $($where)* {
+      type Result = (ListedType<T>, <Tail as SublistGeneratable>::Result);
+    }
+    unsafe impl SublistGeneratable for ! {
+      type Result = !;
+    }
+    
     pub trait Visitor {
       fn visit<$T>(&mut self) where $($where)*;
     }
     pub unsafe trait SublistTrait: ListTrait {
       fn visit_all<V: Visitor>(visitor: &mut V);
-      fn count()->usize;
-      fn count_before<T>()->usize;
     }
-    unsafe impl <T: Any> SublistTrait for ListedType<T> {
-      #[inline(always)]
-      default fn visit_all<V: Visitor>(_: &mut V) {}
-      #[inline(always)]
-      default fn count()->usize {0}
-      #[inline(always)]
-      default fn count_before<U>()->usize {panic!("invoked count_before on a list that doesn't contain the type")}
-    }
-    unsafe impl <$T: Any> SublistTrait for ListedType<$T> where $($where)* {
+    unsafe impl <$T: Any, Tail: SublistTrait> SublistTrait for (ListedType<T>, Tail) where $($where)* {
       #[inline(always)]
       fn visit_all<V: Visitor>(visitor: &mut V) {
         visitor.visit::<$T>();
       }
-      #[inline(always)]
-      fn count()->usize {1}
-      #[inline(always)]
-      fn count_before<U>()->usize {0}
     }
-    __time_steward_internal_sublist_tuple_impls! (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
+    unsafe impl SublistTrait for ! {
+      #[inline(always)]
+      fn visit_all<V: Visitor>(_: &mut V) {}
+    }
+    type MakeSublist <List: SublistGeneratable> = List::Result;
     
-    pub struct Representative <GlobalList: SublistTrait> (PhantomData <GlobalList>,!);
-    impl <GlobalList: SublistTrait> GlobalListConscious for Representative <GlobalList> {
+    pub struct Sublist <GlobalList: ListTrait> (PhantomData <GlobalList>,!);
+    impl <GlobalList: ListTrait> GlobalListConscious for Sublist <GlobalList> {
       type GlobalList = GlobalList;
     }
-    unsafe impl <GlobalList: SublistTrait> Sublist for Representative <GlobalList> {
-      fn count()->usize {
-        $crate::dynamic::list_of_types::assert_unique_global_list::<GlobalList>();
-        GlobalList::count()
-      }
-      fn index <T>()->$crate::dynamic::list_of_types::ListedTypeIndex <Self> {
-        $crate::dynamic::list_of_types::assert_unique_global_list::<GlobalList>();
-        $crate::dynamic::list_of_types::ListedTypeIndex::<Self>(GlobalList::count_before::<T>(), PhantomData)
-      }
-    }/*{
-      fn visit_all<V: Visitor>(visitor: &mut V) {
-        GlobalList::visit_all(visitor);
-      }
-    }*/
+
   }}
 }
 pub struct ListedType<T: Any>(PhantomData <T>, !);
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! __time_steward_internal_sublist_tuple_impls {
-  ($TL: ident $(, $T: ident)*) => {
-    unsafe impl<$($T,)* $TL> SublistTrait for ($($T,)* $TL,)
-      where $($T: SublistTrait,)* $TL: SublistTrait
-    {
-      #[inline(always)]
-      fn visit_all<V: Visitor>(visitor: &mut V) {
-        // note: visiting order must be the same as the order of count_before()
-        $($T::visit_all(visitor);)*
-        $TL::visit_all(visitor);
-      }
-      #[inline(always)]
-      fn count()->usize {
-        $($T::count() + )* $TL::count()
-      }
-      #[inline(always)]
-      fn count_before<T>()->usize {
-        // note: visiting order must be the same as the order of count_before()
-        let count = 0;
-        $(if $T::includes::<T> () {return count + $T::count_before::<T>()}
-        let count = count + $T::count();)*
-        if $TL::includes::<T> () {return count + $TL::count_before::<T>()}
-        panic!("invoked count_before on a list that doesn't contain the type")
-      }
-    }
-    __time_steward_internal_sublist_tuple_impls! ($($T),*);
-  };
-  () => {};
+pub unsafe trait ListTrait: Any {
+  fn count()->usize;
+  fn contains<T> ()->bool;
+  fn index <T>()->ListedTypeIndex <Self>;
 }
 
-pub unsafe trait ListTrait: Any {
-  fn includes <T> ()->bool;
+unsafe impl <T: Any, Tail: ListTrait> ListTrait for (ListedType<T>, Tail){
+  #[inline(always)]
+  fn count()->usize {1 + Tail::count()}
+  #[inline(always)]
+  default fn contains <U>()->bool {<T as AmI<U>>::am_i() || Tail::contains::<U>()}
+  #[inline(always)]
+  default fn index <U>()->ListedTypeIndex <Self> {
+    if <T as AmI<U>>::am_i() {
+      0
+    }
+    else {
+      1 + Tail::index::<U>()
+    }
+  }
+}
+unsafe impl ListTrait for ! {
+  #[inline(always)]
+  fn count()->usize {0}
+  #[inline(always)]
+  fn contains <T>()->bool {false}
+  #[inline(always)]
+  fn index <T>()->ListedTypeIndex <Self> {panic!("trying to get the index of a type that's not in the list")}
 }
 pub trait GlobalListConscious {
   type GlobalList: ListTrait;
-}
-pub unsafe trait Sublist: GlobalListConscious + 'static + Sized {
-  fn count()->usize;
-  fn index<T>()->ListedTypeIndex <Self>;
 }
 
 pub unsafe trait AmI <T> {fn am_i()->bool;}
 unsafe impl <T, U> AmI <T> for U {default fn am_i()->bool {false}}
 unsafe impl <T> AmI <T> for T {fn am_i()->bool {true}}
-
-unsafe impl <T: Any> ListTrait for ListedType<T> {
-  #[inline(always)]
-  fn includes<U>()->bool {<T as AmI<U>>::am_i()}
-}
-
-macro_rules! tuple_impls {
-  ($TL: ident $(, $T: ident)*) => {
-    unsafe impl<$($T,)* $TL> ListTrait for ($($T,)* $TL,)
-      where $($T: ListTrait,)* $TL: ListTrait
-    {
-      #[inline(always)]
-      fn includes<T>()->bool {
-        $($T::includes::<T>() || )* $TL::includes::<T>()
-      }
-    }
-    tuple_impls! ($($T),*);
-  };
-  () => {};
-}
-
-
-tuple_impls! (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
-
-
 
 
 unsafe trait Canonicalizable {
@@ -153,11 +108,6 @@ unsafe impl Canonicalizable for ! {
   type Tail = !;
   type Result = !;
 }
-
-unsafe trait CanonicalList {
-
-}
-
 
 macro_rules! Canonicalizable_tuple_impls {
   ($TL: ident $(, $T: ident)*) => {
@@ -350,7 +300,7 @@ macro_rules! time_steward_with_sublist_table_entry {
     use std::cell::RefCell;
     use std::mem;
     thread_local! {
-      static TABLE: RefCell<Vec<DeterministicallyRandomlyIdentifiedTypeId>> = RefCell::new(Vec::new());
+      static TABLE: RefCell<Vec<$Entry>> = RefCell::new(Vec::new());
     }
     TABLE.with (| table | {
       let mut guard = table.borrow_mut();
@@ -370,6 +320,37 @@ macro_rules! time_steward_with_sublist_table_entry {
     })
   }}
 }
+
+
+#[macro_export]
+macro_rules! time_steward_with_sublist_table_entry {
+  ($GlobalList: ident, [$($mod: tt)*], Vec<$Entry: ty> [$T: ident => {$entry: expr} where $($where: tt)*] [$index: expr], | $entry_variable: ident | $($closure: tt)*) => {{
+    assert_unique_global_list::<$GlobalList>();
+    use std::cell::RefCell;
+    use std::mem;
+    thread_local! {
+      static TABLE: RefCell<Vec<$Entry>> = RefCell::new(Vec::new());
+    }
+    TABLE.with (| table | {
+      let mut guard = table.borrow_mut();
+      if guard.is_empty() {
+        mem::replace (&mut*guard, {
+          let mut result = Vec::with_capacity($($mod)*::Representative::<$GlobalList>::count());
+          time_steward_visit_sublist! (
+            &mut result: Vec<$Entry>,
+            $GlobalList, [$($mod)*],
+            fn visit<$T>(&mut self) where $($where)* {self.push ($entry);}
+          );
+          result
+        });
+      }
+      let $entry_variable = guard.get ($index.0).expect("an invalid ListedTypeIndex exists");
+      $($closure)*
+    })
+  }}
+}
+
+
 
 
 use std::any::Any ;
@@ -405,3 +386,14 @@ use serde::{Serialize, Deserialize, Serializer, Deserializer};
   }
 }*/
 
+#[macro_export]
+macro_rules! time_steward_dynamic_sublist_uhhhhh {
+  () => {
+  
+    fn $function_name ????? (?????)->????? {
+    
+    }
+  
+  
+  }
+}
