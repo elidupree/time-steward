@@ -102,7 +102,7 @@ pub unsafe trait ListTrait: Any {
 pub trait GlobalListConscious {
   type GlobalList: ListTrait;
 }
-pub unsafe trait Sublist: GlobalListConscious + Sized {
+pub unsafe trait Sublist: GlobalListConscious + 'static + Sized {
   fn count()->usize;
   fn index<T>()->ListedTypeIndex <Self>;
 }

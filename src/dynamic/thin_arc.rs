@@ -47,4 +47,12 @@ impl <List: Sublist, CommonData: Any> DynamicArc <List, CommonData> {
   fn common (&self)->& CommonData {
     & unsafe {self.pointer.as_ref()}.data
   }
+  fn differentiated <DifferentiatedData: Any> (&self)->Option <& DifferentiatedData> {
+    if unsafe {self.pointer.as_ref().index} == List::index:: <DifferentiatedData> () {
+      Some (unsafe {mem::transmute(&mem::transmute::<_, &Shared <ArcInner <List, CommonData, DifferentiatedData>>> (&self.pointer).as_ref().differentiated)})
+    }
+    else {
+      None
+    }
+  }
 }
