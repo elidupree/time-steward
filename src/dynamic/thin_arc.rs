@@ -13,7 +13,7 @@ struct ArcInnerCommon <List: Sublist, CommonData: Any> {
 }
 #[repr(C)]
 struct ArcInner <List: Sublist, CommonData: Any, DifferentiatedData: Any> {
-  common: ArcInnerAlways <List, CommonData>,
+  common: ArcInnerCommon <List, CommonData>,
   differentiated: DifferentiatedData,
 }
 pub struct DynamicArc <List: Sublist, CommonData: Any> {
@@ -27,6 +27,12 @@ impl <List: Sublist, CommonData: Any, DifferentiatedData: Any> TypedArc <List, C
   fn erase_type (self)->DynamicArc <List, CommonData> {
     DynamicArc {pointer: unsafe {mem::transmute (self.pointer)}}
   }
+  fn common (&self)->& CommonData {
+    & unsafe {self.pointer.as_ref()}.common.data
+  }
+  fn differentiated (&self)->& DifferentiatedData {
+    & unsafe {self.pointer.as_ref()}.differentiated
+  }
 }
 impl <List: Sublist, CommonData: Any> DynamicArc <List, CommonData> {
   /// If it's not the correct type, return the original DynamicArc 
@@ -37,5 +43,8 @@ impl <List: Sublist, CommonData: Any> DynamicArc <List, CommonData> {
     else {
       Err (self)
     }
+  }
+  fn common (&self)->& CommonData {
+    & unsafe {self.pointer.as_ref()}.data
   }
 }
