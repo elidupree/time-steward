@@ -209,18 +209,18 @@ unsafe trait Uniquable {
   type Result;
 }
 
-/*
+
 unsafe impl <Test: Any, Then, Else, List: Uniquable> IfContainsElse<Test, Then, Else> for List {
   default type Result = <List::UnprocessedTail as IfContainsElse<Test, Then, Else>>::Result;
 }
-unsafe impl <Test: Any, Then, Else, List: Uniquable> IfContainsElse<Test, Then, Else> for List where {
+unsafe impl <Test: Any, Then, Else, Tail: Uniquable> IfContainsElse<Test, Then, Else> for (ListedType<Test>, Tail) {
   type Result = Then;
 }
 unsafe impl <Test, Then, Else> IfContainsElse<Test, Then, Else> for ! {
   type Result = Else;
-}*/
+}
 
-unsafe impl <T: Any, Tail: Uniquable> Uniquable for (ListedType<T>, Tail) {
+/*unsafe impl <T: Any, Tail: Uniquable> Uniquable for (ListedType<T>, Tail) {
   default type Result = <Tail as Uniquable>::Result;
   default type UnprocessedHead = ListedType<T>;
   default type UnprocessedTail = Tail;
@@ -228,6 +228,12 @@ unsafe impl <T: Any, Tail: Uniquable> Uniquable for (ListedType<T>, Tail) {
 
 unsafe impl <T: Any, Tail: Uniquable> Uniquable for (ListedType<T>, Tail) where Tail: Contains <T, Result=No> {
   type Result = (ListedType<T>, <Tail as Uniquable>::Result);
+  type UnprocessedHead = ListedType<T>;
+  type UnprocessedTail = Tail;
+}*/
+
+unsafe impl <T: Any, Tail: Uniquable> Uniquable for (ListedType<T>, Tail) {
+  type Result = <Tail as IfContainsElse<T, <Tail as Uniquable>::Result, (ListedType<T>, <Tail as Uniquable>::Result)>>::Result;
   type UnprocessedHead = ListedType<T>;
   type UnprocessedTail = Tail;
 }
