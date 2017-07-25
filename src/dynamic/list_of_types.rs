@@ -2,6 +2,7 @@
 //!
 //! Creating a list of types is simple: you wrap each type `T` into `ListedType<T>`, then put the `ListedType`s into tuples (possibly nested tuples). All the traits necessary to use a list for automatically implemented for all nested tuples of `ListedType`s. For instance, ((ListedType<i64>, ListedType<String>, ListedType<Vec<usize>>), ListedType<bool>) is a valid list with 4 types in it.
 
+use std::any::Any;
 use std::marker::PhantomData;
 
 #[derive (Derivative)]
@@ -54,13 +55,13 @@ macro_rules! time_steward_make_sublist {
   }}
 }
 pub struct ListedType<T: Any>(PhantomData <T>, !);
-pub unsafe trait ListTrait: Any {
+pub unsafe trait ListTrait: Any + Sized {
   fn count()->usize;
   fn contains<T> ()->bool;
   fn index <T>()->ListedTypeIndex <Self>;
 }
 
-unsafe impl <T: Any, Tail: ListTrait> ListTrait for (ListedType<T>, Tail){
+unsafe impl <T: Any, Tail: ListTrait> ListTrait for (ListedType<T>, Tail) {
   #[inline(always)]
   fn count()->usize {1 + Tail::count()}
   #[inline(always)]
@@ -68,10 +69,10 @@ unsafe impl <T: Any, Tail: ListTrait> ListTrait for (ListedType<T>, Tail){
   #[inline(always)]
   default fn index <U>()->ListedTypeIndex <Self> {
     if <T as AmI<U>>::am_i() {
-      0
+      ListedTypeIndex::<Self>(0, PhantomData)
     }
     else {
-      1 + Tail::index::<U>()
+      ListedTypeIndex::<Self>(1 + Tail::index::<U>().0, PhantomData)
     }
   }
 }
@@ -351,9 +352,9 @@ macro_rules! time_steward_with_sublist_table_entry {
 }
 
 
+/*
 
 
-use std::any::Any ;
   
 fn index_to_id <GlobalList: whatever::SublistTrait> (index: ListedTypeIndex <whatever::Representative<GlobalList>>)->DeterministicallyRandomlyIdentifiedTypeId {
   time_steward_with_sublist_table_entry! (
@@ -378,7 +379,7 @@ macro_rules! time_steward_dynamic_sublist_fn {
 
 
 
-use serde::{Serialize, Deserialize, Serializer, Deserializer};
+use serde::{Serialize, Deserialize, Serializer, Deserializer};*/
 
 /*impl <S: Sublist> Serialize for ListedTypeIndex <S> {
   fn serialize <S: Serializer> (&self, serializer: S)->Result <S::Ok, S::Error> {
