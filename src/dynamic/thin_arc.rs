@@ -33,7 +33,7 @@ impl <List: Sublist, CommonData: Any, DifferentiatedData: Any> TypedArc <List, C
   fn differentiated (&self)->& DifferentiatedData {
     & unsafe {self.pointer.as_ref()}.differentiated
   }
-  fn new (common: CommonData, differentiated: DifferentiatedData)->TypedArc <List, CommonData, DifferentiatedData> {
+  /*fn new (common: CommonData, differentiated: DifferentiatedData)->TypedArc <List, CommonData, DifferentiatedData> {
     TypedArc {
       common: ArcInnerCommon {
         index: List::index:: <DifferentiatedData> (),
@@ -42,7 +42,7 @@ impl <List: Sublist, CommonData: Any, DifferentiatedData: Any> TypedArc <List, C
       },
       differentiated: differentiated,
     }
-  }
+  }*/
 }
 impl <List: Sublist, CommonData: Any> DynamicArc <List, CommonData> {
   /// If it's not the correct type, return the original DynamicArc 

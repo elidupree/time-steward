@@ -134,6 +134,113 @@ macro_rules! tuple_impls {
 
 tuple_impls! (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
 
+
+
+
+unsafe trait Canonicalizable {
+  type Head;
+  type Tail: Canonicalizable;
+  type Result;
+}
+
+unsafe impl <T: Any> Canonicalizable for ListedType<T> {
+  type Head = ListedType<T>;
+  type Tail = !;
+  type Result = (Self::Head, !);
+}
+unsafe impl Canonicalizable for ! {
+  type Head = !;
+  type Tail = !;
+  type Result = !;
+}
+
+unsafe trait CanonicalList {
+
+}
+
+
+macro_rules! Canonicalizable_tuple_impls {
+  ($TL: ident $(, $T: ident)*) => {
+    unsafe impl<$($T,)* $TL> Canonicalizable for ($TL $(, $T)*)
+      where $($T: Canonicalizable,)* $TL: Canonicalizable
+    {
+      default type Head = $TL::Head;
+      default type Tail = ($TL::Tail $(, $T)*);
+      default type Result = (Self::Head, <Self::Tail as Canonicalizable>::Result);
+    }
+    unsafe impl<$($T,)* $TL> Canonicalizable for (!, $TL $(, $T)*)
+      where $($T: Canonicalizable,)* $TL: Canonicalizable
+    {
+      type Head = <($TL $(, $T)*) as Canonicalizable>::Head;
+      type Tail = <($TL $(, $T)*) as Canonicalizable>::Tail;
+      type Result = <($TL $(, $T)*) as Canonicalizable>::Result;
+    }
+    Canonicalizable_tuple_impls! ($($T),*);
+  };
+  () => {};
+}
+
+Canonicalizable_tuple_impls!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31);
+
+
+unsafe trait Contains <Test> {}
+
+unsafe trait IfContainsElse<Test, Then, Else> {
+  type Result;
+}
+
+unsafe trait Unique {
+  type Result;
+}
+
+unsafe impl <Test: Any, Then, Else, T: Any, Tail: IfContainsElse<Test, Then, Else>> IfContainsElse<Test, Then, Else> for (ListedType<T>, Tail) {
+  default type Result = <Tail as IfContainsElse<Test, Then, Else>>::Result;
+}
+unsafe impl <Test: Any, Then, Else, Tail: IfContainsElse<Test, Then, Else>> IfContainsElse<Test, Then, Else> for (ListedType<Test>, Tail) {
+  type Result = Then;
+}
+unsafe impl <Test, Then, Else> IfContainsElse<Test, Then, Else> for ! {
+  type Result = Else;
+}
+
+unsafe impl <T: Any, Tail: Unique + IfContainsElse<T, <Tail as Unique>::Result, (ListedType<T>, <Tail as Unique>::Result)>> Unique for (ListedType<T>, Tail) {
+  type Result = <Tail as IfContainsElse<T, <Tail as Unique>::Result, (ListedType<T>, <Tail as Unique>::Result)>>::Result;
+}
+unsafe impl Unique for ! {
+  type Result = !;
+}
+
+
+
+
+#[cfg (test)]
+mod tests {
+  use super::*;
+  use ::std;
+  use ::dynamic;
+  
+  type Test = (ListedType <usize>, (ListedType <usize>, (ListedType <u64>, !)));
+  type Test2 = <Test as Unique>::Result;
+  
+  type Test3 = (ListedType <usize>, ListedType <f32>, ListedType <f32>, ListedType <u64>, ListedType <usize>, ListedType <Vec<usize>>);
+  type Test4 = ((Test3), ((Test3), Test3), Test3);
+  type Test5 = <Test4 as Canonicalizable>::Result;
+  type Test55 = (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))))))))))))))))))))));
+  type Test6 = <Test55 as Unique>::Result;
+  
+  #[test]
+  fn test_unique() {
+    use std::intrinsics::type_name;
+    unsafe {
+      assert_eq! (type_name::<Test2>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<u64>, !))");
+      assert_eq! (type_name::<Test6>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))");
+      assert_eq! (type_name::<Test5>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))))))))))))))))))))))");
+    }
+  }
+}
+
+
+
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct DeterministicallyRandomlyIdentifiedTypeId(u64);
 pub trait DeterministicallyRandomlyIdentifiedType {
