@@ -189,13 +189,13 @@ unsafe trait Contains <Test> {
 
 struct Yes(!); struct No(!);
 
-unsafe impl <Test: Any> Contains <Test> for ! {
+unsafe impl <Test> Contains <Test> for ! {
   type Result = No;
 }
-unsafe impl <Test: Any, List: Uniquable> Contains <Test> for List {
+unsafe impl <Test, List: Uniquable> Contains <Test> for List {
   default type Result = <List::UnprocessedTail as Contains <Test>>::Result;
 }
-unsafe impl <Test: Any, T: Any, Tail: Uniquable> Contains <Test> for (ListedType<T>, Tail) {
+unsafe impl <Test: Any, Tail: Uniquable> Contains <Test> for (ListedType<Test>, Tail) {
   type Result = Yes;
 }
 
@@ -221,13 +221,13 @@ unsafe impl <Test, Then, Else> IfContainsElse<Test, Then, Else> for ! {
 }*/
 
 unsafe impl <T: Any, Tail: Uniquable> Uniquable for (ListedType<T>, Tail) {
-  default type Result = (ListedType<T>, <Tail as Uniquable>::Result);
+  default type Result = <Tail as Uniquable>::Result;
   default type UnprocessedHead = ListedType<T>;
   default type UnprocessedTail = Tail;
 }
 
-unsafe impl <T: Any, Tail: Uniquable> Uniquable for (ListedType<T>, Tail) where Tail: Contains <T, Result=Yes> {
-  type Result = <Tail as Uniquable>::Result;
+unsafe impl <T: Any, Tail: Uniquable> Uniquable for (ListedType<T>, Tail) where Tail: Contains <T, Result=No> {
+  type Result = (ListedType<T>, <Tail as Uniquable>::Result);
   type UnprocessedHead = ListedType<T>;
   type UnprocessedTail = Tail;
 }
@@ -259,7 +259,19 @@ mod tests {
   fn test_unique() {
     use std::intrinsics::type_name;
     unsafe {
+      assert_eq! (type_name::<<Test as Contains<u64>>::Result>(), "dynamic::list_of_types::Yes");
+      assert_eq! (type_name::<<Test as Contains<usize>>::Result>(), "dynamic::list_of_types::Yes");
+      assert_eq! (type_name::<<Test as Contains<f64>>::Result>(), "dynamic::list_of_types::No");
+      assert_eq! (type_name::<<<Test as Uniquable>::UnprocessedTail as Contains<usize>>::Result>(), "dynamic::list_of_types::Yes");
+      assert_eq! (type_name::<<<<Test as Uniquable>::UnprocessedTail as Uniquable>::UnprocessedTail as Contains<usize>>::Result>(), "dynamic::list_of_types::No");
+      assert_eq! (type_name::<<(ListedType <u64>, !) as Contains<usize>>::Result>(), "dynamic::list_of_types::No");
+      
+      assert_eq! (type_name::<<(ListedType <usize>, (ListedType <u64>, !)) as Uniquable>::Result>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<u64>, !))");
+      
+      assert_eq! (type_name::<<<Test as Uniquable>::UnprocessedTail as Uniquable>::Result>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<u64>, !))");
       assert_eq! (type_name::<Test2>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<u64>, !))");
+      
+      
       assert_eq! (type_name::<Test6>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))");
       assert_eq! (type_name::<Test5>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))))))))))))))))))))))");
     }
