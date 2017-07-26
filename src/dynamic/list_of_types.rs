@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 #[derive (Derivative)]
 #[derivative (Copy, Clone, PartialEq, Eq, Hash)] //  PartialOrd, Ord,
-pub struct ListedTypeIndex <S: ListTrait> (usize, PhantomData <S>);
+pub struct ListedTypeIndex <S: ListTrait> (u32, PhantomData <S>);
 
 #[macro_export]
 macro_rules! time_steward_make_sublist {
@@ -61,7 +61,7 @@ pub struct ListedType<T: Any>(PhantomData <T>, !);
 pub unsafe trait ListTrait: Any + Sized {
   type Head: Any;
   type Tail: ListTrait;
-  fn count()->usize;
+  fn count()->u32;
   fn contains<T> ()->bool;
   fn index <T>()->ListedTypeIndex <Self>;
 }
@@ -70,7 +70,7 @@ unsafe impl <T: Any, Tail: ListTrait> ListTrait for (ListedType<T>, Tail) {
   type Head = T;
   type Tail = Tail;
   #[inline(always)]
-  fn count()->usize {1 + Tail::count()}
+  fn count()->u32 {1 + Tail::count()}
   #[inline(always)]
   fn contains <U>()->bool {<T as AmI<U>>::am_i() || Tail::contains::<U>()}
   #[inline(always)]
@@ -87,7 +87,7 @@ unsafe impl ListTrait for ! {
   type Head = !;
   type Tail = !;
   #[inline(always)]
-  fn count()->usize {0}
+  fn count()->u32 {0}
   #[inline(always)]
   fn contains <T>()->bool {false}
   #[inline(always)]
@@ -233,15 +233,15 @@ fn assert_unique_global_list <GlobalList: ListTrait>() {
 
 time_steward_make_sublist! (pub mod list_of_lists visits T where T: ListTrait);
 pub unsafe trait ListOfLists: list_of_lists::SublistTrait {
-  fn joined_count()->usize;
-  fn beginning<T: ListTrait>()->usize;
+  fn joined_count()->u32;
+  fn beginning<T: ListTrait>()->u32;
 }
 
 unsafe impl <T: ListTrait, Tail: ListOfLists> ListOfLists for (ListedType<T>, Tail) {
   #[inline(always)]
-  fn joined_count()->usize {T::count() + Tail::joined_count()}
+  fn joined_count()->u32 {T::count() + Tail::joined_count()}
   #[inline(always)]
-  fn beginning<U: ListTrait>()->usize {
+  fn beginning<U: ListTrait>()->u32 {
     if <T as AmI<U>>::am_i() {
       0
     }
@@ -252,9 +252,9 @@ unsafe impl <T: ListTrait, Tail: ListOfLists> ListOfLists for (ListedType<T>, Ta
 }
 unsafe impl ListOfLists for ! {
   #[inline(always)]
-  fn joined_count()->usize {0}
+  fn joined_count()->u32 {0}
   #[inline(always)]
-  fn beginning<T>()->usize {panic!("trying to get the beginning of a type that's not in the list")}
+  fn beginning<T>()->u32 {panic!("trying to get the beginning of a type that's not in the list")}
 }
 
 trait GlobalLists {
@@ -290,7 +290,7 @@ macro_rules! time_steward_with_sublist_table_entry {
         mem::replace (&mut*guard, {
           let mut result = Vec::with_capacity(
             <$($sublist_mod)*::list_of_sublists::MakeSublist<$GlobalLists> // ApplicableLists
-            as ListOfLists>::joined_count());
+            as ListOfLists>::joined_count() as usize);
           impl $($sublist_mod)*::Visitor for Vec<$Entry> {
             fn visit<$T>(&mut self) where $($where)* {
               self.push ($entry);
@@ -306,9 +306,9 @@ macro_rules! time_steward_with_sublist_table_entry {
           result
         });
       }
-      let $entry_variable = guard.get (<
+      let $entry_variable = guard.get ((<
         $($sublist_mod)*::list_of_sublists::MakeSublist<$GlobalLists> // ApplicableLists
-        as ListOfLists>::beginning::<$SpecificSublist>() + $index.0).expect("an invalid ListedTypeIndex exists");
+        as ListOfLists>::beginning::<$SpecificSublist>() + $index.0) as usize).expect("an invalid ListedTypeIndex exists");
       $($closure)*
     })
   }}
@@ -374,7 +374,7 @@ macro_rules! time_steward_with_sublist_table_entry {
           result
         });
       }
-      let $entry_variable = guard.get ($index.0).expect("an invalid ListedTypeIndex exists");
+      let $entry_variable = guard.get ($index.0 as usize).expect("an invalid ListedTypeIndex exists");
       $($closure)*
     })
   }}
