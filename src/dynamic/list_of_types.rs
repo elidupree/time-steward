@@ -206,44 +206,6 @@ unsafe impl Uniquable for ! {
 
 
 
-#[cfg (test)]
-mod tests {
-  use super::*;
-  use ::std;
-  use ::dynamic;
-  
-  type Test = (ListedType <usize>, (ListedType <usize>, (ListedType <u64>, !)));
-  type Test2 = <Test as Uniquable>::Result;
-  
-  type Test3 = (ListedType <usize>, ListedType <f32>, ListedType <f32>, ListedType <u64>, ListedType <usize>, ListedType <Vec<usize>>);
-  type Test4 = ((Test3), ((Test3), Test3), Test3);
-  type Test5 = <Test4 as Canonicalizable>::Result;
-  type Test55 = (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))))))))))))))))))))));
-  type Test6 = <Test55 as Uniquable>::Result;
-  
-  #[test]
-  fn test_unique() {
-    use std::intrinsics::type_name;
-    unsafe {
-      /*assert_eq! (type_name::<<Test as Contains<u64>>::Result>(), "dynamic::list_of_types::Yes");
-      assert_eq! (type_name::<<Test as Contains<usize>>::Result>(), "dynamic::list_of_types::Yes");
-      assert_eq! (type_name::<<Test as Contains<f64>>::Result>(), "dynamic::list_of_types::No");
-      assert_eq! (type_name::<<<Test as Uniquable>::UnprocessedTail as Contains<usize>>::Result>(), "dynamic::list_of_types::Yes");
-      assert_eq! (type_name::<<<<Test as Uniquable>::UnprocessedTail as Uniquable>::UnprocessedTail as Contains<usize>>::Result>(), "dynamic::list_of_types::No");
-      assert_eq! (type_name::<<(ListedType <u64>, !) as Contains<usize>>::Result>(), "dynamic::list_of_types::No");*/
-      
-      assert_eq! (type_name::<<(ListedType <usize>, (ListedType <u64>, !)) as Uniquable>::Result>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<u64>, !))");
-      
-      assert_eq! (type_name::<<<Test as Uniquable>::UnprocessedTail as Uniquable>::Result>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<u64>, !))");
-      assert_eq! (type_name::<Test2>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<u64>, !))");
-      
-      
-      assert_eq! (type_name::<Test6>(), "(dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))");
-      assert_eq! (type_name::<Test5>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))))))))))))))))))))))");
-    }
-  }
-}
-
 
 
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -389,7 +351,7 @@ macro_rules! time_steward_sublist_fn {
   */
 
 
-
+/*
 #[macro_export]
 macro_rules! time_steward_with_sublist_table_entry {
   ($GlobalList: ident, [$($mod: tt)*], Vec<$Entry: ty> [$T: ident => {$entry: expr} where $($where: tt)*] [$index: expr], | $entry_variable: ident | $($closure: tt)*) => {{
@@ -417,7 +379,7 @@ macro_rules! time_steward_with_sublist_table_entry {
     })
   }}
 }
-
+*/
 
 
 
@@ -467,3 +429,47 @@ macro_rules! time_steward_dynamic_sublist_uhhhhh {
   
   }
 }
+
+
+#[cfg (test)]
+mod tests {
+  use super::*;
+  use ::std;
+  use ::dynamic;
+  
+  type Test = (ListedType <usize>, (ListedType <usize>, (ListedType <u64>, !)));
+  type Test2 = <Test as Uniquable>::Result;
+  
+  type Test3 = (ListedType <usize>, ListedType <f32>, ListedType <f32>, ListedType <u64>, ListedType <usize>, ListedType <Vec<usize>>);
+  type Test4 = ((Test3), ((Test3), Test3), Test3);
+  type Test5 = <Test4 as Canonicalizable>::Result;
+  type Test55 = (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))))))))))))))))))))));
+  type Test6 = <Test55 as Uniquable>::Result;
+  
+  #[test]
+  fn test_unique() {
+    use std::intrinsics::type_name;
+    unsafe {
+      /*assert_eq! (type_name::<<Test as Contains<u64>>::Result>(), "dynamic::list_of_types::Yes");
+      assert_eq! (type_name::<<Test as Contains<usize>>::Result>(), "dynamic::list_of_types::Yes");
+      assert_eq! (type_name::<<Test as Contains<f64>>::Result>(), "dynamic::list_of_types::No");
+      assert_eq! (type_name::<<<Test as Uniquable>::UnprocessedTail as Contains<usize>>::Result>(), "dynamic::list_of_types::Yes");
+      assert_eq! (type_name::<<<<Test as Uniquable>::UnprocessedTail as Uniquable>::UnprocessedTail as Contains<usize>>::Result>(), "dynamic::list_of_types::No");
+      assert_eq! (type_name::<<(ListedType <u64>, !) as Contains<usize>>::Result>(), "dynamic::list_of_types::No");*/
+      
+      assert_eq! (type_name::<<(ListedType <usize>, (ListedType <u64>, !)) as Uniquable>::Result>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<u64>, !))");
+      
+      assert_eq! (type_name::<<<Test as Uniquable>::UnprocessedTail as Uniquable>::Result>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<u64>, !))");
+      assert_eq! (type_name::<Test2>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<u64>, !))");
+      
+      assert_eq! (type_name::<Test5>(), type_name::<Test55>());
+      
+      
+      assert_eq! (type_name::<Test6>(), "(dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))");
+      assert_eq! (type_name::<Test5>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))))))))))))))))))))))");
+    }
+  }
+  
+  
+}
+
