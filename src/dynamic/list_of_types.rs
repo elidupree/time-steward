@@ -105,7 +105,7 @@ unsafe impl <T> AmI <T> for T {fn am_i()->bool {true}}
 unsafe trait Canonicalizable {
   type Head;
   type Tail: Canonicalizable;
-  type Result;
+  type Result: Uniquable;
 }
 
 unsafe impl <T: Any> Canonicalizable for ListedType<T> {
@@ -444,7 +444,7 @@ mod tests {
   type Test4 = ((Test3), ((Test3), Test3), Test3);
   type Test5 = <Test4 as Canonicalizable>::Result;
   type Test55 = (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))))))))))))))))))))));
-  type Test6 = <Test55 as Uniquable>::Result;
+  type Test6 = <Test5 as Uniquable>::Result;
   
   #[test]
   fn test_unique() {
