@@ -230,6 +230,10 @@ fn assert_unique_global_list <GlobalList: ListTrait>() {
   });
 }
 
+pub mod traits {
+  time_steward_make_sublist! (pub mod copy visits T where T: Copy);
+  time_steward_make_sublist! (pub mod clone visits T where T: Clone);
+}
 
 time_steward_make_sublist! (pub mod list_of_lists visits T where T: ListTrait);
 pub unsafe trait ListOfLists: list_of_lists::SublistTrait {
@@ -445,6 +449,24 @@ mod tests {
   type Test5 = <Test4 as Canonicalizable>::Result;
   type Test55 = (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))))))))))))))))))))));
   type Test6 = <Test5 as Uniquable>::Result;
+  type AllTypes = Test6;
+  type IdList = deterministically_randomly_identified_types_list::MakeSublist<AllTypes>;
+  type CopyList = traits::copy::MakeSublist<AllTypes>;
+  type AllSublistsTuple = (ListedType <IdList>, ListedType <CopyList>, ListedType <traits::clone::MakeSublist<AllTypes>>);
+  type AllSublists = <<AllSublistsTuple as Canonicalizable>::Result as Uniquable>::Result;
+  
+  impl DeterministicallyRandomlyIdentifiedType for usize {
+    const ID: DeterministicallyRandomlyIdentifiedTypeId = DeterministicallyRandomlyIdentifiedTypeId(99);
+  }
+  impl DeterministicallyRandomlyIdentifiedType for f32 {
+    const ID: DeterministicallyRandomlyIdentifiedTypeId = DeterministicallyRandomlyIdentifiedTypeId(992);
+  }
+  impl DeterministicallyRandomlyIdentifiedType for u64 {
+    const ID: DeterministicallyRandomlyIdentifiedTypeId = DeterministicallyRandomlyIdentifiedTypeId(9923);
+  }
+  impl DeterministicallyRandomlyIdentifiedType for std::vec::Vec<usize> {
+    const ID: DeterministicallyRandomlyIdentifiedTypeId = DeterministicallyRandomlyIdentifiedTypeId(99256);
+  }
   
   #[test]
   fn test_unique() {
@@ -467,6 +489,8 @@ mod tests {
       
       assert_eq! (type_name::<Test6>(), "(dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))");
       assert_eq! (type_name::<Test5>(), "(dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<f32>, (dynamic::list_of_types::ListedType<u64>, (dynamic::list_of_types::ListedType<usize>, (dynamic::list_of_types::ListedType<std::vec::Vec<usize>>, !))))))))))))))))))))))))");
+      
+      assert_eq! (index_to_id::<AllSublists, CopyList>(CopyList::index::<f32>()), f32::ID);
     }
   }
   
