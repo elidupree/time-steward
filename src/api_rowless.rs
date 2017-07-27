@@ -24,7 +24,7 @@ They must obey these conditions:
 
 
 They also *should* obey these conditions:
-* whenever the structure stores obsolete information to maintain a snapshot, it should notify the snapshot using snapshot.????? so that the snapshot may free up the memory using forget_snapshot() when it is dropped.
+* whenever the structure stores obsolete information to maintain a snapshot, it should notify the snapshot using ????? so that the snapshot may free up the memory using forget_snapshot() when it is dropped.
 
 */
 struct QueryResult <Timeline: DataTimeline> {
@@ -94,26 +94,14 @@ trait SnapshotTree {
 
 
 struct DataTimelineHandle <GlobalLists: GlobalLists, Timeline: DataTimeline> {
-  data: TypedArc <GlobalLists, StewardsTimesDataTimelines, Timeline>,
+  data: DynamicArc <GlobalLists, StewardsTimesDataTimelines, DataTimelineId>,
 }
-impl<Steward: TimeSteward, Timeline: DataTimeline> DataTimeline for DataTimelineHandle <Steward, Timeline> {
+impl<GlobalLists: GlobalLists, Timeline: DataTimeline> DataTimeline for DataTimelineHandle <GlobalLists, Timeline> {
   // forward all??
   fn query <A: Accessor> (&self, query: Self::Query, accessor: &A)->Result <QueryResult<Self>,> {
-    self.data.query::<Timeline, A> (query, accessor);
+    self.data.differentiated<Times<A::Steward, Timeline>>().query(query, accessor);
   }
 }
- = ThinRc<(DataTimelineId, DataTimeline)>;
-
-struct TypedDataTimelineHandle<T: DataTimeline> {
-  data: DataTimelineHandle;
-}
-impl<T: DataTimeline> TypedDataTimelineHandle<T> {
-  fn get (m: & S::Mutator) {self.data.get (m).downcast_ref().expect()}
-}
-
-
-
-
 
 trait Mutator : ??? + Rng {
   type Steward: Steward;
@@ -131,10 +119,10 @@ trait TimeSteward {
 impl Event for Struct {
   ...
   fn call <M: Mutator <...>> (& self, mutator: M) {
-    let timeline: DataTimelineHandle <MyType, M::Steward> = self.entity_history;
-    let value: &MyType = history.get (mutator);
-    
-    let new_history = mutator.create <MyType>(constants);
+    let timeline: DataTimelineHandle <GlobalLists, MyType> = self.timeline;
+    let value: &MyType = timeline.query (mutator, MyValue);
+    ...
+    let new_timeline = mutator.create <MyType>(constants);
   }
 }
 
