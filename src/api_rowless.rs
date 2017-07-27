@@ -18,7 +18,7 @@ Specifically, I'll call them **stack-retroactive data structures**. They are lik
 They must obey these conditions:
 * The result of a query from a non-snapshot accessor must depend only on the initial snapshot and currently existing operations, and not, for instance, on the order the operations were added. It must also be invariant under taking snapshots at earlier historical times and restoring from them.
 * Also, the existing predictors are implicit in the current state. They may not change over serializing and deserializing through a snapshot.
-* The results of a query/snapshot from a *snapshot accessor* must depend only on the initial snapshot and operations that existed *at the time the snapshot accessor was created*. (In order to maintain this condition, the structure may have to examine its StewardHandle.snapshots() during insert_operation().) This condition may be violated if forget_snapshot() has been called for that snapshot.
+* The results of a query/snapshot from a *snapshot accessor* must depend only on the initial snapshot and operations that existed *at the time the snapshot accessor was created*. (In order to maintain this condition, the structure may have to examine the supplied snapshots structure during insert_operation().) This condition may be violated if forget_snapshot() has been called for that snapshot.
 * If a change to the operations would change the result of an earlier query (earlier in program time, >= in historical time), and that earlier query submitted a InvalidationHandle, that update operation must invalidate it by including an equal InvalidationHandle in its return value. (False-positives are permitted, though undesirable). It need only return each InvalidationHandle once. Note that it does NOT have to retain copies of every handle submitted, if it has some way of looking them up, for example by querying other DataTimelines.
 * Any method called at a historical time > self.valid_since() must return Ok. self.valid_since() must be TheBeginning when a with_steward() is created, and After (time) when a from_snapshot() is created. It must not increase except from calls to discard_before or insert_operation, and if it implements FullDataTimeline, it must not increase from calls to insert_operation either.
 
@@ -67,7 +67,7 @@ trait DataTimeline: Any + UniquelyIdentifiedType {
   
   /// requires a &Steward only so that you can't do it in a predictor or event function.
   //Maybe this should also return a range of times changed so you know what snapshots need to be taken?
-  fn insert_operation (&mut self, time: ExtendedTime <Self::Steward::Basics>, operation: Self::Operation, & Steward)->Result <,>;
+  fn insert_operation <Snapshots: SnapshotTree> (&mut self, time: ExtendedTime <Self::Steward::Basics>, operation: Self::Operation, snapshots_to_maintain: & Snapshots, & Steward)->Result <,>;
   
   fn valid_since (&self, & Steward)->ValidSince <ExtendedTime <Self::Steward::Basics>>;
   
@@ -84,21 +84,25 @@ trait DataTimeline: Any + UniquelyIdentifiedType {
   //An operation at time T may create new predictors from T to other times, destroy predictors from T to other times, or invalidate predictions that include After (T).
 }
 
-#[derive (Clone)]
-struct StewardHandle <Steward: TimeSteward> {
 
-}
-impl <Steward: TimeSteward> StewardHandle <Steward> {
-  fn snapshots (&self)->& SnapshotTree <Steward>;
-}
-impl <Steward: TimeSteward> SnapshotTree <Steward> {
-  fn iterate_snapshots (time_range, since_snapshot_number)->impl Iter<Item = (&Steward::Basics::Time, &StewardRc <Steward::Snapshot>)>;
+trait SnapshotTree {
+  type Steward: TimeSteward;
+  fn iterate_snapshots (&self, time_range, since_snapshot_number)->impl Iter<Item = (& Self::Steward::Basics::Time, &StewardRc <Self::Steward::Snapshot>)>;
 }
 
 
 
 
-type DataTimelineHandle = ThinRc<(DataTimelineId, DataTimeline)>;
+struct DataTimelineHandle <GlobalLists: GlobalLists, Timeline: DataTimeline> {
+  data: TypedArc <GlobalLists, StewardsTimesDataTimelines, Timeline>,
+}
+impl<Steward: TimeSteward, Timeline: DataTimeline> DataTimeline for DataTimelineHandle <Steward, Timeline> {
+  // forward all??
+  fn query <A: Accessor> (&self, query: Self::Query, accessor: &A)->Result <QueryResult<Self>,> {
+    self.data.query::<Timeline, A> (query, accessor);
+  }
+}
+ = ThinRc<(DataTimelineId, DataTimeline)>;
 
 struct TypedDataTimelineHandle<T: DataTimeline> {
   data: DataTimelineHandle;
@@ -108,27 +112,26 @@ impl<T: DataTimeline> TypedDataTimelineHandle<T> {
 }
 
 
-trait Entity {
-  type Varying = Self;
-  type Constants = ();
-}
+
+
 
 trait Mutator : ??? + Rng {
   type Steward: Steward;
-  fn create <T: DataTimeline> (&mut self, constants: T::Constants)->DataTimelineHandle <E, B::S>;
-  fn query <T: DataTimeline> (&self, t: TypedDataTimelineHandle<T>, query: T::Query)->????{t.data.get (...).downcast_ref().expect().query(), }
+  fn create <T: DataTimeline> (&mut self, constants: T::Constants)->DataTimelineHandle <T, Self::Steward>;
+  // not needed because they can invoke on the DataTimelineHandle directly, passing in this accessor
+  //fn query <T: DataTimeline> (&self, t: DataTimelineHandle<T, Self::Steward>, query: T::Query)->Result <QueryResult<Self>,>{t.data.get (...).downcast_ref().expect().query(), }
   ;
 }
 
-trait Steward {
+trait TimeSteward {
   type Mutator: Mutator <Steward = Self>;
-  type EntityHistory: EntityHistory <Steward = Self>;
+  type DataTimelineHandle: DataTimelineHandleData <Steward = Self>;
 }
 
 impl Event for Struct {
   ...
   fn call <M: Mutator <...>> (& self, mutator: M) {
-    let history: TypedEntityHistory <MyType, M::Steward> = self.entity_history;
+    let timeline: DataTimelineHandle <MyType, M::Steward> = self.entity_history;
     let value: &MyType = history.get (mutator);
     
     let new_history = mutator.create <MyType>(constants);
