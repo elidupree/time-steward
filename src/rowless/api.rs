@@ -1,6 +1,6 @@
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
-/// TimeSteward has strong requirements for serializability. In addition to implementing these traits, a StewardData must have Eq be equivalent to equality of its serialization, and invariant under cloning and serialize-deserialize cycles.
+/// TimeSteward has strong requirements for serializability. In addition to implementing these traits, a StewardData must have Eq be equivalent to equality of its serialization, and all its behavior must be invariant under cloning and serialize-deserialize cycles.
 pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {}
 
 trait TimeStewardModificationReverter {
@@ -16,7 +16,7 @@ Specifically, I'll call them **stack-retroactive data structures**. They are lik
 * In many cases, the later operations would almost certainly be invalidated anyway if the earlier one was invalidated.
 
 They must obey these conditions:
-* The result of a query from a non-snapshot accessor must depend only on the initial snapshot and currently existing operations, and not, for instance, on the order the operations were added. It must also be invariant under taking snapshots at earlier historical times and restoring from them.
+* The result of a query from a non-snapshot accessor must depend only on the initial snapshot and currently existing operations, and not, for instance, on the order the operations were added. It MAY depend on the order of operations among operations at the exact same ExtendedTime. Query results must also be invariant under taking snapshots at earlier historical times and restoring from them.
 * Also, the existing predictors are implicit in the current state. They may not change over serializing and deserializing through a snapshot.
 * The results of a query/snapshot from a *snapshot accessor* must depend only on the initial snapshot and operations that existed *at the time the snapshot accessor was created*. (In order to maintain this condition, the structure may have to examine the supplied snapshots structure during insert_operation().) This condition may be violated if forget_snapshot() has been called for that snapshot.
 * If a change to the operations would change the result of an earlier query (earlier in program time, >= in historical time), and that earlier query submitted a InvalidationHandle, that update operation must invalidate it by including an equal InvalidationHandle in its return value. (False-positives are permitted, though undesirable). It need only return each InvalidationHandle once. Note that it does NOT have to retain copies of every handle submitted, if it has some way of looking them up, for example by querying other DataTimelines.
@@ -112,9 +112,16 @@ trait Mutator : ??? + Rng {
 }
 
 trait TimeSteward {
+  type Basics: Basics;
   type Mutator: Mutator <Steward = Self>;
   type DataTimelineHandle: DataTimelineHandleData <Steward = Self>;
 }
+
+trait TimeSteward {
+  fn initialized_with <I: FnOnce (&mut Mutator)->Self::Basics::GlobalTimeline> (time: Self::Basics::Time, initializer: I)->Self;
+}
+
+
 
 impl Event for Struct {
   ...
