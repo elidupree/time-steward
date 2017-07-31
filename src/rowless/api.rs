@@ -91,6 +91,28 @@ trait SnapshotTree {
 }
 
 
+// Model: events interact only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time, and may use query_range on other timelines to collect events/predictions that must be invalidated. (Although for instance, modifications made for dependency tracking purposes don't change any results of "real" queries (i.e. those by events and predictors), so they never need to invalidate anything themselves.)
+// Predictors cannot modify and can only query??? (The data necessary to invalidate them has to be placed by the events that created them?)
+//To audit, we record all of the queries, query results, and modifications. Then after each modification of a DataTimeline, we rerun all queries to that timeline made by still-valid predictions/events. If any query has a different result than before, it's an error. (I guess in order to rerun modifications, we have to feed them the old results of their queries instead of having them do real queries?)
+// Also audit: a modification can never change results of queries in the past
+
+trait DataTimelineQueryInterface: Any + {
+  type Query: StewardData;
+  type QueryResult: StewardData;
+  
+  // audit: these must be consistent
+  // audit: queries must not have side effects (do a separate action for manual dependency tracking)
+  fn query (query: Query, time: Time)->QueryResult;
+  fn query_range (query: Query, time_range: TimeRange)->impl Iter <Item = (TimeRange, QueryResult)>;
+  
+}
+trait DataTimelineModifyInterface: Any + {
+  type Modification: StewardData;
+  
+  fn modify (modification: Modification, time: Time);
+}
+
+
 
 
 struct DataTimelineHandle <GlobalLists: GlobalLists, Timeline: DataTimeline> {
