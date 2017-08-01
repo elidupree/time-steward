@@ -18,7 +18,7 @@ pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + DeserializeO
 // Given a query input, the function (time->query output) must be piecewise constant, changing only at times when modifications have been inserted.
 // Event must implement undo. That must call the undo function matching all modifications it made. After an event is undone, there may not remain any modifications at the time of that event. It follows that after doing and then undoing an event, all queries IMMEDIATELY after the event time are restored to their former value. However, queries in the future might not be restored because modifications are permitted to mess up the future(?)
 
-// Defined by each TimeSteward type; would be an associated type constructor if Rust supported those; temporarily defining it here to allow the API to compile by itself
+// Defined by each TimeSteward type; would be associated type constructors if Rust supported those; temporarily defining them here to allow the API to compile by itself
 struct DataTimelineHandle <T: DataTimeline> {}
 struct EventHandle <T: Event> {}
 struct PredictorHandle <T: Predictor> {}
@@ -44,7 +44,7 @@ trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
   // audit: queries must not have side effects (do a separate action for manual dependency tracking)
   fn query (&self, query: Query, time: ExtendedTime <<Self::Steward as TimeSteward>::Basics>)->Self::QueryResult;
   // permitted to record the dependency
-  fn prediction_query (&mut self, query: Query, time: ExtendedTime <<Self::Steward as TimeSteward>::Basics>, predictor: PredictorHandle)->(Self::QueryResult, Option <ExtendedTime <<Self::Steward as TimeSteward>::Basics>>);
+  fn prediction_query<P: Predictor <Steward = Self::Steward>> (&mut self, query: Query, time: ExtendedTime <<Self::Steward as TimeSteward>::Basics>, predictor: PredictorHandle<P>)->(Self::QueryResult, Option <ExtendedTime <<Self::Steward as TimeSteward>::Basics>>);
   // TODO: is this necessary? Or is it only used in invalidation code, which can peek anyway?
   // fn query_range (&self, query: Query, time_range: TimeRange)->impl Iter <Item = (TimeRange, QueryResult)>;
   
@@ -57,9 +57,9 @@ trait DataTimelineModifiableWith<Modification: StewardData>: DataTimeline {
   // audit both functions: calls invalidate_[thing] for everything whose queries would be changed
   // audit both functions: doesn't change any snapshot_query results for snapshots in the argument
   // audit both functions: doesn't change any query results in the past
-  fn modify (&mut self, accessor: InvalidationAccessor<Steward = Self::Steward>, modification: Modification, event: EventHandle, snapshots: &SnapshotTreeHandle)->Self::DataToUndoModification;
+  fn modify<E: Event <Steward = Self::Steward>, Accessor: InvalidationAccessor<Steward = Self::Steward>> (&mut self, accessor: &Accessor, modification: Modification, event: EventHandle<E>, snapshots: &SnapshotTreeHandle)->Self::DataToUndoModification;
   // audit: if all modifications from a certain event are undone, all query results immediately before and after that event are identical
-  fn undo (&mut self, accessor: InvalidationAccessor <Steward = Self::Steward>, modification: Self::DataToUndoModification, event: EventHandle, snapshots: &SnapshotTreeHandle);
+  fn undo<E: Event <Steward = Self::Steward>, Accessor: InvalidationAccessor <Steward = Self::Steward>> (&mut self, accessor: &Accessor, modification: Self::DataToUndoModification, event: EventHandle<E>, snapshots: &SnapshotTreeHandle);
 }
 trait Event: StewardData {
   type Steward: TimeSteward;
