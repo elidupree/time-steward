@@ -1,7 +1,15 @@
+use ::DeterministicRandomId;
+use std::hash::Hash;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use std::io::{Read, Write};
+use std::any::Any;
+use std::fmt::{self, Debug};
+
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
 /// TimeSteward has strong requirements for serializability. In addition to implementing these traits, a StewardData must have Eq be equivalent to equality of its serialization, and all its behavior must be invariant under cloning and serialize-deserialize cycles.
-pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + Deserialize + Debug {}
+pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + DeserializeOwned + Debug {}
 
 
 // Model: events interact only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time, and may use query_range on other timelines to collect events/predictions that must be invalidated. (Although for instance, modifications made for dependency tracking purposes don't change any results of "real" queries (i.e. those by events and predictors), so they never need to invalidate anything themselves.)
@@ -10,29 +18,38 @@ pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + Deserialize 
 // Given a query input, the function (time->query output) must be piecewise constant, changing only at times when modifications have been inserted.
 // Event must implement undo. That must call the undo function matching all modifications it made. After an event is undone, there may not remain any modifications at the time of that event. It follows that after doing and then undoing an event, all queries IMMEDIATELY after the event time are restored to their former value. However, queries in the future might not be restored because modifications are permitted to mess up the future(?)
 
+// Defined by each TimeSteward type; would be an associated type constructor if Rust supported those; temporarily defining it here to allow the API to compile by itself
+struct DataTimelineHandle <T: DataTimeline> {}
+struct EventHandle <T: Event> {}
+struct PredictorHandle <T: Predictor> {}
+/*impl EventHandle {
+  fn time (&self)->& ExtendedTime;
+}*/
+
 trait DataTimeline: Any {
+  type Steward: TimeSteward;
   // audit: result NEVER changes unless forget_snapshot() is called
   // audit: restoring from version serialized using fresh snapshot doesn't change any query results afterwards
-  fn serialize (&self, serializer: &mut SerializationContext, snapshot: SnapshotHandle);
-  fn deserialize (deserializer: &mut DeserializationContext, time: ExtendedTime)->Self;
+  fn serialize (&self, serializer: &mut SerializationContext, snapshot: & <Self::Steward as TimeSteward>::Snapshot);
+  fn deserialize (deserializer: &mut DeserializationContext, time: ExtendedTime <<Self::Steward as TimeSteward>::Basics>)->Self;
   
   // audit: forget functions don't change any query results except those forgotten
-  fn forget_before (&mut self, time: ExtendedTime);
-  fn forget_snapshot (&mut self, snapshot: SnapshotHandle);
+  fn forget_before (&mut self, time: ExtendedTime <<Self::Steward as TimeSteward>::Basics>);
+  fn forget_snapshot (&mut self, snapshot: & <Self::Steward as TimeSteward>::Snapshot);
 }
 trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
   type QueryResult: StewardData;
   
   // audit all functions: must be consistent with each other
   // audit: queries must not have side effects (do a separate action for manual dependency tracking)
-  fn query (&self, query: Query, time: ExtendedTime)->QueryResult;
+  fn query (&self, query: Query, time: ExtendedTime <<Self::Steward as TimeSteward>::Basics>)->Self::QueryResult;
   // permitted to record the dependency
-  fn prediction_query (&mut self, query: Query, time: ExtendedTime, predictor: PredictorHandle)->(QueryResult, Option <ExtendedTime>);
+  fn prediction_query (&mut self, query: Query, time: ExtendedTime <<Self::Steward as TimeSteward>::Basics>, predictor: PredictorHandle)->(Self::QueryResult, Option <ExtendedTime <<Self::Steward as TimeSteward>::Basics>>);
   // TODO: is this necessary? Or is it only used in invalidation code, which can peek anyway?
-  fn query_range (&self, query: Query, time_range: TimeRange)->impl Iter <Item = (TimeRange, QueryResult)>;
+  // fn query_range (&self, query: Query, time_range: TimeRange)->impl Iter <Item = (TimeRange, QueryResult)>;
   
   // audit: NEVER changes unless forget_snapshot() is called
-  fn snapshot_query (&self, query: Query, snapshot: SnapshotHandle)->QueryResult;
+  fn snapshot_query (&self, query: Query, snapshot: & <Self::Steward as TimeSteward>::Snapshot)->Self::QueryResult;
 }
 trait DataTimelineModifiableWith<Modification: StewardData>: DataTimeline {
   type DataToUndoModification: StewardData;
@@ -40,21 +57,24 @@ trait DataTimelineModifiableWith<Modification: StewardData>: DataTimeline {
   // audit both functions: calls invalidate_[thing] for everything whose queries would be changed
   // audit both functions: doesn't change any snapshot_query results for snapshots in the argument
   // audit both functions: doesn't change any query results in the past
-  fn modify (&mut self, accessor: InvalidationAccessor, modification: Modification, event: EventHandle, snapshots: &SnapshotTreeHandle)->DataToUndoModification;
+  fn modify (&mut self, accessor: InvalidationAccessor<Steward = Self::Steward>, modification: Modification, event: EventHandle, snapshots: &SnapshotTreeHandle)->Self::DataToUndoModification;
   // audit: if all modifications from a certain event are undone, all query results immediately before and after that event are identical
-  fn undo (&mut self, accessor: InvalidationAccessor, modification: DataToUndoModification, event: EventHandle, snapshots: &SnapshotTreeHandle);
+  fn undo (&mut self, accessor: InvalidationAccessor <Steward = Self::Steward>, modification: Self::DataToUndoModification, event: EventHandle, snapshots: &SnapshotTreeHandle);
 }
 trait Event: StewardData {
-  fn execute (&mut self, accessor: EventAccessor);
+  type Steward: TimeSteward;
+  fn execute (&mut self, accessor: EventAccessor <Steward = Self::Steward, Event = Self>);
   //audit: undoes every action done by execute(), and leaves self in its original state
-  fn undo (&mut self, interface: UndoEventAccessor);
+  fn undo (&mut self, interface: UndoEventAccessor <Steward = Self::Steward, Event = Self>);
 }
 trait Predictor: StewardData {
-  fn execute (&mut self, accessor: PredictorAccessor);
+  type Steward: TimeSteward;
+  fn execute (&mut self, accessor: PredictorAccessor <Steward = Self::Steward>);
 }
 
 trait Accessor {
-  fn global_timeline (&self)->DataTimelineHandle <GlobalTimeline>;
+  type Steward: TimeSteward;
+  fn global_timeline (&self)->DataTimelineHandle <<<Self::Steward as TimeSteward>::Basics as Basics>::GlobalTimeline>;
 }
 // Querying versus peeking:
 // Querying accessors are generally for things that can affect the physics. Querying uses an exact interface that can be tracked and audited in various ways to make sure the physics stays consistent.
@@ -66,13 +86,14 @@ trait PeekingAccessor: Accessor {
   fn peek <T: DataTimeline> (&self, handle: & DataTimelineHandle <T>)->& T;
 }
 trait MomentaryAccessor: Accessor {
-  fn now(&self) -> Time;
+  fn now(&self) -> <<Self::Steward as TimeSteward>::Basics as Basics>::Time;
 }
 trait EventSpecificAccessor: MomentaryAccessor {
-  fn event (&self)->& EventHandle;
+  type Event: Event;
+  fn event (&self)->& EventHandle <Self::Event>;
 }
 trait EventAccessor: QueryingAccessor + EventSpecificAccessor {
-  fn modify <Modification: StewardData, T: DataTimelineModifiableWith<Modification>> (&self, handle: & DataTimelineHandle <T>, query: Query)-> T::DataToUndoModification;
+  fn modify <Modification: StewardData, T: DataTimelineModifiableWith<Modification>> (&self, handle: & DataTimelineHandle <T>, modification: Modification)-> T::DataToUndoModification;
 }
 trait UndoEventAccessor: PeekingAccessor + EventSpecificAccessor {
   // no querying because query results wouldn't necessarily correspond to those observed by the original execution in any way
@@ -81,18 +102,17 @@ trait UndoEventAccessor: PeekingAccessor + EventSpecificAccessor {
 trait PredictorAccessor: QueryingAccessor {
   // this one may record dependencies when querying
   // and intentionally doesn't expose the time
-  fn predict_at_time (&self, time: ExtendedTime, event: Event);
-  fn predict_immediately (&self, event: Event);
+  fn predict_at_time <E: Event <Steward = Self::Steward>> (&self, time: ExtendedTime <<Self::Steward as TimeSteward>::Basics>, event: E);
+  fn predict_immediately <E: Event <Steward = Self::Steward>> (&self, event: E);
 }
 trait InvalidationAccessor: PeekingAccessor {
   // no querying because there may be multiple relevant times
+  // audit: can't invalidate things in the past relative to the modification
   fn peek <T: DataTimeline> (&self, handle: & DataTimelineHandle <T>)->& T;
   fn invalidate_predictions <T: Predictor> (&self, handle: & PredictorHandle <T>, time_range: TimeRange);
   fn invalidate_event <T: Event> (&self, handle: & EventHandle <T>) ;
 }
-... EventHandle: Clone {
-  fn time (&self)->& ExtendedTime;
-}
+
 trait Snapshot: QueryingAccessor + PeekingAccessor + MomentaryAccessor {
   /// note: Snapshot::serialize() matches TimeSteward::deserialize()
   fn serialize_into <W: Write> (&self, writer: W);
@@ -102,13 +122,13 @@ trait Snapshot: QueryingAccessor + PeekingAccessor + MomentaryAccessor {
 }
 
 impl <T: EventSpecificAccessor> MomentaryAccessor for T {
-  fn now(&self) -> Time {
+  fn now(&self) -> <<Self::Steward as TimeSteward>::Basics as Basics>::Time {
     self.event.time().base
   }
 }
 
 trait SnapshotTree {
-  fn iterate_snapshots (&self, time_range: TimeRange, skip: ?????)->impl Iter<Item = (&Time, &Snapshot)>;
+  //fn iterate_snapshots (&self, time_range: TimeRange, skip: ?????)->impl Iter<Item = (&Time, &Snapshot)>;
 }
 
 trait SerializationContext {
@@ -124,19 +144,20 @@ trait DeserializationContext {
 
 trait TimeSteward {
   type Basics: Basics;
+  type Snapshot: Snapshot;
   
-  fn from_global_timeline (timeline: GlobalTimeline)->Self;
+  fn from_global_timeline (timeline: <Self::Basics as Basics>::GlobalTimeline)->Self;
   /// note: Snapshot::serialize() matches TimeSteward::deserialize()
   fn deserialize_from <R: Read> (data: &mut R)->Self;
   
-  fn insert_fiat_event<E: Event>(&mut self, time: Time, id: DeterministicRandomId, event: E)
+  fn insert_fiat_event<E: Event>(&mut self, time: <Self::Basics as Basics>::Time, id: DeterministicRandomId, event: E)
                                                -> Result<(), FiatEventOperationError>;
-  fn remove_fiat_event(&mut self, time: &Time, id: DeterministicRandomId)
+  fn remove_fiat_event(&mut self, time: &<Self::Basics as Basics>::Time, id: DeterministicRandomId)
                        -> Result<(), FiatEventOperationError>;
-  fn snapshot_before (&mut self, time: &Time)->Option <Self::Snapshot>;
+  fn snapshot_before (&mut self, time: &<Self::Basics as Basics>::Time)->Option <Self::Snapshot>;
   
-  fn valid_since(&self) -> ValidSince<Time>;
-  fn forget_before (&mut self, time: &Time);
+  fn valid_since(&self) -> ValidSince<<Self::Basics as Basics>::Time>;
+  fn forget_before (&mut self, time: &<Self::Basics as Basics>::Time);
 }
 
 trait Basics {
@@ -160,9 +181,99 @@ pub enum FiatEventOperationError {
 }
 
 
+use std::cmp::Ordering;
+
+// This exists to support a variety of time stewards
+// along with allowing BaseTime to be dense (e.g. a
+// rational number rather than an integer).
+// It is an acceptable peculiarity that even for integer times,
+// After(2) < Before(3).
+// #[derive (Copy, Clone, PartialEq, Eq, Hash)]
+#[derive (Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
+pub enum ValidSince<BaseTime> {
+  TheBeginning,
+  Before(BaseTime),
+  After(BaseTime),
+}
+impl<B: fmt::Display> fmt::Display for ValidSince<B> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    match self {
+      &ValidSince::TheBeginning => write!(f, "TheBeginning"),
+      &ValidSince::Before(ref something) => write!(f, "Before({})", something),
+      &ValidSince::After(ref something) => write!(f, "After({})", something),
+    }
+  }
+}
+
+impl<T: Ord> Ord for ValidSince<T> {
+  fn cmp(&self, other: &Self) -> Ordering {
+    match (self, other) {
+      (&ValidSince::TheBeginning, &ValidSince::TheBeginning) => Ordering::Equal,
+      (&ValidSince::TheBeginning, _) => Ordering::Less,
+      (_, &ValidSince::TheBeginning) => Ordering::Greater,
+      (&ValidSince::Before(ref something), &ValidSince::Before(ref anything)) => {
+        something.cmp(anything)
+      }
+      (&ValidSince::After(ref something), &ValidSince::After(ref anything)) => {
+        something.cmp(anything)
+      }
+      (&ValidSince::Before(ref something), &ValidSince::After(ref anything)) => {
+        if something <= anything {
+          Ordering::Less
+        } else {
+          Ordering::Greater
+        }
+      }
+      (&ValidSince::After(ref something), &ValidSince::Before(ref anything)) => {
+        if something < anything {
+          Ordering::Less
+        } else {
+          Ordering::Greater
+        }
+      }
+    }
+  }
+}
+impl<T> PartialEq<T> for ValidSince<T> {
+  fn eq(&self, _: &T) -> bool {
+    false
+  }
+}
+
+impl<T: Ord> PartialOrd<T> for ValidSince<T> {
+  fn partial_cmp(&self, other: &T) -> Option<Ordering> {
+    Some(match self {
+      &ValidSince::TheBeginning => Ordering::Less,
+      &ValidSince::Before(ref something) => {
+        if something <= other {
+          Ordering::Less
+        } else {
+          Ordering::Greater
+        }
+      }
+      &ValidSince::After(ref something) => {
+        if something < other {
+          Ordering::Less
+        } else {
+          Ordering::Greater
+        }
+      }
+    })
+  }
+}
+impl<T: Ord> PartialOrd for ValidSince<T> {
+  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+    Some(self.cmp(other))
+  }
+}
+// impl <T: Ord> PartialOrd <ValidSince <T>> for T {
+//  fn partial_cmp (&self, other: & ValidSince <T>)->Option <Ordering> {
+//    Some (other.partial_cmp (self).unwrap().reverse());
+//  }
+// }
 
 
-
+/*
 /////////////////
 // old brainstorms below this line
 /////////////////
@@ -290,7 +401,7 @@ impl Event for Struct {
   }
 }
 
-
+*/
 
 
 
