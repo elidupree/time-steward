@@ -90,11 +90,12 @@ trait InvalidationAccessor: PeekingAccessor {
   fn invalidate_predictions <T: Predictor> (&self, handle: & PredictorHandle <T>, time_range: TimeRange);
   fn invalidate_event <T: Event> (&self, handle: & EventHandle <T>) ;
 }
-trait Snapshot: QueryingAccessor + PeekingAccessor + MomentaryAccessor {}
 ... EventHandle: Clone {
   fn time (&self)->& ExtendedTime;
+}
+trait Snapshot: QueryingAccessor + PeekingAccessor + MomentaryAccessor {
   /// note: Snapshot::serialize() matches TimeSteward::deserialize()
-  fn serialize <W: Write> (&self, writer: W);
+  fn serialize_into <W: Write> (&self, writer: W);
   
   // for DataTimelines to request notification so they can drop data related to the snapshot
   fn notify_on_drop<T: DataTimeline> (&self, timeline: & DataTimelineHandle <T>);
@@ -126,7 +127,7 @@ trait TimeSteward {
   
   fn from_global_timeline (timeline: GlobalTimeline)->Self;
   /// note: Snapshot::serialize() matches TimeSteward::deserialize()
-  fn deserialize <R: Read> (data: &mut R)->Self;
+  fn deserialize_from <R: Read> (data: &mut R)->Self;
   
   fn insert_fiat_event<E: Event>(&mut self, time: Time, id: DeterministicRandomId, event: E)
                                                -> Result<(), FiatEventOperationError>;
@@ -141,7 +142,7 @@ trait TimeSteward {
 trait Basics {
   type Time: StewardData + Ord + Hash;
   type GlobalTimeline: DataTimeline;
-  const MAX_ITERATION: IterationType = 65535; will
+  const MAX_ITERATION: IterationType = 65535;
 }
 
 pub type IterationType = u32;
