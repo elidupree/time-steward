@@ -134,39 +134,55 @@ trait DataTimelineModifiableWith<Modification: StewardData>: DataTimeline {
 trait Event: StewardData {
   fn execute (&mut self, accessor: EventAccessor);
   //audit: undoes every action done by execute(), and leaves self in its original state
-  fn undo (&mut self, interface: UndoEventInterface);
+  fn undo (&mut self, interface: UndoEventAccessor);
 }
 trait Predictor: StewardData {
   fn execute (&mut self, accessor: PredictorAccessor);
 }
 
-trait Accessor {
+// Querying versus peeking:
+// Querying accessors are generally for things that can affect the physics. Querying uses an exact interface that can be tracked and audited in various ways to make sure the physics stays consistent.
+// Peeking accessors are generally for things that are required to do a specific job and don't have any leeway to change the physics. We allow them full read-only access with no tracking, and merely audit that they did the job they were asked to. Peeking accessors can also be allowed to use the querying interface for convenience (so that they can call generic functions that take a QueryingAccessor), but this currently is only possible for snapshots.
+trait QueryingAccessor {
   fn query <Query: StewardData, T: DataTimelineQueriableWith<Query>> (&self, handle: & DataTimelineHandle <T>, query: Query)-> T::QueryResult;
 }
-trait EventAccessor: Accessor {
+trait PeekingAccessor {
+  fn peek <T: DataTimeline> (&self, handle: & DataTimelineHandle <T>)->& T;
+}
+trait MomentaryAccessor {
+  fn now(&self) -> Time;
+}
+trait EventSpecificAccessor {
+  fn event (&self)->& EventHandle;
+}
+trait EventAccessor: QueryingAccessor + EventSpecificAccessor {
   fn modify <Modification: StewardData, T: DataTimelineModifiableWith<Modification>> (&self, handle: & DataTimelineHandle <T>, query: Query)-> T::DataToUndoModification;
-  fn event (&self)->& EventHandle;
 }
-// not called an accessor because it can't query
-trait UndoEventInterface {
-  // not permitted to query because query results wouldn't necessarily correspond to those observed by the original execution in any way
+trait UndoEventAccessor: PeekingAccessor + EventSpecificAccessor {
+  // no querying because query results wouldn't necessarily correspond to those observed by the original execution in any way
   fn undo <Modification: StewardData, T: DataTimelineModifiableWith<Modification>> (&self, handle: & DataTimelineHandle <T>, data: T::DataToUndoModification);
-  fn event (&self)->& EventHandle;
 }
-trait PredictorAccessor: Accessor {
+trait PredictorAccessor: QueryingAccessor {
   // this one may record dependencies when querying
   // and intentionally doesn't expose the time
   fn predict_at_time (&self, time: ExtendedTime, event: Event);
   fn predict_immediately (&self, event: Event);
 }
-trait InvalidationAccessor {
-  // permitted to get read-only views to all parts of the state, with no tracking of queries
+trait InvalidationAccessor: PeekingAccessor {
+  // no querying because there may be multiple relevant times
   fn peek <T: DataTimeline> (&self, handle: & DataTimelineHandle <T>)->& T;
   fn invalidate_predictions <T: Predictor> (&self, handle: & PredictorHandle <T>, time_range: TimeRange);
   fn invalidate_event <T: Event> (&self, handle: & EventHandle <T>) ;
 }
+trait Snapshot: QueryingAccessor + PeekingAccessor + MomentaryAccessor {}
 ... EventHandle: Clone {
   fn time (&self)->& ExtendedTime;
+}
+
+impl <T: EventSpecificAccessor> MomentaryAccessor for T {
+  fn now(&self) -> Time {
+    self.event.time().base
+  }
 }
 
 
