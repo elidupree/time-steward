@@ -43,6 +43,7 @@ pub trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
   
   // audit all functions: must be consistent with each other
   // audit: queries must not have side effects (do a separate action for manual dependency tracking)
+  // TODO: allow queries to return references instead of values
   fn query (&self, query: Query, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>)->Self::QueryResult;
   // permitted to record the dependency
   fn prediction_query<P: Predictor <Steward = Self::Steward>> (&mut self, query: Query, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>, predictor: PredictorHandle<P>)->(Self::QueryResult, Option <ExtendedTime <<Self::Steward as TimeSteward>::Basics>>);
