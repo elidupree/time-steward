@@ -5,85 +5,134 @@ use serde::de::DeserializeOwned;
 use std::io::{Read, Write};
 use std::any::Any;
 use std::fmt::{self, Debug};
+use super::api::*;
 
-/// Data used for a TimeSteward simulation, such as times, entities, and events.
-///
-/// TimeSteward has strong requirements for serializability. In addition to implementing these traits, a StewardData must have Eq be equivalent to equality of its serialization, and all its behavior must be invariant under cloning and serialize-deserialize cycles.
-pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + DeserializeOwned + Debug {}
-
-
-// Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time, and the events must use invalidate() to collect future events that must be invalidated. (Although, for instance, modifications made for dependency tracking purposes don't change any results of queries, so they never need to invalidate anything themselves.)
-//To audit, we record all of the queries, query results, and modifications. Then after each event that modifies one or more DataTimeline, we rerun all queries to those timelines made by still-valid future events. If any query has a different result than before, it's an error.
-
-// Given a query input, the function (time->query output) must be piecewise constant, changing only at times when modifications have been inserted.
-// Event must implement undo. That must call the undo function matching all modifications it made. After an event is undone, there may not remain any modifications at the time of that event. It follows that after doing and then undoing an event, all queries IMMEDIATELY after the event time are restored to their former value. However, queries in the future might not be restored because modifications are permitted to mess up the future(?)
-
-// Defined by each TimeSteward type; would be associated type constructors if Rust supported those; temporarily defining them here to allow the API to compile by itself
-pub struct DataTimelineHandle <T: DataTimeline> {t:T}
-pub struct EventHandle <T: Event> {t:T}
-pub struct PredictionHandle <T: Event> {t:T}
-impl <T: Event> EventHandleTrait for EventHandle <T> {
-  type Steward = T::Steward;
-  fn time (&self)->& ExtendedTime <<Self::Steward as TimeSteward>::Basics> {unimplemented!()}
+struct RecordDependency {}
+struct GetValue {}
+struct SimpleTimeline <Data: StewardData, Steward: TimeSteward> {
+  changes: Vec<(DynamicEventHandle, Option <Data>)>,
+  other_dependent_events: RefCell<Vec<DynamicEventHandle>>,
+  snapshots_data: (),
 }
 
-pub enum QueryOffset {
-  Before, After
+trait DynamicInvalidate {
+  fn invalidate_with (&self, Steward::InvalidationAccessor)
 }
 
-pub trait DataTimeline: Any {
+impl <Steward: TimeSteward, E: Event <Steward = Steward>> DynamicInvalidate for EventHandle <E>
+
+impl <Data: StewardData, Steward: TimeSteward> DataTimeline for SimpleTimeline <Data, Steward> {
+  fn invalidate_after <Accessor: InvalidationAccessor> (&self, time: ExtendedTime <Steward::Basics>, accessor: & Accessor) {
+    let mut dependencies = self.other_dependent_events.borrow_mut();
+    while let Some (event) = dependencies.pop() {
+      if event.time() <= time {
+        dependencies.push (event);
+        return
+      }
+      event.invalidate_with (accessor);
+    }
+  }
+}
+
+impl <Data: StewardData, Steward: TimeSteward> DataTimeline for SimpleTimeline <Data, Steward> {
   type Steward: TimeSteward;
-  // audit: result NEVER changes unless forget_snapshot() is called
-  // audit: restoring from version serialized using fresh snapshot doesn't change any query results afterwards
-  fn serialize <Context: SerializationContext> (&self, serializer: &mut Context, snapshot: & <Self::Steward as TimeSteward>::Snapshot);
-  fn deserialize <Context: DeserializationContext> (deserializer: &mut Context, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>)->Self;
   
-  // audit: forget functions don't change any query results except those forgotten
-  fn forget_before (&mut self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>);
-  fn forget_snapshot (&mut self, snapshot: & <Self::Steward as TimeSteward>::Snapshot);
+  fn serialize <Context: SerializationContext> (&self, serializer: &mut Context, snapshot: & <Self::Steward as TimeSteward>::Snapshot) {
+    unimplemented!()
+  )
+  fn deserialize <Context: DeserializationContext> (deserializer: &mut Context, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>)->Self {
+    unimplemented!()
+  }
+  
+  fn forget_before (&mut self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>) {
+    
+  }
+  fn forget_snapshot (&mut self, snapshot: & <Self::Steward as TimeSteward>::Snapshot) {
+    unimplemented!()//snapshots_data.remove (snapshot);
+  }
 }
-pub trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
-  type QueryResult: StewardData;
+impl <Data: StewardData, Steward: TimeSteward> DataTimelineQueriableWith<GetValue> for SimpleTimeline <Data, Steward> {
+  type QueryResult: Option <(ExtendedTime <Steward::Basics>, Option <Data>)>;
+
+  fn query (&self, query: &Query, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>, offset: QueryOffset)->Self::QueryResult {
+    let previous_change_index = match self.changes.binary_search_by_key (time, | change | &change.0) {
+      Ok(index) => match offset {After => index, Before => index.wrapping_sub (1)},
+      Err (index) => index.wrapping_sub (1),
+    }
+    self.changes.get (index).map (| (event, data) | (event.time(), data))
+  }
   
-  // audit all functions: must be consistent with each other
-  // audit: queries must not have side effects (do a separate action for manual dependency tracking)
-  // TODO: allow queries to return references instead of values
-  fn query (&self, query: &Query, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>, offset: QueryOffset)->Self::QueryResult;
-  // TODO: is this necessary? Or is it only used in invalidation code, which can peek anyway?
-  // fn query_range (&self, query: Query, time_range: TimeRange)->impl Iter <Item = (TimeRange, QueryResult)>;
-  
-  // audit: NEVER changes unless forget_snapshot() is called
-  fn snapshot_query (&self, query: &Query, snapshot: & <Self::Steward as TimeSteward>::Snapshot)->Self::QueryResult;
+  fn snapshot_query (&self, query: &Query, snapshot: & <Self::Steward as TimeSteward>::Snapshot)->Self::QueryResult {
+    unimplemented!()
+    //self.query (query, snapshot)
+  }
 }
-pub trait DataTimelineModifiableWith<Modification: StewardData>: DataTimeline {
-  type DataToUndoModification: StewardData;
+impl <Data: StewardData, Steward: TimeSteward> DataTimelineModifiableWith<Option <Data>> for SimpleTimeline <Data, Steward> {
+  type DataToUndoModification: ();
   
-  // TODO: allow modifications to accept references instead of values
-  // audit both functions: doesn't change any snapshot_query results for snapshots in the argument
-  fn modify<E: Event <Steward = Self::Steward>, Snapshots: SnapshotTree> (&mut self, modification: Modification, event: &EventHandle<E>, snapshots: &Snapshots)->Self::DataToUndoModification;
+  fn modify<E: Event <Steward = Self::Steward>, Snapshots: SnapshotTree> (&mut self, modification: Modification, event: &EventHandle<E>, snapshots: &Snapshots)->Self::DataToUndoModification {
+    ...
+    self.changes.push ((event, modification));
+  }
   
-  fn undo<E: Event <Steward = Self::Steward>, Snapshots: SnapshotTree> (&mut self, modification: &Self::DataToUndoModification, event: &EventHandle<E>, snapshots: &Snapshots);
+  fn undo<E: Event <Steward = Self::Steward>, Snapshots: SnapshotTree> (&mut self, modification: &Self::DataToUndoModification, event: &EventHandle<E>, snapshots: &Snapshots)
+  {
+    ...
+  }
 }
+impl <Data: StewardData, Steward: TimeSteward> DataTimelineModifiableWith<RecordDependency> for SimpleTimeline <Data, Steward> {
+  type DataToUndoModification: ();
+  
+  fn modify<E: Event <Steward = Self::Steward>, Snapshots: SnapshotTree> (&mut self, modification: Modification, event: &EventHandle<E>, snapshots: &Snapshots)->Self::DataToUndoModification {
+    self.other_dependent_events...
+  }
+  
+  fn undo<E: Event <Steward = Self::Steward>, Snapshots: SnapshotTree> (&mut self, modification: &Self::DataToUndoModification, event: &EventHandle<E>, snapshots: &Snapshots)
+  {
+    self.other_dependent_events...
+  }
+}
+
+
+fn query_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: ExecuteEventAccessor <Steward = Steward> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward>>, offset: QueryOffset)->Option <(ExtendedTime <Steward::Basics>, Option <Data>)> {
+  accessor.modify (handle, RecordDependency);
+  accessor.query (handle, GetValue, offset)
+}
+fn modify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: ExecuteEventAccessor <Steward = Steward> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward>>, modification: Option <Data>) {
+  accessor.invalidate (| invalidator | {
+  
+  });
+  accessor.modify (handle, modification);
+}
+fn unmodify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: ExecuteEventAccessor <Steward = Steward> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward>>, modification: Option <Data>) {
+  accessor.invalidate (| invalidator | {
+  
+  });
+  accessor.undo (handle, ());
+}
+
+
 pub trait Event: StewardData {
   type Steward: TimeSteward;
-  // audit all functions: calls invalidate_event for everything whose queries would be changed
-  // audit all functions: doesn't change any query results in the past
+  // audit both functions: calls invalidate_event for everything whose queries would be changed
+  // audit both functions: doesn't change any snapshot_query results for snapshots in the argument
+  // audit both functions: doesn't change any query results in the past
   fn execute<Accessor: EventAccessor <Steward = Self::Steward, Event = Self>> (&mut self, accessor: &Accessor);
   // audit: undoes exactly every action done by execute() and nothing else, and leaves self in its original state
   // audit: after undoing, all query results immediately before and after the event are identical to each other (if the previous audit passes, this is more an audit of the DataTimeline types than this event type)
   fn undo<Accessor: UndoEventAccessor <Steward = Self::Steward, Event = Self>> (&mut self, accessor: &Accessor);
-  // audit: should produce the same subsequent query results as doing undo() and then execute()
-  fn redo
 }
 
 pub trait Accessor {
   type Steward: TimeSteward;
   fn global_timeline (&self)->DataTimelineHandle <<<Self::Steward as TimeSteward>::Basics as Basics>::GlobalTimeline>;
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult;
 }
 // Querying versus peeking:
 // Querying accessors are generally for things that can affect the physics. Querying uses an exact interface that can be tracked and audited in various ways to make sure the physics stays consistent.
-// Peeking accessors are generally for things that are required to do a specific job and don't have any leeway to change the physics. We allow them full read-only access with no tracking, and merely audit that they did the job they were asked to. Peeking accessors are also allowed to use the querying interface for convenience (so that they can call generic functions that take a QueryingAccessor).
+// Peeking accessors are generally for things that are required to do a specific job and don't have any leeway to change the physics. We allow them full read-only access with no tracking, and merely audit that they did the job they were asked to. Peeking accessors can also be allowed to use the querying interface for convenience (so that they can call generic functions that take a QueryingAccessor), but this currently is only possible for snapshots.
+pub trait QueryingAccessor: Accessor {
+  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query>> (&self, handle: & DataTimelineHandle <T>, query: &Query)-> T::QueryResult;
+}
 pub trait PeekingAccessor: Accessor {
   fn peek <T: DataTimeline> (&self, handle: & DataTimelineHandle <T>)->& T;
 }
@@ -96,24 +145,25 @@ pub trait EventAccessor: MomentaryAccessor {
   // invalidation is done within a Fn so that the event can't extract any information from the PeekingAccessor used for invalidation.
   fn invalidate <A: InvalidationAccessor, F: Fn(&A)> (&self, invalidator: &F);
 }
-pub trait ExecuteEventAccessor: EventAccessor {
+pub trait ExecuteEventAccessor: QueryingAccessor + EventAccessor {
   fn modify <Modification: StewardData, T: DataTimelineModifiableWith<Modification>> (&self, handle: & DataTimelineHandle <T>, modification: Modification)-> T::DataToUndoModification;
   fn create_prediction <E: Event <Steward = Self::Steward>> (&self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>, event: E)->PredictionHandle<E>;
   fn destroy_prediction <E: Event <Steward = Self::Steward>> (&self, &PredictionHandle<E>);
 }
 pub trait UndoEventAccessor: PeekingAccessor + EventAccessor {
-  // note that query results wouldn't necessarily correspond to those observed by the original execution in any way
+  // no querying because query results wouldn't necessarily correspond to those observed by the original execution in any way
   fn undo <Modification: StewardData, T: DataTimelineModifiableWith<Modification>> (&self, handle: & DataTimelineHandle <T>, data: &T::DataToUndoModification);
   fn uncreate_prediction <E: Event <Steward = Self::Steward>> (&self, &PredictionHandle<E>);
   fn undestroy_prediction <E: Event <Steward = Self::Steward>> (&self, &PredictionHandle<E>);
 }
 pub trait InvalidationAccessor: PeekingAccessor {
-  // if you use queries, note that there may be multiple relevant times and this might be in an undo (see above)
+  // no querying because there may be multiple relevant times and this might be in an undo (see above)
+  fn peek <T: DataTimeline> (&self, handle: & DataTimelineHandle <T>)->& T;
   // audit: can't invalidate things in the past relative to the current event
   fn invalidate <T: Event> (&self, handle: & EventHandle <T>);
 }
 
-pub trait Snapshot: PeekingAccessor + MomentaryAccessor {
+pub trait Snapshot: QueryingAccessor + PeekingAccessor + MomentaryAccessor {
   /// note: Snapshot::serialize() matches TimeSteward::deserialize()
   fn serialize_into <W: Write> (&self, writer: W);
   
