@@ -9,6 +9,7 @@ use std::fmt::{self, Debug};
 use std::collections::BTreeSet;
 use std::mem;
 use std::cell::RefCell;
+use std::marker::PhantomData;
 
 use super::super::api::*;
 
@@ -20,6 +21,7 @@ struct SimpleTimeline <Data: StewardData, Steward: TimeSteward> {
   changes: Vec<(DynamicEventHandle, Option <Data>)>,
   other_dependent_events: RefCell<BTreeSet<DynamicEventHandle>>,
   snapshots_data: (),
+  marker: PhantomData<Steward>,
 }
 
 impl <Data: StewardData, Steward: TimeSteward> SimpleTimeline <Data, Steward> {

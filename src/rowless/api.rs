@@ -11,6 +11,19 @@ use std::fmt::{self, Debug};
 /// TimeSteward has strong requirements for serializability. In addition to implementing these traits, a StewardData must have Eq be equivalent to equality of its serialization, and all its behavior must be invariant under cloning and serialize-deserialize cycles.
 pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + DeserializeOwned + Debug {}
 
+impl <T: StewardData> StewardData for Option <T> {}
+macro_rules! StewardData_tuple_impls {
+  ($TL: ident $(, $T: ident)*) => {
+    impl<$($T,)* $TL> StewardData for ($TL $(, $T)*)
+      where $($T: StewardData,)* $TL: StewardData {}
+    StewardData_tuple_impls! ($($T),*);
+  };
+  () => {};
+}
+StewardData_tuple_impls!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
+
+impl <T: Basics> StewardData for ExtendedTime <T> {}
+
 
 // Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time, and the events must use invalidate() to collect future events that must be invalidated. (Although, for instance, modifications made for dependency tracking purposes don't change any results of queries, so they never need to invalidate anything themselves.)
 //To audit, we record all of the queries, query results, and modifications. Then after each event that modifies one or more DataTimeline, we rerun all queries to those timelines made by still-valid future events. If any query has a different result than before, it's an error.
@@ -152,7 +165,7 @@ pub trait DeserializationContext {
   fn deserialize_prediction_handle <T: Event> (&mut self)->PredictionHandle <T>;
 }
 
-pub trait TimeSteward {
+pub trait TimeSteward: Any {
   type Basics: Basics;
   type Snapshot: Snapshot;
   
@@ -170,7 +183,11 @@ pub trait TimeSteward {
   fn forget_before (&mut self, time: &<Self::Basics as Basics>::Time);
 }
 
-pub trait Basics {
+/**
+This is intended to be implemented on an empty struct. Requiring Clone etc. is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
+*/
+pub trait Basics
+  : Any + Send + Sync + Copy + Clone + Ord + Hash + Serialize + DeserializeOwned + Debug + Default {
   type Time: StewardData + Ord + Hash;
   type GlobalTimeline: DataTimeline;
   const MAX_ITERATION: IterationType = 65535;
