@@ -93,8 +93,9 @@ pub trait EventAccessor: MomentaryAccessor {
   // modification is done within a Fn so that the event can't extract any information from DataTimelines except by querying.
   fn modify <T: DataTimeline, F: Fn(&mut T)> (&self, timeline: DataTimelineHandle <T>, modification: &F);
   
-  // audit: an event creates/destroys the exact predictions that become existent/nonexistent between the serializations of the physics immediately before and after the event.
-  fn create_prediction <E: Event <Steward = Self::Steward>> (&self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>, event: E)->PredictionHandle<E>;
+  // audit: whenever an event is executed or undone, it creates/destroys the exact predictions that become existent/nonexistent between the serializations of the physics immediately before and after the event.
+  // audit: never generates two predictions with the same id, except when rerunning the same event
+  fn create_prediction <E: Event <Steward = Self::Steward>> (&self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)->PredictionHandle<E>;
   fn destroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &PredictionHandle<E>);
   
   // invalidation is done within a Fn so that the event can't extract any information from the PeekingAccessor used for invalidation.
