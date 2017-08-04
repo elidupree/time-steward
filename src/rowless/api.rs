@@ -21,11 +21,16 @@ pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + DeserializeO
 // Defined by each TimeSteward type; would be associated type constructors if Rust supported those; temporarily defining them here to allow the API to compile by itself
 pub struct DataTimelineHandle <T: DataTimeline> {t:T}
 pub struct EventHandle <T: Event> {t:T}
+pub struct DynamicEventHandle {}
 pub struct PredictionHandle <T: Event> {t:T}
 impl <T: Event> EventHandleTrait for EventHandle <T> {
   type Steward = T::Steward;
   fn time (&self)->& ExtendedTime <<Self::Steward as TimeSteward>::Basics> {unimplemented!()}
 }
+/*impl EventHandleTrait for EventHandle {
+  type Steward = T::Steward;
+  fn time (&self)->& ExtendedTime <<Self::Steward as TimeSteward>::Basics> {unimplemented!()}
+}*/
 
 pub enum QueryOffset {
   Before, After
@@ -109,6 +114,7 @@ pub trait InvalidationAccessor: PeekingAccessor {
   // if you use queries, note that there may be multiple relevant times and this might be in an undo (see above)
   // audit: can't invalidate things in the past relative to the current event
   fn invalidate <T: Event> (&self, handle: & EventHandle <T>);
+  fn invalidate_dynamic (&self, handle: & DynamicEventHandle);
 }
 
 pub trait Snapshot: PeekingAccessor + MomentaryAccessor {
