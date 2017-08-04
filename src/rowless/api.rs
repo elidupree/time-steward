@@ -47,6 +47,7 @@ pub trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
   
   // audit all functions: must be consistent with each other
   // audit: queries must not have side effects (do a separate action for manual dependency tracking)
+  // audit: queries don't return PredictionHandles that don't exist at the time
   // TODO: allow queries to return references instead of values
   fn query (&self, query: &Query, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>, offset: QueryOffset)->Self::QueryResult;
   // TODO: is this necessary? Or is it only used in invalidation code, which can peek anyway?
@@ -90,9 +91,9 @@ pub trait EventAccessor: MomentaryAccessor {
   fn handle (&self)->& EventHandle <Self::Event>;
   
   // modification is done within a Fn so that the event can't extract any information from DataTimelines except by querying.
-  fn modify <T: DataTimeline, F: Fn(&mut T)> (&self, modification: &F);
+  fn modify <T: DataTimeline, F: Fn(&mut T)> (&self, timeline: DataTimelineHandle <T>, modification: &F);
   
-  // audit: an event creates/destroys the exact predictions that are existent/nonexistent in the serialization of the
+  // audit: an event creates/destroys the exact predictions that become existent/nonexistent between the serializations of the physics immediately before and after the event.
   fn create_prediction <E: Event <Steward = Self::Steward>> (&self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>, event: E)->PredictionHandle<E>;
   fn destroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &PredictionHandle<E>);
   

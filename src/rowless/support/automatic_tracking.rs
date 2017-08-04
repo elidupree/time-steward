@@ -11,7 +11,7 @@ struct RecordDependency {}
 struct GetValue {}
 struct SimpleTimeline <Data: StewardData, Steward: TimeSteward> {
   changes: Vec<(DynamicEventHandle, Option <Data>)>,
-  other_dependent_events: RefCell<Vec<DynamicEventHandle>>,
+  other_dependent_events: RefCell<BTreeSet<DynamicEventHandle>>,
   snapshots_data: (),
 }
 
@@ -24,12 +24,25 @@ impl <Steward: TimeSteward, E: Event <Steward = Steward>> DynamicInvalidate for 
 impl <Data: StewardData, Steward: TimeSteward> DataTimeline for SimpleTimeline <Data, Steward> {
   fn invalidate_after <Accessor: InvalidationAccessor> (&self, time: ExtendedTime <Steward::Basics>, accessor: & Accessor) {
     let mut dependencies = self.other_dependent_events.borrow_mut();
-    while let Some (event) = dependencies.pop() {
+    let removed = split_off_greater_set (dependencies, time);
+    for event in removed {
+      event.invalidate_with (accessor);
+    }
+    for change in changes.iter().rev() {
+      let event = &change.0;
       if event.time() <= time {
-        dependencies.push (event);
-        return
+        break
       }
       event.invalidate_with (accessor);
+    }
+  }
+  
+  fn remove_from (&mut self, time: ExtendedTime <Steward::Basics>) {
+    while let Some (change) = self.changes.pop() {
+      if change.0.time() <= time {
+        self.changes.push (change);
+        break
+      }
     }
   }
 }
@@ -95,20 +108,34 @@ impl <Data: StewardData, Steward: TimeSteward> DataTimelineModifiableWith<Record
 
 
 fn query_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: ExecuteEventAccessor <Steward = Steward> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward>>, offset: QueryOffset)->Option <(ExtendedTime <Steward::Basics>, Option <Data>)> {
-  accessor.modify (handle, RecordDependency);
+  accessor.modify (handle, &move |timeline| {
+    let mut dependencies = timeline.other_dependent_events.borrow_mut();
+    match dependencies.binary_search_by_key (accessor.now(), | event | event.time()) {
+      Ok(index) => match offset {After => index, Before => index.wrapping_sub (1)},
+      Err (index) => index.wrapping_sub (1),
+    }
+  });
   accessor.query (handle, GetValue, offset)
 }
 fn modify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: ExecuteEventAccessor <Steward = Steward> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward>>, modification: Option <Data>) {
-  accessor.invalidate (| invalidator | {
-  
-  });
-  accessor.modify (handle, modification);
+  if accessor.query (handle, GetValue, After) != (accessor.now(), modification) {
+    accessor.invalidate (| invalidator | {
+      invalidator.peek(handle).invalidate_after (accessor.now(), invalidator);
+    });
+    accessor.modify (handle, &move |timeline| {
+      timeline.remove_from (accessor.now());
+      timeline.changes.push ((accessor.handle(), modification));
+    });
+  }
 }
-fn unmodify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: ExecuteEventAccessor <Steward = Steward> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward>>, modification: Option <Data>) {
+fn unmodify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: ExecuteEventAccessor <Steward = Steward> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward>>) {
+  assert!(accessor.query (handle, GetValue, After) == (accessor.now(), modification), "called unmodify_simple_timeline when there wasn't a modification to undo");
   accessor.invalidate (| invalidator | {
-  
+    invalidator.peek(handle).invalidate_after (accessor.now(), invalidator);
   });
-  accessor.undo (handle, ());
+  accessor.modify (handle, &move |timeline| {
+    timeline.remove_from (accessor.now());
+  });
 }
 
 
