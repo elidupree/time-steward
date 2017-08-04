@@ -40,7 +40,7 @@ impl <Data: StewardData, Steward: TimeSteward> SimpleTimeline <Data, Steward> {
     }
   }
   
-  fn remove_from (&mut self, time: ExtendedTime <Steward::Basics>) {
+  fn remove_from (&mut self, time: &ExtendedTime <Steward::Basics>) {
     while let Some (change) = self.changes.pop() {
       if change.0.time() <= time {
         self.changes.push (change);
@@ -63,7 +63,7 @@ impl <Data: StewardData, Steward: TimeSteward> DataTimeline for SimpleTimeline <
   fn forget_before (&mut self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>) {
     let mut dependencies = self.other_dependent_events.borrow_mut();
     let retained = dependencies.split_off (time);
-    mem::replace (dependencies, retained);
+    mem::replace (&mut*dependencies, retained);
   }
   fn forget_snapshot (&mut self, snapshot: & <Self::Steward as TimeSteward>::Snapshot) {
     unimplemented!()//snapshots_data.remove (snapshot);
@@ -77,7 +77,7 @@ impl <Data: StewardData, Steward: TimeSteward> DataTimelineQueriableWith<GetValu
       Ok(index) => match offset {QueryOffset::After => index, QueryOffset::Before => index.wrapping_sub (1)},
       Err (index) => index.wrapping_sub (1),
     };
-    self.changes.get (previous_change_index).map (| (event, data) | (event.time(), data))
+    self.changes.get (previous_change_index).map (| change | (change.0.time().clone(), change.1.clone()))
   }
   
   fn snapshot_query (&self, query: &GetValue, snapshot: & <Self::Steward as TimeSteward>::Snapshot)->Self::QueryResult {
@@ -95,28 +95,31 @@ fn query_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: Eve
       Err (index) => index.wrapping_sub (1),
     }
   });
-  accessor.query (handle, GetValue, offset)
+  accessor.query (handle, &GetValue, offset)
 }
 fn modify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward>>, modification: Option <Data>) {
-  if accessor.query (handle, GetValue, QueryOffset::After) != (accessor.now(), modification) {
-    accessor.invalidate (| invalidator | {
-      invalidator.peek(handle).invalidate_after (accessor.now(), invalidator);
-    });
-    accessor.modify (handle, &move |timeline| {
-      timeline.remove_from (accessor.now());
-      timeline.changes.push ((accessor.handle(), modification));
-    });
+  if let Some((event, data)) = accessor.query (handle, &GetValue, QueryOffset::After) {
+    if (event.time(), data) == (accessor.now(), modification) {
+      return
+    }
   }
+  accessor.invalidate (&| invalidator | {
+    invalidator.peek(handle).invalidate_after (accessor.now(), invalidator);
+  });
+  accessor.modify (handle, &move |timeline| {
+    timeline.remove_from (accessor.now());
+    timeline.changes.push ((accessor.handle().clone().erase_type(), modification));
+  });
 }
 fn unmodify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward>>) {
-  if accessor.query (handle, GetValue, QueryOffset::After).0 == accessor.now() {
-    accessor.invalidate (| invalidator | {
+  if let Some((event, data)) = accessor.query (handle, &GetValue, QueryOffset::After) { if event.time() == accessor.now() {
+    accessor.invalidate (&| invalidator | {
       invalidator.peek(handle).invalidate_after (accessor.now(), invalidator);
     });
     accessor.modify (handle, &move |timeline| {
       timeline.remove_from (accessor.now());
     });
-  }
+  }}
 }
 
 

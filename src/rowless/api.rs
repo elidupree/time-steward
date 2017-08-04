@@ -36,11 +36,14 @@ pub struct DataTimelineHandle <T: DataTimeline> {t:T}
 pub struct EventHandle <T: Event> {t:T}
 pub struct DynamicEventHandle {}
 pub struct PredictionHandle <T: Event> {t:T}
+impl <T: Event> EventHandle <T> {
+  fn erase_type (self)->DynamicEventHandle {unimplemented!()}
+}
 impl <T: Event> EventHandleTrait for EventHandle <T> {
   type Steward = T::Steward;
   fn time (&self)->& ExtendedTime <<Self::Steward as TimeSteward>::Basics> {unimplemented!()}
 }
-/*impl EventHandleTrait for EventHandle {
+/*impl EventHandleTrait for DynamicEventHandle {
   type Steward = T::Steward;
   fn time (&self)->& ExtendedTime <<Self::Steward as TimeSteward>::Basics> {unimplemented!()}
 }*/
@@ -109,7 +112,7 @@ pub trait EventAccessor: MomentaryAccessor {
   fn handle (&self)->& EventHandle <Self::Event>;
   
   // modification is done within a Fn so that the event can't extract any information from DataTimelines except by querying.
-  fn modify <T: DataTimeline, F: Fn(&mut T)> (&self, timeline: DataTimelineHandle <T>, modification: &F);
+  fn modify <T: DataTimeline, F: Fn(&mut T)> (&self, timeline: &DataTimelineHandle <T>, modification: &F);
   
   // audit: whenever an event is executed or undone, it creates/destroys the exact predictions that become existent/nonexistent between the serializations of the physics immediately before and after the event.
   // audit: never generates two predictions with the same id, except when rerunning the same event
