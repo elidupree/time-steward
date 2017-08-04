@@ -55,25 +55,20 @@ pub trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
   // audit: NEVER changes unless forget_snapshot() is called
   fn snapshot_query (&self, query: &Query, snapshot: & <Self::Steward as TimeSteward>::Snapshot)->Self::QueryResult;
 }
-pub trait DataTimelineModifiableWith<Modification: StewardData>: DataTimeline {
-  type DataToUndoModification: StewardData;
-  
-  // TODO: allow modifications to accept references instead of values
-  // audit both functions: doesn't change any snapshot_query results for snapshots in the argument
-  fn modify<E: Event <Steward = Self::Steward>, Snapshots: SnapshotTree> (&mut self, modification: Modification, event: &EventHandle<E>, snapshots: &Snapshots)->Self::DataToUndoModification;
-  
-  fn undo<E: Event <Steward = Self::Steward>, Snapshots: SnapshotTree> (&mut self, modification: &Self::DataToUndoModification, event: &EventHandle<E>, snapshots: &Snapshots);
-}
 pub trait Event: StewardData {
   type Steward: TimeSteward;
   // audit all functions: calls invalidate_event for everything whose queries would be changed
   // audit all functions: doesn't change any query results in the past
   fn execute<Accessor: EventAccessor <Steward = Self::Steward, Event = Self>> (&mut self, accessor: &Accessor);
-  // audit: undoes exactly every action done by execute() and nothing else, and leaves self in its original state
+  // audit: leaves self in its original state??
   // audit: after undoing, all query results immediately before and after the event are identical to each other (if the previous audit passes, this is more an audit of the DataTimeline types than this event type)
   fn undo<Accessor: UndoEventAccessor <Steward = Self::Steward, Event = Self>> (&mut self, accessor: &Accessor);
   // audit: should produce the same subsequent query results as doing undo() and then execute()
-  fn redo
+  // implementing this is simply an optimization that may allow you to invalidate fewer things, so we default-implement it
+  fn re_execute<Accessor: UndoEventAccessor <Steward = Self::Steward, Event = Self>> (&mut self, accessor: &Accessor) {
+    self.undo (accessor);
+    self.execute (accessor);
+  }
 }
 
 pub trait Accessor {
@@ -83,29 +78,30 @@ pub trait Accessor {
 }
 // Querying versus peeking:
 // Querying accessors are generally for things that can affect the physics. Querying uses an exact interface that can be tracked and audited in various ways to make sure the physics stays consistent.
-// Peeking accessors are generally for things that are required to do a specific job and don't have any leeway to change the physics. We allow them full read-only access with no tracking, and merely audit that they did the job they were asked to. Peeking accessors are also allowed to use the querying interface for convenience (so that they can call generic functions that take a QueryingAccessor).
+// Peeking accessors are generally for things that are required to do a specific job and don't have any leeway to change the physics. We allow them full read-only access with no tracking, and merely audit that they did the job they were asked to. Peeking accessors are also allowed to use the querying interface for convenience (so that they can call generic functions that take a querying accessor).
 pub trait PeekingAccessor: Accessor {
   fn peek <T: DataTimeline> (&self, handle: & DataTimelineHandle <T>)->& T;
 }
 pub trait MomentaryAccessor: Accessor {
-  fn now(&self) -> &<<Self::Steward as TimeSteward>::Basics as Basics>::Time;
+  fn now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
 }
 pub trait EventAccessor: MomentaryAccessor {
   type Event: Event <Steward = Self::Steward>;
-  fn event (&self)->& EventHandle <Self::Event>;
+  fn handle (&self)->& EventHandle <Self::Event>;
+  
+  // modification is done within a Fn so that the event can't extract any information from DataTimelines except by querying.
+  fn modify <T: DataTimeline, F: Fn(&mut T)> (&self, modification: &F);
+  
+  // audit: an event creates/destroys the exact predictions that are existent/nonexistent in the serialization of the
+  fn create_prediction <E: Event <Steward = Self::Steward>> (&self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>, event: E)->PredictionHandle<E>;
+  fn destroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &PredictionHandle<E>);
+  
   // invalidation is done within a Fn so that the event can't extract any information from the PeekingAccessor used for invalidation.
   fn invalidate <A: InvalidationAccessor, F: Fn(&A)> (&self, invalidator: &F);
 }
-pub trait ExecuteEventAccessor: EventAccessor {
-  fn modify <Modification: StewardData, T: DataTimelineModifiableWith<Modification>> (&self, handle: & DataTimelineHandle <T>, modification: Modification)-> T::DataToUndoModification;
-  fn create_prediction <E: Event <Steward = Self::Steward>> (&self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>, event: E)->PredictionHandle<E>;
-  fn destroy_prediction <E: Event <Steward = Self::Steward>> (&self, &PredictionHandle<E>);
-}
 pub trait UndoEventAccessor: PeekingAccessor + EventAccessor {
   // note that query results wouldn't necessarily correspond to those observed by the original execution in any way
-  fn undo <Modification: StewardData, T: DataTimelineModifiableWith<Modification>> (&self, handle: & DataTimelineHandle <T>, data: &T::DataToUndoModification);
-  fn uncreate_prediction <E: Event <Steward = Self::Steward>> (&self, &PredictionHandle<E>);
-  fn undestroy_prediction <E: Event <Steward = Self::Steward>> (&self, &PredictionHandle<E>);
+  fn undestroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &PredictionHandle<E>, until: Option <&ExtendedTime <<Self::Steward as TimeSteward>::Basics>>);
 }
 pub trait InvalidationAccessor: PeekingAccessor {
   // if you use queries, note that there may be multiple relevant times and this might be in an undo (see above)
@@ -121,9 +117,9 @@ pub trait Snapshot: PeekingAccessor + MomentaryAccessor {
   fn notify_on_drop<T: DataTimeline> (&self, timeline: & DataTimelineHandle <T>);
 }
 
-impl <T: EventSpecificAccessor> MomentaryAccessor for T {
-  fn now(&self) -> &<<Self::Steward as TimeSteward>::Basics as Basics>::Time {
-    &self.event().time().base
+impl <T: EventAccessor> MomentaryAccessor for T {
+  fn now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
+    &self.handle().time()
   }
 }
 
