@@ -9,7 +9,7 @@ use std::fmt::{self, Debug};
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
 /// TimeSteward has strong requirements for serializability. In addition to implementing these traits, a StewardData must have Eq be equivalent to equality of its serialization, and all its behavior must be invariant under cloning and serialize-deserialize cycles.
-pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + DeserializeOwned + Debug {}
+pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + TimeStewardDeserialize + Debug {}
 
 impl <T: StewardData> StewardData for Option <T> {}
 macro_rules! StewardData_tuple_impls {
@@ -52,16 +52,43 @@ pub enum QueryOffset {
   Before, After
 }
 
-pub trait DataTimeline: Any {
+pub trait TimeStewardDeserialize {
+  fn deserialize<Context: DeserializationContext> (deserializer: &mut Context)->Self;
+}
+/*impl <T: DeserializeOwned> TimeStewardDeserialize for T {
+  default fn deserialize<Context: DeserializationContext> (deserializer: &mut Context)->Self {
+    deserializer.deserialize_data::<T>()
+  }
+}*/
+impl <T: TimeStewardDeserialize> TimeStewardDeserialize for Option <T> {
+  fn deserialize<Context: DeserializationContext> (deserializer: &mut Context)->Self {
+    unimplemented!()
+  }
+}
+macro_rules! TimeStewardDeserialize_tuple_impls {
+  ($TL: ident) => {};
+  ($TL: ident $(, $T: ident)*) => {
+    impl<$($T,)* $TL> TimeStewardDeserialize for ($TL $(, $T)*)
+      where $($T: TimeStewardDeserialize,)* $TL: TimeStewardDeserialize {
+      fn deserialize<Context: DeserializationContext> (deserializer: &mut Context)->Self {
+        ($TL::deserialize(deserializer)
+        $(, $T::deserialize(deserializer))*)
+      }
+    }
+    TimeStewardDeserialize_tuple_impls! ($($T),*);
+  };
+}
+TimeStewardDeserialize_tuple_impls!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
+
+pub trait DataTimeline: Any + Serialize + TimeStewardDeserialize {
   type Steward: TimeSteward;
-  // audit: result NEVER changes unless forget_snapshot() is called
-  // audit: restoring from version serialized using fresh snapshot doesn't change any query results afterwards
-  fn serialize <Context: SerializationContext> (&self, serializer: &mut Context, snapshot: & <Self::Steward as TimeSteward>::Snapshot);
-  fn deserialize <Context: DeserializationContext> (deserializer: &mut Context, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>)->Self;
+
+  /// Make a clone of only the data necessary to report accurately at a specific time.
+  // audit: the clone yields the same query results immediately before and after the time
+  fn clone_for_snapshot (&self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>)->Self;
   
   // audit: forget functions don't change any query results except those forgotten
   fn forget_before (&mut self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>);
-  fn forget_snapshot (&mut self, snapshot: & <Self::Steward as TimeSteward>::Snapshot);
 }
 pub trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
   type QueryResult: StewardData;
@@ -73,9 +100,6 @@ pub trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
   fn query (&self, query: &Query, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>, offset: QueryOffset)->Self::QueryResult;
   // TODO: is this necessary? Or is it only used in invalidation code, which can peek anyway?
   // fn query_range (&self, query: Query, time_range: TimeRange)->impl Iter <Item = (TimeRange, QueryResult)>;
-  
-  // audit: NEVER changes unless forget_snapshot() is called
-  fn snapshot_query (&self, query: &Query, snapshot: & <Self::Steward as TimeSteward>::Snapshot)->Self::QueryResult;
 }
 pub trait Event: StewardData {
   type Steward: TimeSteward;
@@ -133,12 +157,9 @@ pub trait InvalidationAccessor: PeekingAccessor {
   fn invalidate_dynamic (&self, handle: & DynamicEventHandle);
 }
 
-pub trait Snapshot: PeekingAccessor + MomentaryAccessor {
+pub trait Snapshot: MomentaryAccessor {
   /// note: Snapshot::serialize() matches TimeSteward::deserialize()
   fn serialize_into <W: Write> (&self, writer: W);
-  
-  // for DataTimelines to request notification so they can drop data related to the snapshot
-  fn notify_on_drop<T: DataTimeline> (&self, timeline: & DataTimelineHandle <T>);
 }
 
 impl <T: EventAccessor> MomentaryAccessor for T {
@@ -147,25 +168,17 @@ impl <T: EventAccessor> MomentaryAccessor for T {
   }
 }
 
-pub trait SnapshotTree {
-  //fn iterate_snapshots (&self, time_range: TimeRange, skip: ?????)->impl Iter<Item = (&Time, &Snapshot)>;
-}
-
 pub trait EventHandleTrait {
   type Steward: TimeSteward;
   fn time (&self)->& ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
 }
 
-pub trait SerializationContext {
-  fn serialize_data <T: StewardData> (&mut self, data: T);
-  fn serialize_timeline_handle <T: DataTimeline> (&mut self, timeline: DataTimelineHandle <T>);
-  fn serialize_prediction_handle <T: Event> (&mut self, prediction: PredictionHandle <T>);
-  // event handles can't be serialized because they're momentary and serialization never takes place at one of those moments.
-}
 pub trait DeserializationContext {
-  fn deserialize_data <T: StewardData> (&mut self)->T;
+  fn deserialize_data <T: DeserializeOwned> (&mut self)->T;
   fn deserialize_timeline_handle <T: DataTimeline> (&mut self)->DataTimelineHandle <T>;
   fn deserialize_prediction_handle <T: Event> (&mut self)->PredictionHandle <T>;
+  fn deserialize_event_handle <T: Event> (&mut self)->EventHandle <T>;
+  fn deserialize_dynamic_event_handle (&mut self)->DynamicEventHandle;
 }
 
 pub trait TimeSteward: Any {
@@ -202,6 +215,12 @@ pub struct ExtendedTime<B: Basics> {
   pub base: B::Time,
   pub iteration: IterationType,
   pub id: DeterministicRandomId,
+}
+
+impl <T: Basics> TimeStewardDeserialize for ExtendedTime<T> {
+  fn deserialize<Context: DeserializationContext> (deserializer: &mut Context)->Self {
+    unimplemented!()
+  }
 }
 
 #[derive (Copy, Clone, PartialEq, Eq, Debug)]

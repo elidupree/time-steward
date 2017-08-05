@@ -16,15 +16,33 @@ use super::super::api::*;
 #[derive (Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 struct GetValue;
 impl StewardData for GetValue{}
+impl TimeStewardDeserialize for GetValue {
+  fn deserialize<Context: DeserializationContext> (deserializer: &mut Context)->Self {
+    GetValue
+  }
+}
 
+#[derive (Clone, Serialize, Debug)]
 struct SimpleTimeline <Data: StewardData, Steward: TimeSteward> {
   changes: Vec<(DynamicEventHandle, Option <Data>)>,
   other_dependent_events: RefCell<BTreeSet<DynamicEventHandle>>,
-  snapshots_data: (),
   marker: PhantomData<Steward>,
+}
+impl <Data: StewardData, Steward: TimeSteward> TimeStewardDeserialize for SimpleTimeline <Data, Steward> {
+  fn deserialize<Context: DeserializationContext> (deserializer: &mut Context)->Self {
+    unimplemented!()
+  }
 }
 
 impl <Data: StewardData, Steward: TimeSteward> SimpleTimeline <Data, Steward> {
+  fn new ()->Self {
+    SimpleTimeline {
+      changes: Vec::new(),
+      other_dependent_events: RefCell::new (BTreeSet::new()),
+      marker: PhantomData,
+    }
+  }
+  
   fn invalidate_after <Accessor: InvalidationAccessor> (&self, time: ExtendedTime <Steward::Basics>, accessor: & Accessor) {
     let mut dependencies = self.other_dependent_events.borrow_mut();
     let removed = split_off_greater_set (dependencies, time);
@@ -53,20 +71,22 @@ impl <Data: StewardData, Steward: TimeSteward> SimpleTimeline <Data, Steward> {
 impl <Data: StewardData, Steward: TimeSteward> DataTimeline for SimpleTimeline <Data, Steward> {
   type Steward = Steward;
   
-  fn serialize <Context: SerializationContext> (&self, serializer: &mut Context, snapshot: & <Self::Steward as TimeSteward>::Snapshot) {
-    unimplemented!()
-  }
-  fn deserialize <Context: DeserializationContext> (deserializer: &mut Context, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>)->Self {
-    unimplemented!()
+  fn clone_for_snapshot (&self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>)->Self {
+    let slice = match self.changes.binary_search_by_key (time, | change | &change.0) {
+      Ok(index) => self.changes [index.saturating_sub (1).. index+1],
+      Err (index) => self.changes [index.saturating_sub (1)..index],
+    };
+    SimpleTimeline {
+      changes: slice.to_vec(),
+      other_dependent_events: RefCell::new (BTreeSet::new()),
+      marker: PhantomData,
+    }
   }
   
   fn forget_before (&mut self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>) {
     let mut dependencies = self.other_dependent_events.borrow_mut();
     let retained = dependencies.split_off (time);
     mem::replace (&mut*dependencies, retained);
-  }
-  fn forget_snapshot (&mut self, snapshot: & <Self::Steward as TimeSteward>::Snapshot) {
-    unimplemented!()//snapshots_data.remove (snapshot);
   }
 }
 impl <Data: StewardData, Steward: TimeSteward> DataTimelineQueriableWith<GetValue> for SimpleTimeline <Data, Steward> {
@@ -78,11 +98,6 @@ impl <Data: StewardData, Steward: TimeSteward> DataTimelineQueriableWith<GetValu
       Err (index) => index.wrapping_sub (1),
     };
     self.changes.get (previous_change_index).map (| change | (change.0.time().clone(), change.1.clone()))
-  }
-  
-  fn snapshot_query (&self, query: &GetValue, snapshot: & <Self::Steward as TimeSteward>::Snapshot)->Self::QueryResult {
-    unimplemented!()
-    //self.query (query, snapshot)
   }
 }
 
