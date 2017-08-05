@@ -16,22 +16,12 @@ use super::super::api::*;
 #[derive (Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 struct GetValue;
 impl StewardData for GetValue{}
-impl TimeStewardDeserialize for GetValue {
-  fn deserialize<Context: DeserializationContext> (deserializer: &mut Context)->Self {
-    GetValue
-  }
-}
 
 #[derive (Clone, Serialize, Debug)]
 struct SimpleTimeline <Data: StewardData, Steward: TimeSteward> {
   changes: Vec<(DynamicEventHandle, Option <Data>)>,
   other_dependent_events: RefCell<BTreeSet<DynamicEventHandle>>,
   marker: PhantomData<Steward>,
-}
-impl <Data: StewardData, Steward: TimeSteward> TimeStewardDeserialize for SimpleTimeline <Data, Steward> {
-  fn deserialize<Context: DeserializationContext> (deserializer: &mut Context)->Self {
-    unimplemented!()
-  }
 }
 
 impl <Data: StewardData, Steward: TimeSteward> SimpleTimeline <Data, Steward> {

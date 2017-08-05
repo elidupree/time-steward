@@ -9,7 +9,7 @@ use std::fmt::{self, Debug};
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
 /// TimeSteward has strong requirements for serializability. In addition to implementing these traits, a StewardData must have Eq be equivalent to equality of its serialization, and all its behavior must be invariant under cloning and serialize-deserialize cycles.
-pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + TimeStewardDeserialize + Debug {}
+pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + DeserializeOwned + Debug {}
 
 impl <T: StewardData> StewardData for Option <T> {}
 macro_rules! StewardData_tuple_impls {
@@ -52,35 +52,7 @@ pub enum QueryOffset {
   Before, After
 }
 
-pub trait TimeStewardDeserialize {
-  fn deserialize<Context: DeserializationContext> (deserializer: &mut Context)->Self;
-}
-/*impl <T: DeserializeOwned> TimeStewardDeserialize for T {
-  default fn deserialize<Context: DeserializationContext> (deserializer: &mut Context)->Self {
-    deserializer.deserialize_data::<T>()
-  }
-}*/
-impl <T: TimeStewardDeserialize> TimeStewardDeserialize for Option <T> {
-  fn deserialize<Context: DeserializationContext> (deserializer: &mut Context)->Self {
-    unimplemented!()
-  }
-}
-macro_rules! TimeStewardDeserialize_tuple_impls {
-  ($TL: ident) => {};
-  ($TL: ident $(, $T: ident)*) => {
-    impl<$($T,)* $TL> TimeStewardDeserialize for ($TL $(, $T)*)
-      where $($T: TimeStewardDeserialize,)* $TL: TimeStewardDeserialize {
-      fn deserialize<Context: DeserializationContext> (deserializer: &mut Context)->Self {
-        ($TL::deserialize(deserializer)
-        $(, $T::deserialize(deserializer))*)
-      }
-    }
-    TimeStewardDeserialize_tuple_impls! ($($T),*);
-  };
-}
-TimeStewardDeserialize_tuple_impls!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
-
-pub trait DataTimeline: Any + Serialize + TimeStewardDeserialize {
+pub trait DataTimeline: Any + Serialize + DeserializeOwned {
   type Steward: TimeSteward;
 
   /// Make a clone of only the data necessary to report accurately at a specific time.
@@ -215,12 +187,6 @@ pub struct ExtendedTime<B: Basics> {
   pub base: B::Time,
   pub iteration: IterationType,
   pub id: DeterministicRandomId,
-}
-
-impl <T: Basics> TimeStewardDeserialize for ExtendedTime<T> {
-  fn deserialize<Context: DeserializationContext> (deserializer: &mut Context)->Self {
-    unimplemented!()
-  }
 }
 
 #[derive (Copy, Clone, PartialEq, Eq, Debug)]
