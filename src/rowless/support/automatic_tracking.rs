@@ -12,13 +12,16 @@ use std::cell::RefCell;
 use std::marker::PhantomData;
 
 use super::super::api::*;
+use implementation_support::common::{split_off_greater_set};
 
 #[derive (Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 struct GetValue;
 impl StewardData for GetValue{}
 
-#[derive (Clone, Serialize, Debug)]
+#[derive (Clone, Serialize, Deserialize, Debug)]
 struct SimpleTimeline <Data: StewardData, Steward: TimeSteward> {
+  // Hacky workaround for https://github.com/rust-lang/rust/issues/41617 (see https://github.com/serde-rs/serde/issues/943)
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   changes: Vec<(DynamicEventHandle, Option <Data>)>,
   other_dependent_events: RefCell<BTreeSet<DynamicEventHandle>>,
   marker: PhantomData<Steward>,

@@ -36,7 +36,7 @@
 use {DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, TimeId, Column, StewardRc,
      FieldRc, ExtendedTime, Basics, Accessor, FiatEventOperationError, ValidSince, TimeSteward,
      IncrementalTimeSteward, TimeStewardFromConstants};
-use implementation_support::common::{self, DynamicEventFn};
+use implementation_support::common::{self, DynamicEventFn, split_off_greater, split_off_greater_set};
 use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet};
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::rc::Rc;
@@ -76,28 +76,6 @@ pub fn limit_option_by_value_with_none_representing_positive_infinity <B: Ord + 
   if first.is_none() {
     *first = Some(second.clone());
   }
-}
-
-pub fn split_off_greater<K: Ord + Clone, V>(input: &mut BTreeMap<K, V>,
-                                            split: &K)
-                                            -> BTreeMap<K, V> {
-  // BTreeMap::split_off() DOES remove this splitting key, while we want to NOT include that key.
-  // TODO: will Rust eventually make this easier?
-  let mut result = input.split_off(split);
-  if let Some(whoops) = result.remove(split) {
-    input.insert(split.clone(), whoops);
-  }
-  result
-}
-
-pub fn split_off_greater_set<K: Ord + Clone>(input: &mut BTreeSet<K>, split: &K) -> BTreeSet<K> {
-  // BTreeMap::split_off() DOES remove this splitting key, while we want to NOT include that key.
-  // TODO: will Rust eventually make this easier?
-  let mut result = input.split_off(split);
-  if result.remove(split) {
-    input.insert(split.clone());
-  }
-  result
 }
 
 

@@ -8,6 +8,8 @@
 use std::mem;
 use std::ptr;
 
+macro_rules! implement_serialization_for_handle {
+  () => {
 
 thread_local! {
   static DESERIALIZATION_CONTEXT: RefCell<Option <DeserializationContext>> = RefCell::new (None);
@@ -16,6 +18,7 @@ thread_local! {
 
 impl <T: DataTimeline> Serialize for DataTimelineHandle <T> {
   fn serialize <S: Serializer> (&self, serializer: S)->Result <S::Ok, S::Error> {
+    // TODO minor security thing: transform the value using runtime-fixed salt to avoid leaking pointers
     (self.inner as usize).serialize (serializer)
   }
 }
@@ -50,4 +53,8 @@ impl DeserializationContext {
     })?;
     Ok(())
   }
+}
+
+
+  };
 }

@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::io::{Read, Write};
@@ -16,6 +17,29 @@ impl<T> Filter<T> for Option<T> {
   fn filter<P: FnOnce(&T) -> bool>(self, predicate: P) -> Self {
     self.and_then(|x| { if predicate(&x) { Some(x) } else { None } })
   }
+}
+
+
+pub fn split_off_greater<K: Ord + Clone, V>(input: &mut BTreeMap<K, V>,
+                                            split: &K)
+                                            -> BTreeMap<K, V> {
+  // BTreeMap::split_off() DOES remove this splitting key, while we want to NOT include that key.
+  // TODO: will Rust eventually make this easier?
+  let mut result = input.split_off(split);
+  if let Some(whoops) = result.remove(split) {
+    input.insert(split.clone(), whoops);
+  }
+  result
+}
+
+pub fn split_off_greater_set<K: Ord + Clone>(input: &mut BTreeSet<K>, split: &K) -> BTreeSet<K> {
+  // BTreeMap::split_off() DOES remove this splitting key, while we want to NOT include that key.
+  // TODO: will Rust eventually make this easier?
+  let mut result = input.split_off(split);
+  if result.remove(split) {
+    input.insert(split.clone());
+  }
+  result
 }
 
 type EventRng = ChaChaRng;
