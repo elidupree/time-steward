@@ -36,11 +36,11 @@ impl <Data: StewardData, Steward: TimeSteward> SimpleTimeline <Data, Steward> {
     }
   }
   
-  fn invalidate_after <Accessor: InvalidationAccessor> (&self, time: ExtendedTime <Steward::Basics>, accessor: & Accessor) {
+  fn invalidate_after <Accessor: InvalidationAccessor> (&self, time: &ExtendedTime <Steward::Basics>, accessor: & Accessor) {
     let mut dependencies = self.other_dependent_events.borrow_mut();
-    let removed = split_off_greater_set (dependencies, time);
+    let removed = split_off_greater_set (&mut *dependencies, time);
     for event in removed {
-      event.invalidate_with (accessor);
+      accessor.invalidate_dynamic(&event);
     }
     for change in self.changes.iter().rev() {
       let event = &change.0;
@@ -65,9 +65,9 @@ impl <Data: StewardData, Steward: TimeSteward> DataTimeline for SimpleTimeline <
   type Steward = Steward;
   
   fn clone_for_snapshot (&self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>)->Self {
-    let slice = match self.changes.binary_search_by_key (time, | change | &change.0) {
-      Ok(index) => self.changes [index.saturating_sub (1).. index+1],
-      Err (index) => self.changes [index.saturating_sub (1)..index],
+    let slice = match self.changes.binary_search_by_key (&time, | change | &change.0) {
+      Ok(index) => &self.changes [index.saturating_sub (1).. index+1],
+      Err (index) => &self.changes [index.saturating_sub (1)..index],
     };
     SimpleTimeline {
       changes: slice.to_vec(),
@@ -86,7 +86,7 @@ impl <Data: StewardData, Steward: TimeSteward> DataTimelineQueriableWith<GetValu
   type QueryResult = Option <(ExtendedTime <Steward::Basics>, Option <Data>)>;
 
   fn query (&self, query: &GetValue, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>, offset: QueryOffset)->Self::QueryResult {
-    let previous_change_index = match self.changes.binary_search_by_key (time, | change | &change.0) {
+    let previous_change_index = match self.changes.binary_search_by_key (&time, | change | &change.0) {
       Ok(index) => match offset {QueryOffset::After => index, QueryOffset::Before => index.wrapping_sub (1)},
       Err (index) => index.wrapping_sub (1),
     };
@@ -98,10 +98,7 @@ impl <Data: StewardData, Steward: TimeSteward> DataTimelineQueriableWith<GetValu
 fn query_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward>>, offset: QueryOffset)->Option <(ExtendedTime <Steward::Basics>, Option <Data>)> {
   accessor.modify (handle, &move |timeline| {
     let mut dependencies = timeline.other_dependent_events.borrow_mut();
-    match dependencies.binary_search_by_key (accessor.now(), | event | event.time()) {
-      Ok(index) => match offset {QueryOffset::After => index, Before => index.wrapping_sub (1)},
-      Err (index) => index.wrapping_sub (1),
-    }
+    dependencies.insert (accessor.handle());
   });
   accessor.query (handle, &GetValue, offset)
 }

@@ -37,7 +37,7 @@ pub struct EventHandle <T: Event> {t:T}
 pub struct DynamicEventHandle {}
 pub struct PredictionHandle <T: Event> {t:T}
 impl <T: Event> EventHandle <T> {
-  fn erase_type (self)->DynamicEventHandle {unimplemented!()}
+  pub fn erase_type (self)->DynamicEventHandle {unimplemented!()}
 }
 impl <T: Event> EventHandleTrait for EventHandle <T> {
   type Steward = T::Steward;
