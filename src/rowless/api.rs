@@ -11,19 +11,6 @@ use std::fmt::{self, Debug};
 /// TimeSteward has strong requirements for serializability. In addition to implementing these traits, a StewardData must have Eq be equivalent to equality of its serialization, and all its behavior must be invariant under cloning and serialize-deserialize cycles.
 pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + DeserializeOwned + Debug {}
 
-impl <T: StewardData> StewardData for Option <T> {}
-macro_rules! StewardData_tuple_impls {
-  ($TL: ident $(, $T: ident)*) => {
-    impl<$($T,)* $TL> StewardData for ($TL $(, $T)*)
-      where $($T: StewardData,)* $TL: StewardData {}
-    StewardData_tuple_impls! ($($T),*);
-  };
-  () => {};
-}
-StewardData_tuple_impls!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
-
-impl <T: Basics> StewardData for ExtendedTime <T> {}
-
 
 // Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time, and the events must use invalidate() to collect future events that must be invalidated. (Although, for instance, modifications made for dependency tracking purposes don't change any results of queries, so they never need to invalidate anything themselves.)
 //To audit, we record all of the queries, query results, and modifications. Then after each event that modifies one or more DataTimeline, we rerun all queries to those timelines made by still-valid future events. If any query has a different result than before, it's an error.
@@ -89,6 +76,56 @@ pub trait Event: StewardData {
   }
 }
 
+
+/**
+This is intended to be implemented on an empty struct. Requiring Clone etc. is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
+*/
+pub trait Basics
+  : Any + Send + Sync + Copy + Clone + Ord + Hash + Serialize + DeserializeOwned + Debug + Default {
+  type Time: StewardData + Ord + Hash;
+  type GlobalTimeline: DataTimeline;
+  const MAX_ITERATION: IterationType = 65535;
+}
+
+pub type IterationType = u32;
+#[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+pub struct ExtendedTime<B: Basics> {
+  pub base: B::Time,
+  pub iteration: IterationType,
+  pub id: DeterministicRandomId,
+}
+
+#[derive (Copy, Clone, PartialEq, Eq, Debug)]
+pub enum FiatEventOperationError {
+  InvalidInput,
+  InvalidTime,
+}
+
+pub trait EventHandleTrait {
+  type Basics: Basics;
+  fn time (&self)->& ExtendedTime <Self::Basics>;
+}
+
+/*pub struct TimeRange <Time> {
+  pub start: Time,
+  pub end: Option <Time>,
+}*/
+
+// This exists to support a variety of time stewards
+// along with allowing BaseTime to be dense (e.g. a
+// rational number rather than an integer).
+// It is an acceptable peculiarity that even for integer times,
+// After(2) < Before(3).
+// #[derive (Copy, Clone, PartialEq, Eq, Hash)]
+#[derive (Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
+pub enum ValidSince<BaseTime> {
+  TheBeginning,
+  Before(BaseTime),
+  After(BaseTime),
+}
+
+
+
 pub trait Accessor {
   type Steward: TimeSteward;
   fn global_timeline (&self)->DataTimelineHandle <<<Self::Steward as TimeSteward>::Basics as Basics>::GlobalTimeline>;
@@ -140,10 +177,6 @@ impl <T: EventAccessor> MomentaryAccessor for T {
   }
 }
 
-pub trait EventHandleTrait {
-  type Basics: Basics;
-  fn time (&self)->& ExtendedTime <Self::Basics>;
-}
 
 /*pub trait DeserializationContext {
   fn deserialize_data <T: DeserializeOwned> (&mut self)->T;
@@ -170,125 +203,4 @@ pub trait TimeSteward: Any {
   fn valid_since(&self) -> ValidSince<<Self::Basics as Basics>::Time>;
   fn forget_before (&mut self, time: &<Self::Basics as Basics>::Time);
 }
-
-/**
-This is intended to be implemented on an empty struct. Requiring Clone etc. is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
-*/
-pub trait Basics
-  : Any + Send + Sync + Copy + Clone + Ord + Hash + Serialize + DeserializeOwned + Debug + Default {
-  type Time: StewardData + Ord + Hash;
-  type GlobalTimeline: DataTimeline;
-  const MAX_ITERATION: IterationType = 65535;
-}
-
-pub type IterationType = u32;
-#[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
-pub struct ExtendedTime<B: Basics> {
-  pub base: B::Time,
-  pub iteration: IterationType,
-  pub id: DeterministicRandomId,
-}
-
-#[derive (Copy, Clone, PartialEq, Eq, Debug)]
-pub enum FiatEventOperationError {
-  InvalidInput,
-  InvalidTime,
-}
-
-pub struct TimeRange <Time> {
-  pub start: Time,
-  pub end: Option <Time>,
-}
-
-
-use std::cmp::Ordering;
-
-// This exists to support a variety of time stewards
-// along with allowing BaseTime to be dense (e.g. a
-// rational number rather than an integer).
-// It is an acceptable peculiarity that even for integer times,
-// After(2) < Before(3).
-// #[derive (Copy, Clone, PartialEq, Eq, Hash)]
-#[derive (Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
-pub enum ValidSince<BaseTime> {
-  TheBeginning,
-  Before(BaseTime),
-  After(BaseTime),
-}
-impl<B: fmt::Display> fmt::Display for ValidSince<B> {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    match self {
-      &ValidSince::TheBeginning => write!(f, "TheBeginning"),
-      &ValidSince::Before(ref something) => write!(f, "Before({})", something),
-      &ValidSince::After(ref something) => write!(f, "After({})", something),
-    }
-  }
-}
-
-impl<T: Ord> Ord for ValidSince<T> {
-  fn cmp(&self, other: &Self) -> Ordering {
-    match (self, other) {
-      (&ValidSince::TheBeginning, &ValidSince::TheBeginning) => Ordering::Equal,
-      (&ValidSince::TheBeginning, _) => Ordering::Less,
-      (_, &ValidSince::TheBeginning) => Ordering::Greater,
-      (&ValidSince::Before(ref something), &ValidSince::Before(ref anything)) => {
-        something.cmp(anything)
-      }
-      (&ValidSince::After(ref something), &ValidSince::After(ref anything)) => {
-        something.cmp(anything)
-      }
-      (&ValidSince::Before(ref something), &ValidSince::After(ref anything)) => {
-        if something <= anything {
-          Ordering::Less
-        } else {
-          Ordering::Greater
-        }
-      }
-      (&ValidSince::After(ref something), &ValidSince::Before(ref anything)) => {
-        if something < anything {
-          Ordering::Less
-        } else {
-          Ordering::Greater
-        }
-      }
-    }
-  }
-}
-impl<T> PartialEq<T> for ValidSince<T> {
-  fn eq(&self, _: &T) -> bool {
-    false
-  }
-}
-
-impl<T: Ord> PartialOrd<T> for ValidSince<T> {
-  fn partial_cmp(&self, other: &T) -> Option<Ordering> {
-    Some(match self {
-      &ValidSince::TheBeginning => Ordering::Less,
-      &ValidSince::Before(ref something) => {
-        if something <= other {
-          Ordering::Less
-        } else {
-          Ordering::Greater
-        }
-      }
-      &ValidSince::After(ref something) => {
-        if something < other {
-          Ordering::Less
-        } else {
-          Ordering::Greater
-        }
-      }
-    })
-  }
-}
-impl<T: Ord> PartialOrd for ValidSince<T> {
-  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-    Some(self.cmp(other))
-  }
-}
-// impl <T: Ord> PartialOrd <ValidSince <T>> for T {
-//  fn partial_cmp (&self, other: & ValidSince <T>)->Option <Ordering> {
-//    Some (other.partial_cmp (self).unwrap().reverse());
-//  }
-// }
 
