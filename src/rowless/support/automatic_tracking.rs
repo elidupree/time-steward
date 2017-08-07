@@ -19,15 +19,15 @@ struct GetValue;
 impl StewardData for GetValue{}
 
 #[derive (Clone, Serialize, Deserialize, Debug)]
-struct SimpleTimeline <Data: StewardData, Steward: TimeSteward> {
+struct SimpleTimeline <Data: StewardData, B: Basics> {
   // Hacky workaround for https://github.com/rust-lang/rust/issues/41617 (see https://github.com/serde-rs/serde/issues/943)
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
-  changes: Vec<(DynamicEventHandle, Option <Data>)>,
-  other_dependent_events: RefCell<BTreeSet<DynamicEventHandle>>,
-  marker: PhantomData<Steward>,
+  changes: Vec<(DynamicEventHandle <B>, Option <Data>)>,
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
+  other_dependent_events: RefCell<BTreeSet<DynamicEventHandle<B>>>,
 }
 
-impl <Data: StewardData, Steward: TimeSteward> SimpleTimeline <Data, Steward> {
+impl <Data: StewardData, B: Basics> SimpleTimeline <Data, B> {
   fn new ()->Self {
     SimpleTimeline {
       changes: Vec::new(),
@@ -36,7 +36,7 @@ impl <Data: StewardData, Steward: TimeSteward> SimpleTimeline <Data, Steward> {
     }
   }
   
-  fn invalidate_after <Accessor: InvalidationAccessor> (&self, time: &ExtendedTime <Steward::Basics>, accessor: & Accessor) {
+  fn invalidate_after <Accessor: InvalidationAccessor> (&self, time: &ExtendedTime <B>, accessor: & Accessor) {
     let mut dependencies = self.other_dependent_events.borrow_mut();
     let removed = split_off_greater_set (&mut *dependencies, time);
     for event in removed {
@@ -51,7 +51,7 @@ impl <Data: StewardData, Steward: TimeSteward> SimpleTimeline <Data, Steward> {
     }
   }
   
-  fn remove_from (&mut self, time: &ExtendedTime <Steward::Basics>) {
+  fn remove_from (&mut self, time: &ExtendedTime <B>) {
     while let Some (change) = self.changes.pop() {
       if change.0.time() <= time {
         self.changes.push (change);
@@ -61,10 +61,10 @@ impl <Data: StewardData, Steward: TimeSteward> SimpleTimeline <Data, Steward> {
   }
 }
 
-impl <Data: StewardData, Steward: TimeSteward> DataTimeline for SimpleTimeline <Data, Steward> {
-  type Steward = Steward;
+impl <Data: StewardData, B: Basics> DataTimeline for SimpleTimeline <Data, B> {
+  type Basics = B;
   
-  fn clone_for_snapshot (&self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>)->Self {
+  fn clone_for_snapshot (&self, time: &ExtendedTime <Self::Basics>)->Self {
     let slice = match self.changes.binary_search_by_key (&time, | change | &change.0) {
       Ok(index) => &self.changes [index.saturating_sub (1).. index+1],
       Err (index) => &self.changes [index.saturating_sub (1)..index],
@@ -76,16 +76,16 @@ impl <Data: StewardData, Steward: TimeSteward> DataTimeline for SimpleTimeline <
     }
   }
   
-  fn forget_before (&mut self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>) {
+  fn forget_before (&mut self, time: &ExtendedTime <Self::Basics>) {
     let mut dependencies = self.other_dependent_events.borrow_mut();
     let retained = dependencies.split_off (time);
     mem::replace (&mut*dependencies, retained);
   }
 }
-impl <Data: StewardData, Steward: TimeSteward> DataTimelineQueriableWith<GetValue> for SimpleTimeline <Data, Steward> {
-  type QueryResult = Option <(ExtendedTime <Steward::Basics>, Option <Data>)>;
+impl <Data: StewardData, B: Basics> DataTimelineQueriableWith<GetValue> for SimpleTimeline <Data, B> {
+  type QueryResult = Option <(ExtendedTime <B>, Option <Data>)>;
 
-  fn query (&self, query: &GetValue, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>, offset: QueryOffset)->Self::QueryResult {
+  fn query (&self, query: &GetValue, time: &ExtendedTime <Self::Basics>, offset: QueryOffset)->Self::QueryResult {
     let previous_change_index = match self.changes.binary_search_by_key (&time, | change | &change.0) {
       Ok(index) => match offset {QueryOffset::After => index, QueryOffset::Before => index.wrapping_sub (1)},
       Err (index) => index.wrapping_sub (1),
@@ -95,14 +95,14 @@ impl <Data: StewardData, Steward: TimeSteward> DataTimelineQueriableWith<GetValu
 }
 
 
-fn query_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward>>, offset: QueryOffset)->Option <(ExtendedTime <Steward::Basics>, Option <Data>)> {
+fn query_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>, offset: QueryOffset)->Option <(ExtendedTime <Steward::Basics>, Option <Data>)> {
   accessor.modify (handle, &move |timeline| {
     let mut dependencies = timeline.other_dependent_events.borrow_mut();
     dependencies.insert (accessor.handle());
   });
   accessor.query (handle, &GetValue, offset)
 }
-fn modify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward>>, modification: Option <Data>) {
+fn modify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>, modification: Option <Data>) {
   if let Some((event, data)) = accessor.query (handle, &GetValue, QueryOffset::After) {
     if (event.time(), data) == (accessor.now(), modification) {
       return
@@ -116,7 +116,7 @@ fn modify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: Ev
     timeline.changes.push ((accessor.handle().clone().erase_type(), modification));
   });
 }
-fn unmodify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward>>) {
+fn unmodify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>) {
   if let Some((event, data)) = accessor.query (handle, &GetValue, QueryOffset::After) { if event.time() == accessor.now() {
     accessor.invalidate (&| invalidator | {
       invalidator.peek(handle).invalidate_after (accessor.now(), invalidator);

@@ -34,33 +34,33 @@ impl <T: Basics> StewardData for ExtendedTime <T> {}
 // Defined by each TimeSteward type; would be associated type constructors if Rust supported those; temporarily defining them here to allow the API to compile by itself
 pub struct DataTimelineHandle <T: DataTimeline> {t:T}
 pub struct EventHandle <T: Event> {t:T}
-pub struct DynamicEventHandle {}
+pub struct DynamicEventHandle <B: Basics> {b:B}
 pub struct PredictionHandle <T: Event> {t:T}
 impl <T: Event> EventHandle <T> {
-  pub fn erase_type (self)->DynamicEventHandle {unimplemented!()}
+  pub fn erase_type (self)->DynamicEventHandle<<T::Steward as TimeSteward>::Basics> {unimplemented!()}
 }
 impl <T: Event> EventHandleTrait for EventHandle <T> {
-  type Steward = T::Steward;
-  fn time (&self)->& ExtendedTime <<Self::Steward as TimeSteward>::Basics> {unimplemented!()}
+  type Basics = <T::Steward as TimeSteward>::Basics;
+  fn time (&self)->& ExtendedTime <Self::Basics> {unimplemented!()}
 }
-/*impl EventHandleTrait for DynamicEventHandle {
-  type Steward = T::Steward;
-  fn time (&self)->& ExtendedTime <<Self::Steward as TimeSteward>::Basics> {unimplemented!()}
-}*/
+impl <B: Basics> EventHandleTrait for DynamicEventHandle<B> {
+  type Basics = B;
+  fn time (&self)->& ExtendedTime <Self::Basics> {unimplemented!()}
+}
 
 pub enum QueryOffset {
   Before, After
 }
 
 pub trait DataTimeline: Any + Serialize + DeserializeOwned {
-  type Steward: TimeSteward;
+  type Basics: Basics;
 
   /// Make a clone of only the data necessary to report accurately at a specific time.
   // audit: the clone yields the same query results immediately before and after the time
-  fn clone_for_snapshot (&self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>)->Self;
+  fn clone_for_snapshot (&self, time: &ExtendedTime <Self::Basics>)->Self;
   
   // audit: forget functions don't change any query results except those forgotten
-  fn forget_before (&mut self, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>);
+  fn forget_before (&mut self, time: &ExtendedTime <Self::Basics>);
 }
 pub trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
   type QueryResult: StewardData;
@@ -69,7 +69,7 @@ pub trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
   // audit: queries must not have side effects (do a separate action for manual dependency tracking)
   // audit: queries don't return PredictionHandles that don't exist at the time
   // TODO: allow queries to return references instead of values
-  fn query (&self, query: &Query, time: &ExtendedTime <<Self::Steward as TimeSteward>::Basics>, offset: QueryOffset)->Self::QueryResult;
+  fn query (&self, query: &Query, time: &ExtendedTime <Self::Basics>, offset: QueryOffset)->Self::QueryResult;
   // TODO: is this necessary? Or is it only used in invalidation code, which can peek anyway?
   // fn query_range (&self, query: Query, time_range: TimeRange)->impl Iter <Item = (TimeRange, QueryResult)>;
 }
@@ -92,13 +92,13 @@ pub trait Event: StewardData {
 pub trait Accessor {
   type Steward: TimeSteward;
   fn global_timeline (&self)->DataTimelineHandle <<<Self::Steward as TimeSteward>::Basics as Basics>::GlobalTimeline>;
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult;
+  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult;
 }
 // Querying versus peeking:
 // Querying accessors are generally for things that can affect the physics. Querying uses an exact interface that can be tracked and audited in various ways to make sure the physics stays consistent.
 // Peeking accessors are generally for things that are required to do a specific job and don't have any leeway to change the physics. We allow them full read-only access with no tracking, and merely audit that they did the job they were asked to. Peeking accessors are also allowed to use the querying interface for convenience (so that they can call generic functions that take a querying accessor).
 pub trait PeekingAccessor: Accessor {
-  fn peek <T: DataTimeline> (&self, handle: & DataTimelineHandle <T>)->& T;
+  fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&self, handle: & DataTimelineHandle <T>)->& T;
 }
 pub trait MomentaryAccessor: Accessor {
   fn now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
@@ -108,7 +108,7 @@ pub trait EventAccessor: MomentaryAccessor {
   fn handle (&self)->& EventHandle <Self::Event>;
   
   // modification is done within a Fn so that the event can't extract any information from DataTimelines except by querying.
-  fn modify <T: DataTimeline, F: Fn(&mut T)> (&self, timeline: &DataTimelineHandle <T>, modification: &F);
+  fn modify <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, F: Fn(&mut T)> (&self, timeline: &DataTimelineHandle <T>, modification: &F);
   
   // audit: whenever an event is executed or undone, it creates/destroys the exact predictions that become existent/nonexistent between the serializations of the physics immediately before and after the event.
   // audit: never generates two predictions with the same id, except when rerunning the same event
@@ -125,8 +125,8 @@ pub trait UndoEventAccessor: PeekingAccessor + EventAccessor {
 pub trait InvalidationAccessor: PeekingAccessor {
   // if you use queries, note that there may be multiple relevant times and this might be in an undo (see above)
   // audit: can't invalidate things in the past relative to the current event
-  fn invalidate <T: Event> (&self, handle: & EventHandle <T>);
-  fn invalidate_dynamic (&self, handle: & DynamicEventHandle);
+  fn invalidate <T: Event <Steward = Self::Steward>> (&self, handle: & EventHandle <T>);
+  fn invalidate_dynamic (&self, handle: & DynamicEventHandle<<Self::Steward as TimeSteward>::Basics>);
 }
 
 pub trait Snapshot: MomentaryAccessor {
@@ -141,17 +141,17 @@ impl <T: EventAccessor> MomentaryAccessor for T {
 }
 
 pub trait EventHandleTrait {
-  type Steward: TimeSteward;
-  fn time (&self)->& ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
+  type Basics: Basics;
+  fn time (&self)->& ExtendedTime <Self::Basics>;
 }
 
-pub trait DeserializationContext {
+/*pub trait DeserializationContext {
   fn deserialize_data <T: DeserializeOwned> (&mut self)->T;
   fn deserialize_timeline_handle <T: DataTimeline> (&mut self)->DataTimelineHandle <T>;
   fn deserialize_prediction_handle <T: Event> (&mut self)->PredictionHandle <T>;
   fn deserialize_event_handle <T: Event> (&mut self)->EventHandle <T>;
   fn deserialize_dynamic_event_handle (&mut self)->DynamicEventHandle;
-}
+}*/
 
 pub trait TimeSteward: Any {
   type Basics: Basics;
