@@ -99,8 +99,11 @@ pub mod support {
 pub mod rowless {
   #[macro_use]
   pub mod implementation_support { #[macro_use] pub mod common; }
+  #[macro_use]
   pub mod api;
   pub mod api_impls;
-  pub mod support { pub mod automatic_tracking; }
+  #[macro_use]
+  pub mod support { #[macro_use] pub mod automatic_tracking; }
+  pub mod stewards { pub mod inefficient_flat; }
 }
 */

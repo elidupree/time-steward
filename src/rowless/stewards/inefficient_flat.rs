@@ -1,4 +1,39 @@
-use ::{Basics, TimeSteward, Accessor};
+use std::mem;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::cmp::{Ordering, max};
+use std::borrow::Borrow;
+use std::any::Any;
+use std::io::{Read, Write};
+
+use super::super::api::*;
+use super::super::implementation_support::common::*;
+use implementation_support::common::split_off_greater_set;
+use {DeterministicRandomId};
+
+time_steward_steward_specific_api!();
+
+#[derive (Clone, Debug, Serialize, Deserialize)]
+pub struct DataTimelineHandle <T: DataTimeline> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] t:T}
+#[derive (Clone, Debug, Serialize, Deserialize)]
+pub struct EventHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] t:T}
+#[derive (Clone, Debug, Serialize, Deserialize)]
+pub struct DynamicEventHandle <B: Basics> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] b:B}
+#[derive (Clone, Debug, Serialize, Deserialize)]
+pub struct PredictionHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] t:T}
+impl <T: Event> EventHandle <T> {
+  pub fn erase_type (self)->DynamicEventHandle<<T::Steward as TimeSteward>::Basics> {unimplemented!()}
+}
+impl <T: Event> EventHandleTrait for EventHandle <T> {
+  type Basics = <T::Steward as TimeSteward>::Basics;
+  fn time (&self)->& ExtendedTime <Self::Basics> {unimplemented!()}
+}
+impl <B: Basics> EventHandleTrait for DynamicEventHandle<B> {
+  type Basics = B;
+  fn time (&self)->& ExtendedTime <Self::Basics> {unimplemented!()}
+}
+
+time_steward_common_impls_for_handles!();
 
 
 pub struct Mutator<'a, B: Basics> {
@@ -10,26 +45,15 @@ pub struct PredictorAccessor<'a, B: Basics> {
   steward: &'a StewardImpl<B>,
 }
 
-struct DataTimelineHandle <B: Basics, Timeline: DataTimeline> {
-  data: TypedArc::<B::DataTimelinesList, DataTimelineId, T>>;
-}
-
-struct PredictorHandle <B: Basics> {
-  data: DynamicArc::<B::PredictorsList, ()>>;
-}
-struct EventHandle <B: Basics> {
-  data: DynamicArc <B::EventsList, ()>;
-}
-
 impl <B: Basics> ::Mutator for Mutator {
-  fn create <T: DataTimeline> (&mut self, constants: D::Constants)->DataTimelineHandle <B, T> {
+  fn create <T: DataTimeline> (&mut self, constants: D::Constants)->DataTimelineHandle <T> {
     let id = self.next_id();
     let result = DataTimelineHandle {
-      data: TypedArc::<StewardsTimesDataTimelines, DataTimelineId, Times <<Self as Accessor>::Steward, T>>::new (id, T::from_constants (constants))
-    }
+      //data: TypedArc::<StewardsTimesDataTimelines, DataTimelineId, Times <<Self as Accessor>::Steward, T>>::new (id, T::from_constants (constants))
+    };
     //self.existent_timelines.insert (result.data.clone().erase_type());
   }
-  fn do_operation <T: DataTimeline> (&mut self, timeline: &DataTimelineHandle <B, T>, operation: T::Operation) {
+  fn do_operation <T: DataTimeline> (&mut self, timeline: &DataTimelineHandle <T>, operation: T::Operation) {
     // stewards::simplest always uhh...  reverts all later changes before uh...?
     let result = timeline.differentiated_mut().insert_operation (self.extended_now(), operation, snapshots????);
     for predictor in result.created_predictors {
@@ -80,7 +104,7 @@ impl<B: Basics> Steward<B> {
                 .expect("this should only fail if the time was in the past, a case that was \
                          already ruled out");
             (extended, event)
-          })
+          
         })
     });
     let events_iter = first_fiat_event_iter.chain(predicted_events_iter);
@@ -189,3 +213,5 @@ impl<B: Basics> ::IncrementalTimeSteward for Steward<B> {
   }
 }
 impl<B: Basics> ::CanonicalTimeSteward for Steward<B> {}
+
+time_steward_define_simple_timeline!();

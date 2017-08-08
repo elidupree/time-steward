@@ -21,6 +21,7 @@ pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + DeserializeO
 // Event must implement undo. That must call the undo function matching all modifications it made. After an event is undone, there may not remain any modifications at the time of that event. It follows that after doing and then undoing an event, all queries IMMEDIATELY after the event time are restored to their former value. However, queries in the future might not be restored because modifications are permitted to mess up the future(?)
 
 // Defined by each TimeSteward type; would be associated type constructors if Rust supported those; temporarily defining them here to allow the API to compile by itself
+/*
 #[derive (Clone, Debug, Serialize, Deserialize)]
 pub struct DataTimelineHandle <T: DataTimeline> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] t:T}
 #[derive (Clone, Debug, Serialize, Deserialize)]
@@ -41,7 +42,7 @@ impl <B: Basics> EventHandleTrait for DynamicEventHandle<B> {
   fn time (&self)->& ExtendedTime <Self::Basics> {unimplemented!()}
 }
 
-time_steward_common_impls_for_handles!();
+time_steward_common_impls_for_handles!();*/
 
 
 pub enum QueryOffset {
@@ -69,21 +70,7 @@ pub trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
   // TODO: is this necessary? Or is it only used in invalidation code, which can peek anyway?
   // fn query_range (&self, query: Query, time_range: TimeRange)->impl Iter <Item = (TimeRange, QueryResult)>;
 }
-pub trait Event: StewardData {
-  type Steward: TimeSteward;
-  // audit all functions: calls invalidate_event for everything whose queries would be changed
-  // audit all functions: doesn't change any query results in the past
-  fn execute<Accessor: EventAccessor <Steward = Self::Steward, Event = Self>> (&mut self, accessor: &Accessor);
-  // audit: leaves self in its original state??
-  // audit: after undoing, all query results immediately before and after the event are identical to each other (if the previous audit passes, this is more an audit of the DataTimeline types than this event type)
-  fn undo<Accessor: UndoEventAccessor <Steward = Self::Steward, Event = Self>> (&mut self, accessor: &Accessor);
-  // audit: should produce the same subsequent query results as doing undo() and then execute()
-  // implementing this is simply an optimization that may allow you to invalidate fewer things, so we default-implement it
-  fn re_execute<Accessor: UndoEventAccessor <Steward = Self::Steward, Event = Self>> (&mut self, accessor: &Accessor) {
-    self.undo (accessor);
-    self.execute (accessor);
-  }
-}
+
 
 
 /**
@@ -134,6 +121,26 @@ pub enum ValidSince<BaseTime> {
 }
 
 
+#[doc (hidden)]
+#[macro_export]
+macro_rules! time_steward_steward_specific_api {
+  () => {
+
+pub trait Event: StewardData {
+  type Steward: TimeSteward;
+  // audit all functions: calls invalidate_event for everything whose queries would be changed
+  // audit all functions: doesn't change any query results in the past
+  fn execute<Accessor: EventAccessor <Steward = Self::Steward, Event = Self>> (&mut self, accessor: &Accessor);
+  // audit: leaves self in its original state??
+  // audit: after undoing, all query results immediately before and after the event are identical to each other (if the previous audit passes, this is more an audit of the DataTimeline types than this event type)
+  fn undo<Accessor: UndoEventAccessor <Steward = Self::Steward, Event = Self>> (&mut self, accessor: &Accessor);
+  // audit: should produce the same subsequent query results as doing undo() and then execute()
+  // implementing this is simply an optimization that may allow you to invalidate fewer things, so we default-implement it
+  fn re_execute<Accessor: UndoEventAccessor <Steward = Self::Steward, Event = Self>> (&mut self, accessor: &Accessor) {
+    self.undo (accessor);
+    self.execute (accessor);
+  }
+}
 
 pub trait Accessor {
   type Steward: TimeSteward;
@@ -206,3 +213,6 @@ pub trait TimeSteward: Any + Sized {
   fn forget_before (&mut self, time: &<Self::Basics as Basics>::Time);
 }
 
+
+  };
+}
