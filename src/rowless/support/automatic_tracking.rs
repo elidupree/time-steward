@@ -94,7 +94,7 @@ impl <Data: StewardData, B: Basics> DataTimelineQueriableWith<GetValue> for Simp
 
 
 fn query_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>, offset: QueryOffset)->Option <(ExtendedTime <Steward::Basics>, Option <Data>)> {
-  accessor.modify (handle, &move |timeline| {
+  accessor.modify (handle, move |timeline| {
     let mut dependencies = timeline.other_dependent_events.borrow_mut();
     dependencies.insert (accessor.handle().clone().erase_type());
   });
@@ -102,14 +102,14 @@ fn query_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: Eve
 }
 fn modify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>, modification: Option <Data>) {
   if let Some((time, data)) = accessor.query (handle, &GetValue, QueryOffset::After) {
-    if (&time, data) == (accessor.now(), modification) {
+    if &time == accessor.now() && data == modification {
       return
     }
   }
   accessor.invalidate (&| invalidator | {
     invalidator.peek(handle).invalidate_after (accessor.now(), invalidator);
   });
-  accessor.modify (handle, &move |timeline| {
+  accessor.modify (handle, move |timeline| {
     timeline.remove_from (accessor.now());
     timeline.changes.push ((accessor.handle().clone().erase_type(), modification));
   });
@@ -119,7 +119,7 @@ fn unmodify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: 
     accessor.invalidate (&| invalidator | {
       invalidator.peek(handle).invalidate_after (accessor.now(), invalidator);
     });
-    accessor.modify (handle, &move |timeline| {
+    accessor.modify (handle, move |timeline| {
       timeline.remove_from (accessor.now());
     });
   }}

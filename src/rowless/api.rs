@@ -6,6 +6,7 @@ use std::io::{Read, Write};
 use std::any::Any;
 use std::fmt::{self, Debug};
 use std::cmp::Ordering;
+use std::borrow::Borrow;
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
@@ -20,10 +21,14 @@ pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + DeserializeO
 // Event must implement undo. That must call the undo function matching all modifications it made. After an event is undone, there may not remain any modifications at the time of that event. It follows that after doing and then undoing an event, all queries IMMEDIATELY after the event time are restored to their former value. However, queries in the future might not be restored because modifications are permitted to mess up the future(?)
 
 // Defined by each TimeSteward type; would be associated type constructors if Rust supported those; temporarily defining them here to allow the API to compile by itself
-pub struct DataTimelineHandle <T: DataTimeline> {t:T}
-pub struct EventHandle <T: Event> {t:T}
-pub struct DynamicEventHandle <B: Basics> {b:B}
-pub struct PredictionHandle <T: Event> {t:T}
+#[derive (Clone, Debug, Serialize, Deserialize)]
+pub struct DataTimelineHandle <T: DataTimeline> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] t:T}
+#[derive (Clone, Debug, Serialize, Deserialize)]
+pub struct EventHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] t:T}
+#[derive (Clone, Debug, Serialize, Deserialize)]
+pub struct DynamicEventHandle <B: Basics> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] b:B}
+#[derive (Clone, Debug, Serialize, Deserialize)]
+pub struct PredictionHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] t:T}
 impl <T: Event> EventHandle <T> {
   pub fn erase_type (self)->DynamicEventHandle<<T::Steward as TimeSteward>::Basics> {unimplemented!()}
 }
@@ -36,6 +41,23 @@ impl <B: Basics> EventHandleTrait for DynamicEventHandle<B> {
   fn time (&self)->& ExtendedTime <Self::Basics> {unimplemented!()}
 }
 
+impl <T: Event> Borrow<ExtendedTime <<T::Steward as TimeSteward>::Basics>> for EventHandle <T> {
+  fn borrow (&self)->& ExtendedTime <<T::Steward as TimeSteward>::Basics> {self.time()}
+}
+impl <B: Basics> Borrow<ExtendedTime <B>> for DynamicEventHandle<B> {
+  fn borrow (&self)->& ExtendedTime <B> {self.time()}
+}
+
+/*impl<T: Event> Clone for EventHandle <T> {
+  fn clone(&self) -> Self {
+    unimplemented!()
+  }
+}
+impl<B: Basics> Clone for DynamicEventHandle<B> {
+  fn clone(&self) -> Self {
+    unimplemented!()
+  }
+}*/
 impl<T: Event> Ord for EventHandle <T> {
   fn cmp(&self, other: &Self) -> Ordering {
     self.time().cmp(other.time())
@@ -156,7 +178,7 @@ pub enum FiatEventOperationError {
   InvalidTime,
 }
 
-pub trait EventHandleTrait: Ord {
+pub trait EventHandleTrait: Clone + Ord {
   type Basics: Basics;
   fn time (&self)->& ExtendedTime <Self::Basics>;
 }
@@ -199,16 +221,16 @@ pub trait EventAccessor: MomentaryAccessor {
   type Event: Event <Steward = Self::Steward>;
   fn handle (&self)->& EventHandle <Self::Event>;
   
-  // modification is done within a Fn so that the event can't extract any information from DataTimelines except by querying.
-  fn modify <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, F: Fn(&mut T)> (&self, timeline: &DataTimelineHandle <T>, modification: &F);
+  // modification is done within a closure, to help prevent the event from extracting any information from DataTimelines except by querying. I'd like to make this a Fn instead of FnOnce, to prevent the user from putting &mut in it that could communicate back to the outer function, but it may be useful for optimization to be able move owned objects into the closure.
+  fn modify <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, F: FnOnce(&mut T)> (&self, timeline: &DataTimelineHandle <T>, modification: F);
   
   // audit: whenever an event is executed or undone, it creates/destroys the exact predictions that become existent/nonexistent between the serializations of the physics immediately before and after the event.
   // audit: never generates two predictions with the same id, except when rerunning the same event
   fn create_prediction <E: Event <Steward = Self::Steward>> (&self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)->PredictionHandle<E>;
   fn destroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &PredictionHandle<E>);
   
-  // invalidation is done within a Fn so that the event can't extract any information from the PeekingAccessor used for invalidation.
-  fn invalidate <A: InvalidationAccessor, F: Fn(&A)> (&self, invalidator: &F);
+  // invalidation is done within a closure, to help prevent the event from extracting any information from the PeekingAccessor used for invalidation. I'd like to make this a Fn instead of FnOnce, to prevent the user from putting &mut in it that could communicate back to the outer function, but it may be useful for optimization to be able move owned objects into the closure.
+  fn invalidate <F: FnOnce(&<Self::Steward as TimeSteward>::InvalidationAccessor)> (&self, invalidator: F);
 }
 pub trait UndoEventAccessor: PeekingAccessor + EventAccessor {
   // note that query results wouldn't necessarily correspond to those observed by the original execution in any way
@@ -241,9 +263,10 @@ impl <T: EventAccessor> MomentaryAccessor for T {
   fn deserialize_dynamic_event_handle (&mut self)->DynamicEventHandle;
 }*/
 
-pub trait TimeSteward: Any {
+pub trait TimeSteward: Any + Sized {
   type Basics: Basics;
-  type Snapshot: Snapshot;
+  type Snapshot: Snapshot <Steward = Self>;
+  type InvalidationAccessor: InvalidationAccessor <Steward = Self>;
   
   fn from_global_timeline (timeline: <Self::Basics as Basics>::GlobalTimeline)->Self;
   /// note: Snapshot::serialize() matches TimeSteward::deserialize()
