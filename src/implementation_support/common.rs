@@ -3,6 +3,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::io::{Read, Write};
 use std::any::Any;
+use std::borrow::Borrow;
 use rand::{ChaChaRng, SeedableRng};
 use {DeterministicRandomId, PredictorId, EventId, TimeId, RowId, ColumnId, FieldId, SiphashIdGenerator,
      IterationType, Basics, ExtendedTime, Column, Predictor, Event,
@@ -20,24 +21,30 @@ impl<T> Filter<T> for Option<T> {
 }
 
 
-pub fn split_off_greater<K: Ord + Clone, V>(input: &mut BTreeMap<K, V>,
-                                            split: &K)
+pub fn split_off_greater<K: Ord + Borrow<Q> + Clone, V, Q: Ord + ?Sized>(input: &mut BTreeMap<K, V>,
+                                            split: &Q)
                                             -> BTreeMap<K, V> {
   // BTreeMap::split_off() DOES remove this splitting key, while we want to NOT include that key.
   // TODO: will Rust eventually make this easier?
   let mut result = input.split_off(split);
-  if let Some(whoops) = result.remove(split) {
-    input.insert(split.clone(), whoops);
+  let mut transfer = None;
+  if let Some(whoops) = result.iter().next() {
+    if whoops.0.borrow() == split {
+      transfer = Some(whoops.0.clone());
+    }
+  }
+  if let Some(key) = transfer {
+    input.insert(key, result.remove (split).unwrap());
   }
   result
 }
 
-pub fn split_off_greater_set<K: Ord + Clone>(input: &mut BTreeSet<K>, split: &K) -> BTreeSet<K> {
+pub fn split_off_greater_set<K: Ord + Borrow<Q>, Q: Ord + ?Sized>(input: &mut BTreeSet<K>, split: &Q) -> BTreeSet<K> {
   // BTreeMap::split_off() DOES remove this splitting key, while we want to NOT include that key.
   // TODO: will Rust eventually make this easier?
   let mut result = input.split_off(split);
-  if result.remove(split) {
-    input.insert(split.clone());
+  if let Some(whoops) = result.take(split) {
+    input.insert(whoops);
   }
   result
 }
