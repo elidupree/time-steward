@@ -52,6 +52,10 @@ impl <T: Event> EventHandleTrait for EventHandle <T> {
   type Basics = <T::Steward as TimeSteward>::Basics;
   fn time (&self)->& ExtendedTime <Self::Basics> {&self.data.shared.time}
 }
+impl <T: Event> EventHandleTrait for PredictionHandle <T> {
+  type Basics = <T::Steward as TimeSteward>::Basics;
+  fn time (&self)->& ExtendedTime <Self::Basics> {&self.data.shared.time}
+}
 impl <B: Basics> EventHandleTrait for DynamicEventHandle<B> {
   type Basics = B;
   fn time (&self)->& ExtendedTime <Self::Basics> {&self.data.shared().time}
