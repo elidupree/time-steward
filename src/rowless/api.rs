@@ -4,7 +4,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::io::{Read, Write};
 use std::any::Any;
-use std::fmt::{self, Debug};
+use std::fmt::Debug;
 use std::cmp::Ordering;
 use std::borrow::Borrow;
 

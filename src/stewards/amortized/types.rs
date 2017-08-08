@@ -36,7 +36,7 @@
 use {DeterministicRandomId, SiphashIdGenerator, RowId, FieldId, PredictorId, TimeId, Column, StewardRc,
      FieldRc, ExtendedTime, Basics, Accessor, FiatEventOperationError, ValidSince, TimeSteward,
      IncrementalTimeSteward, TimeStewardFromConstants};
-use implementation_support::common::{self, DynamicEventFn, split_off_greater, split_off_greater_set};
+use implementation_support::common::{self, DynamicEventFn};
 use std::collections::{HashMap, BTreeMap, HashSet, BTreeSet};
 // use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::rc::Rc;
