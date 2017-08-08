@@ -96,9 +96,11 @@ pub mod support {
 }
 
 /*
-mod rowless {
+pub mod rowless {
+  #[macro_use]
+  pub mod implementation_support { #[macro_use] pub mod common; }
   pub mod api;
   pub mod api_impls;
-  pub mod support { mod automatic_tracking; }
+  pub mod support { pub mod automatic_tracking; }
 }
 */
