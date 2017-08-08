@@ -106,7 +106,7 @@ fn modify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: Ev
       return
     }
   }
-  accessor.invalidate (&| invalidator | {
+  accessor.invalidate (| invalidator | {
     invalidator.peek(handle).invalidate_after (accessor.now(), invalidator);
   });
   accessor.modify (handle, move |timeline| {
@@ -116,7 +116,7 @@ fn modify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: Ev
 }
 fn unmodify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>) {
   if let Some((time, data)) = accessor.query (handle, &GetValue, QueryOffset::After) { if &time == accessor.now() {
-    accessor.invalidate (&| invalidator | {
+    accessor.invalidate (| invalidator | {
       invalidator.peek(handle).invalidate_after (accessor.now(), invalidator);
     });
     accessor.modify (handle, move |timeline| {
