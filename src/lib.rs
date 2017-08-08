@@ -94,3 +94,11 @@ pub mod support {
   pub mod time_functions;
   pub mod collision_detection;
 }
+
+/*
+mod rowless {
+  pub mod api;
+  pub mod api_impls;
+  pub mod support { mod automatic_tracking; }
+}
+*/
