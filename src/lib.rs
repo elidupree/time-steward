@@ -100,6 +100,8 @@ pub mod rowless {
   #[macro_use]
   pub mod implementation_support { #[macro_use] pub mod common; }
   #[macro_use]
+  pub mod serialization;
+  #[macro_use]
   pub mod api;
   pub mod api_impls;
   #[macro_use]

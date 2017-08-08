@@ -13,24 +13,48 @@ use {DeterministicRandomId};
 
 time_steward_steward_specific_api!();
 
+struct DataTimelineInner <T: DataTimeline> {
+  serial_number: usize,
+  data: T,
+}
+struct EventInnerShared <B: Basics> {
+  serial_number: usize,
+  time: ExtendedTime <B>,
+  data: T,
+}
+struct EventInner <T: Event> {
+  shared: EventInnerShared <<T::Steward as TimeSteward>::Basics>,
+  data: T,
+}
+trait EventInnerTrait <B: Basics>: Any {
+  fn shared (&self)->& EventInnerShared <<T::Steward as TimeSteward>::Basics>;
+}
+impl <T: Event> EventInnerTrait <<T::Steward as TimeSteward>::Basics> for EventInner <T> {
+  fn shared (&self)->& EventInnerShared <<T::Steward as TimeSteward>::Basics> {&self.shared}
+}
+
 #[derive (Clone, Debug, Serialize, Deserialize)]
-pub struct DataTimelineHandle <T: DataTimeline> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] t:T}
+pub struct DataTimelineHandle <T: DataTimeline> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] data: Arc <DataTimelineInner<T>>}
 #[derive (Clone, Debug, Serialize, Deserialize)]
-pub struct EventHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] t:T}
+pub struct EventHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] data: Arc <EventInner<T>>}
 #[derive (Clone, Debug, Serialize, Deserialize)]
-pub struct DynamicEventHandle <B: Basics> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] b:B}
+pub struct DynamicEventHandle <B: Basics> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] data: Arc <EventInnerTrait<B>>}
 #[derive (Clone, Debug, Serialize, Deserialize)]
-pub struct PredictionHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] t:T}
+pub struct PredictionHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] data: Arc <EventInner<T>>}
 impl <T: Event> EventHandle <T> {
-  pub fn erase_type (self)->DynamicEventHandle<<T::Steward as TimeSteward>::Basics> {unimplemented!()}
+  pub fn erase_type (self)->DynamicEventHandle<<T::Steward as TimeSteward>::Basics> {
+    DynamicEventHandle {
+      data: self.data as Arc <EventInnerTrait<<T::Steward as TimeSteward>::Basics>>
+    }
+  }
 }
 impl <T: Event> EventHandleTrait for EventHandle <T> {
   type Basics = <T::Steward as TimeSteward>::Basics;
-  fn time (&self)->& ExtendedTime <Self::Basics> {unimplemented!()}
+  fn time (&self)->& ExtendedTime <Self::Basics> {&self.data.shared.time}
 }
 impl <B: Basics> EventHandleTrait for DynamicEventHandle<B> {
   type Basics = B;
-  fn time (&self)->& ExtendedTime <Self::Basics> {unimplemented!()}
+  fn time (&self)->& ExtendedTime <Self::Basics> {&self.data.shared().time}
 }
 
 time_steward_common_impls_for_handles!();
@@ -45,7 +69,7 @@ pub struct PredictorAccessor<'a, B: Basics> {
   steward: &'a StewardImpl<B>,
 }
 
-impl <B: Basics> ::Mutator for Mutator {
+impl <B: Basics> EventAccessor for Mutator {
   fn create <T: DataTimeline> (&mut self, constants: D::Constants)->DataTimelineHandle <T> {
     let id = self.next_id();
     let result = DataTimelineHandle {
@@ -66,11 +90,11 @@ impl <B: Basics> ::Mutator for Mutator {
 }
 
 struct Steward <B: Basics> {
-  constants: B::Constants,
+  global_timeline: DataTimelineHandle <B::GlobalTimeline>,
   invalid_before: ValidSince <B::Time>,
   last_event: Option <ExtendedTime <B>>,
-  upcoming_fiat_events: BTreeMap<ExtendedTime <B>, EventHandle<B>>,
-  existent_predictors: HashMap<PredictorHandle <B>>,
+  upcoming_fiat_events: BTreeSet<DynamicEventHandle<B>>,
+  existent_predictions: BTreeSet <PredictionHandle <B>>,
   snapshots: SnapshotTree <B>,
 }
 

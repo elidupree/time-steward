@@ -213,6 +213,21 @@ pub trait TimeSteward: Any + Sized {
   fn forget_before (&mut self, time: &<Self::Basics as Basics>::Time);
 }
 
+/// A trait for TimeSteward types that can be initialized from just the initial physics data.
+/// Most TimeSteward types should implement this. Exceptions are types that can't function without certain extra runtime metadata
+pub trait ConstructibleTimeSteward: TimeSteward {
+  fn from_global_timeline (timeline: <Self::Basics as Basics>::GlobalTimeline)->Self;
+  /// note: Snapshot::serialize() matches TimeSteward::deserialize()
+  fn deserialize_from <R: Read> (data: &mut R)->Self;
+}
+
+pub trait IncrementalTimeSteward: TimeSteward {
+  fn step(&mut self);
+  fn updated_until_before(&self) -> Option<<Self::Basics as Basics>::Time>;
+}
+
+pub trait CanonicalTimeSteward: TimeSteward {}
+
 
   };
 }
