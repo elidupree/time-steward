@@ -199,10 +199,6 @@ pub trait TimeSteward: Any + Sized {
   type Snapshot: Snapshot <Steward = Self>;
   type InvalidationAccessor: InvalidationAccessor <Steward = Self>;
   
-  fn from_global_timeline (timeline: <Self::Basics as Basics>::GlobalTimeline)->Self;
-  /// note: Snapshot::serialize() matches TimeSteward::deserialize()
-  fn deserialize_from <R: Read> (data: &mut R)->Self;
-  
   fn insert_fiat_event<E: Event>(&mut self, time: <Self::Basics as Basics>::Time, id: DeterministicRandomId, event: E)
                                                -> Result<(), FiatEventOperationError>;
   fn remove_fiat_event(&mut self, time: &<Self::Basics as Basics>::Time, id: DeterministicRandomId)

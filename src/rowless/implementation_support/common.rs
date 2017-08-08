@@ -1,4 +1,3 @@
-
 #[doc (hidden)]
 #[macro_export]
 macro_rules! time_steward_common_impls_for_event_handle {
@@ -61,13 +60,13 @@ impl<T: Event> PartialOrd<$($concrete_1)*> for $($concrete_2)* {
 macro_rules! time_steward_common_impls_for_handles {
   () => {
 
-time_steward_common_impls_for_event_handle! ([T: Event], [EventHandle <T>], [<T::Steward as TimeSteward>::Basics]);
-time_steward_common_impls_for_event_handle! ([B: Basics], [DynamicEventHandle <B>], [B]);
-time_steward_common_impls_for_event_handle! ([T: Event], [PredictionHandle <T>], [<T::Steward as TimeSteward>::Basics]);
+time_steward_common_impls_for_event_handle! ([T: Event] [EventHandle <T>] [<T::Steward as TimeSteward>::Basics]);
+time_steward_common_impls_for_event_handle! ([B: Basics] [DynamicEventHandle <B>] [B]);
+time_steward_common_impls_for_event_handle! ([T: Event] [PredictionHandle <T>] [<T::Steward as TimeSteward>::Basics]);
 
-time_steward_crossover_impls_for_event_handles ([T: Event], [EventHandle <T>], [DynamicEventHandle<<T::Steward as TimeSteward>::Basics>]);
-time_steward_crossover_impls_for_event_handles ([T: Event], [PredictionHandle <T>], [DynamicEventHandle<<T::Steward as TimeSteward>::Basics>]);
-time_steward_crossover_impls_for_event_handles ([T: Event], [EventHandle <T>], [PredictionHandle <T>]);
+time_steward_crossover_impls_for_event_handles! ([T: Event] [EventHandle <T>] [DynamicEventHandle<<T::Steward as TimeSteward>::Basics>]);
+time_steward_crossover_impls_for_event_handles! ([T: Event] [PredictionHandle <T>] [DynamicEventHandle<<T::Steward as TimeSteward>::Basics>]);
+time_steward_crossover_impls_for_event_handles! ([T: Event] [EventHandle <T>] [PredictionHandle <T>]);
 
   };
 }

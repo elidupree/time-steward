@@ -150,9 +150,11 @@ impl<B: Basics> Steward<B> {
   }
 }
 
+
 impl<B: Basics> TimeSteward for Steward<B> {
   type Basics = B;
   type Snapshot = Snapshot<B>;
+  type InvalidationAccessor = InvalidationAccessor<B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     max(self.state.invalid_before.clone(),
@@ -202,34 +204,24 @@ impl<B: Basics> TimeSteward for Steward<B> {
   fn forget_before (&mut self, time: & Basics::Time) {}
 }
 
-impl<B: Basics> ::TimeStewardFromConstants for Steward<B> {
-  fn from_constants(constants: B::Constants) -> Self {
+
+impl <B: Basics> ConstructibleTimeSteward for Steward <B> {
+  fn from_global_timeline (timeline: <Self::Basics as Basics>::GlobalTimeline)->Self {
     Steward {
-      constants: constants,
+      global_timeline: timeline,
       invalid_before: ValidSince::TheBeginning,
       last_event: None,
       upcoming_fiat_events: BTreeMap::new(),
       snapshots: SnapshotTree::new(),
     }
   }
-}
-impl<B: Basics> ::TimeStewardFromSnapshot for Steward<B> {
-  fn from_snapshot<'a, S: ::Snapshot<Basics = B>>(snapshot: &'a S) -> Self
-    where &'a S: IntoIterator<Item = ::SnapshotEntry<'a, B>>
-  {
-    let mut result = Steward {
-      constants: ????,
-      invalid_before: ValidSince::Before(snapshot.now().clone()),
-      last_event: None,
-      upcoming_fiat_events: BTreeMap::new(),
-      snapshots: SnapshotTree::new(),
-    };
-    ????
-    result
+  
+  fn deserialize_from <R: Read> (data: &mut R)->Self {
+    unimplemented!()
   }
 }
 
-impl<B: Basics> ::IncrementalTimeSteward for Steward<B> {
+impl<B: Basics> IncrementalTimeSteward for Steward<B> {
   fn step(&mut self) {
     if let Some(ev) = self.next_event() {
       let (event_time, event) = ev;
@@ -240,6 +232,6 @@ impl<B: Basics> ::IncrementalTimeSteward for Steward<B> {
     self.next_event().map(|(time, _)| time.base)
   }
 }
-impl<B: Basics> ::CanonicalTimeSteward for Steward<B> {}
+impl<B: Basics> CanonicalTimeSteward for Steward<B> {}
 
 time_steward_define_simple_timeline!();
