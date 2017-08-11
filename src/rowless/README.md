@@ -130,7 +130,7 @@ for time in 0..50 {
 }
 ```
 
-A typical choice for FiatEvents would be to hash together a tuple of `(time, ID of user who gave the input, enum indicating the type of input)`. A typical choice for Predictions would be to hash together something unique to the prediction, like a unique id of an object being predicted about, or coordinates of a cell in a grid that's being predicted about. Also, considering whether you want the order to be the same every time between each pair of objects. If that's an undesirable bias, consider hashing in the time-id of the creating event or the time it's being predicted at.
+A typical choice for FiatEvents would be to hash together a tuple of `(time, ID of user who gave the input, enum indicating the type of input)`. A typical choice for Predictions would be to hash together the time-id of the creating event with something unique to the prediction, like a unique id of an object being predicted about, or coordinates of a cell in a grid that's being predicted about.
 
 
 ### ExtendedTime

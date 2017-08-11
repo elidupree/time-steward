@@ -14,35 +14,13 @@ use std::borrow::Borrow;
 pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + DeserializeOwned + Debug {}
 
 
-// Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time, and the events must use invalidate() to collect future events that must be invalidated. (Although, for instance, modifications made for dependency tracking purposes don't change any results of queries, so they never need to invalidate anything themselves.)
-//To audit, we record all of the queries, query results, and modifications. Then after each event that modifies one or more DataTimeline, we rerun all queries to those timelines made by still-valid future events. If any query has a different result than before, it's an error.
+// Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time, and the events must use invalidate() to collect future events that must be invalidated. (Although, for instance, modifications made for dependency tracking purposes might not change any results any queries, so they wouldn't create the need for any invalidation.)
+//To audit, we record all of the queries and query results. Then after each event that modifies one or more DataTimelines, we rerun all queries to those timelines made by still-valid future events. If any query has a different result than before, it's an error.
 
 // Given a query input, the function (time->query output) must be piecewise constant, changing only at times when modifications have been inserted.
-// Event must implement undo. That must call the undo function matching all modifications it made. After an event is undone, there may not remain any modifications at the time of that event. It follows that after doing and then undoing an event, all queries IMMEDIATELY after the event time are restored to their former value. However, queries in the future might not be restored because modifications are permitted to mess up the future(?)
+// Event must implement undo. After an event is undone, there may not remain any modifications at the time of that event. It follows that after doing and then undoing an event, all query results immediately before the event are equal to the corresponding results immediately after the event.
 
-// Defined by each TimeSteward type; would be associated type constructors if Rust supported those; temporarily defining them here to allow the API to compile by itself
-/*
-#[derive (Clone, Debug, Serialize, Deserialize)]
-pub struct DataTimelineHandle <T: DataTimeline> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] t:T}
-#[derive (Clone, Debug, Serialize, Deserialize)]
-pub struct EventHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] t:T}
-#[derive (Clone, Debug, Serialize, Deserialize)]
-pub struct DynamicEventHandle <B: Basics> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] b:B}
-#[derive (Clone, Debug, Serialize, Deserialize)]
-pub struct PredictionHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] t:T}
-impl <T: Event> EventHandle <T> {
-  pub fn erase_type (self)->DynamicEventHandle<<T::Steward as TimeSteward>::Basics> {unimplemented!()}
-}
-impl <T: Event> EventHandleTrait for EventHandle <T> {
-  type Basics = <T::Steward as TimeSteward>::Basics;
-  fn time (&self)->& ExtendedTime <Self::Basics> {unimplemented!()}
-}
-impl <B: Basics> EventHandleTrait for DynamicEventHandle<B> {
-  type Basics = B;
-  fn time (&self)->& ExtendedTime <Self::Basics> {unimplemented!()}
-}
-
-time_steward_common_impls_for_handles!();*/
+//These would be associated type constructors if Rust supported those: DataTimelineHandle, EventHandle, DynamicEventHandle, PredictionHandle
 
 
 pub enum QueryOffset {
@@ -101,6 +79,15 @@ pub trait EventHandleTrait: Clone + Ord {
   type Basics: Basics;
   fn time (&self)->& ExtendedTime <Self::Basics>;
 }
+pub trait TypedEventHandleTrait <E: Event>: EventHandleTrait + Deref <E> {
+  
+}
+pub trait DataTimelineHandleTrait: Clone {
+
+}
+pub trait TypedDataTimelineHandleTrait <T: DataTimeline>: DataTimelineHandleTrait {
+  fn new(data: T)->Self;
+}
 
 /*pub struct TimeRange <Time> {
   pub start: Time,
@@ -128,16 +115,17 @@ macro_rules! time_steward_steward_specific_api {
 
 pub trait Event: StewardData {
   type Steward: TimeSteward;
+  type ExecutionData;
   // audit all functions: calls invalidate_event for everything whose queries would be changed
   // audit all functions: doesn't change any query results in the past
-  fn execute<Accessor: EventAccessor <Steward = Self::Steward, Event = Self>> (&mut self, accessor: &Accessor);
+  fn execute<Accessor: EventAccessor <Steward = Self::Steward, Event = Self>> (&self, accessor: &Accessor)->Self::ExecutionData;
   // audit: leaves self in its original state??
   // audit: after undoing, all query results immediately before and after the event are identical to each other (if the previous audit passes, this is more an audit of the DataTimeline types than this event type)
-  fn undo<Accessor: UndoEventAccessor <Steward = Self::Steward, Event = Self>> (&mut self, accessor: &Accessor);
+  fn undo<Accessor: UndoEventAccessor <Steward = Self::Steward, Event = Self>> (&self, execution_data: Self::ExecutionData, accessor: &Accessor);
   // audit: should produce the same subsequent query results as doing undo() and then execute()
   // implementing this is simply an optimization that may allow you to invalidate fewer things, so we default-implement it
-  fn re_execute<Accessor: UndoEventAccessor <Steward = Self::Steward, Event = Self>> (&mut self, accessor: &Accessor) {
-    self.undo (accessor);
+  fn re_execute<Accessor: UndoEventAccessor <Steward = Self::Steward, Event = Self>> (&self, execution_data: Self::ExecutionData, accessor: &Accessor) {
+    self.undo (accessor, execution_data);
     self.execute (accessor);
   }
 }
@@ -161,6 +149,7 @@ pub trait EventAccessor: MomentaryAccessor {
   fn handle (&self)->& EventHandle <Self::Event>;
   
   // modification is done within a closure, to help prevent the event from extracting any information from DataTimelines except by querying. I'd like to make this a Fn instead of FnOnce, to prevent the user from putting &mut in it that could communicate back to the outer function, but it may be useful for optimization to be able move owned objects into the closure.
+  // audit: the event does the same thing if the closure isn't called, as long as we feed it the same query results after that
   fn modify <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, F: FnOnce(&mut T)> (&self, timeline: &DataTimelineHandle <T>, modification: F);
   
   // audit: whenever an event is executed or undone, it creates/destroys the exact predictions that become existent/nonexistent between the serializations of the physics immediately before and after the event.
@@ -169,6 +158,7 @@ pub trait EventAccessor: MomentaryAccessor {
   fn destroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &PredictionHandle<E>);
   
   // invalidation is done within a closure, to help prevent the event from extracting any information from the PeekingAccessor used for invalidation. I'd like to make this a Fn instead of FnOnce, to prevent the user from putting &mut in it that could communicate back to the outer function, but it may be useful for optimization to be able move owned objects into the closure.
+  // audit: the event does the same thing if the closure isn't called
   fn invalidate <F: FnOnce(&<Self::Steward as TimeSteward>::InvalidationAccessor)> (&self, invalidator: F);
 }
 pub trait UndoEventAccessor: PeekingAccessor + EventAccessor {
