@@ -159,6 +159,31 @@ For various reasons, it's convenient to allow the handles to *not know the concr
 So, we require that all DataTimeline types and Event types have hard-coded IDs. These IDs are simply one random u64 for each type. (Because there are fewer of them, they don't need to have as many bits to stay unique. Thanks to the [birthday problem](https://en.wikipedia.org/wiki/Birthday_problem), this would have a >1% chance of a collision with a mere 700 million types. I don't think we need to worry about this. 128 bit IDs are necessary for events, because computers can generate billions of them easily, but this isn't the same situation.) The documentation provides a convenient way to generate these IDs. We could theoretically have these IDs be automatically generated from the type name and module path, which would make them unique, but hard-coding them helps keep serialization consistent from version to version of your program. (You wouldn't want savefiles to be incompatible just because you reorganized some modules.)
 
 
+### Invalidation, invariants, and auditing
+
+A TimeSteward may run events out of order. Let's define the **canonical state** to be the exact history that results if you run all of the events **in order**. We want the history to eventually reach the canonical state regardless of what order the events are run. In particular, if a later event runs first, then an earlier event may change some data that the later event queried, making the later event invalid. If that happens, the later event must be rerun with the new inputs.
+
+Each event must:
+* implement a way for the event to be undone.
+* whenever the event modifies a DataTimeline, inform the TimeSteward of all future events whose queries to that DataTimeline would return a different result. (False-positives are okay, but false-negatives are not.)
+
+TimeSteward *could* automatically track which events queried which DataTimelines, but that would be inefficient – in most cases, it would store many redundant dependencies. For instance, a certain type of event might be centered on a certain tile of a grid, and query the 25 tiles closest to it. An automatic system would store 25 handles to the event. But it would be possible to only store one, in the center tile. The implementor would simply know that when you modify one tile, you need to invalidate the events in surrounding tiles as well.
+
+So instead of automatically tracking everything *during normal simulations*, TimeSteward provides features to *audit that your more efficient behavior was correct* after-the-fact.
+
+To guarantee determinism, we require this invariant: "The history **prior to the first invalid event** is always in the canonical state." Note that for this definition, a Prediction that exists but hasn't been run yet is also considered "invalid", because the "valid" state is the one where it **has** been run.
+
+This is sufficient to uphold determinism (we can simply keep running/undoing/rerunning invalid events until we reach the canonical state), but hard to audit in a helpful way. On one hand, whenever we run the first invalid event, we know that it receives canonical inputs, and we can audit that it leaves the history on the canonical state up through the next invalid event. On the other hand, imagine that, near the beginning of the simulation, an unimportant event E was invalidated, but not undone. Then the simulation continued for a while, executing hundreds of events unrelated to E. Only after that, E was rerun – and TimeSteward detected that it the history was now inconsistent with the canonical state! That isn't very useful. We have no idea which of the hundreds of events was responsible for the inconsistency.
+
+Invalid events raise a problem for tightening this condition. We'd like to be able to say, "The history depends solely on the executed-events (events that have been executed but not undone)." But if you had a timeline like this:
+
+Time 0 – Undone event E – Invalidated, but not undone, event F – Valid event G
+
+Then the state after F could legitimately depend on whether F's execution happened *before* or *after* E was undone. So we need a weaker invariant.
+
+
+
+
 ## Example
 
 Coming soon...
