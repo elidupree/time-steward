@@ -79,3 +79,59 @@ time_steward_crossover_impls_for_event_handles! ([T: Event] [EventHandle <T>] [P
   fn deserialize_dynamic_event_handle (&mut self)->DynamicEventHandle;
 }*/
 
+fn generator_for_event(id: DeterministicRandomId) -> ChaChaRng {
+  ChaChaRng::from_seed(&[(id.data()[0] >> 32) as u32,
+                        (id.data()[0] & 0xffffffff) as u32,
+                        (id.data()[1] >> 32) as u32,
+                        (id.data()[1] & 0xffffffff) as u32])
+}
+
+pub struct GenericEventAccessor<B: Basics> {
+  pub now: ExtendedTime<B>,
+  pub generator: ChaChaRng,
+}
+impl<B: Basics> GenericEventAccessor<B> {
+  pub fn new(now: ExtendedTime<B>) -> Self {
+    let generator = generator_for_event(now.id);
+    GenericMutator {
+      now: now,
+      generator: generator,
+    }
+  }
+}
+
+pub fn extended_time_of_fiat_event<B: Basics>(time: B::Time,
+                                                  id: TimeId)
+                                                  -> ExtendedTime<B> {
+  ExtendedTime {
+    base: time,
+    iteration: 0,
+    id: id.for_fiat_event_internal(),
+  }
+}
+
+pub fn extended_time_of_predicted_event<B: Basics>
+  (id: DeterministicRandomId,
+   event_base_time: B::Time,
+   from: &ExtendedTime<B>)
+   -> Option<ExtendedTime<B>> {
+  let iteration = match event_base_time.cmp(&from.base) {
+    Ordering::Less => return None, // short-circuit
+    Ordering::Greater => 0,
+    Ordering::Equal => {
+      if id > from.id {
+        from.iteration
+      } else {
+        if from.iteration >= B::MAX_ITERATION {
+          panic!("Too many iterations at the same base time; probably an infinite loop")
+        }
+        from.iteration + 1
+      }
+    }
+  };
+  Some(ExtendedTime {
+    base: event_base_time,
+    iteration: iteration,
+    id: id,
+  })
+}
