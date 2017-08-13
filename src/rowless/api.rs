@@ -189,7 +189,7 @@ pub trait TimeSteward: Any + Sized {
   type Snapshot: Snapshot <Steward = Self>;
   type InvalidationAccessor: InvalidationAccessor <Steward = Self>;
   
-  fn insert_fiat_event<E: Event>(&mut self, time: <Self::Basics as Basics>::Time, id: DeterministicRandomId, event: E)
+  fn insert_fiat_event<E: Event <Steward = Self>>(&mut self, time: <Self::Basics as Basics>::Time, id: DeterministicRandomId, event: E)
                                                -> Result<(), FiatEventOperationError>;
   fn remove_fiat_event(&mut self, time: &<Self::Basics as Basics>::Time, id: DeterministicRandomId)
                        -> Result<(), FiatEventOperationError>;
