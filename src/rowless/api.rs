@@ -119,13 +119,13 @@ pub trait Event: StewardData {
   type ExecutionData;
   // audit all functions: calls invalidate_event for everything whose queries would be changed
   // audit all functions: doesn't change any query results in the past
-  fn execute<Accessor: EventAccessor <Steward = Self::Steward, Event = Self>> (&self, accessor: &Accessor)->Self::ExecutionData;
+  fn execute<Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &Accessor)->Self::ExecutionData;
   // audit: leaves self in its original state??
   // audit: after undoing, all query results immediately before and after the event are identical to each other (if the previous audit passes, this is more an audit of the DataTimeline types than this event type)
-  fn undo<Accessor: UndoEventAccessor <Steward = Self::Steward, Event = Self>> (&self, execution_data: Self::ExecutionData, accessor: &Accessor);
+  fn undo<Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, execution_data: Self::ExecutionData, accessor: &Accessor);
   // audit: should produce the same subsequent query results as doing undo() and then execute()
   // implementing this is simply an optimization that may allow you to invalidate fewer things, so we default-implement it
-  fn re_execute<Accessor: UndoEventAccessor <Steward = Self::Steward, Event = Self>> (&self, execution_data: Self::ExecutionData, accessor: &Accessor) {
+  fn re_execute<Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, execution_data: Self::ExecutionData, accessor: &Accessor) {
     self.undo (accessor, execution_data);
     self.execute (accessor);
   }
@@ -146,8 +146,7 @@ pub trait MomentaryAccessor: Accessor {
   fn now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
 }
 pub trait EventAccessor: MomentaryAccessor {
-  type Event: Event <Steward = Self::Steward>;
-  fn handle (&self)->& EventHandle <Self::Event>;
+  fn handle (&self)->& DynamicEventHandle <<Self::Steward as TimeSteward>::Basics>;
   
   // modification is done within a closure, to help prevent the event from extracting any information from DataTimelines except by querying. I'd like to make this a Fn instead of FnOnce, to prevent the user from putting &mut in it that could communicate back to the outer function, but it may be useful for optimization to be able move owned objects into the closure.
   // audit: the event does the same thing if the closure isn't called, as long as we feed it the same query results after that

@@ -110,10 +110,10 @@ time_steward_common_impls_for_handles!();
 
 
 
-pub struct EventAccessorStruct <'a, T: Event> {
+pub struct EventAccessorStruct <'a, B: Basics> {
   generic: GenericEventAccessor,
-  handle: EventHandle <T>,
-  steward: &'a mut Steward<<T::Steward as TimeSteward>::Basics>,
+  handle: DynamicEventHandle <B>,
+  steward: &'a mut Steward<B>,
 }
 pub struct SnapshotStruct <B: Basics> {
   time: ExtendedTime <B>,
@@ -122,10 +122,10 @@ pub struct SnapshotStruct <B: Basics> {
 pub struct InvalidationAccessorStruct <B: Basics> (!, PhantomData <B>);
 
 
-impl <'a, T: Event> Accessor for EventAccessorStruct <'a, T> {
-  type Steward = Steward <<T::Steward as TimeSteward>::Basics>;
-  fn global_timeline (&self)->DataTimelineHandle <<<Self::Steward as TimeSteward>::Basics as Basics>::GlobalTimeline> {self.steward.global_timeline}
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
+impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
+  type Steward = Steward <B>;
+  fn global_timeline (&self)->DataTimelineHandle <B::GlobalTimeline> {self.steward.global_timeline}
+  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = B>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
     handle.data.borrow().query (query, self.now(), offset)
   }
 }
@@ -143,10 +143,9 @@ impl <B: Basics> MomentaryAccessor for SnapshotStruct <B> {
   
   }
 }
-impl <'a, T: Event> EventAccessor for EventAccessorStruct <'a, T> {
-  type Event = T;
-  fn handle (&self)->& EventHandle <Self::Event> {
-    self.event
+impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
+  fn handle (&self)->& DynamicEventHandle <B> {
+    &self.handle
   }
   
   fn modify <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, F: FnOnce(&mut T)> (&self, timeline: &DataTimelineHandle <T>, modification: F) {
