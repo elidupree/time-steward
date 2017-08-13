@@ -1,3 +1,8 @@
+use super::super::api::*;
+use std::cmp::Ordering;
+use ::DeterministicRandomId;
+use rand::ChaChaRng;
+
 #[doc (hidden)]
 #[macro_export]
 macro_rules! time_steward_common_impls_for_event_handle {
@@ -87,21 +92,19 @@ fn generator_for_event(id: DeterministicRandomId) -> ChaChaRng {
 }
 
 pub struct GenericEventAccessor<B: Basics> {
-  pub now: ExtendedTime<B>,
   pub generator: ChaChaRng,
 }
 impl<B: Basics> GenericEventAccessor<B> {
-  pub fn new(now: ExtendedTime<B>) -> Self {
+  pub fn new(now: &ExtendedTime<B>) -> Self {
     let generator = generator_for_event(now.id);
-    GenericMutator {
-      now: now,
+    GenericEventAccessor {
       generator: generator,
     }
   }
 }
 
 pub fn extended_time_of_fiat_event<B: Basics>(time: B::Time,
-                                                  id: TimeId)
+                                                  id: DeterministicRandomId)
                                                   -> ExtendedTime<B> {
   ExtendedTime {
     base: time,

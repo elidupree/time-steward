@@ -7,6 +7,7 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::cmp::Ordering;
 use std::borrow::Borrow;
+use std::ops::Deref;
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
@@ -79,7 +80,7 @@ pub trait EventHandleTrait: Clone + Ord {
   type Basics: Basics;
   fn time (&self)->& ExtendedTime <Self::Basics>;
 }
-pub trait TypedEventHandleTrait <E: Event>: EventHandleTrait + Deref <E> {
+pub trait TypedEventHandleTrait <E>: EventHandleTrait + Deref <Target = E> {
   
 }
 pub trait DataTimelineHandleTrait: Clone {
