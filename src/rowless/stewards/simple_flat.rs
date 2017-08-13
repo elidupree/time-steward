@@ -6,6 +6,7 @@ use std::borrow::Borrow;
 use std::any::Any;
 use std::io::{Read, Write};
 use std::rc::Rc;
+use std::marker::PhantomData;
 
 use super::super::api::*;
 use super::super::implementation_support::common::*;
@@ -43,14 +44,30 @@ impl <T: Event> EventInnerTrait <<T::Steward as TimeSteward>::Basics> for EventI
   }
 }
 
-#[derive (Clone, Debug, Serialize, Deserialize)]
-pub struct DataTimelineHandle <T: DataTimeline> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] data: Rc<DataTimelineInner<T>>}
-#[derive (Clone, Debug, Serialize, Deserialize)]
-pub struct EventHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] data: Rc <EventInner<T>>}
-#[derive (Clone, Debug, Serialize, Deserialize)]
-pub struct DynamicEventHandle <B: Basics> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] data: Rc <EventInnerTrait<B>>}
-#[derive (Clone, Debug, Serialize, Deserialize)]
+#[derive (Debug, Serialize, Deserialize, Derivative)]
+#[derivative (Clone (bound = ""))]
+pub struct DataTimelineHandle <T: DataTimeline> {
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
+  data: Rc<DataTimelineInner<T>>
+}
+
+#[derive (Debug, Serialize, Deserialize, Derivative)]
+#[derivative (Clone (bound = ""))]
+pub struct EventHandle <T: Event> {
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
+  data: Rc <EventInner<T>>
+}
+
+#[derive (Debug, Serialize, Deserialize, Derivative)]
+#[derivative (Clone (bound = ""))]
+pub struct DynamicEventHandle <B: Basics> {
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
+  data: Rc <EventInnerTrait<B>>
+}
+#[derive (Debug, Serialize, Deserialize, Derivative)]
+#[derivative (Clone (bound = ""))]
 pub struct PredictionHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] data: Rc <EventInner<T>>}
+
 impl <T: Event> EventHandle <T> {
   pub fn erase_type (self)->DynamicEventHandle<<T::Steward as TimeSteward>::Basics> {
     DynamicEventHandle {
@@ -94,7 +111,7 @@ time_steward_common_impls_for_handles!();
 
 
 pub struct EventAccessorStruct <'a, T: Event> {
-  generic: GenericEventAccessor<<T::Steward as TimeSteward>::Basics>,
+  generic: GenericEventAccessor,
   handle: EventHandle <T>,
   steward: &'a mut Steward<<T::Steward as TimeSteward>::Basics>,
 }
@@ -102,6 +119,7 @@ pub struct SnapshotStruct <B: Basics> {
   time: ExtendedTime <B>,
   clones: RefCell<HashMap<DynamicDataTimelineHandle, DynamicDataTimelineHandle>>,
 }
+pub struct InvalidationAccessorStruct <B: Basics> (!, PhantomData <B>);
 
 
 impl <'a, T: Event> Accessor for EventAccessorStruct <'a, T> {
@@ -164,13 +182,26 @@ impl <B: Basics> Snapshot for SnapshotStruct <B> {
   }
 }
 
+impl <B: Basics> Accessor for InvalidationAccessorStruct <B> {
+  type Steward = Steward <B>;
+  fn global_timeline (&self)->DataTimelineHandle <<<Self::Steward as TimeSteward>::Basics as Basics>::GlobalTimeline> {
+    unimplemented!()
+  }
+  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
+    unimplemented!()
+  }
+}
+impl <B: Basics> MomentaryAccessor for InvalidationAccessorStruct <B> {}
+impl <B: Basics> PeekingAccessor for InvalidationAccessorStruct <B> {}
+impl <B: Basics> InvalidationAccessor for InvalidationAccessorStruct <B> {}
+
 
 struct Steward <B: Basics> {
   global_timeline: DataTimelineHandle <B::GlobalTimeline>,
   invalid_before: ValidSince <B::Time>,
   last_event: Option <ExtendedTime <B>>,
   upcoming_fiat_events: BTreeSet<DynamicEventHandle<B>>,
-  existent_predictions: BTreeSet <PredictionHandle <B>>,
+  existent_predictions: BTreeSet <DynamicEventHandle<B>>,
   snapshots: BTreeMap<usize, SnapshotStruct <B>>,
 }
 
@@ -195,7 +226,7 @@ impl<B: Basics> Steward<B> {
 impl<B: Basics> TimeSteward for Steward<B> {
   type Basics = B;
   type Snapshot = SnapshotStruct <B>;
-  type InvalidationAccessor = InvalidationAccessor<B>;
+  type InvalidationAccessor = InvalidationAccessorStruct <B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
     max(self.state.invalid_before.clone(),
@@ -205,7 +236,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
         })
   }
   
-  fn insert_fiat_event<E: ::Event<Basics = B>>(&mut self,
+  fn insert_fiat_event<E: Event<Steward = Self>>(&mut self,
                                                time: B::Time,
                                                id: DeterministicRandomId,
                                                event: E)

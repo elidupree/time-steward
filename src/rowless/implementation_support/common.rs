@@ -91,11 +91,11 @@ fn generator_for_event(id: DeterministicRandomId) -> ChaChaRng {
                         (id.data()[1] & 0xffffffff) as u32])
 }
 
-pub struct GenericEventAccessor<B: Basics> {
+pub struct GenericEventAccessor {
   pub generator: ChaChaRng,
 }
-impl<B: Basics> GenericEventAccessor<B> {
-  pub fn new(now: &ExtendedTime<B>) -> Self {
+impl GenericEventAccessor {
+  pub fn new<B: Basics>(now: &ExtendedTime<B>) -> Self {
     let generator = generator_for_event(now.id);
     GenericEventAccessor {
       generator: generator,
