@@ -1,14 +1,17 @@
-//use std::collections::BTreeSet;
-//use std::mem;
-//use std::cell::RefCell;
 
-//use super::super::api::*;
-//use implementation_support::common::{split_off_greater_set};
 
 #[doc (hidden)]
 #[macro_export]
 macro_rules! time_steward_define_simple_timeline {
   () => {
+pub mod automatic_tracking {
+use std::collections::BTreeSet;
+use std::mem;
+use std::cell::RefCell;
+
+use super::super::super::api::*;
+use super::*;
+use implementation_support::common::{split_off_greater_set};
 
 #[derive (Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 pub struct GetValue;
@@ -120,6 +123,8 @@ pub fn unmodify_simple_timeline <Data: StewardData, Steward: TimeSteward, Access
     });
   }}
 }
+
+} //mod
 
   };
 }

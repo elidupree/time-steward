@@ -9,23 +9,26 @@ extern crate serde;
 extern crate serde_derive;
 
 use time_steward::{DeterministicRandomId};
+use time_steward::rowless::api::{self, StewardData, QueryOffset};
 use time_steward::rowless::stewards::{simple_flat};
-use simple_flat::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineHandle, automatic_tracking};
+use simple_flat::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineHandle, PredictionHandle, EventAccessor, Snapshot, automatic_tracking};
 use simple_flat::Steward;
-use automatic_tracking::{SimpleTimeline, ConstantTimeline};
+use automatic_tracking::{SimpleTimeline, ConstantTimeline, GetValue, query_simple_timeline, modify_simple_timeline, unmodify_simple_timeline};
 
 
 type Time = i64;
 
-const HOW_MANY_PHILOSOPHERS: i32 = 7;
+const HOW_MANY_PHILOSOPHERS: usize = 7;
 
-type PhilosopherHandle = DataTimelineHandle <SimpleTimeline <Philosopher>>;
+type PhilosopherHandle = DataTimelineHandle <SimpleTimeline <Philosopher, Basics >>;
 
-time_steward_basics!(struct Basics {
+#[derive (Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug, Default)]
+struct Basics {}
+impl api::Basics for Basics {
   type Time = Time;
-  type GlobalTimeline = ConstantTimeline <[PhilosopherHandle; HOW_MANY_PHILOSOPHERS]>];
-  type IncludedTypes = TimeStewardTypes;
-});
+  type GlobalTimeline = SimpleTimeline <[PhilosopherHandle; HOW_MANY_PHILOSOPHERS], Basics>;
+  //type IncludedTypes = TimeStewardTypes;
+}
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Philosopher {
@@ -35,20 +38,21 @@ struct Philosopher {
   time_when_next_initiates_handshake: Time,
   next_handshake_prediction: PredictionHandle <Shake>,
 }
-impl Column for Philosopher {
+impl StewardData for Philosopher{}
+/*impl Column for Philosopher {
   type FieldType = Self;
   fn column_id() -> ColumnId {
     ColumnId(0x4084d1501468b6dd)
   }
-}
+}*/
 
 fn change_next_handshake_time <Accessor: EventAccessor> (accessor: & Accessor, handle: & PhilosopherHandle, time: Time) {
-  let philosopher = query_simple_timeline (accessor, handle, After).expect ("philosophers should never not exist");
+  let philosopher = query_simple_timeline (accessor, handle, QueryOffset::After).expect ("philosophers should never not exist");
   if let Some(prediction) = philosopher.next_handshake_prediction.take() {
     accessor.destroy_prediction (&prediction);
   }
   philosopher.time_when_next_initiates_handshake = time;
-  if (time >= accessor.now().base) {
+  if time >= accessor.now().base {
     philosopher.next_handshake_prediction = Some(accessor.create_prediction (time, Shake {whodunnit: handle.clone()}));
   }
   modify_simple_timeline (accessor, handle, Some (philosopher));
@@ -56,11 +60,11 @@ fn change_next_handshake_time <Accessor: EventAccessor> (accessor: & Accessor, h
 
 
 fn unchange_next_handshake_time <Accessor: EventAccessor> (accessor: & Accessor, handle: & PhilosopherHandle) {
-  let philosopher = accessor.query (handle, GetValue, After).expect ("philosophers should never not exist");
+  let philosopher = accessor.query (handle, GetValue, QueryOffset::After).expect ("philosophers should never not exist");
   if let Some(prediction) = philosopher.next_handshake_prediction.take() {
     accessor.destroy_prediction (&prediction);
   }
-  let philosopher = accessor.query (handle, GetValue, Before).expect ("philosophers should never not exist");
+  let philosopher = accessor.query (handle, GetValue, QueryOffset::Before).expect ("philosophers should never not exist");
   if let Some(prediction) = philosopher.next_handshake_prediction.take() {
     accessor.undestroy_prediction (&prediction, None);
   }
@@ -68,18 +72,18 @@ fn unchange_next_handshake_time <Accessor: EventAccessor> (accessor: & Accessor,
 }
 
  
-
+/*
 type TimeStewardTypes = (ListedType<SimpleTimeline <Philosopher>>,
                          ListedType<Initialize>,
                          ListedType<Tweak>,
                          ListedType<TweakUnsafe>,
-                         ListedType<Shake>);
+                         ListedType<Shake>);*/
 
-fn display_snapshot<S: time_steward::Snapshot<Basics = Basics>>(snapshot: &S) {
+fn display_snapshot<S: Snapshot<Steward = Steward <Basics>>>(snapshot: &S) {
   println!("snapshot for {}", snapshot.now());
-  for handle in snapshot.query (snapshot.global_timeline(), GetValue, After).iter() {
+  for handle in snapshot.query (snapshot.global_timeline(), GetValue, QueryOffset::After).iter() {
     println!("{}",
-             snapshot.query(handle, GetValue, After)
+             snapshot.query(handle, GetValue, QueryOffset::After)
                .expect("missing philosopher")
                .time_when_next_initiates_handshake);
   }
@@ -87,70 +91,86 @@ fn display_snapshot<S: time_steward::Snapshot<Basics = Basics>>(snapshot: &S) {
 
 
 
-time_steward_predictor! (
+/*time_steward_predictor! (
   struct Shaker, Basics, PredictorId(0x0e7f27c7643f8167), watching Philosopher,
   | pa, whodunnit | {
 // println!("Planning {}", whodunnit);
   let me = pa.get::<Philosopher>(whodunnit).unwrap().clone();
   pa.predict_at_time(me.time_when_next_initiates_handshake, Shake::new (whodunnit));
-});
+});*/
 
-time_steward_event! (
-  struct Shake {whodunnit: RowId}, Basics, EventId (0x8987a0b8e7d3d624),
-  fn execute <Accessor: EventAccessor <Steward = Self::Steward, Event = Self>> (&self, accessor: & Accessor) {
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+struct Shake {whodunnit: DataTimelineHandle <SimpleTimeline <Philosopher, Basics>>} //, Basics, EventId (0x8987a0b8e7d3d624),
+impl StewardData for Shake {}
+impl Event for Shake {
+  type Steward = Steward <Basics>;
+  fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let now = *accessor.now();
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let awaken_time_1 = now + accessor.gen_range(-1, 4);
     let awaken_time_2 = now + accessor.gen_range(-1, 7);
-    let philosophers = accessor.query (snapshot.global_timeline(), GetValue, After);
+    let philosophers = accessor.query (accessor.global_timeline(), GetValue, QueryOffset::After);
 // println!("SHAKE!!! @{}. {}={}; {}={}", now, self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
 // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
 // IN THE SECOND TIME APPARENTLY
     change_next_handshake_time (accessor, philosophers [friend_id], awaken_time_1);
     change_next_handshake_time (accessor, self.whodunnit, awaken_time_2);
   }
-  fn undo <Accessor: EventAccessor <Steward = Self::Steward, Event = Self>> (&self, accessor: & Accessor) {
+  fn undo <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
+    let philosophers = accessor.query (accessor.global_timeline(), GetValue, QueryOffset::After);
     unchange_next_handshake_time (accessor, philosophers [friend_id]);
     unchange_next_handshake_time (accessor, self.whodunnit);
   }
-);
+}
 
-time_steward_event! (
-  struct Initialize {}, Basics, EventId (0xd5e73d8ba6ec59a2),
-  | &self, m | {
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+struct Initialize {} //, Basics, EventId (0xd5e73d8ba6ec59a2),
+impl StewardData for Initialize {}
+impl Event for Initialize {
+  type Steward = Steward <Basics>;
+  fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     println!("FIAT!!!!!");
+    let philosophers = accessor.query (accessor.global_timeline(), GetValue, QueryOffset::After);
     for i in 0..HOW_MANY_PHILOSOPHERS {
-      m.set::<Philosopher>(get_philosopher_id(i),
-        Some(Philosopher {
-          time_when_next_initiates_handshake: (i + 1) as Time,
-        })
-      );
+      change_next_handshake_time (accessor, philosophers [i], (i + 1) as Time);
     }
   }
-);
+  fn undo <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
+    unimplemented!()
+  }
+}
 
-time_steward_event! (
-  struct Tweak {}, Basics, EventId (0xfe9ff3047f9a9552),
-  | &self, accessor | {
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+struct Tweak {} //, Basics, EventId (0xfe9ff3047f9a9552),
+impl StewardData for Tweak {}
+impl Event for Tweak {
+  type Steward = Steward <Basics>;
+  fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     println!(" Tweak !!!!!");
     let now = *accessor.now();
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let awaken_time = now + accessor.gen_range(-1, 7);
-    let philosophers = accessor.query (snapshot.global_timeline(), GetValue, After);
+    let philosophers = accessor.query (accessor.global_timeline(), GetValue, QueryOffset::After);
     change_next_handshake_time (accessor, philosophers [friend_id], awaken_time);
   }
-);
+  fn undo <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
+    unimplemented!()
+  }
+}
 
 use rand::{Rng, SeedableRng, ChaChaRng};
 thread_local! {static INCONSISTENT: u32 = rand::thread_rng().gen::<u32>();}
 
-time_steward_event! (
-  struct TweakUnsafe {}, Basics, EventId (0xa1618440808703da),
-  | &self, m | {
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+struct TweakUnsafe {} //, Basics, EventId (0xa1618440808703da),
+impl StewardData for TweakUnsafe {}
+impl Event for TweakUnsafe {
+  type Steward = Steward <Basics>;
+  fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let now = *accessor.now();
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
-    let philosophers = accessor.query (snapshot.global_timeline(), GetValue, After);
+    let philosophers = accessor.query (accessor.global_timeline(), GetValue, QueryOffset::After);
 
     let inconsistent = INCONSISTENT.with (| value | {
       *value
@@ -160,11 +180,14 @@ time_steward_event! (
 
     change_next_handshake_time (accessor, philosophers [friend_id], awaken_time);
   }
-);
+  fn undo <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
+    unimplemented!()
+  }
+}
 
 #[test]
 pub fn handshakes_simple() {
-  type Steward = crossverified::Steward<Basics, inefficient_flat::Steward<Basics>, memoized_flat::Steward<Basics>>;
+  //type Steward = crossverified::Steward<Basics, inefficient_flat::Steward<Basics>, memoized_flat::Steward<Basics>>;
   let mut stew: Steward = Steward::from_constants(());
 
   stew.insert_fiat_event(0,
@@ -177,6 +200,8 @@ pub fn handshakes_simple() {
     display_snapshot(&snapshot);
   }
 }
+
+/*
 
 #[test]
 pub fn handshakes_reloading() {
@@ -339,3 +364,4 @@ fn local_synchronization_failure() {
   }
   stew_1.finish();
 }
+*/

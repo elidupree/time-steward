@@ -4,12 +4,12 @@ use super::api::*;
 
 impl <T: StewardData> StewardData for Option <T> {}
 macro_rules! StewardData_tuple_impls {
+  ($TL: ident) => {};
   ($TL: ident $(, $T: ident)*) => {
     impl<$($T,)* $TL> StewardData for ($TL $(, $T)*)
       where $($T: StewardData,)* $TL: StewardData {}
     StewardData_tuple_impls! ($($T),*);
   };
-  () => {};
 }
 StewardData_tuple_impls!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
 
