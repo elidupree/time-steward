@@ -247,7 +247,7 @@ impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
   type Steward = Steward <B>;
   fn global_timeline (&self)->&DataTimelineHandle <B::GlobalTimeline> {&self.steward.global_timeline}
   fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = B>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
-    DataTimelineQueriableWith::<Query>::query (handle.data.borrow(), query, self.now(), offset)
+    DataTimelineQueriableWith::<Query>::query (&*handle.data.data.borrow(), query, self.now(), offset)
   }
 }
 impl <B: Basics> Accessor for SnapshotHandle <B> {
@@ -256,7 +256,13 @@ impl <B: Basics> Accessor for SnapshotHandle <B> {
     &self.data.global_timeline
   }
   fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
-    self.data.clones.borrow_mut().entry (handle.clone()).or_insert_with (| | handle.data.data.borrow().clone_for_snapshot (self.now())).query (query, offset)
+    let mut guard = self.data.clones.borrow_mut();
+    let mut entry = guard.entry (handle.clone().erase_type());
+    let handle = entry.or_insert_with (| | DataTimelineHandle::new (handle.data.data.borrow().clone_for_snapshot (self.now())).erase_type());
+    let typed = handle.clone().downcast::<T>().unwrap();
+    let timeline_guard = typed.data.data.borrow();
+    DataTimelineQueriableWith::<Query>::query(
+      &*timeline_guard, query, self.now(), offset)
   }
 }
 impl <B: Basics> MomentaryAccessor for SnapshotHandle <B> {
@@ -273,7 +279,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     modification (&mut*timeline.data.data.borrow_mut());
   }
   
-  fn create_prediction <E: Event <Steward = Self::Steward>> (&self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)->PredictionHandle<E> {
+  fn create_prediction <E: Event <Steward = Self::Steward>> (&mut self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)->PredictionHandle<E> {
     let time = extended_time_of_fiat_event::<<Self::Steward as TimeSteward>::Basics> (time, id);
     let handle = PredictionHandle {
       data: Rc::new (EventInner {
@@ -287,8 +293,8 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     self.steward.existent_predictions.insert (handle.clone().as_dynamic_event());
     handle
   }
-  fn destroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &PredictionHandle<E>) {
-    self.steward.existent_predictions.remove (prediction.clone());
+  fn destroy_prediction <E: Event <Steward = Self::Steward>> (&mut self, prediction: &PredictionHandle<E>) {
+    self.steward.existent_predictions.remove (& prediction.clone().as_dynamic_event());
   }
   
   fn invalidate <F: FnOnce(&<Self::Steward as TimeSteward>::InvalidationAccessor)> (&self, invalidator: F) {
@@ -319,7 +325,7 @@ impl <B: Basics> InvalidationAccessor for InvalidationAccessorStruct <B> {
 }
 
 #[derive (Debug)]
-struct Steward <B: Basics> {
+pub struct Steward <B: Basics> {
   global_timeline: DataTimelineHandle <B::GlobalTimeline>,
   invalid_before: ValidSince <B::Time>,
   last_event: Option <ExtendedTime <B>>,
@@ -429,12 +435,12 @@ impl <B: Basics> ConstructibleTimeSteward for Steward <B> {
 
 impl<B: Basics> IncrementalTimeSteward for Steward<B> {
   fn step(&mut self) {
-    if let Some(event) = self.next_event() {
-      self.execute_event(event);
+    if let Some(event) = self.next_event().cloned() {
+      self.execute_event(&event);
     }
   }
   fn updated_until_before(&self) -> Option<B::Time> {
-    self.next_event().map(|event| event.time().base)
+    self.next_event().map(|event| event.time().base.clone())
   }
 }
 impl<B: Basics> CanonicalTimeSteward for Steward<B> {}
