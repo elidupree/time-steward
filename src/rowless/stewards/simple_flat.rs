@@ -8,6 +8,7 @@ use std::io::{Read, Write};
 use std::rc::Rc;
 use std::marker::PhantomData;
 use std::fmt::Debug;
+use std::hash::{Hash, Hasher};
 
 use super::super::api::*;
 use super::super::implementation_support::common::*;
@@ -67,40 +68,38 @@ impl <T: DataTimeline> DataTimelineInnerTrait <T::Basics> for DataTimelineInner 
 }
 
 
-#[derive (Debug, Serialize, Deserialize, Derivative)]
+#[derive (Debug, Derivative)]
 #[derivative (Clone (bound = ""))]
 pub struct DataTimelineHandle <T: DataTimeline> {
-  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   data: Rc<DataTimelineInner<T>>
 }
-#[derive (Debug, Serialize, Deserialize, Derivative)]
+#[derive (Debug, Derivative)]
 #[derivative (Clone (bound = ""))]
 pub struct DynamicDataTimelineHandle <B: Basics> {
-  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   data: Rc <DataTimelineInnerTrait <B>>
 }
 
-#[derive (Debug, Serialize, Deserialize, Derivative)]
+#[derive (Debug, Derivative)]
 #[derivative (Clone (bound = ""))]
 pub struct EventHandle <T: Event> {
-  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   data: Rc <EventInner<T>>
 }
 
-#[derive (Debug, Serialize, Deserialize, Derivative)]
+#[derive (Debug, Derivative)]
 #[derivative (Clone (bound = ""))]
 pub struct DynamicEventHandle <B: Basics> {
-  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   data: Rc <EventInnerTrait<B>>
 }
-#[derive (Debug, Serialize, Deserialize, Derivative)]
+#[derive (Debug, Derivative)]
 #[derivative (Clone (bound = ""))]
-pub struct PredictionHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] data: Rc <EventInner<T>>}
+pub struct PredictionHandle <T: Event> {
+  data: Rc <EventInner<T>>
+}
 
 impl <T: DataTimeline> DataTimelineHandle <T> {
   pub fn erase_type (self)->DynamicDataTimelineHandle<T::Basics> {
     DynamicDataTimelineHandle {
-      data: self.data as Rc <DataTimelineInnerTrait>
+      data: self.data as Rc <DataTimelineInnerTrait <T::Basics>>
     }
   }
 }
@@ -122,6 +121,13 @@ impl <B: Basics> DynamicEventHandle <B> {
     /*self.data.downcast_ref::<EventInner <T>> ().map (DynamicEventHandle {
       data: self.data as Rc <EventInnerTrait<<T::Steward as TimeSteward>::Basics>>
     })*/
+  }
+}
+impl <B: Basics, T: Event <Steward = Steward <B>>> PredictionHandle <T> {
+  pub fn as_dynamic_event (self)->DynamicEventHandle<B> {
+    DynamicEventHandle {
+      data: self.data as Rc <EventInnerTrait<B>>
+    }
   }
 }
 
@@ -154,7 +160,67 @@ impl <T: DataTimeline> TypedDataTimelineHandleTrait <T> for DataTimelineHandle <
   }
 }
 
+impl <T: DataTimeline> Hash for DataTimelineHandle <T> {
+  fn hash <H: Hasher> (&self, state: &mut H) {
+    self.data.shared().serial_number.hash (state);
+  }
+}
+impl <T: DataTimeline> Eq for DataTimelineHandle <T> {}
+impl <T: DataTimeline> PartialEq for DataTimelineHandle <T> {
+  fn eq(&self, other: &Self) -> bool {
+    self.data.shared().serial_number == other.data.shared().serial_number
+  }
+}
+impl <B: Basics> Hash for DynamicDataTimelineHandle <B>{
+  fn hash <H: Hasher> (&self, state: &mut H) {
+    self.data.shared().serial_number.hash (state);
+  }
+}
+impl <B: Basics> Eq for DynamicDataTimelineHandle <B> {}
+impl <B: Basics> PartialEq for DynamicDataTimelineHandle <B> {
+  fn eq(&self, other: &Self) -> bool {
+    self.data.shared().serial_number == other.data.shared().serial_number
+  }
+}
+
+
 time_steward_common_impls_for_handles!();
+
+time_steward_serialization_impls_for_handle!(
+  [T: DataTimeline]
+  [DataTimelineHandle <T>]
+  (&self)
+  Uniquely identified by ((self.data.shared.serial_number): usize)
+  Data located at (| handle | &mut handle.data.data)
+);
+time_steward_serialization_impls_for_handle!(
+  [B: Basics]
+  [DynamicDataTimelineHandle <B>]
+  (&self)
+  Uniquely identified by ((self.data.shared().serial_number): usize)
+  Data located at (| handle | &mut unimplemented!())
+);
+time_steward_serialization_impls_for_handle!(
+  [T: Event]
+  [EventHandle <T>]
+  (&self)
+  Uniquely identified by ((self.data.shared.time.id): DeterministicRandomId)
+  Data located at (| handle | &mut handle.data.data)
+);
+time_steward_serialization_impls_for_handle!(
+  [B: Basics]
+  [DynamicEventHandle <B>]
+  (&self)
+  Uniquely identified by ((self.data.shared().time.id): DeterministicRandomId)
+  Data located at (| handle | &mut unimplemented!())
+);
+time_steward_serialization_impls_for_handle!(
+  [T: Event]
+  [PredictionHandle <T>]
+  (&self)
+  Uniquely identified by ((self.data.shared.time.id): DeterministicRandomId)
+  Data located at (| handle | &mut handle.data.data)
+);
 
 
 #[derive (Debug)]
@@ -218,7 +284,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
         }
       })
     };
-    self.steward.existent_predictions.insert (handle.clone());
+    self.steward.existent_predictions.insert (handle.clone().as_dynamic_event());
     handle
   }
   fn destroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &PredictionHandle<E>) {
@@ -267,7 +333,7 @@ struct Steward <B: Basics> {
 impl<B: Basics> Steward<B> {
   fn next_event(&self) -> Option<&DynamicEventHandle<B>> {
     let first_fiat_event_iter = self.upcoming_fiat_events.iter().take (1);
-    let first_predicted_event_iter = self.existent_predictions.iter().map(| prediction | prediction.as_dynamic_event).take (1);
+    let first_predicted_event_iter = self.existent_predictions.iter().take (1);
     let events_iter = first_fiat_event_iter.chain(first_predicted_event_iter);
     events_iter.min()
   }
@@ -302,8 +368,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
     if self.valid_since() > time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    match self.upcoming_fiat_events.insert(extended_time_of_fiat_event(time, id),
-                                        EventHandle {data: Rc::new(event)}.erase_type()) {
+    match self.upcoming_fiat_events.insert(EventHandle {data: Rc::new(EventInner {shared: EventInnerShared {time:extended_time_of_fiat_event(time, id)}, data: event})}.erase_type()) {
       false => Ok(()),
       true => Err(FiatEventOperationError::InvalidInput),
     }
