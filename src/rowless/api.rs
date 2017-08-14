@@ -28,7 +28,7 @@ pub enum QueryOffset {
   Before, After
 }
 
-pub trait DataTimeline: Any + Serialize + DeserializeOwned {
+pub trait DataTimeline: Any + Serialize + DeserializeOwned + Debug {
   type Basics: Basics;
 
   /// Make a clone of only the data necessary to report accurately at a specific time.
@@ -184,7 +184,7 @@ impl <T: EventAccessor> MomentaryAccessor for T {
 }
 
 
-pub trait TimeSteward: Any + Sized {
+pub trait TimeSteward: Any + Sized + Debug {
   type Basics: Basics;
   type Snapshot: Snapshot <Steward = Self>;
   type InvalidationAccessor: InvalidationAccessor <Steward = Self>;

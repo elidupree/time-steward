@@ -2,6 +2,7 @@ use super::super::api::*;
 use std::cmp::Ordering;
 use ::DeterministicRandomId;
 use rand::{ChaChaRng, SeedableRng};
+use std::fmt::Debug;
 
 #[doc (hidden)]
 #[macro_export]
@@ -91,6 +92,8 @@ fn generator_for_event(id: DeterministicRandomId) -> ChaChaRng {
                         (id.data()[1] & 0xffffffff) as u32])
 }
 
+
+#[derive (Debug)]
 pub struct GenericEventAccessor {
   pub generator: ChaChaRng,
 }

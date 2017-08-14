@@ -7,6 +7,7 @@ use std::any::Any;
 use std::io::{Read, Write};
 use std::rc::Rc;
 use std::marker::PhantomData;
+use std::fmt::Debug;
 
 use super::super::api::*;
 use super::super::implementation_support::common::*;
@@ -15,26 +16,29 @@ use {DeterministicRandomId};
 
 time_steward_steward_specific_api!();
 
+#[derive (Debug)]
 struct DataTimelineInner <T: DataTimeline> {
   serial_number: usize,
   first_snapshot_not_updated: Cell<usize>,
   data: RefCell<T>,
 }
+#[derive (Debug)]
 struct EventInnerShared <B: Basics> {
   serial_number: usize,
   time: ExtendedTime <B>,
 }
+#[derive (Debug)]
 struct EventInner <T: Event> {
   shared: EventInnerShared <<T::Steward as TimeSteward>::Basics>,
   data: T,
 }
-trait EventInnerTrait <B: Basics>: Any {
+trait EventInnerTrait <B: Basics>: Any + Debug {
   fn shared (&self)->& EventInnerShared <B>;
   fn execute (&self, self_handle: & DynamicEventHandle <B>, steward: &mut Steward <B>);
 }
-impl <T: Event> EventInnerTrait <<T::Steward as TimeSteward>::Basics> for EventInner <T> {
-  fn shared (&self)->& EventInnerShared <<T::Steward as TimeSteward>::Basics> {&self.shared}
-  fn execute (&self, self_handle: & DynamicEventHandle<<T::Steward as TimeSteward>::Basics>, steward: &mut Steward <<T::Steward as TimeSteward>::Basics>) {
+impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for EventInner <T> {
+  fn shared (&self)->& EventInnerShared <B> {&self.shared}
+  fn execute (&self, self_handle: & DynamicEventHandle<B>, steward: &mut Steward <B>) {
     let mut accessor = EventAccessorStruct {
       generic: GenericEventAccessor::new(&self.shared.time),
       handle: self_handle.clone(),
@@ -68,10 +72,10 @@ pub struct DynamicEventHandle <B: Basics> {
 #[derivative (Clone (bound = ""))]
 pub struct PredictionHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] data: Rc <EventInner<T>>}
 
-impl <T: Event> EventHandle <T> {
-  pub fn erase_type (self)->DynamicEventHandle<<T::Steward as TimeSteward>::Basics> {
+impl <B: Basics, T: Event <Steward = Steward <B>>> EventHandle <T> {
+  pub fn erase_type (self)->DynamicEventHandle<B> {
     DynamicEventHandle {
-      data: self.data as Rc <EventInnerTrait<<T::Steward as TimeSteward>::Basics>>
+      data: self.data as Rc <EventInnerTrait<B>>
     }
   }
 }
@@ -101,7 +105,7 @@ impl <T: DataTimeline> DataTimelineHandleTrait for DataTimelineHandle <T> {
   fn new(data: T)->Self {
     DataTimelineHandle {
       data: Rc::new(DataTimelineInner {
-        data: data
+        data: RefCell::new (data),
       })
     }
   }
@@ -110,21 +114,23 @@ impl <T: DataTimeline> DataTimelineHandleTrait for DataTimelineHandle <T> {
 time_steward_common_impls_for_handles!();
 
 
-
+#[derive (Debug)]
 pub struct EventAccessorStruct <'a, B: Basics> {
   generic: GenericEventAccessor,
   handle: DynamicEventHandle <B>,
   steward: &'a mut Steward<B>,
 }
+#[derive (Debug)]
 pub struct SnapshotInner <B: Basics> {
   time: ExtendedTime <B>,
   global_timeline: DataTimelineHandle <B::GlobalTimeline>,
   clones: RefCell<HashMap<DynamicDataTimelineHandle, DynamicDataTimelineHandle>>,
 }
-#[derive (Clone)]
+#[derive (Debug, Clone)]
 pub struct SnapshotHandle <B: Basics> {
   data: Rc <SnapshotInner <B>>,
 }
+#[derive (Debug)]
 pub struct InvalidationAccessorStruct <B: Basics> (!, PhantomData <B>);
 
 
@@ -203,6 +209,7 @@ impl <B: Basics> InvalidationAccessor for InvalidationAccessorStruct <B> {
   fn invalidate_dynamic (&self, handle: & DynamicEventHandle<<Self::Steward as TimeSteward>::Basics>) { unimplemented!() }
 }
 
+#[derive (Debug)]
 struct Steward <B: Basics> {
   global_timeline: DataTimelineHandle <B::GlobalTimeline>,
   invalid_before: ValidSince <B::Time>,
