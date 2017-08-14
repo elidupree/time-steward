@@ -48,7 +48,7 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for Event
       handle: self_handle.clone(),
       steward: steward,
     };
-    self.data.execute (&accessor);
+    self.data.execute (&mut accessor);
   }
 }
 trait DataTimelineInnerTrait <B: Basics>: Any + Debug {
@@ -148,10 +148,17 @@ impl <T: DataTimeline> DataTimelineHandleTrait for DataTimelineHandle <T> {}
 impl <B: Basics> DataTimelineHandleTrait for DynamicDataTimelineHandle <B> {}
 impl <T: DataTimeline> TypedDataTimelineHandleTrait <T> for DataTimelineHandle <T> {
   fn new(data: T)->Self {
+    thread_local! {
+      static NEXT_SERIAL_NUMBER: Cell <usize> = Cell::new (0);
+    }
     DataTimelineHandle {
       data: Rc::new(DataTimelineInner {
         shared: DataTimelineInnerShared {
-          serial_number: unimplemented!(),
+          serial_number: NEXT_SERIAL_NUMBER.with (| cell | {
+            let result = cell.get();
+            cell.set (result + 1) ;
+            result
+          }),
           first_snapshot_not_updated: Cell::new (0),
         },
         data: RefCell::new (data),
@@ -239,6 +246,7 @@ pub struct SnapshotInner <B: Basics> {
 pub struct SnapshotHandle <B: Basics> {
   data: Rc <SnapshotInner <B>>,
 }
+#[allow (unreachable_patterns, unreachable_code)]
 #[derive (Debug)]
 pub struct InvalidationAccessorStruct <B: Basics> (!, PhantomData <B>);
 
@@ -257,7 +265,7 @@ impl <B: Basics> Accessor for SnapshotHandle <B> {
   }
   fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
     let mut guard = self.data.clones.borrow_mut();
-    let mut entry = guard.entry (handle.clone().erase_type());
+    let entry = guard.entry (handle.clone().erase_type());
     let handle = entry.or_insert_with (| | DataTimelineHandle::new (handle.data.data.borrow().clone_for_snapshot (self.now())).erase_type());
     let typed = handle.clone().downcast::<T>().unwrap();
     let timeline_guard = typed.data.data.borrow();
@@ -297,7 +305,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     self.steward.existent_predictions.remove (& prediction.clone().as_dynamic_event());
   }
   
-  fn invalidate <F: FnOnce(&<Self::Steward as TimeSteward>::InvalidationAccessor)> (&self, invalidator: F) {
+  fn invalidate <F: FnOnce(&<Self::Steward as TimeSteward>::InvalidationAccessor)> (&self, _: F) {
     // There are never any future events. Do nothing.
   }
 }
@@ -311,17 +319,17 @@ impl <B: Basics> Snapshot for SnapshotHandle <B> {
 impl <B: Basics> Accessor for InvalidationAccessorStruct <B> {
   type Steward = Steward <B>;
   fn global_timeline (&self)->&DataTimelineHandle <<<Self::Steward as TimeSteward>::Basics as Basics>::GlobalTimeline> { unimplemented!() }
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult { unimplemented!() }
+  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, _: & DataTimelineHandle <T>, _: &Query, _: QueryOffset)-> T::QueryResult { unimplemented!() }
 }
 impl <B: Basics> MomentaryAccessor for InvalidationAccessorStruct <B> {
   fn now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> { unimplemented!() }
 }
 impl <B: Basics> PeekingAccessor for InvalidationAccessorStruct <B> {
-  fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&self, handle: & DataTimelineHandle <T>)->& T { unimplemented!() }
+  fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&self, _: & DataTimelineHandle <T>)->& T { unimplemented!() }
 }
 impl <B: Basics> InvalidationAccessor for InvalidationAccessorStruct <B> {
-  fn invalidate <T: Event <Steward = Self::Steward>> (&self, handle: & EventHandle <T>) { unimplemented!() }
-  fn invalidate_dynamic (&self, handle: & DynamicEventHandle<<Self::Steward as TimeSteward>::Basics>) { unimplemented!() }
+  fn invalidate <T: Event <Steward = Self::Steward>> (&self, _: & EventHandle <T>) { unimplemented!() }
+  fn invalidate_dynamic (&self, _: & DynamicEventHandle<<Self::Steward as TimeSteward>::Basics>) { unimplemented!() }
 }
 
 #[derive (Debug)]
@@ -411,7 +419,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
     Some (handle);
   }
   
-  fn forget_before (&mut self, time: & B::Time) {}
+  fn forget_before (&mut self, _: & B::Time) {}
 }
 
 
