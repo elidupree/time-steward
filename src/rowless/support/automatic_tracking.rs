@@ -92,7 +92,7 @@ impl <Data: StewardData, B: Basics> DataTimelineQueriableWith<GetValue> for Simp
 pub fn query_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>, offset: QueryOffset)->Option <(ExtendedTime <Steward::Basics>, Option <Data>)> {
   accessor.modify (handle, move |timeline| {
     let mut dependencies = timeline.other_dependent_events.borrow_mut();
-    dependencies.insert (accessor.handle().clone().erase_type());
+    dependencies.insert (accessor.handle().clone());
   });
   accessor.query (handle, &GetValue, offset)
 }
@@ -107,7 +107,7 @@ pub fn modify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor
   });
   accessor.modify (handle, move |timeline| {
     timeline.remove_from (accessor.now());
-    timeline.changes.push ((accessor.handle().clone().erase_type(), modification));
+    timeline.changes.push ((accessor.handle().clone(), modification));
   });
 }
 pub fn unmodify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>) {

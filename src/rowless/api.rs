@@ -122,7 +122,7 @@ pub trait Event: StewardData {
   fn execute<Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &Accessor)->Self::ExecutionData;
   // audit: leaves self in its original state??
   // audit: after undoing, all query results immediately before and after the event are identical to each other (if the previous audit passes, this is more an audit of the DataTimeline types than this event type)
-  fn undo<Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, execution_data: Self::ExecutionData, accessor: &Accessor);
+  fn undo<Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &Accessor, execution_data: Self::ExecutionData);
   // audit: should produce the same subsequent query results as doing undo() and then execute()
   // implementing this is simply an optimization that may allow you to invalidate fewer things, so we default-implement it
   fn re_execute<Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, execution_data: Self::ExecutionData, accessor: &Accessor) {

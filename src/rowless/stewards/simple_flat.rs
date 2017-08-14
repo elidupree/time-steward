@@ -36,11 +36,11 @@ impl <T: Event> EventInnerTrait <<T::Steward as TimeSteward>::Basics> for EventI
   fn shared (&self)->& EventInnerShared <<T::Steward as TimeSteward>::Basics> {&self.shared}
   fn execute (&self, self_handle: & DynamicEventHandle<<T::Steward as TimeSteward>::Basics>, steward: &mut Steward <<T::Steward as TimeSteward>::Basics>) {
     let mut accessor = EventAccessorStruct {
-      generic: GenericEventAccessor::new(self.shared.time.clone()),
-      handle: self_handle,
+      generic: GenericEventAccessor::new(&self.shared.time),
+      handle: self_handle.clone(),
       steward: steward,
     };
-    self.data.execute (accessor);
+    self.data.execute (&accessor);
   }
 }
 
@@ -77,9 +77,10 @@ impl <T: Event> EventHandle <T> {
 }
 impl <B: Basics> DynamicEventHandle <B> {
   pub fn downcast <T: Event> (self)->Option <EventHandle<T>> {
-    self.data.downcast_ref::<EventInner <T>> ().map (DynamicEventHandle {
+    unimplemented!() 
+    /*self.data.downcast_ref::<EventInner <T>> ().map (DynamicEventHandle {
       data: self.data as Rc <EventInnerTrait<<T::Steward as TimeSteward>::Basics>>
-    })
+    })*/
   }
 }
 
@@ -115,10 +116,14 @@ pub struct EventAccessorStruct <'a, B: Basics> {
   handle: DynamicEventHandle <B>,
   steward: &'a mut Steward<B>,
 }
-pub struct SnapshotStruct <B: Basics> {
+pub struct SnapshotInner <B: Basics> {
   time: ExtendedTime <B>,
   global_timeline: DataTimelineHandle <B::GlobalTimeline>,
   clones: RefCell<HashMap<DynamicDataTimelineHandle, DynamicDataTimelineHandle>>,
+}
+#[derive (Clone)]
+pub struct SnapshotHandle <B: Basics> {
+  data: Rc <SnapshotInner <B>>,
 }
 pub struct InvalidationAccessorStruct <B: Basics> (!, PhantomData <B>);
 
@@ -127,21 +132,21 @@ impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
   type Steward = Steward <B>;
   fn global_timeline (&self)->&DataTimelineHandle <B::GlobalTimeline> {&self.steward.global_timeline}
   fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = B>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
-    <handle.data.borrow() as DataTimelineQueriableWith<Query>>.query (query, self.now(), offset)
+    DataTimelineQueriableWith::<Query>::query (handle.data.borrow(), query, self.now(), offset)
   }
 }
-impl <B: Basics> Accessor for SnapshotStruct <B> {
+impl <B: Basics> Accessor for SnapshotHandle <B> {
   type Steward = Steward <B>;
   fn global_timeline (&self)->&DataTimelineHandle <<<Self::Steward as TimeSteward>::Basics as Basics>::GlobalTimeline> {
-    &self.global_timeline
+    &self.data.global_timeline
   }
   fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
-    self.clones.borrow_mut().entry (handle.clone()).or_insert_with (| | handle.data.data.borrow().clone_for_snapshot (self.now())).query (query, offset)
+    self.data.clones.borrow_mut().entry (handle.clone()).or_insert_with (| | handle.data.data.borrow().clone_for_snapshot (self.now())).query (query, offset)
   }
 }
-impl <B: Basics> MomentaryAccessor for SnapshotStruct <B> {
+impl <B: Basics> MomentaryAccessor for SnapshotHandle <B> {
   fn now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
-    & self.time
+    & self.data.time
   }
 }
 impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
@@ -176,7 +181,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
   }
 }
 
-impl <B: Basics> Snapshot for SnapshotStruct <B> {
+impl <B: Basics> Snapshot for SnapshotHandle <B> {
   fn serialize_into <W: Write> (&self, writer: W) {
     unimplemented!()
   }
@@ -204,7 +209,8 @@ struct Steward <B: Basics> {
   last_event: Option <ExtendedTime <B>>,
   upcoming_fiat_events: BTreeSet<DynamicEventHandle<B>>,
   existent_predictions: BTreeSet <DynamicEventHandle<B>>,
-  snapshots: BTreeMap<usize, SnapshotStruct <B>>,
+  snapshots: BTreeMap<usize, SnapshotHandle <B>>,
+  next_snapshot_index: usize,
 }
 
 
@@ -227,7 +233,7 @@ impl<B: Basics> Steward<B> {
 
 impl<B: Basics> TimeSteward for Steward<B> {
   type Basics = B;
-  type Snapshot = SnapshotStruct <B>;
+  type Snapshot = SnapshotHandle <B>;
   type InvalidationAccessor = InvalidationAccessorStruct <B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
@@ -272,7 +278,16 @@ impl<B: Basics> TimeSteward for Steward<B> {
       if updated >= *time {break;}
       self.step();
     }
-    Some (self.snapshots.make_new (time))
+    self.next_snapshot_index += 1;
+    let handle = SnapshotHandle {
+      data: Rc::new (SnapshotInner {
+        global_timeline: self.global_timeline.clone(),
+        time: unimplemented!(),
+        clones: BTreeSet::new(),
+      })
+    };
+    self.snapshots.insert (self.next_snapshot_index, handle.clone());
+    Some (handle);
   }
   
   fn forget_before (&mut self, time: & B::Time) {}
@@ -288,6 +303,7 @@ impl <B: Basics> ConstructibleTimeSteward for Steward <B> {
       upcoming_fiat_events: BTreeSet::new(),
       existent_predictions: BTreeSet::new(),
       snapshots: BTreeMap::new(),
+      next_snapshot_index: 0,
     }
   }
   

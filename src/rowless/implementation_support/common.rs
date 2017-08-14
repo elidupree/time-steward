@@ -1,7 +1,7 @@
 use super::super::api::*;
 use std::cmp::Ordering;
 use ::DeterministicRandomId;
-use rand::ChaChaRng;
+use rand::{ChaChaRng, SeedableRng};
 
 #[doc (hidden)]
 #[macro_export]
