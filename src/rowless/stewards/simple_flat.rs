@@ -16,15 +16,18 @@ use {DeterministicRandomId};
 
 time_steward_steward_specific_api!();
 
-#[derive (Debug)]
-struct DataTimelineInner <T: DataTimeline> {
+#[derive (Debug, Clone)]
+struct DataTimelineInnerShared {
   serial_number: usize,
   first_snapshot_not_updated: Cell<usize>,
+}
+#[derive (Debug)]
+struct DataTimelineInner <T: DataTimeline> {
+  shared: DataTimelineInnerShared,
   data: RefCell<T>,
 }
 #[derive (Debug)]
 struct EventInnerShared <B: Basics> {
-  serial_number: usize,
   time: ExtendedTime <B>,
 }
 #[derive (Debug)]
@@ -47,12 +50,34 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for Event
     self.data.execute (&accessor);
   }
 }
+trait DataTimelineInnerTrait <B: Basics>: Any + Debug {
+  fn shared (&self)->& DataTimelineInnerShared;
+  fn clone_for_snapshot (&self, time: & ExtendedTime <B>)->DynamicDataTimelineHandle <B>;
+}
+impl <T: DataTimeline> DataTimelineInnerTrait <T::Basics> for DataTimelineInner <T> {
+  fn shared (&self)->& DataTimelineInnerShared {&self.shared}
+  fn clone_for_snapshot (&self, time: & ExtendedTime <T::Basics>)->DynamicDataTimelineHandle <T::Basics> {
+    DataTimelineHandle {
+      data: Rc::new (DataTimelineInner {
+        shared: self.shared.clone(),
+        data: RefCell::new (self.data.borrow().clone_for_snapshot(time)),
+      })
+    }.erase_type()
+  }
+}
+
 
 #[derive (Debug, Serialize, Deserialize, Derivative)]
 #[derivative (Clone (bound = ""))]
 pub struct DataTimelineHandle <T: DataTimeline> {
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   data: Rc<DataTimelineInner<T>>
+}
+#[derive (Debug, Serialize, Deserialize, Derivative)]
+#[derivative (Clone (bound = ""))]
+pub struct DynamicDataTimelineHandle <B: Basics> {
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
+  data: Rc <DataTimelineInnerTrait <B>>
 }
 
 #[derive (Debug, Serialize, Deserialize, Derivative)]
@@ -72,6 +97,18 @@ pub struct DynamicEventHandle <B: Basics> {
 #[derivative (Clone (bound = ""))]
 pub struct PredictionHandle <T: Event> {#[serde(deserialize_with = "::serde::Deserialize::deserialize")] data: Rc <EventInner<T>>}
 
+impl <T: DataTimeline> DataTimelineHandle <T> {
+  pub fn erase_type (self)->DynamicDataTimelineHandle<T::Basics> {
+    DynamicDataTimelineHandle {
+      data: self.data as Rc <DataTimelineInnerTrait>
+    }
+  }
+}
+impl <B: Basics> DynamicDataTimelineHandle<B> {
+  pub fn downcast <T: DataTimeline <Basics = B>> (self)->Option <DataTimelineHandle<T>> {
+    unimplemented!()
+  }
+}
 impl <B: Basics, T: Event <Steward = Steward <B>>> EventHandle <T> {
   pub fn erase_type (self)->DynamicEventHandle<B> {
     DynamicEventHandle {
@@ -101,10 +138,16 @@ impl <B: Basics> EventHandleTrait for DynamicEventHandle<B> {
   fn time (&self)->& ExtendedTime <Self::Basics> {&self.data.shared().time}
 }
 
-impl <T: DataTimeline> DataTimelineHandleTrait for DataTimelineHandle <T> {
+impl <T: DataTimeline> DataTimelineHandleTrait for DataTimelineHandle <T> {}
+impl <B: Basics> DataTimelineHandleTrait for DynamicDataTimelineHandle <B> {}
+impl <T: DataTimeline> TypedDataTimelineHandleTrait <T> for DataTimelineHandle <T> {
   fn new(data: T)->Self {
     DataTimelineHandle {
       data: Rc::new(DataTimelineInner {
+        shared: DataTimelineInnerShared {
+          serial_number: unimplemented!(),
+          first_snapshot_not_updated: Cell::new (0),
+        },
         data: RefCell::new (data),
       })
     }
@@ -124,7 +167,7 @@ pub struct EventAccessorStruct <'a, B: Basics> {
 pub struct SnapshotInner <B: Basics> {
   time: ExtendedTime <B>,
   global_timeline: DataTimelineHandle <B::GlobalTimeline>,
-  clones: RefCell<HashMap<DynamicDataTimelineHandle, DynamicDataTimelineHandle>>,
+  clones: RefCell<HashMap<DynamicDataTimelineHandle <B>, DynamicDataTimelineHandle <B> >>,
 }
 #[derive (Debug, Clone)]
 pub struct SnapshotHandle <B: Basics> {
@@ -170,7 +213,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
       data: Rc::new (EventInner {
         data: event,
         shared: EventInnerShared {
-          serial_number: panic!(),
+
           time: time,
         }
       })
@@ -290,7 +333,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
       data: Rc::new (SnapshotInner {
         global_timeline: self.global_timeline.clone(),
         time: unimplemented!(),
-        clones: BTreeSet::new(),
+        clones: RefCell::new (HashMap::new()),
       })
     };
     self.snapshots.insert (self.next_snapshot_index, handle.clone());
