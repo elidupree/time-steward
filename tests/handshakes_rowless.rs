@@ -11,7 +11,7 @@ extern crate serde_derive;
 use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{self, StewardData, QueryOffset};
 use time_steward::rowless::stewards::{simple_flat};
-use simple_flat::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineHandle, PredictionHandle, EventAccessor, Snapshot, automatic_tracking};
+use simple_flat::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineHandle, PredictionHandle, EventAccessor, SnapshotAccessor, automatic_tracking};
 use simple_flat::Steward;
 use automatic_tracking::{SimpleTimeline, ConstantTimeline, GetValue, query_simple_timeline, modify_simple_timeline, unmodify_simple_timeline};
 
@@ -86,11 +86,11 @@ type TimeStewardTypes = (ListedType<SimpleTimeline <Philosopher>>,
                          ListedType<TweakUnsafe>,
                          ListedType<Shake>);*/
 
-fn display_snapshot<S: Snapshot<Steward = Steward <Basics>>>(snapshot: &S) {
-  println!("snapshot for {}", snapshot.now());
-  for handle in snapshot.query (snapshot.global_timeline(), GetValue, QueryOffset::After).iter() {
+fn display_snapshot<Accessor: SnapshotAccessor<Steward = Steward <Basics>>>(accessor: & Accessor) {
+  println!("snapshot for {}", accessor.now());
+  for handle in accessor.query (accessor.global_timeline(), GetValue, QueryOffset::After).iter() {
     println!("{}",
-             snapshot.query(handle, GetValue, QueryOffset::After)
+             accessor.query(handle, GetValue, QueryOffset::After)
                .expect("missing philosopher")
                .time_when_next_initiates_handshake);
   }

@@ -320,7 +320,7 @@ impl <'a, B: Basics> Rng for EventAccessorStruct <'a, B> {
     }
 }
 
-impl <B: Basics> Snapshot for SnapshotHandle <B> {
+impl <B: Basics> SnapshotAccessor for SnapshotHandle <B> {
   fn serialize_into <W: Write> (&self, writer: W) {
     unimplemented!()
   }
@@ -373,7 +373,7 @@ impl<B: Basics> Steward<B> {
 
 impl<B: Basics> TimeSteward for Steward<B> {
   type Basics = B;
-  type Snapshot = SnapshotHandle <B>;
+  type SnapshotAccessor = SnapshotHandle <B>;
   type InvalidationAccessor = InvalidationAccessorStruct <B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {
@@ -411,7 +411,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
     }
   }
   
-  fn snapshot_before (&mut self, time: & B::Time)->Option <Self::Snapshot> {
+  fn snapshot_before (&mut self, time: & B::Time)->Option <Self::SnapshotAccessor> {
     if self.valid_since() > *time { return None; }
     while let Some (updated) = self.updated_until_before () {
       if updated >= *time {break;}

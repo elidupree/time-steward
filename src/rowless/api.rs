@@ -173,8 +173,8 @@ pub trait InvalidationAccessor: PeekingAccessor {
   fn invalidate_dynamic (&self, handle: & DynamicEventHandle<<Self::Steward as TimeSteward>::Basics>);
 }
 
-pub trait Snapshot: MomentaryAccessor {
-  /// note: Snapshot::serialize() matches TimeSteward::deserialize()
+pub trait SnapshotAccessor: MomentaryAccessor {
+  /// note: SnapshotAccessor::serialize() matches TimeSteward::deserialize()
   fn serialize_into <W: Write> (&self, writer: W);
 }
 
@@ -187,14 +187,14 @@ impl <T: EventAccessor> MomentaryAccessor for T {
 
 pub trait TimeSteward: Any + Sized + Debug {
   type Basics: Basics;
-  type Snapshot: Snapshot <Steward = Self>;
+  type SnapshotAccessor: SnapshotAccessor <Steward = Self>;
   type InvalidationAccessor: InvalidationAccessor <Steward = Self>;
   
   fn insert_fiat_event<E: Event <Steward = Self>>(&mut self, time: <Self::Basics as Basics>::Time, id: DeterministicRandomId, event: E)
                                                -> Result<(), FiatEventOperationError>;
   fn remove_fiat_event(&mut self, time: &<Self::Basics as Basics>::Time, id: DeterministicRandomId)
                        -> Result<(), FiatEventOperationError>;
-  fn snapshot_before (&mut self, time: &<Self::Basics as Basics>::Time)->Option <Self::Snapshot>;
+  fn snapshot_before (&mut self, time: &<Self::Basics as Basics>::Time)->Option <Self::SnapshotAccessor>;
   
   fn valid_since(&self) -> ValidSince<<Self::Basics as Basics>::Time>;
   fn forget_before (&mut self, time: &<Self::Basics as Basics>::Time);
@@ -204,7 +204,7 @@ pub trait TimeSteward: Any + Sized + Debug {
 /// Most TimeSteward types should implement this. Exceptions are types that can't function without certain extra runtime metadata
 pub trait ConstructibleTimeSteward: TimeSteward {
   fn from_global_timeline (timeline: <Self::Basics as Basics>::GlobalTimeline)->Self;
-  /// note: Snapshot::serialize() matches TimeSteward::deserialize()
+  /// note: SnapshotAccessor::serialize() matches TimeSteward::deserialize()
   fn deserialize_from <R: Read> (data: &mut R)->Self;
 }
 
