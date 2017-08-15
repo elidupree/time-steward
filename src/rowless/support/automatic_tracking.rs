@@ -52,7 +52,7 @@ impl <Data: StewardData, B: Basics> DataTimelineQueriableWith<GetValue> for Cons
   }
 }
 
-pub fn query_constant_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <ConstantTimeline <Data, Steward::Basics>>)->Data {
+pub fn query_constant_timeline <Data: StewardData, Steward: TimeSteward, A: Accessor <Steward = Steward>> (accessor: & A, handle: & DataTimelineHandle <ConstantTimeline <Data, Steward::Basics>>)->Data {
   accessor.query (handle, &GetValue, QueryOffset::After)
 }
 
@@ -121,19 +121,19 @@ impl <Data: StewardData, B: Basics> DataTimeline for SimpleTimeline <Data, B> {
   }
 }
 impl <Data: StewardData, B: Basics> DataTimelineQueriableWith<GetValue> for SimpleTimeline <Data, B> {
-  type QueryResult = Option <(ExtendedTime <B>, Option <Data>)>;
+  type QueryResult = Option <(ExtendedTime <B>, Data)>;
 
   fn query (&self, _: &GetValue, time: &ExtendedTime <Self::Basics>, offset: QueryOffset)->Self::QueryResult {
     let previous_change_index = match self.changes.binary_search_by_key (&time, | change | change.0.extended_time()) {
       Ok(index) => match offset {QueryOffset::After => index, QueryOffset::Before => index.wrapping_sub (1)},
       Err (index) => index.wrapping_sub (1),
     };
-    self.changes.get (previous_change_index).map (| change | (change.0.extended_time().clone(), change.1.clone()))
+    self.changes.get (previous_change_index).and_then (| change | change.1.as_ref().map (| data | (change.0.extended_time().clone(), data.clone())))
   }
 }
 
 
-pub fn query_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>, offset: QueryOffset)->Option <(ExtendedTime <Steward::Basics>, Option <Data>)> {
+pub fn query_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>, offset: QueryOffset)->Option <(ExtendedTime <Steward::Basics>, Data)> {
   accessor.modify (handle, move |timeline| {
     let mut dependencies = timeline.other_dependent_events.borrow_mut();
     dependencies.insert (accessor.handle().clone());
@@ -141,11 +141,16 @@ pub fn query_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor:
   accessor.query (handle, &GetValue, offset)
 }
 pub fn modify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>, modification: Option <Data>) {
-  if let Some((time, data)) = accessor.query (handle, &GetValue, QueryOffset::After) {
-    if &time == accessor.extended_now() && data == modification {
-      return
-    }
-  }
+  match accessor.query (handle, &GetValue, QueryOffset::After) {
+    Some((time, data)) =>
+      if let Some (new_data) = modification.as_ref() {
+        if &time == accessor.extended_now() && &data == new_data {
+          return
+        }
+      },
+    None =>
+      if modification.is_none() {return}
+  };
   accessor.invalidate (| invalidator | {
     invalidator.peek(handle).invalidate_after (accessor.extended_now(), invalidator);
   });
