@@ -138,25 +138,25 @@ pub fn query_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor:
 }
 pub fn modify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>, modification: Option <Data>) {
   if let Some((time, data)) = accessor.query (handle, &GetValue, QueryOffset::After) {
-    if &time == accessor.now() && data == modification {
+    if &time == accessor.extended_now() && data == modification {
       return
     }
   }
   accessor.invalidate (| invalidator | {
-    invalidator.peek(handle).invalidate_after (accessor.now(), invalidator);
+    invalidator.peek(handle).invalidate_after (accessor.extended_now(), invalidator);
   });
   accessor.modify (handle, move |timeline| {
-    timeline.remove_from (accessor.now());
+    timeline.remove_from (accessor.extended_now());
     timeline.changes.push ((accessor.handle().clone(), modification));
   });
 }
 pub fn unmodify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>) {
-  if let Some((time, _)) = accessor.query (handle, &GetValue, QueryOffset::After) { if &time == accessor.now() {
+  if let Some((time, _)) = accessor.query (handle, &GetValue, QueryOffset::After) { if &time == accessor.extended_now() {
     accessor.invalidate (| invalidator | {
-      invalidator.peek(handle).invalidate_after (accessor.now(), invalidator);
+      invalidator.peek(handle).invalidate_after (accessor.extended_now(), invalidator);
     });
     accessor.modify (handle, move |timeline| {
-      timeline.remove_from (accessor.now());
+      timeline.remove_from (accessor.extended_now());
     });
   }}
 }

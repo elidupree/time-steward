@@ -144,7 +144,8 @@ pub trait PeekingAccessor: Accessor {
   fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&self, handle: & DataTimelineHandle <T>)->& T;
 }
 pub trait MomentaryAccessor: Accessor {
-  fn now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
+  fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
+  fn now(&self) -> & <<Self::Steward as TimeSteward>::Basics as Basics>::Time {&self.extended_now().base}
 }
 pub trait EventAccessor: MomentaryAccessor + Rng {
   fn handle (&self)->& DynamicEventHandle <<Self::Steward as TimeSteward>::Basics>;
@@ -179,7 +180,7 @@ pub trait SnapshotAccessor: MomentaryAccessor {
 }
 
 impl <T: EventAccessor> MomentaryAccessor for T {
-  fn now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
+  fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
     &self.handle().time()
   }
 }

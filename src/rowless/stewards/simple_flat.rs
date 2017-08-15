@@ -256,7 +256,7 @@ impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
   type Steward = Steward <B>;
   fn global_timeline (&self)->&DataTimelineHandle <B::GlobalTimeline> {&self.steward.global_timeline}
   fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = B>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
-    DataTimelineQueriableWith::<Query>::query (&*handle.data.data.borrow(), query, self.now(), offset)
+    DataTimelineQueriableWith::<Query>::query (&*handle.data.data.borrow(), query, self.extended_now(), offset)
   }
 }
 impl <B: Basics> Accessor for SnapshotHandle <B> {
@@ -267,15 +267,15 @@ impl <B: Basics> Accessor for SnapshotHandle <B> {
   fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
     let mut guard = self.data.clones.borrow_mut();
     let entry = guard.entry (handle.clone().erase_type());
-    let handle = entry.or_insert_with (| | DataTimelineHandle::new (handle.data.data.borrow().clone_for_snapshot (self.now())).erase_type());
+    let handle = entry.or_insert_with (| | DataTimelineHandle::new (handle.data.data.borrow().clone_for_snapshot (self.extended_now())).erase_type());
     let typed = handle.clone().downcast::<T>().unwrap();
     let timeline_guard = typed.data.data.borrow();
     DataTimelineQueriableWith::<Query>::query(
-      &*timeline_guard, query, self.now(), offset)
+      &*timeline_guard, query, self.extended_now(), offset)
   }
 }
 impl <B: Basics> MomentaryAccessor for SnapshotHandle <B> {
-  fn now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
+  fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
     & self.data.time
   }
 }
@@ -332,7 +332,7 @@ impl <B: Basics> Accessor for InvalidationAccessorStruct <B> {
   fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, _: & DataTimelineHandle <T>, _: &Query, _: QueryOffset)-> T::QueryResult { unimplemented!() }
 }
 impl <B: Basics> MomentaryAccessor for InvalidationAccessorStruct <B> {
-  fn now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> { unimplemented!() }
+  fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> { unimplemented!() }
 }
 impl <B: Basics> PeekingAccessor for InvalidationAccessorStruct <B> {
   fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&self, _: & DataTimelineHandle <T>)->& T { unimplemented!() }
