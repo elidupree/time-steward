@@ -52,6 +52,10 @@ impl <Data: StewardData, B: Basics> DataTimelineQueriableWith<GetValue> for Cons
   }
 }
 
+pub fn query_constant_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <ConstantTimeline <Data, Steward::Basics>>)->Data {
+  accessor.query (handle, &GetValue, QueryOffset::After)
+}
+
 
 
 #[derive (Clone, Serialize, Deserialize, Debug)]
