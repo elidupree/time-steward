@@ -134,15 +134,15 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> PredictionHandle <T> {
 
 impl <T: Event> EventHandleTrait for EventHandle <T> {
   type Basics = <T::Steward as TimeSteward>::Basics;
-  fn time (&self)->& ExtendedTime <Self::Basics> {&self.data.shared.time}
+  fn extended_time (&self)->& ExtendedTime <Self::Basics> {&self.data.shared.time}
 }
 impl <T: Event> EventHandleTrait for PredictionHandle <T> {
   type Basics = <T::Steward as TimeSteward>::Basics;
-  fn time (&self)->& ExtendedTime <Self::Basics> {&self.data.shared.time}
+  fn extended_time (&self)->& ExtendedTime <Self::Basics> {&self.data.shared.time}
 }
 impl <B: Basics> EventHandleTrait for DynamicEventHandle<B> {
   type Basics = B;
-  fn time (&self)->& ExtendedTime <Self::Basics> {&self.data.shared().time}
+  fn extended_time (&self)->& ExtendedTime <Self::Basics> {&self.data.shared().time}
 }
 
 impl <T: DataTimeline> DataTimelineHandleTrait for DataTimelineHandle <T> {}
@@ -366,7 +366,7 @@ impl<B: Basics> Steward<B> {
     event.data.execute (event, &mut*self);
     // if it was a fiat event, clean it up:
     self.upcoming_fiat_events.remove(event);
-    self.last_event = Some(event.time().clone());
+    self.last_event = Some(event.extended_time().clone());
   }
 }
 
@@ -458,7 +458,7 @@ impl<B: Basics> IncrementalTimeSteward for Steward<B> {
     }
   }
   fn updated_until_before(&self) -> Option<B::Time> {
-    self.next_event().map(|event| event.time().base.clone())
+    self.next_event().map(|event| event.extended_time().base.clone())
   }
 }
 impl<B: Basics> CanonicalTimeSteward for Steward<B> {}

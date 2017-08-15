@@ -10,18 +10,18 @@ macro_rules! time_steward_common_impls_for_event_handle {
   
 
 impl <$($bounds)*> Borrow<ExtendedTime <$($basics)*>> for $($concrete)* {
-  fn borrow (&self)->& ExtendedTime <$($basics)*> {self.time()}
+  fn borrow (&self)->& ExtendedTime <$($basics)*> {self.extended_time()}
 }
 
 impl<$($bounds)*> Ord for $($concrete)* {
   fn cmp(&self, other: &Self) -> Ordering {
-    self.time().cmp(other.time())
+    self.extended_time().cmp(other.extended_time())
   }
 }
 impl<$($bounds)*> Eq for $($concrete)* {}
 impl<$($bounds)*> PartialEq for $($concrete)* {
   fn eq(&self, other: &Self) -> bool {
-    self.time().eq(other.time())
+    self.extended_time().eq(other.extended_time())
   }
 }
 impl<$($bounds)*> PartialOrd for $($concrete)* {
@@ -46,13 +46,13 @@ macro_rules! time_steward_crossover_impls_for_event_handles {
 
 impl<T: Event> PartialEq <$($concrete_1)*> for $($concrete_2)* {
   fn eq(&self, other: &$($concrete_1)*) -> bool {
-    self.time().eq(other.time())
+    self.extended_time().eq(other.extended_time())
   }
 }
 
 impl<T: Event> PartialOrd<$($concrete_1)*> for $($concrete_2)* {
   fn partial_cmp(&self, other: &$($concrete_1)*) -> Option<Ordering> {
-    Some(self.time().cmp(other.time()))
+    Some(self.extended_time().cmp(other.extended_time()))
   }
 }
 

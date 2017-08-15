@@ -79,7 +79,7 @@ impl <Data: StewardData, B: Basics> SimpleTimeline <Data, B> {
     }
     for change in self.changes.iter().rev() {
       let event = &change.0;
-      if event.time() <= time {
+      if event.extended_time() <= time {
         break
       }
       accessor.invalidate_dynamic(&event);
@@ -88,7 +88,7 @@ impl <Data: StewardData, B: Basics> SimpleTimeline <Data, B> {
   
   fn remove_from (&mut self, time: &ExtendedTime <B>) {
     while let Some (change) = self.changes.pop() {
-      if change.0.time() <= time {
+      if change.0.extended_time() <= time {
         self.changes.push (change);
         break
       }
@@ -100,7 +100,7 @@ impl <Data: StewardData, B: Basics> DataTimeline for SimpleTimeline <Data, B> {
   type Basics = B;
   
   fn clone_for_snapshot (&self, time: &ExtendedTime <Self::Basics>)->Self {
-    let slice = match self.changes.binary_search_by_key (&time, | change | change.0.time()) {
+    let slice = match self.changes.binary_search_by_key (&time, | change | change.0.extended_time()) {
       Ok(index) => &self.changes [index.saturating_sub (1).. index+1],
       Err (index) => &self.changes [index.saturating_sub (1)..index],
     };
@@ -120,11 +120,11 @@ impl <Data: StewardData, B: Basics> DataTimelineQueriableWith<GetValue> for Simp
   type QueryResult = Option <(ExtendedTime <B>, Option <Data>)>;
 
   fn query (&self, _: &GetValue, time: &ExtendedTime <Self::Basics>, offset: QueryOffset)->Self::QueryResult {
-    let previous_change_index = match self.changes.binary_search_by_key (&time, | change | change.0.time()) {
+    let previous_change_index = match self.changes.binary_search_by_key (&time, | change | change.0.extended_time()) {
       Ok(index) => match offset {QueryOffset::After => index, QueryOffset::Before => index.wrapping_sub (1)},
       Err (index) => index.wrapping_sub (1),
     };
-    self.changes.get (previous_change_index).map (| change | (change.0.time().clone(), change.1.clone()))
+    self.changes.get (previous_change_index).map (| change | (change.0.extended_time().clone(), change.1.clone()))
   }
 }
 

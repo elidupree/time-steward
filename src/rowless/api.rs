@@ -79,7 +79,8 @@ pub enum FiatEventOperationError {
 
 pub trait EventHandleTrait: Clone + Ord {
   type Basics: Basics;
-  fn time (&self)->& ExtendedTime <Self::Basics>;
+  fn extended_time (&self)->& ExtendedTime <Self::Basics>;
+  fn time (&self)->& <Self::Basics as Basics>::Time {& self.extended_time().base}
 }
 pub trait TypedEventHandleTrait <E>: EventHandleTrait + Deref <Target = E> {
   
@@ -181,7 +182,7 @@ pub trait SnapshotAccessor: MomentaryAccessor {
 
 impl <T: EventAccessor> MomentaryAccessor for T {
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
-    &self.handle().time()
+    &self.handle().extended_time()
   }
 }
 
