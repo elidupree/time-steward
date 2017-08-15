@@ -393,8 +393,8 @@ impl<B: Basics> TimeSteward for Steward<B> {
       return Err(FiatEventOperationError::InvalidTime);
     }
     match self.upcoming_fiat_events.insert(EventHandle {data: Rc::new(EventInner {shared: EventInnerShared {time:extended_time_of_fiat_event(time, id)}, data: event})}.erase_type()) {
-      false => Ok(()),
-      true => Err(FiatEventOperationError::InvalidInput),
+      true => Ok(()),
+      false => Err(FiatEventOperationError::InvalidInput),
     }
   }
 
