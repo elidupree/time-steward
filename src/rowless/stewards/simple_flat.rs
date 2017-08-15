@@ -9,6 +9,7 @@ use std::rc::Rc;
 use std::marker::PhantomData;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
+use rand::Rng;
 
 use super::super::api::*;
 use super::super::implementation_support::common::*;
@@ -308,6 +309,15 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
   fn invalidate <F: FnOnce(&<Self::Steward as TimeSteward>::InvalidationAccessor)> (&self, _: F) {
     // There are never any future events. Do nothing.
   }
+}
+impl <'a, B: Basics> Rng for EventAccessorStruct <'a, B> {
+  fn next_u32(&mut self) -> u32 {self.generic.generator.next_u32()}
+    fn next_f32(&mut self) -> f32 {
+      panic!("Using floating point numbers in TimeSteward events is forbidden because it is nondeterministic across platforms.")
+    }
+    fn next_f64(&mut self) -> f64 {
+      panic!("Using floating point numbers in TimeSteward events is forbidden because it is nondeterministic across platforms.")
+    }
 }
 
 impl <B: Basics> Snapshot for SnapshotHandle <B> {

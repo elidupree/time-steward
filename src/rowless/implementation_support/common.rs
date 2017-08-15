@@ -73,6 +73,13 @@ time_steward_crossover_impls_for_event_handles! ([T: Event] [EventHandle <T>] [D
 time_steward_crossover_impls_for_event_handles! ([T: Event] [PredictionHandle <T>] [DynamicEventHandle<<T::Steward as TimeSteward>::Basics>]);
 time_steward_crossover_impls_for_event_handles! ([T: Event] [EventHandle <T>] [PredictionHandle <T>]);
 
+impl <T: Event> StewardData for EventHandle <T> {}
+impl <T: Event> StewardData for PredictionHandle <T> {}
+impl <T: DataTimeline> StewardData for DataTimelineHandle <T> {}
+impl <B: Basics> StewardData for DynamicEventHandle <B> {}
+//impl <B: Basics> StewardData for DynamicPredictionHandle <B> {}
+impl <B: Basics> StewardData for DynamicDataTimelineHandle <B> {}
+
   };
 }
 

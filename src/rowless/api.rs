@@ -12,7 +12,8 @@ use std::ops::Deref;
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
 /// TimeSteward has strong requirements for serializability. In addition to implementing these traits, a StewardData must have Eq be equivalent to equality of its serialization, and all its behavior must be invariant under cloning and serialize-deserialize cycles.
-pub trait StewardData: Any + Send + Sync + Clone + Eq + Serialize + DeserializeOwned + Debug {}
+/// We used to require `Send + Sync` for this, but now that DataTimelineHandles can be part of StewardData, we have to omit that to support TimeSteward types that have !Send/!Sync handles (like Rc)
+pub trait StewardData: Any + Clone + Eq + Serialize + DeserializeOwned + Debug {}
 
 
 // Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time, and the events must use invalidate() to collect future events that must be invalidated. (Although, for instance, modifications made for dependency tracking purposes might not change any results any queries, so they wouldn't create the need for any invalidation.)
@@ -119,13 +120,13 @@ pub trait Event: StewardData {
   type ExecutionData;
   // audit all functions: calls invalidate_event for everything whose queries would be changed
   // audit all functions: doesn't change any query results in the past
-  fn execute<Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &Accessor)->Self::ExecutionData;
+  fn execute<Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor)->Self::ExecutionData;
   // audit: leaves self in its original state??
   // audit: after undoing, all query results immediately before and after the event are identical to each other (if the previous audit passes, this is more an audit of the DataTimeline types than this event type)
   fn undo<Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, execution_data: Self::ExecutionData);
   // audit: should produce the same subsequent query results as doing undo() and then execute()
   // implementing this is simply an optimization that may allow you to invalidate fewer things, so we default-implement it
-  fn re_execute<Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, execution_data: Self::ExecutionData, accessor: &mut Accessor) {
+  fn re_execute<Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, execution_data: Self::ExecutionData) {
     self.undo (accessor, execution_data);
     self.execute (accessor);
   }
@@ -145,7 +146,7 @@ pub trait PeekingAccessor: Accessor {
 pub trait MomentaryAccessor: Accessor {
   fn now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
 }
-pub trait EventAccessor: MomentaryAccessor {
+pub trait EventAccessor: MomentaryAccessor + Rng {
   fn handle (&self)->& DynamicEventHandle <<Self::Steward as TimeSteward>::Basics>;
   
   // modification is done within a closure, to help prevent the event from extracting any information from DataTimelines except by querying. I'd like to make this a Fn instead of FnOnce, to prevent the user from putting &mut in it that could communicate back to the outer function, but it may be useful for optimization to be able move owned objects into the closure.

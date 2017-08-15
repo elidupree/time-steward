@@ -26,7 +26,7 @@ type PhilosopherHandle = DataTimelineHandle <SimpleTimeline <Philosopher, Basics
 struct Basics {}
 impl api::Basics for Basics {
   type Time = Time;
-  type GlobalTimeline = SimpleTimeline <[PhilosopherHandle; HOW_MANY_PHILOSOPHERS], Basics>;
+  type GlobalTimeline = SimpleTimeline <Vec<PhilosopherHandle>, Basics>;
   //type IncludedTypes = TimeStewardTypes;
 }
 
@@ -36,7 +36,7 @@ struct Philosopher {
   // they muse philosophically about handshakes
   // for a while, whenever one of them happens.
   time_when_next_initiates_handshake: Time,
-  next_handshake_prediction: PredictionHandle <Shake>,
+  next_handshake_prediction: Option <PredictionHandle <Shake>>,
 }
 impl StewardData for Philosopher{}
 /*impl Column for Philosopher {
@@ -45,6 +45,13 @@ impl StewardData for Philosopher{}
     ColumnId(0x4084d1501468b6dd)
   }
 }*/
+
+impl Philosopher {
+  fn new()->Self {Philosopher {
+    time_when_next_initiates_handshake: -1,
+    next_handshake_prediction: None,
+  }}
+}
 
 fn change_next_handshake_time <Accessor: EventAccessor> (accessor: & Accessor, handle: & PhilosopherHandle, time: Time) {
   let philosopher = query_simple_timeline (accessor, handle, QueryOffset::After).expect ("philosophers should never not exist");
@@ -104,6 +111,7 @@ struct Shake {whodunnit: DataTimelineHandle <SimpleTimeline <Philosopher, Basics
 impl StewardData for Shake {}
 impl Event for Shake {
   type Steward = Steward <Basics>;
+  type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let now = *accessor.now();
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
@@ -116,7 +124,7 @@ impl Event for Shake {
     change_next_handshake_time (accessor, philosophers [friend_id], awaken_time_1);
     change_next_handshake_time (accessor, self.whodunnit, awaken_time_2);
   }
-  fn undo <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
+  fn undo <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let philosophers = accessor.query (accessor.global_timeline(), GetValue, QueryOffset::After);
     unchange_next_handshake_time (accessor, philosophers [friend_id]);
@@ -129,14 +137,16 @@ struct Initialize {} //, Basics, EventId (0xd5e73d8ba6ec59a2),
 impl StewardData for Initialize {}
 impl Event for Initialize {
   type Steward = Steward <Basics>;
+  type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     println!("FIAT!!!!!");
     let philosophers = accessor.query (accessor.global_timeline(), GetValue, QueryOffset::After);
     for i in 0..HOW_MANY_PHILOSOPHERS {
+      philosophers.push (DataTimelineHandle::new (Philosopher::new()));
       change_next_handshake_time (accessor, philosophers [i], (i + 1) as Time);
     }
   }
-  fn undo <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
+  fn undo <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
@@ -146,6 +156,7 @@ struct Tweak {} //, Basics, EventId (0xfe9ff3047f9a9552),
 impl StewardData for Tweak {}
 impl Event for Tweak {
   type Steward = Steward <Basics>;
+  type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     println!(" Tweak !!!!!");
     let now = *accessor.now();
@@ -154,7 +165,7 @@ impl Event for Tweak {
     let philosophers = accessor.query (accessor.global_timeline(), GetValue, QueryOffset::After);
     change_next_handshake_time (accessor, philosophers [friend_id], awaken_time);
   }
-  fn undo <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
+  fn undo <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
@@ -167,6 +178,7 @@ struct TweakUnsafe {} //, Basics, EventId (0xa1618440808703da),
 impl StewardData for TweakUnsafe {}
 impl Event for TweakUnsafe {
   type Steward = Steward <Basics>;
+  type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let now = *accessor.now();
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
@@ -180,7 +192,7 @@ impl Event for TweakUnsafe {
 
     change_next_handshake_time (accessor, philosophers [friend_id], awaken_time);
   }
-  fn undo <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
+  fn undo <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }

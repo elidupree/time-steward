@@ -1,5 +1,3 @@
-
-
 #[doc (hidden)]
 #[macro_export]
 macro_rules! time_steward_define_simple_timeline {
@@ -8,6 +6,7 @@ pub mod automatic_tracking {
 use std::collections::BTreeSet;
 use std::mem;
 use std::cell::RefCell;
+use std::marker::PhantomData;
 
 use super::super::super::api::*;
 use super::*;
@@ -16,6 +15,44 @@ use implementation_support::common::{split_off_greater_set};
 #[derive (Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 pub struct GetValue;
 impl StewardData for GetValue{}
+
+
+
+#[derive (Clone, Serialize, Deserialize, Debug)]
+pub struct ConstantTimeline <Data: StewardData, B: Basics> {
+  // Hacky workaround for https://github.com/rust-lang/rust/issues/41617 (see https://github.com/serde-rs/serde/issues/943)
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
+  data: Data,
+  marker: PhantomData <B>,
+}
+
+impl <Data: StewardData, B: Basics> ConstantTimeline <Data, B> {
+  pub fn new (data: Data)->Self {
+    ConstantTimeline {
+      data: data,
+      marker: PhantomData,
+    }
+  }
+}
+
+impl <Data: StewardData, B: Basics> DataTimeline for ConstantTimeline <Data, B> {
+  type Basics = B;
+  
+  fn clone_for_snapshot (&self, _: &ExtendedTime <Self::Basics>)->Self {
+    self.clone()
+  }
+  
+  fn forget_before (&mut self, _: &ExtendedTime <Self::Basics>) {}
+}
+impl <Data: StewardData, B: Basics> DataTimelineQueriableWith<GetValue> for ConstantTimeline <Data, B> {
+  type QueryResult = Data;
+
+  fn query (&self, _: &GetValue, _: &ExtendedTime <Self::Basics>, _: QueryOffset)->Self::QueryResult {
+    self.data.clone()
+  }
+}
+
+
 
 #[derive (Clone, Serialize, Deserialize, Debug)]
 pub struct SimpleTimeline <Data: StewardData, B: Basics> {
