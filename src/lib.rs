@@ -35,6 +35,8 @@ extern crate bincode;
 extern crate crossbeam;
 #[macro_use]
 extern crate quickcheck;
+#[macro_use]
+extern crate derivative;
 
 macro_rules! printlnerr(
     ($($arg:tt)*) => { {use std::io::Write;
@@ -95,7 +97,7 @@ pub mod support {
   pub mod collision_detection;
 }
 
-/*
+
 pub mod rowless {
   #[macro_use]
   pub mod implementation_support { #[macro_use] pub mod common; }
@@ -106,6 +108,6 @@ pub mod rowless {
   pub mod api_impls;
   #[macro_use]
   pub mod support { #[macro_use] pub mod automatic_tracking; }
-  pub mod stewards { pub mod inefficient_flat; }
+  pub mod stewards { pub mod simple_flat; }
 }
-*/
+

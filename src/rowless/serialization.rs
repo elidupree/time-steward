@@ -5,56 +5,80 @@
 //! * The serialization needs to not block other operations for more than O(1) time at a time.
 //! * The serialization must be lossless and platform-independent. For this reason, we always use bincode in low-endian mode.
 
-use std::mem;
-use std::ptr;
+macro_rules! time_steward_serialization_impls_for_handle {
+  (
+    [$($bounds:tt)*]
+    [$($concrete:tt)*]
+    (&$self_hack: ident)
+    Uniquely identified by (($identifier: expr): $Identifier: ty)
+    Data located at (| $handle: ident | &mut $data: expr)
+  ) => {
 
-macro_rules! implement_serialization_for_handle {
-  () => {
-
-thread_local! {
+/*thread_local! {
+  static SERIALIZATION_CONTEXT: RefCell<Option <SerializationContext>> = RefCell::new (None);
   static DESERIALIZATION_CONTEXT: RefCell<Option <DeserializationContext>> = RefCell::new (None);
-}
+}*/
 
 
-impl <T: DataTimeline> Serialize for DataTimelineHandle <T> {
-  fn serialize <S: Serializer> (&self, serializer: S)->Result <S::Ok, S::Error> {
-    // TODO minor security thing: transform the value using runtime-fixed salt to avoid leaking pointers
-    (self.inner as usize).serialize (serializer)
+impl <$($bounds)*> $crate::serde::Serialize for $($concrete)* {
+  fn serialize <S: $crate::serde::Serializer> (&$self_hack, serializer: S)->Result <S::Ok, S::Error> {
+    unimplemented!()
+    /*
+    SERIALIZATION_CONTEXT.with (| cell | {
+      let mut guard = cell.borrow_mut();
+      let mut map = &mut guard.unwrap().map;
+      map.insert (
+    })
+    $identifier.serialize (serializer)
+    */
   }
 }
 
-impl <'a, T: DataTimeline> Deserialize <'a> for DataTimelineHandle <T> {
-  fn deserialize <D: Deserializer> (deserializer: D)->Result <Self, D::Error> {
-    let old_pointer = usize::deserialize (deserializer)?;
+impl <'a, $($bounds)*> $crate::serde::Deserialize <'a> for $($concrete)* {
+  fn deserialize <D: $crate::serde::Deserializer<'a>> (deserializer: D)->Result <Self, D::Error> {
+    unimplemented!()
+    /*
+    let old_identifier = $Identifier::deserialize (deserializer)?;
     DESERIALIZATION_CONTEXT.with (| cell | {
       let mut guard = cell.borrow_mut();
       let mut map = &mut guard.unwrap().map;
       Ok(map.entry (old_pointer).or_insert_with (| | {
-        DataTimelineHandle {
-          inner: Arc::new (unsafe {mem::uninitialized()}),
-        }
-      }).clone())
+        unimplemented!() 
+        /*DataTimelineHandle {
+          inner: Arc::new (unsafe {::std::mem::uninitialized()}),
+        }*/
+      }).clone().downcast::<T> ())
     })
+    */
   }
 }
 
+/*
 impl DeserializationContext {
   fn deserialize_(deserializer: D)->Result <(), D::Error> {
     let old_pointer = usize::deserialize (deserializer)?;
     DESERIALIZATION_CONTEXT.with (| cell | {
       let mut guard = cell.borrow_mut();
       let mut map = &mut guard.unwrap().map;
-      let new_pointer = map.entry (old_pointer).or_insert_with (| | {
-        DataTimelineHandle {
-          inner: Arc::new (unsafe {mem::uninitialized()}),
-        }
-      }).inner;
-      unsafe {ptr::write (new_pointer as *mut DataTimelineHandle, DataTimeline::deserialize (D))?;}
+      let $handle = map.entry (old_pointer).or_insert_with (| | {
+        unimplemented!()
+        /*DataTimelineHandle {
+          inner: Arc::new (unsafe {::std::mem::uninitialized()}),
+        }*/
+      });
+      let new_pointer = &mut $data;
+      unsafe {::std::ptr::write (
+        new_pointer as *mut DataTimelineHandle,
+        unimplemented!() //DataTimeline::deserialize (D)
+      )?;}
     })?;
     Ok(())
   }
-}
+}*/
 
 
   };
 }
+
+
+
