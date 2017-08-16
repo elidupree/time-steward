@@ -99,14 +99,19 @@ pub struct PredictionHandle <T: Event> {
 
 impl <T: DataTimeline> DataTimelineHandle <T> {
   pub fn erase_type (self)->DynamicDataTimelineHandle<T::Basics> {
-    DynamicDataTimelineHandle {
+    let result = DynamicDataTimelineHandle {
       data: self.data as Rc <DataTimelineInnerTrait <T::Basics>>
-    }
+    };
+    assert! (result.clone().downcast::<T>().is_ok());
+    result
   }
 }
 impl <B: Basics> DynamicDataTimelineHandle<B> {
-  pub fn downcast <T: DataTimeline <Basics = B>> (self)->Option <DataTimelineHandle<T>> {
-    unimplemented!()
+  pub fn downcast <T: DataTimeline <Basics = B>> (self)->Result<DataTimelineHandle<T>, Self> {
+    match downcast_rc!(self.data, DataTimelineInner<T>, DataTimelineInnerTrait <T::Basics>) {
+      Ok(result) => Ok(DataTimelineHandle {data: result}),
+      Err(result) => Err(DynamicDataTimelineHandle {data: result}),
+    }
   }
 }
 impl <B: Basics, T: Event <Steward = Steward <B>>> EventHandle <T> {
@@ -117,8 +122,11 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventHandle <T> {
   }
 }
 impl <B: Basics> DynamicEventHandle <B> {
-  pub fn downcast <T: Event> (self)->Option <EventHandle<T>> {
-    unimplemented!() 
+  pub fn downcast <T: Event> (self)->Result <EventHandle<T>, Self> {
+    match downcast_rc!(self.data, EventInner<T>, EventInnerTrait <B>) {
+      Ok(result) => Ok(EventHandle {data: result}),
+      Err(result) => Err(DynamicEventHandle {data: result}),
+    }
     /*self.data.downcast_ref::<EventInner <T>> ().map (DynamicEventHandle {
       data: self.data as Rc <EventInnerTrait<<T::Steward as TimeSteward>::Basics>>
     })*/

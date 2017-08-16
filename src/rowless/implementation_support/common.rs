@@ -3,6 +3,25 @@ use std::cmp::Ordering;
 use ::DeterministicRandomId;
 use rand::{ChaChaRng, SeedableRng};
 
+macro_rules! downcast_rc {
+  ($input: expr, $T: ty, $($Trait:tt)*) => {{
+    let result: Result <Rc<$T>, Rc<$($Trait)*>> = {
+      let input = $input;
+      if (*input).get_type_id() == ::std::any::TypeId::of::<$T>() {
+        println!( "succeeded");
+        unsafe {
+          let raw: ::std::raw::TraitObject = ::std::mem::transmute (input);
+          Ok(::std::mem::transmute (raw.data))
+        }
+      }
+      else {
+        Err (input)
+      }
+    };
+    result
+  }}
+}
+
 #[doc (hidden)]
 #[macro_export]
 macro_rules! time_steward_common_impls_for_event_handle {
