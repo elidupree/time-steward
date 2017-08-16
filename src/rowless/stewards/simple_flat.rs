@@ -289,7 +289,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
   }
   
   fn create_prediction <E: Event <Steward = Self::Steward>> (&mut self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)->PredictionHandle<E> {
-    let time = extended_time_of_predicted_event::<<Self::Steward as TimeSteward>::Basics> (id, time, self.extended_now()).unwrap();
+    let time = extended_time_of_predicted_event::<<Self::Steward as TimeSteward>::Basics> (time, id, self.extended_now()).unwrap();
     let handle = PredictionHandle {
       data: Rc::new (EventInner {
         data: event,
