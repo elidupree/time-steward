@@ -421,12 +421,12 @@ impl<B: Basics> TimeSteward for Steward<B> {
     let handle = SnapshotHandle {
       data: Rc::new (SnapshotInner {
         global_timeline: self.global_timeline.clone(),
-        time: unimplemented!(),
+        time: ExtendedTime::beginning_of(time.clone()),
         clones: RefCell::new (HashMap::new()),
       })
     };
     self.snapshots.insert (self.next_snapshot_index, handle.clone());
-    Some (handle);
+    Some (handle)
   }
   
   fn forget_before (&mut self, _: & B::Time) {}

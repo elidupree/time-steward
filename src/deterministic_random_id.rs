@@ -1,3 +1,4 @@
+use std;
 use std::hash::{Hash, Hasher};
 use siphasher::sip::SipHasher;
 use std::fmt;
@@ -68,6 +69,12 @@ impl DeterministicRandomId {
   pub fn from_rng(rng: &mut ChaChaRng) -> DeterministicRandomId {
     DeterministicRandomId { data: [rng.gen::<u64>(), rng.gen::<u64>()] }
   }
+  /// Useful for creating out-of-band values which don't identify actual
+  /// events, for implementations that need them. A common usage is to have
+  /// "before all other events" sentinels.
+  pub fn from_raw(data: [u64; 2]) -> DeterministicRandomId {
+    DeterministicRandomId { data: data }
+  }
   /// TimeSteward implementors use this internally to make sure fiat events have unique ids.
   ///
   /// We combine fiat event ids with unique random data so that TimeSteward impls
@@ -85,6 +92,8 @@ impl DeterministicRandomId {
   pub fn data(&self) -> &[u64; 2] {
     &self.data
   }
+  pub const MIN: DeterministicRandomId = DeterministicRandomId { data: [std::u64::MIN, std::u64::MIN] };
+  pub const MAX: DeterministicRandomId = DeterministicRandomId { data: [std::u64::MAX, std::u64::MAX] };
 }
 impl fmt::Display for DeterministicRandomId {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
