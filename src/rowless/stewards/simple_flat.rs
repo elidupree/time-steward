@@ -289,7 +289,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
   }
   
   fn create_prediction <E: Event <Steward = Self::Steward>> (&mut self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)->PredictionHandle<E> {
-    let time = extended_time_of_fiat_event::<<Self::Steward as TimeSteward>::Basics> (time, id);
+    let time = extended_time_of_predicted_event::<<Self::Steward as TimeSteward>::Basics> (time, id, self.extended_now()).unwrap();
     let handle = PredictionHandle {
       data: Rc::new (EventInner {
         data: event,
@@ -303,7 +303,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     handle
   }
   fn destroy_prediction <E: Event <Steward = Self::Steward>> (&mut self, prediction: &PredictionHandle<E>) {
-    self.steward.existent_predictions.remove (& prediction.clone().as_dynamic_event());
+    assert!(self.steward.existent_predictions.remove (& prediction.clone().as_dynamic_event()));
   }
   
   fn invalidate <F: FnOnce(&<Self::Steward as TimeSteward>::InvalidationAccessor)> (&self, _: F) {
@@ -421,12 +421,12 @@ impl<B: Basics> TimeSteward for Steward<B> {
     let handle = SnapshotHandle {
       data: Rc::new (SnapshotInner {
         global_timeline: self.global_timeline.clone(),
-        time: unimplemented!(),
+        time: ExtendedTime::beginning_of(time.clone()),
         clones: RefCell::new (HashMap::new()),
       })
     };
     self.snapshots.insert (self.next_snapshot_index, handle.clone());
-    Some (handle);
+    Some (handle)
   }
   
   fn forget_before (&mut self, _: & B::Time) {}

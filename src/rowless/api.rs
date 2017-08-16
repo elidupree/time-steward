@@ -71,6 +71,15 @@ pub struct ExtendedTime<B: Basics> {
   pub id: DeterministicRandomId,
 }
 
+impl <B: Basics> ExtendedTime<B> {
+  pub fn beginning_of (time: B::Time) -> ExtendedTime<B> {
+    ExtendedTime { base: time, iteration: 0, id: DeterministicRandomId::MIN }
+  }
+  pub fn end_of (time: B::Time) -> ExtendedTime<B> {
+    ExtendedTime { base: time, iteration: B::MAX_ITERATION, id: DeterministicRandomId::MAX }
+  }
+}
+
 #[derive (Copy, Clone, PartialEq, Eq, Debug)]
 pub enum FiatEventOperationError {
   InvalidInput,
