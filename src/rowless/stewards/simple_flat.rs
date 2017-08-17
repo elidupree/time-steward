@@ -1,6 +1,6 @@
 use std::mem;
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, Bound};
 use std::cmp::{Ordering, max};
 use std::borrow::Borrow;
 use std::any::Any;
@@ -247,9 +247,11 @@ pub struct EventAccessorStruct <'a, B: Basics> {
 }
 #[derive (Debug)]
 pub struct SnapshotInner <B: Basics> {
+  index: usize,
   time: ExtendedTime <B>,
   global_timeline: DataTimelineHandle <B::GlobalTimeline>,
   clones: RefCell<HashMap<DynamicDataTimelineHandle <B>, DynamicDataTimelineHandle <B> >>,
+  snapshots_tree: Rc<RefCell<SnapshotsTree<B>>>,
 }
 #[derive (Debug, Clone)]
 pub struct SnapshotHandle <B: Basics> {
@@ -259,6 +261,20 @@ pub struct SnapshotHandle <B: Basics> {
 #[derive (Debug)]
 pub struct InvalidationAccessorStruct <B: Basics> (!, PhantomData <B>);
 
+type SnapshotsTree<B> = BTreeMap<usize, SnapshotHandle <B>>;
+
+impl <B: Basics> Drop for SnapshotHandle <B> {
+  fn drop (&mut self) {
+    assert!(Rc::strong_count(&self.data) >= 2);
+    // if we are the last one dropped, our data still exists, and so does the entry in the tree
+    if Rc::strong_count(&self.data) == 2 {
+      // when we drop the one from the map recursively, that one will also observe a strong count of 2, so short-circuit it
+      if let Ok (mut map) = self.data.snapshots_tree.try_borrow_mut() {
+        map.remove (&self.data.index);
+      }
+    }
+  }
+}
 
 impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
   type Steward = Steward <B>;
@@ -293,6 +309,16 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
   }
   
   fn modify <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, F: FnOnce(&mut T)> (&self, timeline: &DataTimelineHandle <T>, modification: F) {
+    let index = timeline.data.shared.first_snapshot_not_updated.get ();
+    let guard = (*self.steward.snapshots).borrow();
+    let map: &SnapshotsTree<B> = &*guard;
+    for (_,snapshot) in map.range ((Bound::Included(index), Bound::Unbounded)) {
+      let mut guard = snapshot.data.clones.borrow_mut();
+      let entry = guard.entry (timeline.clone().erase_type());
+      entry.or_insert_with (| | DataTimelineHandle::new (timeline.data.data.borrow().clone_for_snapshot (self.extended_now())).erase_type());
+    }
+    timeline.data.shared.first_snapshot_not_updated.set (self.steward.next_snapshot_index);
+    
     modification (&mut*timeline.data.data.borrow_mut());
   }
   
@@ -336,18 +362,18 @@ impl <B: Basics> SnapshotAccessor for SnapshotHandle <B> {
 
 impl <B: Basics> Accessor for InvalidationAccessorStruct <B> {
   type Steward = Steward <B>;
-  fn global_timeline (&self)->&DataTimelineHandle <<<Self::Steward as TimeSteward>::Basics as Basics>::GlobalTimeline> { unimplemented!() }
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, _: & DataTimelineHandle <T>, _: &Query, _: QueryOffset)-> T::QueryResult { unimplemented!() }
+  fn global_timeline (&self)->&DataTimelineHandle <<<Self::Steward as TimeSteward>::Basics as Basics>::GlobalTimeline> { unreachable!() }
+  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, _: & DataTimelineHandle <T>, _: &Query, _: QueryOffset)-> T::QueryResult { unreachable!() }
 }
 impl <B: Basics> MomentaryAccessor for InvalidationAccessorStruct <B> {
-  fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> { unimplemented!() }
+  fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> { unreachable!() }
 }
 impl <B: Basics> PeekingAccessor for InvalidationAccessorStruct <B> {
-  fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&self, _: & DataTimelineHandle <T>)->& T { unimplemented!() }
+  fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&self, _: & DataTimelineHandle <T>)->& T { unreachable!() }
 }
 impl <B: Basics> InvalidationAccessor for InvalidationAccessorStruct <B> {
-  fn invalidate <T: Event <Steward = Self::Steward>> (&self, _: & EventHandle <T>) { unimplemented!() }
-  fn invalidate_dynamic (&self, _: & DynamicEventHandle<<Self::Steward as TimeSteward>::Basics>) { unimplemented!() }
+  fn invalidate <T: Event <Steward = Self::Steward>> (&self, _: & EventHandle <T>) { unreachable!() }
+  fn invalidate_dynamic (&self, _: & DynamicEventHandle<<Self::Steward as TimeSteward>::Basics>) { unreachable!() }
 }
 
 #[derive (Debug)]
@@ -357,7 +383,7 @@ pub struct Steward <B: Basics> {
   last_event: Option <ExtendedTime <B>>,
   upcoming_fiat_events: BTreeSet<DynamicEventHandle<B>>,
   existent_predictions: BTreeSet <DynamicEventHandle<B>>,
-  snapshots: BTreeMap<usize, SnapshotHandle <B>>,
+  snapshots: Rc<RefCell<SnapshotsTree<B>>>,
   next_snapshot_index: usize,
 }
 
@@ -425,15 +451,17 @@ impl<B: Basics> TimeSteward for Steward<B> {
       if updated >= *time {break;}
       self.step();
     }
-    self.next_snapshot_index += 1;
     let handle = SnapshotHandle {
       data: Rc::new (SnapshotInner {
+        index: self.next_snapshot_index,
         global_timeline: self.global_timeline.clone(),
         time: ExtendedTime::beginning_of(time.clone()),
         clones: RefCell::new (HashMap::new()),
+        snapshots_tree: self.snapshots.clone(),
       })
     };
-    self.snapshots.insert (self.next_snapshot_index, handle.clone());
+    self.snapshots.borrow_mut().insert (self.next_snapshot_index, handle.clone());
+    self.next_snapshot_index += 1;
     Some (handle)
   }
   
@@ -449,7 +477,7 @@ impl <B: Basics> ConstructibleTimeSteward for Steward <B> {
       last_event: None,
       upcoming_fiat_events: BTreeSet::new(),
       existent_predictions: BTreeSet::new(),
-      snapshots: BTreeMap::new(),
+      snapshots: Rc::new (RefCell::new (BTreeMap::new())),
       next_snapshot_index: 0,
     }
   }
