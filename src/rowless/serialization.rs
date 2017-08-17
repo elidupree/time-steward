@@ -80,5 +80,43 @@ impl DeserializationContext {
   };
 }
 
+macro_rules! time_steward_serialization_impls {
+  () => {
+  fn deserialize_something <R: Read> (reader: &mut R)->$crate::bincode::Result <()> {
+    DESERIALIZATION_CONTEXT.with (| cell | {
+      {
+        let guard = cell.borrow_mut();
+        assert!(guard.is_none(), "deserializing recursively breaks my hacks probably makes no sense");
+        *guard = Some(DeserializationContext::new());
+      }
+      // deserialize inside a closure so that errors can be collected and we still clear the context afterwards
+      let result = || {
+        let time: ExtendedTime <B> = deserialize_from (reader, ::std::mem::size_of::<ExtendedTime <B>>())?;
+        let global_timeline: DataTimelineHandle <B::GlobalTimeline> = deserialize_from (reader, $crate::bincode::Infinite)?;
+    
+        while !cell.borrow().uninitialized.is_empty() {
+          let next: ????? = deserialize_from (reader, $crate::bincode::Infinite)?;
+          match next {
+            ?????::DataTimeline (type_id) => {
+              let deserialize_function = cell.borrow().?????.get (type_id);
+              (*deserialize_function)();
+            }
+            ?????::Event (type_id) => {
+              let deserialize_function = cell.borrow().?????.get (type_id);
+              (*deserialize_function)();
+            }
+          };
+        }
+      }();
+
+      {
+        let guard = cell.borrow_mut();
+        *guard = None;
+      }
+      result
+    })
+  }
+  };
+}
 
 
