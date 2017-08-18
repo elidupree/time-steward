@@ -1,8 +1,14 @@
-
 use time_steward::support;
 use time_steward::support::time_functions::QuadraticTrajectory;
 use nalgebra::Vector2;
 use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
+
+
+use time_steward::{DeterministicRandomId};
+use time_steward::rowless::api::{self, StewardData, QueryOffset, TypedDataTimelineHandleTrait, Basics as BasicsTrait};
+use time_steward::rowless::stewards::{simple_flat as steward_module};
+use steward_module::{self, TimeSteward, ConstructibleTimeSteward, Event, DataTimelineHandle, PredictionHandle, EventAccessor, UndoEventAccessor, SnapshotAccessor, automatic_tracking};
+use automatic_tracking::{SimpleTimeline, ConstantTimeline, GetValue, query_constant_timeline, query_simple_timeline, modify_simple_timeline, unmodify_simple_timeline};
 
 
 pub type Time = i64;
@@ -18,13 +24,14 @@ pub const MAX_DISTANCE_TRAVELED_AT_ONCE: SpaceCoordinate = ARENA_SIZE << 4;
 pub const TIME_SHIFT: u32 = 20;
 pub const SECOND: Time = 1 << TIME_SHIFT;
 
-pub struct Basics {};
+#[derive (Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug, Default)]
+pub struct Basics {}
 impl BasicsTrait for Basics {
   type Time = Time;
   type GlobalTimeline = ConstantTimeline <Vec<DataTimelineHandle <Circle>>>;
-});
+}
 
-pub type Steward = simple_flat::Steward <Basics>;
+pub type Steward = steward_module::Steward <Basics>;
 
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -33,7 +40,10 @@ pub struct Circle {
   pub position: QuadraticTrajectory,
   pub radius: SpaceCoordinate,
   pub relationships: Vec<DataTimelineHandle <SimpleTimeline <Relationship>>>,
+  pub boundary_induced_acceleration: Option <Vector2<SpaceCoordinate>>,
+  pub next_boundary_change: Option <PredictionHandle <BoundaryChange>>,
 }
+impl StewardData for Circle {}
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Relationship {
@@ -41,15 +51,19 @@ pub struct Relationship {
   pub induced_acceleration: Option <Vector2<SpaceCoordinate>>,
   pub next_change: Option <PredictionHandle <RelationshipChange>>,
 }
+impl StewardData for Relationship {}
 
+pub fn query_relationship_circles <Accessor: EventAccessor <Steward = Steward>>(accessor: &mut Accessor, relationship: &Relationship)->((ExtendedTime <Basics>, Circle), (ExtendedTime <Basics>, Circle)) {
+  (query_simple_timeline (accessor, relationship.circles.0, QueryOffset::After)
+      .expect("a relationship exists for a circle that doesn't"),
+   query_simple_timeline (accessor, relationship.circles.1, QueryOffset::After)
+      .expect("a relationship exists for a circle that doesn't"));
+}
 
-pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward = Steward>>(accessor: &mut Accessor, relationship_handle: DataTimelineHandle <Relationship>) {
-  let relationship = query_simple_timeline (accessor, relationship_handle, QueryOffset::After);
+pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward = Steward>>(accessor: &mut Accessor, relationship_handle: &DataTimelineHandle <SimpleTimeline <Relationship>>) {
+  let (_, relationship) = query_simple_timeline (accessor, relationship_handle, QueryOffset::After);
 
-  let us = (query_simple_timeline (accessor, relationship.circles.0, QueryOffset::After)
-      .expect("a nearness exists for a circle that doesn't"),
-              query_simple_timeline (accessor, relationship.circles.1, QueryOffset::After)
-      .expect("a nearness exists for a circle that doesn't"));
+  let us = query_relationship_circles (accessor, &relationship);
 
   let time = QuadraticTrajectory::approximately_when_distance_passes((us.0).0.radius +
                                                                    (us.1).0.radius,
@@ -64,7 +78,7 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
                                                                     &(us.1).1.position));
   // println!("Planning for {} At {}, {}", id, (us.0).1, (us.1).1);
   if time.is_none() && relationship.induced_acceleration.is_some() {
-    panic!(" fail {:?} {:?} {:?} {:?}", relationship, us)
+    panic!(" fail {:?} {:?}", relationship, us)
   }
   
   if let Some (discarded) = relationship.next_change.take() {
@@ -73,174 +87,232 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
   if let Some(yes) = time {
     if yes >= *accessor.now() {
       // println!(" planned for {}", &yes);
-      relationship.next_change = Some(accessor.create_prediction (yes, DeterministicRandomId::new (&(us.0).1.index, (us.1).1.index)), RelationshipChange {relationship: relationship_handle}));
+      relationship.next_change = Some(accessor.create_prediction (
+        yes,
+        DeterministicRandomId::new (&((us.0).1.index, (us.1).1.index)),
+        RelationshipChange {relationship_handle: relationship_handle.clone()}
+      ));
     }
   }
   modify_simple_timeline (accessor, relationship_handle, Some (relationship)) ;
 }
 
-time_steward_event! (
-  pub struct Collision {id: RowId}, Basics, EventId (0x2312e29e341a2495),
-  | &self, mutator | {
-    let new_relationship;
-    let mut new;
-    let ids = Nearness::get_ids(mutator, self.id).0;
-    {
-      let relationship = mutator.get::<Intersection>(self.id).clone();
-      let us = (mutator.data_and_last_change::<Circle>(ids[0])
-                    .expect("a nearness exists for a circle that \
-                             doesn't (event)"),
-             mutator.data_and_last_change::<Circle>(ids[1])
-                    .expect("a nearness exists for a circle that \
-                             doesn't (event)"));
-      new = ((us.0).0.clone(), (us.1).0.clone());
-      new.0.position.update_by(mutator.now() - (us.0).1);
-      new.1.position.update_by(mutator.now() - (us.1).1);
-      if let Some(intersection) = relationship {
-        new.0
-          .position
-          .add_acceleration(-intersection.induced_acceleration);
-        new.1
-          .position
-          .add_acceleration(intersection.induced_acceleration);
-        new_relationship = None;
-        //println!("Parted {} At {}", self.id, mutator.now());
-      } else {
-        let acceleration = (new.0.position.evaluate() -
-                           new.1.position.evaluate()) *
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub struct RelationshipChange {relationship_handle: DataTimelineHandle <SimpleTimeline <Relationship>>} //, Basics, EventId (0x2312e29e341a2495),
+impl StewardData for RelationshipChange {}
+impl Event for RelationshipChange {
+  type Steward = Steward;
+  type ExecutionData = ();
+  fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
+    let (_, relationship) = query_simple_timeline (accessor, &self.relationship_handle, QueryOffset::After);
+    let us = query_relationship_circles (accessor, &relationship);
+    let new_relationship = relationship.clone();
+    let new = ((us.0).1.clone(), (us.1).1.clone());
+    new.0.position.update_by(accessor.now() - (us.0).0.base);
+    new.1.position.update_by(accessor.now() - (us.1).0.base);
+    if let Some(induced_acceleration) = relationship.induced_acceleration {
+      new.0
+        .position
+        .add_acceleration(-induced_acceleration);
+      new.1
+        .position
+        .add_acceleration(induced_acceleration);
+      new_relationship.induced_acceleration = None;
+      //println!("Parted {} At {}", self.id, mutator.now());
+    } else {
+      let acceleration = (new.0.position.evaluate() -
+                          new.1.position.evaluate()) *
                           (ARENA_SIZE * 4 /
                            (new.0.radius + new.1.radius));
-        new.0.position.add_acceleration(acceleration);
-        new.1.position.add_acceleration(-acceleration);
-        new_relationship = Some(Intersection {
-         induced_acceleration: acceleration,
-        });
-
+      new.0.position.add_acceleration(acceleration);
+      new.1.position.add_acceleration(-acceleration);
+      new_relationship.induced_acceleration = Some(acceleration);
         //println!("Joined {} At {}", self.id, mutator.now());
-      }
     }
-    mutator.set::<Intersection>(self.id, new_relationship);
-    mutator.set::<Circle>(ids[0], Some(new.0));
-    mutator.set::<Circle>(ids[1], Some(new.1));
+    modify_simple_timeline (accessor, self.relationship_handle, Some (new_relationship)) ;
+    modify_simple_timeline (accessor, relationship.circles.0, Some(new.0));
+    modify_simple_timeline (accessor, relationship.circles.1, Some(new.1));
+    // TODO no repeating the relationship between these 2 in particular
+    update_predictions (accessor, &relationship.circles.0, new.0);
+    update_predictions (accessor, &relationship.circles.1, new.1);
   }
-);
 
-pub fn boundary_predictor<PA: PredictorAccessor<Basics = Basics>>(accessor: &mut PA, id: RowId) {
-  let time;
-  {
-    let arena_center = QuadraticTrajectory::new(TIME_SHIFT,
-                                                MAX_DISTANCE_TRAVELED_AT_ONCE,
-                                                [ARENA_SIZE / 2, ARENA_SIZE / 2, 0, 0, 0, 0]);
-    let me = accessor.data_and_last_change::<Circle>(id)
-      .expect("a prediction was recorded for a circle that doesn't exist");
+  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+    unimplemented!()
+  }
+}
 
-    let relationship = accessor.get::<Intersection>(id);
-    time = QuadraticTrajectory::approximately_when_distance_passes(ARENA_SIZE - me.0.radius,
-                                                                   if relationship.is_some() {
+pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Steward>>(accessor: &mut Accessor, circle_handle: &DataTimelineHandle <SimpleTimeline <Circle>>) {
+  let arena_center = QuadraticTrajectory::new(TIME_SHIFT,
+                                              MAX_DISTANCE_TRAVELED_AT_ONCE,
+                                              [ARENA_SIZE / 2, ARENA_SIZE / 2, 0, 0, 0, 0]);
+  let me = query_simple_timeline (accessor, circle_handle, QueryOffset::After)
+    .expect("circles should never not exist");
+
+  let time = QuadraticTrajectory::approximately_when_distance_passes(ARENA_SIZE - me.1.radius,
+                                                                   if me.boundary_induced_acceleration.is_some() {
                                                                      -1
                                                                    } else {
                                                                      1
                                                                    },
-                                                                   (me.1.clone(),
-                                                                    &(me.0.position)),
-                                                                   (0, &(arena_center)));
+                                                                   (me.0.base.clone(),
+                                                                    &me.1.position));
+ 
+  if let Some (discarded) = me.next_boundary_change.take() {
+    accessor.destroy_prediction (&discarded);
   }
   if let Some(yes) = time {
-    // println!(" planned for {}", &yes);
-    accessor.predict_at_time(yes, BoundaryCollision::new(id));
+    if yes >= *accessor.now() {
+      // println!(" planned for {}", &yes);
+      me.next_boundary_change = Some(accessor.create_prediction (
+        yes,
+        DeterministicRandomId::new (&me.1.index),
+        BoundaryChange {circle_handle: circle_handle.clone()}
+      ));
+    }
   }
+  modify_simple_timeline (accessor, circle_handle, Some(me));
 }
 
-time_steward_event! (
-  pub struct BoundaryCollision {id: RowId}, Basics, EventId (0x59732d675b2329ad),
-  | &self, mutator | {
-    let new_relationship;
-    let mut new;
-    {
-      let relationship = mutator.get::<Intersection>(self.id).clone();
-      let me = mutator.data_and_last_change::<Circle>(self.id)
-                   .expect("a an event was recorded for a circle \
-                            that doesn't exist)");
-      new = me.0.clone();
-      new.position.update_by(mutator.now() - me.1);
-      if let Some(intersection) = relationship {
-        new.position
-          .add_acceleration(-intersection.induced_acceleration);
-        new_relationship = None;
-      } else {
+pub fn update_predictions <Accessor: EventAccessor <Steward = Steward>>(accessor: &mut Accessor, circle_handle: &DataTimelineHandle <SimpleTimeline <Circle>>, circle: &Circle) {
+  for handle in circle.relationships.iter() {
+    update_relationship_change_prediction (accessor, handle);
+  }
+  update_boundary_change_prediction (accessor, circle_handle);
+}
+
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub struct BoundaryChange {circle_handle: DataTimelineHandle <SimpleTimeline <Circle>>} //, Basics, EventId (0x59732d675b2329ad),
+impl StewardData for BoundaryChange {}
+impl Event for BoundaryChange {
+  type Steward = Steward;
+  type ExecutionData = ();
+  fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
+    let me = query_simple_timeline (accessor, &self.circle_handle, QueryOffset::After)
+      .expect("circles should never not exist");
+    let new_relationship = me.1.clone();
+    let new = ((us.0).1.clone(), (us.1).1.clone());
+    new.position.update_by(accessor.now() - me.0.base);
+    if let Some(induced_acceleration) = me.boundary_induced_acceleration {
+      new.position
+        .add_acceleration(-induced_acceleration);
+      new.boundary_induced_acceleration = None;
+    } else {
       let acceleration = -(new.position.evaluate() -
                             Vector2::new(ARENA_SIZE / 2,
                                          ARENA_SIZE / 2)) *
-                          (ARENA_SIZE * 400 / (ARENA_SIZE - me.0.radius));
-        new.position.add_acceleration(acceleration);
-        new_relationship = Some(Intersection {
-         induced_acceleration: acceleration,
-      });
-
-      }
+                          (ARENA_SIZE * 400 / (ARENA_SIZE - me.1.radius));
+      new.position.add_acceleration(acceleration);
+      new.boundary_induced_acceleration = Some(acceleration);
     }
     mutator.set::<Intersection>(self.id, new_relationship);
     mutator.set::<Circle>(self.id, Some(new));
+    modify_simple_timeline (accessor, &self.circle_handle, Some(new));
+    update_predictions (accessor, &self.circle_handle, new);
   }
-);
 
-time_steward_predictor! (pub struct CollisionPredictor, Basics, PredictorId(0x5375592f4da8682c), watching Nearness, fn collision_predictor);
-time_steward_predictor! (pub struct BoundaryPredictor, Basics, PredictorId(0x87d8a4a095350d30), watching Circle, fn boundary_predictor);
+  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+    unimplemented!()
+  }
+}
 
-time_steward_event! (
-  pub struct Initialize {}, Basics, EventId (0xa2a17317b84f96e5),
-  | &self, mutator | {
-    for i in 0..HOW_MANY_CIRCLES {
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub struct Initialize {} //, Basics, EventId (0xa2a17317b84f96e5),
+impl StewardData for Initialize {}
+impl Event for Initialize {
+  type Steward = Steward;
+  type ExecutionData = ();
+  fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
+    
+    let circle_handles = query_constant_timeline (accessor, accessor.global_timeline());
+    let circles = Vec::new();
+    for index in 0..HOW_MANY_CIRCLES {
       let thingy = ARENA_SIZE / 20;
       let radius = mutator.gen_range(ARENA_SIZE / 30, ARENA_SIZE / 15);
-      let id = get_circle_id(i);
 
       let position =
       QuadraticTrajectory::new(TIME_SHIFT,
                               MAX_DISTANCE_TRAVELED_AT_ONCE,
-                              [mutator.gen_range(0, ARENA_SIZE),
-                               mutator.gen_range(0, ARENA_SIZE),
-                               mutator.gen_range(-thingy, thingy),
-                               mutator.gen_range(-thingy, thingy),
+                              [accessor.gen_range(0, ARENA_SIZE),
+                               accessor.gen_range(0, ARENA_SIZE),
+                               accessor.gen_range(-thingy, thingy),
+                               accessor.gen_range(-thingy, thingy),
                                0,
                                0]);
-      mutator.set::<Circle>(id,
-                         Some(Circle {
-                           position: position,
-                           radius: radius,
-                         }));
-      collisions::insert::<CollisionBasics, _>(mutator, id, ());
+      
+      circles.push (Circle {
+        index: index,
+        position: position,
+        radius: radius,
+        relationships: Vec::new(),
+        boundary_induced_acceleration: None,
+        next_boundary_change: None,
+      });
+    }
+    for first in 0..HOW_MANY_CIRCLES {
+      for second in (index + 1)..HOW_MANY_CIRCLES {
+        let relationship = Relationship {
+          circles: (circle_handles [first], circle_handles [second]),
+          induced_acceleration: None,
+          next_change: None,
+        };
+        let relationship_handle = DataTimelineHandle::new (SimpleTimeline::new ());
+        
+        modify_simple_timeline (accessor, & relationship_handle, Some (relationship));
+        circles [first].relationships.push (relationship_handle.clone()) ;
+        circles [second].relationships.push (relationship_handle) ;
+      }
+    }
+    
+    for index in 0..HOW_MANY_CIRCLES {
+      modify_simple_timeline (accessor, & circle_handles [index], Some (circles [index].clone()));
+    }
+    for index in 0..HOW_MANY_CIRCLES {
+      update_predictions (accessor, &self.circle_handles [index], & circles [index]);
     }
   }
-);
 
-time_steward_event! (
-  pub struct Disturb {coordinates: [SpaceCoordinate; 2]}, Basics, EventId(0x058cb70d89116605),
-  | &self, mutator | {
-    let mut best_id = RowId::new (& 0u8);
+  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+    unimplemented!()
+  }
+}
+
+
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub struct Disturb {coordinates: [SpaceCoordinate; 2]} //, Basics, EventId (0x058cb70d89116605),
+impl StewardData for Disturb {}
+impl Event for Disturb {
+  type Steward = Steward;
+  type ExecutionData = ();
+  fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
+    let circles = query_constant_timeline (accessor, accessor.global_timeline());
+    let mut best_handle = None;
     let mut best_distance_squared = i64::max_value();
-    for i in 0..HOW_MANY_CIRCLES {
-      let id = get_circle_id(i);
-      let (circle, time) = mutator.data_and_last_change::<Circle>(id)
-          .expect("missing circle")
-          .clone();
-      let position = circle.position.updated_by(mutator.now() - time).unwrap().evaluate();
+    for circle_handle in circles.iter() {
+      let (time, circle) = query_simple_timeline (accessor, circle_handle, QueryOffset::After).expect ("circles should never not exist");
+      let position = circle.position.updated_by(accessor.now() - time.base).unwrap().evaluate();
       let distance_squared = (self.coordinates [0] - position [0]) * (self.coordinates [0] - position [0]) + (self.coordinates [1] - position [1]) * (self.coordinates [1] - position [1]);
       if distance_squared <best_distance_squared {
         best_distance_squared = distance_squared;
-        best_id = id;
+        best_handle = Some (circle_handle.clone());
       }
-    }    let mut new;{
-    let (a, time) = mutator.data_and_last_change::<Circle>(best_id)
-              .expect("missing circle")
-              .clone();
-    new =a.clone();
-    new.position.update_by(mutator.now() - time);
+    }
+    
+    let best_handle = best_handle.unwrap() ;
+    let (time, best) = query_simple_timeline (accessor, best_handle, QueryOffset::After).expect ("uhhhh");
+    let mut new = best.clone();
+    new.position.update_by(accessor.now() - time.base);
     let impulse = -(new.position.evaluate() -
                             Vector2::new(ARENA_SIZE / 2,
                                          ARENA_SIZE / 2)) *
                           (ARENA_SIZE * 4 / (ARENA_SIZE ));
-    new.position.add_velocity(impulse);}
-    mutator.set::<Circle>(best_id, Some(new));
+    new.position.add_velocity(impulse);
+    modify_simple_timeline (accessor, & best_handle, Some(new));
+    update_predictions (accessor, & best_handle, new);
   }
-);
+
+  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+    unimplemented!()
+  }
+}
+
