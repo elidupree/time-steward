@@ -1,6 +1,4 @@
 #![feature (test)]
-#![feature (plugin, custom_derive)]
-#![plugin (serde_macros)]
 
 extern crate test;
 
@@ -10,9 +8,11 @@ extern crate time_steward;
 #[macro_use]
 extern crate glium;
 
-extern crate nalgebra;
-extern crate rustc_serialize;
-extern crate docopt;
+extern crate nalgebra;extern crate docopt;
+
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 
 use test::Bencher;
 
