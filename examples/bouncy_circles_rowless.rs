@@ -241,9 +241,9 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
 
       target.finish().expect("failed to finish drawing");
       
-      while frame_begin.elapsed() < Duration::from_millis (10) && stew.updated_until_before().map_or (false, | limitation | limitation < time + SECOND) {
+      /*while frame_begin.elapsed() < Duration::from_millis (10) && stew.updated_until_before().map_or (false, | limitation | limitation < time + SECOND) {
         for _ in 0..8 {stew.step();}
-      }
+      }*/
       false
     };
     

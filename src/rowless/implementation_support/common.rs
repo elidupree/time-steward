@@ -8,7 +8,7 @@ macro_rules! downcast_rc {
     let result: Result <Rc<$T>, Rc<$($Trait)*>> = {
       let input = $input;
       if (*input).get_type_id() == ::std::any::TypeId::of::<$T>() {
-        println!( "succeeded");
+        //println!( "succeeded");
         unsafe {
           let raw: ::std::raw::TraitObject = ::std::mem::transmute (input);
           Ok(::std::mem::transmute (raw.data))
