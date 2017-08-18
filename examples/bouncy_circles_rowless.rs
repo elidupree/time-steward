@@ -38,8 +38,11 @@ struct Args {
 
 use std::time::{Instant, Duration};
 use glium::{DisplayBuild, Surface};
+use time_steward::DeterministicRandomId;
+use time_steward::rowless::api::{QueryOffset, TypedDataTimelineHandleTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::simple_flat as steward_module;
-use steward_module::{IncrementalTimeSteward, Basics as BasicsTrait};
+use steward_module::{TimeSteward, IncrementalTimeSteward, ConstructibleTimeSteward, Accessor, MomentaryAccessor, SnapshotAccessor, DataTimelineHandle, automatic_tracking};
+use automatic_tracking::{SimpleTimeline, ConstantTimeline, GetValue, query_constant_timeline, query_simple_timeline, modify_simple_timeline, unmodify_simple_timeline};
 
 #[path = "../dev-shared/bouncy_circles_rowless.rs"] mod bouncy_circles;
 use bouncy_circles::*;
@@ -99,7 +102,7 @@ fn main() {
 }
 
 
-fn run <Steward: IncrementalTimeSteward <Basics = Basics>,F: Fn (&mut Steward, Time)>(mut stew: Steward, settle:F) {
+fn run <F: Fn (&mut Steward, Time)>(mut stew: Steward, settle:F) {
 
 
   let vertex_shader_source = r#"
@@ -169,7 +172,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
           },
           glium::glutin::Event::MouseInput (_,_) => {
             event_index += 1;
-            stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), Disturb::new ([mouse_coordinates [0], mouse_coordinates [1]])).unwrap();
+            stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), Disturb {coordinates: [mouse_coordinates [0], mouse_coordinates [1]]}).unwrap();
           },
           _ => (),
         }
@@ -179,19 +182,19 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
         mouse_coordinates [0] = (((x*600.0) as SpaceCoordinate) - 150) * ARENA_SIZE / 300;
         mouse_coordinates [1] = (450-((y*600.0) as SpaceCoordinate)) * ARENA_SIZE / 300;
         event_index += 1;
-        stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), Disturb::new ([mouse_coordinates [0], mouse_coordinates [1]])).unwrap();
+        stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), Disturb {coordinates: [mouse_coordinates [0], mouse_coordinates [1]]}).unwrap();
       }
 
       let mut target = display.draw();
       target.clear_color(0.0, 0.0, 0.0, 1.0);
       let mut vertices = Vec::<Vertex>::new();
 
-      let snapshot = stew.snapshot_before(& time)
+      let accessor = stew.snapshot_before(& time)
         .expect("steward failed to provide snapshot");
       settle (&mut stew, time);
-      for index in 0..HOW_MANY_CIRCLES {
-        if let Some ((circle, time)) = snapshot.data_and_last_change::<Circle>(get_circle_id(index)){
-        let position = circle.position.updated_by(snapshot.now() - time).unwrap().evaluate();
+      for handle in query_constant_timeline (& accessor, accessor.global_timeline()).iter() {
+        if let Some ((time, circle)) = accessor.query (handle, &GetValue, QueryOffset::After){
+        let position = circle.position.updated_by(accessor.now() - time.base).unwrap().evaluate();
         let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,
                       position[1] as f32 / ARENA_SIZE as f32 - 0.5];
         let radius = circle.radius as f32 / ARENA_SIZE as f32;
