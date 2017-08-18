@@ -333,11 +333,11 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
         }
       })
     };
-    self.steward.existent_predictions.insert (handle.clone().as_dynamic_event());
+    assert!(self.steward.existent_predictions.insert (handle.clone().as_dynamic_event()), "created a prediction that already existed? Probably used a duplicate time id");
     handle
   }
   fn destroy_prediction <E: Event <Steward = Self::Steward>> (&mut self, prediction: &PredictionHandle<E>) {
-    assert!(self.steward.existent_predictions.remove (& prediction.clone().as_dynamic_event()));
+    assert!(self.steward.existent_predictions.remove (& prediction.clone().as_dynamic_event()), "destroyed a prediction doesn't exist? Probably one that was already destroyed");
   }
   
   fn invalidate <F: FnOnce(&<Self::Steward as TimeSteward>::InvalidationAccessor)> (&self, _: F) {

@@ -61,6 +61,7 @@ pub fn query_relationship_circles <Accessor: EventAccessor <Steward = Steward>>(
 }
 
 pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward = Steward>>(accessor: &mut Accessor, relationship_handle: &DataTimelineHandle <SimpleTimeline <Relationship, Basics >>) {
+  let now = accessor.extended_now().clone();
   let (_, mut relationship) = query_simple_timeline (accessor, relationship_handle, QueryOffset::After).unwrap();
 
   let us = query_relationship_circles (accessor, &relationship);
@@ -89,7 +90,7 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
       // println!(" planned for {}", &yes);
       relationship.next_change = Some(accessor.create_prediction (
         yes,
-        DeterministicRandomId::new (&((us.0).1.index, (us.1).1.index)),
+        DeterministicRandomId::new (&(now.id, (us.0).1.index, (us.1).1.index.wrapping_add (0x6515c48170b61837))),
         RelationshipChange {relationship_handle: relationship_handle.clone()}
       ));
     }
@@ -146,6 +147,7 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
   let arena_center = QuadraticTrajectory::new(TIME_SHIFT,
                                               MAX_DISTANCE_TRAVELED_AT_ONCE,
                                               [ARENA_SIZE / 2, ARENA_SIZE / 2, 0, 0, 0, 0]);
+  let now = accessor.extended_now().clone();
   let mut me = query_simple_timeline (accessor, circle_handle, QueryOffset::After)
     .expect("circles should never not exist");
 
@@ -167,7 +169,7 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
       // println!(" planned for {}", &yes);
       me.1.next_boundary_change = Some(accessor.create_prediction (
         yes,
-        DeterministicRandomId::new (&me.1.index),
+        DeterministicRandomId::new (&(now.id, me.1.index)),
         BoundaryChange {circle_handle: circle_handle.clone()}
       ));
     }

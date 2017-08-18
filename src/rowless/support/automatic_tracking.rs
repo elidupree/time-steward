@@ -92,7 +92,7 @@ impl <Data: StewardData, B: Basics> SimpleTimeline <Data, B> {
   
   fn remove_from (&mut self, time: &ExtendedTime <B>) {
     while let Some (change) = self.changes.pop() {
-      if change.0.extended_time() <= time {
+      if change.0.extended_time() < time {
         self.changes.push (change);
         break
       }
