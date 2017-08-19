@@ -11,7 +11,7 @@ use std::ops::Deref;
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
-/// TimeSteward has strong requirements for serializability. In addition to implementing these traits, a StewardData must have Eq be equivalent to equality of its serialization, and all its behavior must be invariant under cloning and serialize-deserialize cycles.
+/// TimeSteward has strong requirements for serializability. In addition to implementing these traits, a StewardData must have all its behavior be invariant under cloning and serialize-deserialize cycles, and identical to that of any other object that is == to it.
 /// We used to require `Send + Sync` for this, but now that DataTimelineHandles can be part of StewardData, we have to omit that to support TimeSteward types that have !Send/!Sync handles (like Rc)
 pub trait StewardData: Any + Clone + Eq + Serialize + DeserializeOwned + Debug {}
 

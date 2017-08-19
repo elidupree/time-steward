@@ -173,13 +173,15 @@ So instead of automatically tracking everything *during normal simulations*, Tim
 
 To guarantee determinism, we require this invariant: "The history **prior to the first invalid event** is always in the canonical state." Note that for this definition, a Prediction that exists but hasn't been run yet is also considered "invalid", because the "valid" state is the one where it **has** been run.
 
-This is sufficient to uphold determinism (we can simply keep running/undoing/rerunning invalid events until we reach the canonical state), but hard to audit in a helpful way. On one hand, whenever we run the first invalid event, we know that it receives canonical inputs, and we can audit that it leaves the history on the canonical state up through the next invalid event. On the other hand, imagine that, near the beginning of the simulation, an unimportant event E was invalidated, but not undone. Then the simulation continued for a while, executing hundreds of events unrelated to E. Only after that, E was rerun – and TimeSteward detected that it the history was now inconsistent with the canonical state! That isn't very useful. We have no idea which of the hundreds of events was responsible for the inconsistency.
+This is sufficient to uphold determinism (we can simply keep running/undoing/rerunning invalid events until we reach the canonical state), but hard to audit in a helpful way. On one hand, whenever we run the first invalid event, we know that it receives canonical inputs, and we can audit that it leaves the history in the canonical state up through the next invalid event. On the other hand, imagine that, near the beginning of the simulation, an unimportant event E was invalidated, but not undone. Then the simulation continued for a while, executing hundreds of events unrelated to E. Only after that, E was rerun – and TimeSteward detected that it the history was now inconsistent with the canonical state! That isn't very useful. We have no idea which of the hundreds of events was responsible for the inconsistency.
 
 Invalid events raise a problem for tightening this condition. We'd like to be able to say, "The history depends solely on the executed-events (events that have been executed but not undone)." But if you had a timeline like this:
 
 Time 0 – Undone event E – Invalidated, but not undone, event F – Valid event G
 
 Then the state after F could legitimately depend on whether F's execution happened *before* or *after* E was undone. So we need a weaker invariant.
+
+Luckily, we can check the canonicity of individual DataTimelines. So specifically, "For any DataTimeline D, D's history **prior to the first noncanonical event that modifies D** is always in the canonical state." Again, we need to clarify the definition of noncanonical event – this includes both **events that have been executed with noncanonical inputs and modified D**, and also **events that canonically modify D, but have not been executed canonically**. (Can we prove that this is stricter than the first invariant? What do we need to know in order to know that there can't be any noncanonical events prior to the first invalid event?)
 
 
 
