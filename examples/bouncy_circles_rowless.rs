@@ -42,7 +42,7 @@ use time_steward::DeterministicRandomId;
 use time_steward::rowless::api::{QueryOffset, TypedDataTimelineHandleTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::simple_flat as steward_module;
 use steward_module::{TimeSteward, IncrementalTimeSteward, ConstructibleTimeSteward, Accessor, MomentaryAccessor, SnapshotAccessor, DataTimelineHandle, simple_timeline};
-use simple_timeline::{SimpleTimeline, ConstantTimeline, GetValue, query_constant_timeline, query_simple_timeline, modify_simple_timeline, unmodify_simple_timeline};
+use simple_timeline::{SimpleTimeline, ConstantTimeline, GetConstant, GetVarying, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
 #[path = "../dev-shared/bouncy_circles_rowless.rs"] mod bouncy_circles;
 use bouncy_circles::*;
@@ -63,13 +63,7 @@ use std::net::{TcpListener, TcpStream};
 use std::io::{BufReader, BufWriter};
 
 fn main() {
-  let global_timeline = <Basics as BasicsTrait>::GlobalTimeline::new ({
-    let mut circles = Vec::new();
-    for index in 0..HOW_MANY_CIRCLES {
-      circles.push (DataTimelineHandle::new (SimpleTimeline::new ()));
-    }
-    circles
-  });
+  let global_timeline = make_global_timeline();
   // For some reason, docopt checking the arguments caused build_glium() to fail in emscripten.
   /*if !cfg!(target_os = "emscripten") {
     let arguments: Args = Docopt::new(USAGE)
@@ -192,8 +186,8 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
       let accessor = stew.snapshot_before(& time)
         .expect("steward failed to provide snapshot");
       settle (&mut stew, time);
-      for handle in query_constant_timeline (& accessor, accessor.global_timeline()).iter() {
-        if let Some ((time, circle)) = accessor.query (handle, &GetValue, QueryOffset::After){
+      for handle in accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After).iter() {
+        if let Some ((time, circle)) = accessor.query (handle, &GetVarying, QueryOffset::After){
         let position = circle.position.updated_by(accessor.now() - time.base).unwrap().evaluate();
         let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,
                       position[1] as f32 / ARENA_SIZE as f32 - 0.5];

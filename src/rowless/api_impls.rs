@@ -28,7 +28,7 @@ macro_rules! StewardData_primitive_impls {
     StewardData_primitive_impls! ($($rest),*);
   };
 }
-StewardData_primitive_impls!(u8, i8, u16, i16, u32, i32, u64, i64, usize, isize);
+StewardData_primitive_impls!((), u8, i8, u16, i16, u32, i32, u64, i64, usize, isize);
 
 impl <T: StewardData> StewardData for Option <T> {}
 impl <T: StewardData> StewardData for Vec<T> {}

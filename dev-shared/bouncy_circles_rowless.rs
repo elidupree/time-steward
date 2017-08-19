@@ -8,7 +8,7 @@ use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{self, StewardData, QueryOffset, TypedDataTimelineHandleTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_flat as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineHandle, PredictionHandle, MomentaryAccessor, EventAccessor, UndoEventAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, ConstantTimeline, GetValue, query_constant_timeline, query_simple_timeline, modify_simple_timeline, unmodify_simple_timeline};
+use simple_timeline::{SimpleTimeline, ConstantTimeline, GetConstant, GetVarying, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
 
 pub type Time = i64;
@@ -28,7 +28,7 @@ pub const SECOND: Time = 1 << TIME_SHIFT;
 pub struct Basics {}
 impl BasicsTrait for Basics {
   type Time = Time;
-  type GlobalTimeline = ConstantTimeline <Vec<DataTimelineHandle <SimpleTimeline <Circle, Basics >>>, Basics>;
+  type GlobalTimeline = ConstantTimeline <Vec<CircleHandle>, Basics>;
 }
 
 pub type Steward = steward_module::Steward <Basics>;
@@ -39,30 +39,32 @@ pub struct Circle {
   pub index: usize,
   pub position: QuadraticTrajectory,
   pub radius: SpaceCoordinate,
-  pub relationships: Vec<DataTimelineHandle <SimpleTimeline <Relationship, Basics >>>,
+  pub relationships: Vec<RelationshipHandle>,
   pub boundary_induced_acceleration: Option <Vector2<SpaceCoordinate>>,
   pub next_boundary_change: Option <PredictionHandle <BoundaryChange>>,
 }
 impl StewardData for Circle {}
+type CircleHandle = DataTimelineHandle <SimpleTimeline <(), Circle, Basics>>;
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Relationship {
-  pub circles: (DataTimelineHandle <SimpleTimeline <Circle, Basics >>, DataTimelineHandle <SimpleTimeline <Circle, Basics >>),
+  pub circles: (CircleHandle, CircleHandle),
   pub induced_acceleration: Option <Vector2<SpaceCoordinate>>,
   pub next_change: Option <PredictionHandle <RelationshipChange>>,
 }
 impl StewardData for Relationship {}
+type RelationshipHandle = DataTimelineHandle <SimpleTimeline <(), Relationship, Basics>>;
 
 pub fn query_relationship_circles <Accessor: EventAccessor <Steward = Steward>>(accessor: &mut Accessor, relationship: &Relationship)->((ExtendedTime <Basics>, Circle), (ExtendedTime <Basics>, Circle)) {
-  (query_simple_timeline (accessor, & relationship.circles.0, QueryOffset::After)
+  (tracking_query (accessor, & relationship.circles.0, QueryOffset::After)
       .expect("a relationship exists for a circle that doesn't"),
-   query_simple_timeline (accessor, & relationship.circles.1, QueryOffset::After)
+   tracking_query (accessor, & relationship.circles.1, QueryOffset::After)
       .expect("a relationship exists for a circle that doesn't"))
 }
 
-pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward = Steward>>(accessor: &mut Accessor, relationship_handle: &DataTimelineHandle <SimpleTimeline <Relationship, Basics >>) {
+pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward = Steward>>(accessor: &mut Accessor, relationship_handle: &RelationshipHandle) {
   let now = accessor.extended_now().clone();
-  let (_, mut relationship) = query_simple_timeline (accessor, relationship_handle, QueryOffset::After).unwrap();
+  let (_, mut relationship) = tracking_query (accessor, relationship_handle, QueryOffset::After).unwrap();
 
   let us = query_relationship_circles (accessor, &relationship);
 
@@ -99,13 +101,13 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
 }
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-pub struct RelationshipChange {pub relationship_handle: DataTimelineHandle <SimpleTimeline <Relationship, Basics >>} //, Basics, EventId (0x2312e29e341a2495),
+pub struct RelationshipChange {pub relationship_handle: RelationshipHandle} //, Basics, EventId (0x2312e29e341a2495),
 impl StewardData for RelationshipChange {}
 impl Event for RelationshipChange {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    let (_, relationship) = query_simple_timeline (accessor, &self.relationship_handle, QueryOffset::After).unwrap();
+    let (_, relationship) = tracking_query (accessor, &self.relationship_handle, QueryOffset::After).unwrap();
     let us = query_relationship_circles (accessor, &relationship);
     let mut new_relationship = relationship.clone();
     let mut new = ((us.0).1.clone(), (us.1).1.clone());
@@ -143,12 +145,12 @@ impl Event for RelationshipChange {
   }
 }
 
-pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Steward>>(accessor: &mut Accessor, circle_handle: &DataTimelineHandle <SimpleTimeline <Circle, Basics >>) {
+pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Steward>>(accessor: &mut Accessor, circle_handle: &CircleHandle) {
   let arena_center = QuadraticTrajectory::new(TIME_SHIFT,
                                               MAX_DISTANCE_TRAVELED_AT_ONCE,
                                               [ARENA_SIZE / 2, ARENA_SIZE / 2, 0, 0, 0, 0]);
   let now = accessor.extended_now().clone();
-  let mut me = query_simple_timeline (accessor, circle_handle, QueryOffset::After)
+  let mut me = tracking_query (accessor, circle_handle, QueryOffset::After)
     .expect("circles should never not exist");
 
   let time = QuadraticTrajectory::approximately_when_distance_passes(ARENA_SIZE - me.1.radius,
@@ -177,7 +179,7 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
   modify_simple_timeline (accessor, circle_handle, Some(me.1));
 }
 
-pub fn update_predictions <Accessor: EventAccessor <Steward = Steward>>(accessor: &mut Accessor, circle_handle: &DataTimelineHandle <SimpleTimeline <Circle, Basics >>, circle: &Circle) {
+pub fn update_predictions <Accessor: EventAccessor <Steward = Steward>>(accessor: &mut Accessor, circle_handle: &CircleHandle, circle: &Circle) {
   for handle in circle.relationships.iter() {
     update_relationship_change_prediction (accessor, handle);
   }
@@ -185,13 +187,13 @@ pub fn update_predictions <Accessor: EventAccessor <Steward = Steward>>(accessor
 }
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-pub struct BoundaryChange {pub circle_handle: DataTimelineHandle <SimpleTimeline <Circle, Basics >>} //, Basics, EventId (0x59732d675b2329ad),
+pub struct BoundaryChange {pub circle_handle: CircleHandle} //, Basics, EventId (0x59732d675b2329ad),
 impl StewardData for BoundaryChange {}
 impl Event for BoundaryChange {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    let me = query_simple_timeline (accessor, &self.circle_handle, QueryOffset::After)
+    let me = tracking_query (accessor, &self.circle_handle, QueryOffset::After)
       .expect("circles should never not exist");
     let mut new = me.1.clone();
     new.position.update_by(accessor.now() - me.0.base);
@@ -224,7 +226,7 @@ impl Event for Initialize {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     
-    let circle_handles = query_constant_timeline (accessor, accessor.global_timeline());
+    let circle_handles = accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After);
     let mut circles = Vec::new();
     for index in 0..HOW_MANY_CIRCLES {
       let thingy = ARENA_SIZE / 20;
@@ -256,7 +258,7 @@ impl Event for Initialize {
           induced_acceleration: None,
           next_change: None,
         };
-        let relationship_handle = DataTimelineHandle::new (SimpleTimeline::new ());
+        let relationship_handle = DataTimelineHandle::new (SimpleTimeline::new (()));
         
         modify_simple_timeline (accessor, & relationship_handle, Some (relationship));
         circles [first].relationships.push (relationship_handle.clone()) ;
@@ -285,11 +287,11 @@ impl Event for Disturb {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    let circles = query_constant_timeline (accessor, accessor.global_timeline());
+    let circles = accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After);
     let mut best_handle = None;
     let mut best_distance_squared = i64::max_value();
     for circle_handle in circles.iter() {
-      let (time, circle) = query_simple_timeline (accessor, circle_handle, QueryOffset::After).expect ("circles should never not exist");
+      let (time, circle) = tracking_query (accessor, circle_handle, QueryOffset::After).expect ("circles should never not exist");
       let position = circle.position.updated_by(accessor.now() - time.base).unwrap().evaluate();
       let distance_squared = (self.coordinates [0] - position [0]) * (self.coordinates [0] - position [0]) + (self.coordinates [1] - position [1]) * (self.coordinates [1] - position [1]);
       if distance_squared <best_distance_squared {
@@ -299,7 +301,7 @@ impl Event for Disturb {
     }
     
     let best_handle = best_handle.unwrap() ;
-    let (time, best) = query_simple_timeline (accessor, & best_handle, QueryOffset::After).expect ("uhhhh");
+    let (time, best) = tracking_query (accessor, & best_handle, QueryOffset::After).expect ("uhhhh");
     let mut new = best.clone();
     new.position.update_by(accessor.now() - time.base);
     let impulse = -(new.position.evaluate() -
@@ -314,5 +316,15 @@ impl Event for Disturb {
   fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
+}
+
+pub fn make_global_timeline()-> <Basics as BasicsTrait>::GlobalTimeline {
+  <Basics as BasicsTrait>::GlobalTimeline::new ({
+    let mut circles = Vec::new();
+    for index in 0..HOW_MANY_CIRCLES {
+      circles.push (DataTimelineHandle::new (SimpleTimeline::new (())));
+    }
+    circles
+  })
 }
 

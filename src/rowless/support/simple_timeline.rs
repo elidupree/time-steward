@@ -13,8 +13,12 @@ use super::*;
 use implementation_support::common::{split_off_greater_set};
 
 #[derive (Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
-pub struct GetValue;
-impl StewardData for GetValue{}
+pub struct GetConstant;
+impl StewardData for GetConstant {}
+
+#[derive (Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
+pub struct GetVarying;
+impl StewardData for GetVarying {}
 
 
 
@@ -44,32 +48,31 @@ impl <Data: StewardData, B: Basics> DataTimeline for ConstantTimeline <Data, B> 
   
   fn forget_before (&mut self, _: &ExtendedTime <Self::Basics>) {}
 }
-impl <Data: StewardData, B: Basics> DataTimelineQueriableWith<GetValue> for ConstantTimeline <Data, B> {
+impl <Data: StewardData, B: Basics> DataTimelineQueriableWith<GetConstant> for ConstantTimeline <Data, B> {
   type QueryResult = Data;
 
-  fn query (&self, _: &GetValue, _: &ExtendedTime <Self::Basics>, _: QueryOffset)->Self::QueryResult {
+  fn query (&self, _: & GetConstant, _: &ExtendedTime <Self::Basics>, _: QueryOffset)->Self::QueryResult {
     self.data.clone()
   }
-}
-
-pub fn query_constant_timeline <Data: StewardData, Steward: TimeSteward, A: Accessor <Steward = Steward>> (accessor: & A, handle: & DataTimelineHandle <ConstantTimeline <Data, Steward::Basics>>)->Data {
-  accessor.query (handle, &GetValue, QueryOffset::After)
 }
 
 
 
 #[derive (Clone, Serialize, Deserialize, Debug)]
-pub struct SimpleTimeline <Data: StewardData, B: Basics> {
+pub struct SimpleTimeline <ConstantData: StewardData, VaryingData: StewardData, B: Basics> {
   // Hacky workaround for https://github.com/rust-lang/rust/issues/41617 (see https://github.com/serde-rs/serde/issues/943)
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
-  changes: Vec<(DynamicEventHandle <B>, Option <Data>)>,
+  constant: ConstantData,
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
+  changes: Vec<(DynamicEventHandle <B>, Option <VaryingData>)>,
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   other_dependent_events: RefCell<BTreeSet<DynamicEventHandle<B>>>,
 }
 
-impl <Data: StewardData, B: Basics> SimpleTimeline <Data, B> {
-  pub fn new ()->Self {
+impl <ConstantData: StewardData, VaryingData: StewardData, B: Basics> SimpleTimeline <ConstantData, VaryingData, B> {
+  pub fn new (constant: ConstantData)->Self {
     SimpleTimeline {
+      constant: constant,
       changes: Vec::new(),
       other_dependent_events: RefCell::new (BTreeSet::new()),
     }
@@ -100,7 +103,7 @@ impl <Data: StewardData, B: Basics> SimpleTimeline <Data, B> {
   }
 }
 
-impl <Data: StewardData, B: Basics> DataTimeline for SimpleTimeline <Data, B> {
+impl <ConstantData: StewardData, VaryingData: StewardData, B: Basics> DataTimeline for SimpleTimeline <ConstantData, VaryingData, B> {
   type Basics = B;
   
   fn clone_for_snapshot (&self, time: &ExtendedTime <Self::Basics>)->Self {
@@ -109,6 +112,7 @@ impl <Data: StewardData, B: Basics> DataTimeline for SimpleTimeline <Data, B> {
       Err (index) => &self.changes [index.saturating_sub (1)..index],
     };
     SimpleTimeline {
+      constant: self.constant.clone(),
       changes: slice.to_vec(),
       other_dependent_events: RefCell::new (BTreeSet::new()),
     }
@@ -128,10 +132,17 @@ impl <Data: StewardData, B: Basics> DataTimeline for SimpleTimeline <Data, B> {
     }
   }
 }
-impl <Data: StewardData, B: Basics> DataTimelineQueriableWith<GetValue> for SimpleTimeline <Data, B> {
-  type QueryResult = Option <(ExtendedTime <B>, Data)>;
+impl <ConstantData: StewardData, VaryingData: StewardData, B: Basics> DataTimelineQueriableWith<GetConstant> for SimpleTimeline <ConstantData, VaryingData, B> {
+  type QueryResult = ConstantData;
 
-  fn query (&self, _: &GetValue, time: &ExtendedTime <Self::Basics>, offset: QueryOffset)->Self::QueryResult {
+  fn query (&self, _: & GetConstant, _: &ExtendedTime <Self::Basics>, _: QueryOffset)->Self::QueryResult {
+    self.constant.clone()
+  }
+}
+impl <ConstantData: StewardData, VaryingData: StewardData, B: Basics> DataTimelineQueriableWith<GetVarying> for SimpleTimeline <ConstantData, VaryingData, B> {
+  type QueryResult = Option <(ExtendedTime <B>, VaryingData)>;
+
+  fn query (&self, _: &GetVarying, time: &ExtendedTime <Self::Basics>, offset: QueryOffset)->Self::QueryResult {
     let previous_change_index = match self.changes.binary_search_by_key (&time, | change | change.0.extended_time()) {
       Ok(index) => match offset {QueryOffset::After => index, QueryOffset::Before => index.wrapping_sub (1)},
       Err (index) => index.wrapping_sub (1),
@@ -141,15 +152,15 @@ impl <Data: StewardData, B: Basics> DataTimelineQueriableWith<GetValue> for Simp
 }
 
 
-pub fn query_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>, offset: QueryOffset)->Option <(ExtendedTime <Steward::Basics>, Data)> {
+pub fn tracking_query <ConstantData: StewardData, VaryingData: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <ConstantData, VaryingData, Steward::Basics>>, offset: QueryOffset)->Option <(ExtendedTime <Steward::Basics>, VaryingData)> {
   accessor.modify (handle, move |timeline| {
     let mut dependencies = timeline.other_dependent_events.borrow_mut();
     dependencies.insert (accessor.handle().clone());
   });
-  accessor.query (handle, &GetValue, offset)
+  accessor.query (handle, &GetVarying, offset)
 }
-pub fn modify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>, modification: Option <Data>) {
-  match accessor.query (handle, &GetValue, QueryOffset::After) {
+pub fn modify_simple_timeline <ConstantData: StewardData, VaryingData: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <ConstantData, VaryingData, Steward::Basics>>, modification: Option <VaryingData>) {
+  match accessor.query (handle, &GetVarying, QueryOffset::After) {
     Some((time, data)) =>
       if let Some (new_data) = modification.as_ref() {
         if &time == accessor.extended_now() && &data == new_data {
@@ -167,8 +178,8 @@ pub fn modify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor
     timeline.changes.push ((accessor.handle().clone(), modification));
   });
 }
-pub fn unmodify_simple_timeline <Data: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <Data, Steward::Basics>>) {
-  if let Some((time, _)) = accessor.query (handle, &GetValue, QueryOffset::After) { if &time == accessor.extended_now() {
+pub fn unmodify_simple_timeline <ConstantData: StewardData, VaryingData: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineHandle <SimpleTimeline <ConstantData, VaryingData, Steward::Basics>>) {
+  if let Some((time, _)) = accessor.query (handle, &GetVarying, QueryOffset::After) { if &time == accessor.extended_now() {
     accessor.invalidate (| invalidator | {
       invalidator.peek(handle).invalidate_after (accessor.extended_now(), invalidator);
     });

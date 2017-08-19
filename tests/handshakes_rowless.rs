@@ -13,14 +13,14 @@ use time_steward::rowless::api::{self, StewardData, QueryOffset, TypedDataTimeli
 use time_steward::rowless::stewards::{simple_flat};
 use simple_flat::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineHandle, PredictionHandle, EventAccessor, UndoEventAccessor, SnapshotAccessor, simple_timeline};
 use simple_flat::Steward;
-use simple_timeline::{SimpleTimeline, ConstantTimeline, GetValue, query_constant_timeline, query_simple_timeline, modify_simple_timeline, unmodify_simple_timeline};
+use simple_timeline::{SimpleTimeline, ConstantTimeline, GetConstant, GetVarying, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
 
 type Time = i64;
 
 const HOW_MANY_PHILOSOPHERS: usize = 7;
 
-type PhilosopherHandle = DataTimelineHandle <SimpleTimeline <Philosopher, Basics >>;
+type PhilosopherHandle = DataTimelineHandle <SimpleTimeline <(), Philosopher, Basics>>;
 
 #[derive (Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug, Default)]
 struct Basics {}
@@ -54,7 +54,7 @@ impl Philosopher {
 }
 
 fn change_next_handshake_time <Accessor: EventAccessor <Steward = Steward <Basics>>> (accessor: &mut Accessor, index: usize, handle: & PhilosopherHandle, time: Time) {
-  let mut philosopher = query_simple_timeline (accessor, handle, QueryOffset::After).expect ("philosophers should never not exist").1;
+  let mut philosopher = tracking_query(accessor, handle, QueryOffset::After).expect ("philosophers should never not exist").1;
   if let Some(prediction) = philosopher.next_handshake_prediction.take() {
     accessor.destroy_prediction (&prediction);
   }
@@ -68,11 +68,11 @@ fn change_next_handshake_time <Accessor: EventAccessor <Steward = Steward <Basic
 
 
 fn unchange_next_handshake_time <Accessor: UndoEventAccessor <Steward = Steward <Basics>>> (accessor: &mut Accessor, handle: & PhilosopherHandle) {
-  let mut philosopher = accessor.query (handle, &GetValue, QueryOffset::After).expect ("philosophers should never not exist").1;
+  let mut philosopher = accessor.query (handle, &GetVarying, QueryOffset::After).expect ("philosophers should never not exist").1;
   if let Some(prediction) = philosopher.next_handshake_prediction.take() {
     accessor.destroy_prediction (&prediction);
   }
-  let mut philosopher = accessor.query (handle, &GetValue, QueryOffset::Before).expect ("philosophers should never not exist").1;
+  let mut philosopher = accessor.query (handle, &GetVarying, QueryOffset::Before).expect ("philosophers should never not exist").1;
   if let Some(prediction) = philosopher.next_handshake_prediction.take() {
     accessor.undestroy_prediction (&prediction, None);
   }
@@ -89,9 +89,9 @@ type TimeStewardTypes = (ListedType<SimpleTimeline <Philosopher>>,
 
 fn display_snapshot<Accessor: SnapshotAccessor<Steward = Steward <Basics>>>(accessor: & Accessor) {
   println!("snapshot for {}", accessor.now());
-  for handle in query_constant_timeline (accessor, accessor.global_timeline()).iter() {
+  for handle in accessor.query (accessor.global_timeline(), &GetConstant, QueryOffset::After).iter() {
     println!("{}",
-             accessor.query(handle, &GetValue, QueryOffset::After)
+             accessor.query(handle, &GetVarying, QueryOffset::After)
                .expect("missing philosopher").1
                .time_when_next_initiates_handshake);
   }
@@ -118,7 +118,7 @@ impl Event for Shake {
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let awaken_time_1 = now + accessor.gen_range(-1, 4);
     let awaken_time_2 = now + accessor.gen_range(-1, 7);
-    let philosophers = query_constant_timeline (accessor, accessor.global_timeline());
+    let philosophers = accessor.query (accessor.global_timeline(), &GetConstant, QueryOffset::After);
 // println!("SHAKE!!! @{}. {}={}; {}={}", now, self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
 // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
 // IN THE SECOND TIME APPARENTLY
@@ -127,7 +127,7 @@ impl Event for Shake {
   }
   fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
-    let philosophers = query_constant_timeline (accessor, accessor.global_timeline());
+    let philosophers = accessor.query (accessor.global_timeline(), &GetConstant, QueryOffset::After);
     unchange_next_handshake_time (accessor, & philosophers [friend_id]);
     unchange_next_handshake_time (accessor, & philosophers [self.whodunnit]);
   }
@@ -141,7 +141,7 @@ impl Event for Initialize {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     println!("FIAT!!!!!");
-    let philosophers = query_constant_timeline (accessor, accessor.global_timeline());
+    let philosophers = accessor.query (accessor.global_timeline(), &GetConstant, QueryOffset::After);
     for i in 0..HOW_MANY_PHILOSOPHERS {
       modify_simple_timeline (accessor, & philosophers [i], Some (Philosopher::new()));
       change_next_handshake_time (accessor, i, & philosophers [i], (i + 1) as Time);
@@ -163,7 +163,7 @@ impl Event for Tweak {
     let now = *accessor.now();
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let awaken_time = now + accessor.gen_range(-1, 7);
-    let philosophers = query_constant_timeline (accessor, accessor.global_timeline());
+    let philosophers = accessor.query (accessor.global_timeline(), &GetConstant, QueryOffset::After);
     change_next_handshake_time (accessor, friend_id, & philosophers [friend_id], awaken_time);
   }
   fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
@@ -183,7 +183,7 @@ impl Event for TweakUnsafe {
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let now = *accessor.now();
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
-    let philosophers = query_constant_timeline (accessor, accessor.global_timeline());
+    let philosophers = accessor.query (accessor.global_timeline(), &GetConstant, QueryOffset::After);
 
     let inconsistent = INCONSISTENT.with (| value | {
       *value
@@ -204,7 +204,7 @@ pub fn handshakes_simple() {
   let mut stew: Steward <Basics> = Steward::from_global_timeline (<Basics as BasicsTrait>::GlobalTimeline::new ({
     let mut philosophers = Vec::new();
     for _ in 0.. HOW_MANY_PHILOSOPHERS {
-      philosophers.push (DataTimelineHandle::new (SimpleTimeline::new ()));
+      philosophers.push (DataTimelineHandle::new (SimpleTimeline::new (())));
     }
     philosophers
   }));
