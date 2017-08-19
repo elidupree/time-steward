@@ -7,8 +7,8 @@ use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
 use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{self, StewardData, QueryOffset, TypedDataTimelineHandleTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_flat as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineHandle, PredictionHandle, MomentaryAccessor, EventAccessor, UndoEventAccessor, SnapshotAccessor, automatic_tracking};
-use automatic_tracking::{SimpleTimeline, ConstantTimeline, GetValue, query_constant_timeline, query_simple_timeline, modify_simple_timeline, unmodify_simple_timeline};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineHandle, PredictionHandle, MomentaryAccessor, EventAccessor, UndoEventAccessor, SnapshotAccessor, simple_timeline};
+use simple_timeline::{SimpleTimeline, ConstantTimeline, GetValue, query_constant_timeline, query_simple_timeline, modify_simple_timeline, unmodify_simple_timeline};
 
 
 pub type Time = i64;

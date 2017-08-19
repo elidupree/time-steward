@@ -2,7 +2,7 @@
 #[macro_export]
 macro_rules! time_steward_define_simple_timeline {
   () => {
-pub mod automatic_tracking {
+pub mod simple_timeline {
 use std::collections::BTreeSet;
 use std::mem;
 use std::cell::RefCell;

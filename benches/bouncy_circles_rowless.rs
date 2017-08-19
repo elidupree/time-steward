@@ -20,8 +20,8 @@ use test::Bencher;
 use time_steward::DeterministicRandomId;
 use time_steward::rowless::api::{QueryOffset, TypedDataTimelineHandleTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::simple_flat as steward_module;
-use steward_module::{TimeSteward, IncrementalTimeSteward, ConstructibleTimeSteward, Accessor, MomentaryAccessor, SnapshotAccessor, DataTimelineHandle, automatic_tracking};
-use automatic_tracking::{SimpleTimeline, ConstantTimeline, GetValue, query_constant_timeline, query_simple_timeline, modify_simple_timeline, unmodify_simple_timeline};
+use steward_module::{TimeSteward, IncrementalTimeSteward, ConstructibleTimeSteward, Accessor, MomentaryAccessor, SnapshotAccessor, DataTimelineHandle, simple_timeline};
+use simple_timeline::{SimpleTimeline, ConstantTimeline, GetValue, query_constant_timeline, query_simple_timeline, modify_simple_timeline, unmodify_simple_timeline};
 
 #[path = "../dev-shared/bouncy_circles_rowless.rs"] mod bouncy_circles;
 use bouncy_circles::*;
