@@ -319,7 +319,13 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     }
     timeline.data.shared.first_snapshot_not_updated.set (self.steward.next_snapshot_index);
     
-    modification (&mut*timeline.data.data.borrow_mut());
+    let mut modify_guard = timeline.data.data.borrow_mut();
+    modification (&mut*modify_guard);
+    match &self.steward.invalid_before {
+      &ValidSince::Before (ref time) => modify_guard.forget_before(&ExtendedTime::beginning_of (time.clone())),
+      &ValidSince::After (ref time) => modify_guard.forget_before(&ExtendedTime::end_of(time.clone())),
+      &ValidSince::TheBeginning => (),
+    }
   }
   
   fn create_prediction <E: Event <Steward = Self::Steward>> (&mut self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)->PredictionHandle<E> {
@@ -465,7 +471,9 @@ impl<B: Basics> TimeSteward for Steward<B> {
     Some (handle)
   }
   
-  fn forget_before (&mut self, _: & B::Time) {}
+  fn forget_before (&mut self, time: & B::Time) {
+    self.invalid_before = max (self.invalid_before.clone(), ValidSince::Before(time.clone()));
+  }
 }
 
 

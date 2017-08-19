@@ -118,6 +118,14 @@ impl <Data: StewardData, B: Basics> DataTimeline for SimpleTimeline <Data, B> {
     let mut dependencies = self.other_dependent_events.borrow_mut();
     let retained = dependencies.split_off (time);
     mem::replace (&mut*dependencies, retained);
+    
+    if self.changes.len() > 0 && self.changes [self.changes.len()/2].0.extended_time() < time {
+      let keep_from_index = match self.changes.binary_search_by_key (&time, | change | change.0.extended_time()) {
+        Ok (index) => index,
+        Err(index) => index - 1,
+      };
+      self.changes = self.changes.split_off (keep_from_index);
+    }
   }
 }
 impl <Data: StewardData, B: Basics> DataTimelineQueriableWith<GetValue> for SimpleTimeline <Data, B> {

@@ -40,6 +40,8 @@ fn bouncy_circles_straightforward(bencher: &mut Bencher) {
 
     let mut steward: Steward = Steward::from_global_timeline (global_timeline);
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize {}).unwrap();
+    // make sure to check for inefficiencies in the forgetting code
+    steward.forget_before(& 0);
     steward.snapshot_before(& SECOND).expect("steward failed to provide snapshot");
   })
 }
@@ -61,6 +63,7 @@ fn bouncy_circles_disturbed (bencher: &mut Bencher) {
     for index in 1..10 {
       steward.insert_fiat_event (index*SECOND/10, DeterministicRandomId::new (& index), Disturb{ coordinates: [ARENA_SIZE/3,ARENA_SIZE/3]}).unwrap();
     }
+    steward.forget_before(& 0);
     steward.snapshot_before(& SECOND).expect("steward failed to provide snapshot");
   })
 }
