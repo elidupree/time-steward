@@ -452,7 +452,8 @@ impl<B: Basics> TimeSteward for Steward<B> {
   }
   
   fn snapshot_before (&mut self, time: & B::Time)->Option <Self::SnapshotAccessor> {
-    if self.valid_since() > *time { return None; }
+    // NOT self.valid_since(); this Steward can continue recording snapshots from earlier than the earliest time it can accept fiat event input
+    if self.invalid_before > *time { return None; }
     while let Some (updated) = self.updated_until_before () {
       if updated >= *time {break;}
       self.step();
