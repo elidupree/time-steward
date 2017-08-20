@@ -440,12 +440,14 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
   // take care of the expensive predictions before starting the timer
   stew.snapshot_before(&1);
   let start = Instant::now();
+  let mut previous_time = 0;
 
   let frame = || {
     let frame_begin = Instant::now();
-    let time = 1 + ((start.elapsed().as_secs() as i64 * 1000000000i64) +
+    let time = min (previous_time + SECOND/10, 1 + ((start.elapsed().as_secs() as i64 * 1000000000i64) +
                           start.elapsed().subsec_nanos() as i64) *
-                         SECOND / 1000000000i64;
+                         SECOND / 1000000000i64);
+    previous_time = time;
     for ev in display.poll_events() {
       match ev {
         glium::glutin::Event::Closed => return true,
