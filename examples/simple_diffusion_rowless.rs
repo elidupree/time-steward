@@ -129,12 +129,18 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
     }
     else if current_difference_change_rate > 0 {
       //printlnerr!( "predict {}/{}",max_difference-current_difference, current_difference_change_rate);
-      let time = last_change + min (SECOND/4, (max_difference-current_difference)/current_difference_change_rate);
+      let time = last_change + min (
+        SECOND/4,
+        (max_difference-current_difference)/current_difference_change_rate
+      );
       if best.map_or (true, | previous | time <previous.0) {best = Some((time, dimension));}
     }
     else if current_difference_change_rate < 0 {
       //printlnerr!( "predict {}/{}",min_difference-current_difference, current_difference_change_rate);
-      let time = last_change + min (SECOND/4, (min_difference-current_difference)/current_difference_change_rate);
+      let time = last_change + min (
+        SECOND/4,
+        (min_difference-current_difference)/current_difference_change_rate
+      );
       if best.map_or (true, | previous | time <previous.0) {best = Some((time, dimension));}
     }
   }
@@ -142,6 +148,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
   let now = accessor.extended_now().clone();
   
   me.next_transfer_change = best.map (|(time, dimension) | {
+    assert!(time >= my_last_change) ;
     assert!(time >= now.base) ;
     accessor.create_prediction (
         time,
@@ -149,6 +156,10 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
         TransferChange {coordinates: coordinates, dimension: dimension}
       )
   });
+  
+  // Hack: we only need to modify this because overwriting the cell in order to overwrite it prediction
+  // also updates the last change time for the cell as a whole
+  me.ink_at_last_change += my_accumulation_rate*(now.base - my_last_change);
   
   modify_cell (accessor, globals, coordinates, me) ;
 }
