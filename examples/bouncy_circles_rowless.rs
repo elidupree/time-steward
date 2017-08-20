@@ -185,6 +185,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
 
       let accessor = stew.snapshot_before(& time)
         .expect("steward failed to provide snapshot");
+      stew.forget_before(& time);
       settle (&mut stew, time);
       for handle in accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After).iter() {
         if let Some ((time, circle)) = accessor.query (handle, &GetVarying, QueryOffset::After){
