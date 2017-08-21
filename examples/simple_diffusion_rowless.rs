@@ -34,6 +34,8 @@ use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeStewa
 use simple_timeline::{SimpleTimeline, ConstantTimeline, GetConstant, GetVarying, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
 
+use time_steward::support::rounding_error_tolerant_math::Range;
+
 /// i64 makes a good time type:
 /// It's big enough to subdivide down to the nanosecond, allowing a smooth simulation,
 /// while still representing any reasonable amount of time the simulation could take.
@@ -50,13 +52,17 @@ type Steward = steward_module::Steward <Basics>;
 struct Globals {
   size: [i32; 2],
   
-  /// Maximum inaccuracy of transfers in ink-per-time-unit
+  /// Maximum inaccuracy of transfers in ink-per-update
   max_inaccuracy: i64,
   
   cells: Vec<CellHandle>,
 }
 impl StewardData for Globals {}
 
+//HACK
+fn sqrt (argument: i64)->i64 {
+  (argument as f64).sqrt() as i64
+}
 
 // Derive all the traits required for field data types.
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -77,6 +83,7 @@ struct Cell {
   /// x and y directions. Transfers from the cells in the negative x and y directions
   /// are stored in the data of *those* cells.
   ink_transfers: [i64; 2],
+  transfer_change_times: [Time; 2],
   
   next_transfer_change: Option <PredictionHandle <TransferChange>>,
 }
@@ -93,7 +100,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
     accessor.destroy_prediction (&discarded);
   }
   
-  let mut best = None;
+  let mut best: Option <(Time, usize)> = None;
   
   for dimension in 0..2 {
     // This update is only in charge of the transfers to the cells
@@ -105,7 +112,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
     let neighbor_accumulation_rate = get_accumulation_rate (accessor, globals, neighbor_coordinates);
     let (neighbor_last_change, neighbor) = query_cell (accessor, globals, neighbor_coordinates).unwrap();
     
-    let last_change = max (my_last_change, neighbor_last_change);
+    let last_change = me.transfer_change_times [dimension];
     let current_difference =
       (me.ink_at_last_change + my_accumulation_rate*(last_change - my_last_change)) -
       (neighbor.ink_at_last_change + neighbor_accumulation_rate*(last_change - neighbor_last_change));
@@ -115,12 +122,64 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
     // We choose the target transfer rate to be the amount that would
     // equalize the two cells in one second.
     // That is, the target transfer rate is (my ink - other ink)/(SECOND*2).
+    //
+    // Cumulative error = integral_0^t (actual transfer rate - ideal transfer rate)
+    // = integral_0^t (actual transfer rate) - integral_0^t (ideal transfer rate)
+    // = t*(actual transfer rate) - integral_0^t (ideal transfer rate)
+    //
+    // ideal transfer rate(t) = (my ink - other ink(t))/(SECOND*2)
+    // = (current_difference + t*current_difference_change_rate)/(SECOND*2)
+    // 
+    // so Cumulative error =
+    // = t*(actual transfer rate) - integral_0^t (ideal transfer rate)
+    // = t*(actual transfer rate) - integral_0^t ((current_difference + t*current_difference_change_rate)/(SECOND*2))
+    // = t*(actual transfer rate - current_difference/(SECOND*2)) - integral_0^t ((t*current_difference_change_rate)/(SECOND*2))
+    // = t*(actual transfer rate - current_difference/(SECOND*2)) - (0.5t^2)*current_difference_change_rate/(SECOND*2)
+    //
+    // set = to max_inaccuracy, and
+    // multiply everything by (SECOND*2*2) to reduce rounding:
+    // 0 = t^2(current_difference_change_rate) + t*2(actual transfer rate*SECOND*2 - current_difference) +/- max_inaccuracy*SECOND*2*2
+    let a = current_difference_change_rate;
+    let b = current_transfer_rate*(SECOND*4) - current_difference*2;
+    let c = globals.max_inaccuracy*(SECOND*4);
+    // quadratic formula: t = (-b +/- \sqrt(b^2-4ac)) / 2a
+    // if it's currently going up, we want the first result for positive inaccuracy and the second for negative inaccuracy, and vice versa
+    let time;
+    if a == 0 {
+      if b == 0 {
+        time = None;
+      }
+      else {
+        time = Some ((c/b).abs());
+      }
+    }
+    else {
+      let sign_a = if a <0 {-1} else {1};
+      if b == 0 {
+        let discriminant = Range::exactly (4)*a*c*sign_a;
+        time = Some ((discriminant.sqrt().unwrap()*sign_a).min() / (2*a));
+      }
+      else {
+        let sign_b = if b <0 {-1} else {1};
+        let direct_discriminant_sqrt = if sign_a == sign_b {None} else {(Range::exactly (b)*b-Range::exactly (4)*a*c*sign_a).sqrt()};
+        if let Some(square_root) = direct_discriminant_sqrt {
+          time = Some ((-b - (square_root*sign_a).max()) / (2*a));
+        }
+        else {
+          let later_discriminant = Range::exactly (b)*b-Range::exactly (-4)*a*c*sign_a;
+          time = Some ((-b + (later_discriminant.sqrt().unwrap()*sign_a).min()) / (2*a));
+        }
+      }
+    }
+    printlnerr!( "predict {} {} {} {:?}",a,b,c,time);
+    
     // 
     // We need to notice when the target transfer rate goes outside of the range
     // [current transfer rate - maximum inaccuracy, current transfer rate + maximum inaccuracy].
     // After a little algebra...
-    let (min_difference, max_difference) = (
+    /*let (min_difference, target_difference, max_difference) = (
       (current_transfer_rate - globals.max_inaccuracy)*(2*SECOND),
+      (current_transfer_rate                         )*(2*SECOND),
       (current_transfer_rate + globals.max_inaccuracy)*(2*SECOND)
     );
     if current_difference < min_difference || current_difference > max_difference {
@@ -129,19 +188,24 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
     }
     else if current_difference_change_rate > 0 {
       //printlnerr!( "predict {}/{}",max_difference-current_difference, current_difference_change_rate);
-      let time = last_change + min (
-        SECOND/4,
-        (max_difference-current_difference)/current_difference_change_rate
+      let time = min (
+        me.transfer_change_times [dimension] + SECOND/4,
+        last_change + (max_difference-current_difference)/current_difference_change_rate
       );
       if best.map_or (true, | previous | time <previous.0) {best = Some((time, dimension));}
     }
     else if current_difference_change_rate < 0 {
       //printlnerr!( "predict {}/{}",min_difference-current_difference, current_difference_change_rate);
-      let time = last_change + min (
-        SECOND/4,
-        (min_difference-current_difference)/current_difference_change_rate
+      let time = min (
+        me.transfer_change_times [dimension] + SECOND/4,
+        last_change + (min_difference-current_difference)/current_difference_change_rate
       );
       if best.map_or (true, | previous | time <previous.0) {best = Some((time, dimension));}
+    }*/
+    if let Some (time) = time {
+      assert!(time >= 0);
+      let time = last_change + time;
+      if best.map_or (true, | previous | time <previous.0) {best = Some((max (*accessor.now(),time) , dimension));}
     }
   }
   
@@ -227,6 +291,7 @@ impl Event for TransferChange {
     me.ink_at_last_change = my_current_ink;
     neighbor.ink_at_last_change = neighbor_current_ink;
     me.ink_transfers [self.dimension] = current_difference/(2*SECOND);
+    me.transfer_change_times [self.dimension] = *accessor.now() ;
     
     modify_cell (accessor, &globals, self.coordinates, me) ;
     modify_cell (accessor, &globals, neighbor_coordinates, neighbor) ;
@@ -268,6 +333,7 @@ impl Event for Initialize {
           coordinates: [x, y],
           ink_at_last_change: 0,
           ink_transfers: [0, 0],
+          transfer_change_times: [0, 0],
           next_transfer_change: None,
         });
       }
@@ -310,7 +376,7 @@ fn make_global_timeline()-> <Basics as BasicsTrait>::GlobalTimeline {
     }
     Globals {
       size: [60, 60],
-      max_inaccuracy: 100_00,
+      max_inaccuracy: 1 << 30,
       cells: cells,
     }
   })
