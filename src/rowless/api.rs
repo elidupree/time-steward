@@ -29,7 +29,7 @@ pub enum QueryOffset {
   Before, After
 }
 
-pub trait DataTimeline: Any + Serialize + DeserializeOwned + Debug {
+pub trait DataTimeline: Any + Clone + Serialize + DeserializeOwned + Debug {
   type Basics: Basics;
 
   /// Make a clone of only the data necessary to report accurately at a specific time.
@@ -59,7 +59,7 @@ This is intended to be implemented on an empty struct. Requiring Clone etc. is a
 pub trait Basics
   : Any + Send + Sync + Copy + Clone + Ord + Hash + Serialize + DeserializeOwned + Debug + Default {
   type Time: StewardData + Ord + Hash;
-  type GlobalTimeline: DataTimeline;
+  type Globals: StewardData;
   const MAX_ITERATION: IterationType = 65535;
 }
 
@@ -86,18 +86,16 @@ pub enum FiatEventOperationError {
   InvalidTime,
 }
 
-pub trait EventHandleTrait: Clone + Ord {
+pub trait EventHandleTrait: Clone + Ord + Eq + Hash {
   type Basics: Basics;
   fn extended_time (&self)->& ExtendedTime <Self::Basics>;
   fn time (&self)->& <Self::Basics as Basics>::Time {& self.extended_time().base}
+  fn downcast_ref <T: Any> (&self)->Option<&T>;
 }
-pub trait TypedEventHandleTrait <E>: EventHandleTrait + Deref <Target = E> {
-  
+pub trait DataHandleTrait <T: StewardData>: Clone + Eq + Hash + Deref<Target = T> {
+  fn new(data: T)->Self;
 }
-pub trait DataTimelineHandleTrait: Clone {
-
-}
-pub trait TypedDataTimelineHandleTrait <T: DataTimeline>: DataTimelineHandleTrait {
+pub trait DataTimelineCellTrait <T: DataTimeline>: StewardData + Hash {
   fn new(data: T)->Self;
 }
 
@@ -144,30 +142,30 @@ pub trait Event: StewardData {
 
 pub trait Accessor {
   type Steward: TimeSteward;
-  fn global_timeline (&self)->&DataTimelineHandle <<<Self::Steward as TimeSteward>::Basics as Basics>::GlobalTimeline>;
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, handle: & DataTimelineHandle <T>, query: &Query, offset: QueryOffset)-> T::QueryResult;
+  fn globals (&self)->&<<Self::Steward as TimeSteward>::Basics as Basics>::Globals;
+  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: &Query, offset: QueryOffset)-> T::QueryResult;
 }
 // Querying versus peeking:
 // Querying accessors are generally for things that can affect the physics. Querying uses an exact interface that can be tracked and audited in various ways to make sure the physics stays consistent.
 // Peeking accessors are generally for things that are required to do a specific job and don't have any leeway to change the physics. We allow them full read-only access with no tracking, and merely audit that they did the job they were asked to. Peeking accessors are also allowed to use the querying interface for convenience (so that they can call generic functions that take a querying accessor).
 pub trait PeekingAccessor: Accessor {
-  fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&self, handle: & DataTimelineHandle <T>)->& T;
+  fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>)->& T;
 }
 pub trait MomentaryAccessor: Accessor {
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
   fn now(&self) -> & <<Self::Steward as TimeSteward>::Basics as Basics>::Time {&self.extended_now().base}
 }
 pub trait EventAccessor: MomentaryAccessor + Rng {
-  fn handle (&self)->& DynamicEventHandle <<Self::Steward as TimeSteward>::Basics>;
+  fn handle (&self)->& <Self::Steward as TimeSteward>::EventHandle;
   
   // modification is done within a closure, to help prevent the event from extracting any information from DataTimelines except by querying. I'd like to make this a Fn instead of FnOnce, to prevent the user from putting &mut in it that could communicate back to the outer function, but it may be useful for optimization to be able move owned objects into the closure.
   // audit: the event does the same thing if the closure isn't called, as long as we feed it the same query results after that
-  fn modify <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, F: FnOnce(&mut T)> (&self, timeline: &DataTimelineHandle <T>, modification: F);
+  fn modify <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, F: FnOnce(&mut T)> (&self, timeline: &DataTimelineCell<T>, modification: F);
   
   // audit: whenever an event is executed or undone, it creates/destroys the exact predictions that become existent/nonexistent between the serializations of the physics immediately before and after the event.
   // audit: never generates two predictions with the same id, except when rerunning the same event
-  fn create_prediction <E: Event <Steward = Self::Steward>> (&mut self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)->PredictionHandle<E>;
-  fn destroy_prediction <E: Event <Steward = Self::Steward>> (&mut self, prediction: &PredictionHandle<E>);
+  fn create_prediction <E: Event <Steward = Self::Steward>> (&mut self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)-><Self::Steward as TimeSteward>::EventHandle;
+  fn destroy_prediction (&mut self, prediction: &<Self::Steward as TimeSteward>::EventHandle);
   
   // invalidation is done within a closure, to help prevent the event from extracting any information from the PeekingAccessor used for invalidation. I'd like to make this a Fn instead of FnOnce, to prevent the user from putting &mut in it that could communicate back to the outer function, but it may be useful for optimization to be able move owned objects into the closure.
   // audit: the event does the same thing if the closure isn't called
@@ -175,13 +173,12 @@ pub trait EventAccessor: MomentaryAccessor + Rng {
 }
 pub trait UndoEventAccessor: PeekingAccessor + EventAccessor {
   // note that query results wouldn't necessarily correspond to those observed by the original execution in any way
-  fn undestroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &PredictionHandle<E>, until: Option <&ExtendedTime <<Self::Steward as TimeSteward>::Basics>>);
+  fn undestroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, until: Option <&ExtendedTime <<Self::Steward as TimeSteward>::Basics>>);
 }
 pub trait InvalidationAccessor: PeekingAccessor {
   // if you use queries, note that there may be multiple relevant times and this might be in an undo (see above)
   // audit: can't invalidate things in the past relative to the current event
-  fn invalidate <T: Event <Steward = Self::Steward>> (&self, handle: & EventHandle <T>);
-  fn invalidate_dynamic (&self, handle: & DynamicEventHandle<<Self::Steward as TimeSteward>::Basics>);
+  fn invalidate (&self, handle: & <Self::Steward as TimeSteward>::EventHandle);
 }
 
 pub trait SnapshotAccessor: MomentaryAccessor {
@@ -200,6 +197,7 @@ pub trait TimeSteward: Any + Sized + Debug {
   type Basics: Basics;
   type SnapshotAccessor: SnapshotAccessor <Steward = Self>;
   type InvalidationAccessor: InvalidationAccessor <Steward = Self>;
+  type EventHandle: EventHandleTrait <Basics = Self::Basics>;
   
   fn insert_fiat_event<E: Event <Steward = Self>>(&mut self, time: <Self::Basics as Basics>::Time, id: DeterministicRandomId, event: E)
                                                -> Result<(), FiatEventOperationError>;
@@ -214,7 +212,7 @@ pub trait TimeSteward: Any + Sized + Debug {
 /// A trait for TimeSteward types that can be initialized from just the initial physics data.
 /// Most TimeSteward types should implement this. Exceptions are types that can't function without certain extra runtime metadata
 pub trait ConstructibleTimeSteward: TimeSteward {
-  fn from_global_timeline (timeline: <Self::Basics as Basics>::GlobalTimeline)->Self;
+  fn from_globals (globals: <Self::Basics as Basics>::Globals)->Self;
   /// note: SnapshotAccessor::serialize() matches TimeSteward::deserialize()
   fn deserialize_from <R: Read> (data: &mut R)->Self;
 }

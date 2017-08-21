@@ -21,6 +21,24 @@ macro_rules! downcast_rc {
     result
   }}
 }
+macro_rules! downcast_ref {
+  ($input: expr, $T: ty, $($Trait:tt)*) => {{
+    let result: Option <&$T> = {
+      let input = $input;
+      if (*input).get_type_id() == ::std::any::TypeId::of::<$T>() {
+        //println!( "succeeded");
+        unsafe {
+          let raw: ::std::raw::TraitObject = ::std::mem::transmute (input);
+          Some(::std::mem::transmute (raw.data))
+        }
+      }
+      else {
+        None
+      }
+    };
+    result
+  }}
+}
 
 #[doc (hidden)]
 #[macro_export]
@@ -37,12 +55,12 @@ macro_rules! time_steward_common_impls_for_event_handle {
         self.extended_time().cmp(other.extended_time())
       }
     }
-    impl<$($bounds)*> Eq for $($concrete)* {}
+    /*impl<$($bounds)*> Eq for $($concrete)* {}
     impl<$($bounds)*> PartialEq for $($concrete)* {
       fn eq(&self, other: &Self) -> bool {
         self.extended_time().eq(other.extended_time())
       }
-    }
+    }*/
     impl<$($bounds)*> PartialOrd for $($concrete)* {
       fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -83,22 +101,11 @@ macro_rules! time_steward_crossover_impls_for_event_handles {
 #[macro_export]
 macro_rules! time_steward_common_impls_for_handles {
   () => {
-
-    time_steward_common_impls_for_event_handle! ([T: Event] [EventHandle <T>] [<T::Steward as TimeSteward>::Basics]);
-    time_steward_common_impls_for_event_handle! ([B: Basics] [DynamicEventHandle <B>] [B]);
-    time_steward_common_impls_for_event_handle! ([T: Event] [PredictionHandle <T>] [<T::Steward as TimeSteward>::Basics]);
-
-    time_steward_crossover_impls_for_event_handles! ([T: Event] [EventHandle <T>] [DynamicEventHandle<<T::Steward as TimeSteward>::Basics>]);
-    time_steward_crossover_impls_for_event_handles! ([T: Event] [PredictionHandle <T>] [DynamicEventHandle<<T::Steward as TimeSteward>::Basics>]);
-    time_steward_crossover_impls_for_event_handles! ([T: Event] [EventHandle <T>] [PredictionHandle <T>]);
-
-    impl <T: Event> StewardData for EventHandle <T> {}
-    impl <T: Event> StewardData for PredictionHandle <T> {}
-    impl <T: DataTimeline> StewardData for DataTimelineHandle <T> {}
-    impl <B: Basics> StewardData for DynamicEventHandle <B> {}
-    //impl <B: Basics> StewardData for DynamicPredictionHandle <B> {}
-    impl <B: Basics> StewardData for DynamicDataTimelineHandle <B> {}
-
+    time_steward_common_impls_for_event_handle! ([B: Basics] [EventHandle <B>] [B]);
+    
+    impl <T: StewardData> StewardData for DataHandle <T> {}
+    impl <B: Basics> StewardData for EventHandle <B> {}
+    impl <T: DataTimeline> StewardData for DataTimelineCell <T> {}
   };
 }
 
