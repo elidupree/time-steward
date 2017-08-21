@@ -168,7 +168,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
         }
         else {
           let later_discriminant = Range::exactly (b)*b-Range::exactly (-4)*a*c*sign_a;
-          time = Some ((-b + (later_discriminant.sqrt().unwrap()*sign_a).min()) / (2*a));
+          time = Some ((-b + (later_discriminant.sqrt().unwrap()*sign_a).max()) / (2*a));
         }
       }
     }
