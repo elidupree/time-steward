@@ -280,10 +280,10 @@ impl Event for TransferChange {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let globals = accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After);
-    let (my_last_change, mut me) = query_cell (accessor, & globals, self.coordinates).unwrap();
+    let (my_last_change, mut me) = query_cell (accessor, & globals, self.coordinates).expect("cell doesn't exist for TransferChange?");
     let mut neighbor_coordinates = self.coordinates;
     neighbor_coordinates [self.dimension] += 1;
-    let (neighbor_last_change, mut neighbor) = query_cell (accessor, & globals, neighbor_coordinates).unwrap();
+    let (neighbor_last_change, mut neighbor) = query_cell (accessor, & globals, neighbor_coordinates).expect("neighbor doesn't exist for TransferChange?");
     
     let my_current_ink = me.ink_at_last_change + get_accumulation_rate (accessor, & globals, self.coordinates)*(accessor.now() - my_last_change);
     let neighbor_current_ink = neighbor.ink_at_last_change + get_accumulation_rate (accessor, & globals, neighbor_coordinates)*(accessor.now() - neighbor_last_change);
@@ -352,7 +352,7 @@ impl Event for AddInk {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let globals = accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After);
-    let (my_last_change, mut me) = query_cell (accessor, & globals, self.coordinates).unwrap();
+    let (my_last_change, mut me) = query_cell (accessor, & globals, self.coordinates).expect("cell doesn't exist for AddInk?");
     let my_current_ink = me.ink_at_last_change + get_accumulation_rate (accessor, & globals, self.coordinates)*(accessor.now() - my_last_change);
     me.ink_at_last_change = my_current_ink + self.amount;
     modify_cell (accessor, & globals, self.coordinates, me) ;
@@ -515,6 +515,13 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
                           start.elapsed().subsec_nanos() as i64) *
                          SECOND / 1000000000i64);
     previous_time = time;
+    
+    let accessor = stew.snapshot_before(& time)
+      .expect("steward failed to provide snapshot");
+    stew.forget_before (& time);
+    settle (&mut stew, time);
+    let globals = accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After);
+    
     for ev in display.poll_events() {
       match ev {
         glium::glutin::Event::Closed => return true,
@@ -523,11 +530,13 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
           mouse_coordinates [1] = (display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32-(y as i32)) * 60 / display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32;
         },
         glium::glutin::Event::MouseInput (_,_) => {
-          event_index += 1;
-          stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
-            coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
-            amount: (DeterministicRandomId::new (& event_index).data() [0] & ((1u64<<40)-1)) as i64 - (1<<39)
-          }).unwrap();
+          if in_bounds (&globals, mouse_coordinates) {
+            event_index += 1;
+            stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
+              coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
+              amount: (DeterministicRandomId::new (& event_index).data() [0] & ((1u64<<40)-1)) as i64 - (1<<39)
+            }).unwrap();
+          }
         },
         _ => (),
       }
@@ -546,13 +555,6 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
     let mut target = display.draw();
     target.clear_color(1.0, 1.0, 1.0, 1.0);
     let mut vertices = Vec::<Vertex>::new();
-
-    
-    let accessor = stew.snapshot_before(& time)
-      .expect("steward failed to provide snapshot");
-    stew.forget_before (& time);
-    settle (&mut stew, time);
-    let globals = accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After);
     
     for x in 0.. globals.size [0] {
       for y in 0.. globals.size [1] {
