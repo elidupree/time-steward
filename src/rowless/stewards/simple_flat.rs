@@ -22,6 +22,14 @@ time_steward_steward_specific_api!();
 thread_local! {
   static NEXT_SERIAL_NUMBER: Cell <usize> = Cell::new (0);
 }
+fn new_serial_number()->usize {
+  NEXT_SERIAL_NUMBER.with (| cell | {
+    let result = cell.get();
+    cell.set (result + 1);
+    result
+  })
+}
+
 #[derive (Debug)]
 pub struct DataTimelineCell <T: DataTimeline> {
   serial_number: usize,
@@ -46,21 +54,6 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
     <T as Event>::execute (self, &mut accessor);
   }
 }
-/*trait DataTimelineInnerTrait <B: Basics>: Any + Debug {
-  fn shared (&self)->& DataTimelineInnerShared;
-  fn clone_for_snapshot (&self, time: & ExtendedTime <B>)->DynamicDataTimelineHandle <B>;
-}
-impl <T: DataTimeline> DataTimelineInnerTrait <T::Basics> for DataTimelineInner <T> {
-  fn shared (&self)->& DataTimelineInnerShared {&self.shared}
-  fn clone_for_snapshot (&self, time: & ExtendedTime <T::Basics>)->DynamicDataTimelineHandle <T::Basics> {
-    DataTimelineHandle {
-      data: Rc::new (DataTimelineInner {
-        shared: self.shared.clone(),
-        data: RefCell::new (self.data.borrow().clone_for_snapshot(time)),
-      })
-    }.erase_type()
-  }
-}*/
 
 
 #[derive (Debug, Derivative)]
@@ -84,23 +77,15 @@ impl <B: Basics> EventHandleTrait for EventHandle <B> {
   }
 }
 
-//impl <T: DataTimeline> DataTimelineHandleTrait for DataTimelineHandle <T> {}
-//impl <B: Basics> DataTimelineHandleTrait for DynamicDataTimelineHandle <B> {}
 impl <T: StewardData> DataHandleTrait <T> for DataHandle <T> {
   fn new(data: T)->Self {
-    DataHandle {
-      data: Rc::new(data)
-    }
+    DataHandle { data: Rc::new(data) }
   }
 }
 impl <T: DataTimeline> DataTimelineCellTrait <T> for DataTimelineCell <T> {
   fn new(data: T)->Self {
     DataTimelineCell {
-      serial_number: NEXT_SERIAL_NUMBER.with (| cell | {
-        let result = cell.get();
-        cell.set (result + 1) ;
-        result
-      }),
+      serial_number: new_serial_number(),
       first_snapshot_not_updated: Cell::new (0),
       data: RefCell::new (data),
     }
@@ -108,18 +93,9 @@ impl <T: DataTimeline> DataTimelineCellTrait <T> for DataTimelineCell <T> {
 }
 impl <T: DataTimeline> Clone for DataTimelineCell <T> {
   fn clone(&self)->Self {
-    DataTimelineCell {
-      serial_number: NEXT_SERIAL_NUMBER.with (| cell | {
-        let result = cell.get();
-        cell.set (result + 1) ;
-        result
-      }),
-      first_snapshot_not_updated: Cell::new (0),
-      data: self.data.clone(),
-    }
+    Self::new(self.data.borrow().clone())
   }
 }
-
 
 impl <T: StewardData> Deref for DataHandle <T> {
   type Target = T;
@@ -128,62 +104,22 @@ impl <T: StewardData> Deref for DataHandle <T> {
   }
 }
 
-impl <T: StewardData> Hash for DataHandle <T> {
-  fn hash <H: Hasher> (&self, state: &mut H) {
-    (&*self.data as *const T).hash (state);
-  }
-}
-impl <B: Basics> Hash for EventHandle <B>{
-  fn hash <H: Hasher> (&self, state: &mut H) {
-    (&*self.data as *const EventInner<B>).hash (state);
-  }
-}
-impl <T: StewardData> Eq for DataHandle <T> {}
-impl <T: StewardData> PartialEq for DataHandle <T> {
-  fn eq(&self, other: &Self) -> bool {
-    (&*self.data as *const T) == (&*other.data as *const T)
-  }
-}
-impl <B: Basics> Eq for EventHandle <B> {}
-impl <B: Basics> PartialEq for EventHandle <B> {
-  fn eq(&self, other: &Self) -> bool {
-    (&*self.data as *const EventInner<B>) == (&*other.data as *const EventInner<B>)
-  }
-}
-
-
-impl <T: DataTimeline> Hash for DataTimelineCell <T> {
-  fn hash <H: Hasher> (&self, state: &mut H) {
-    self.serial_number.hash (state);
-  }
-}
-impl <T: DataTimeline> Eq for DataTimelineCell <T> {}
-impl <T: DataTimeline> PartialEq for DataTimelineCell <T> {
-  fn eq(&self, other: &Self) -> bool {
-    self.serial_number == other.serial_number
-  }
-}
-
-
 time_steward_common_impls_for_handles!();
+time_steward_common_impls_for_uniquely_identified_handle! ([B: Basics] [EventHandle <B>] self => (&*self.data as *const EventInner<B>): *const EventInner<B>);
+time_steward_common_impls_for_uniquely_identified_handle! ([T: StewardData] [DataHandle <T>] self => (&*self.data as *const T): *const T);
+time_steward_common_impls_for_uniquely_identified_handle! ([T: DataTimeline] [DataTimelineCell <T>] self => (self.serial_number): usize);
 
 time_steward_serialization_impls_for_handle!(
-  [T: DataTimeline]
-  [DataTimelineCell <T>]
-  (&self)
-  Data located at (| handle | &mut handle.data)
+  [T: DataTimeline] [DataTimelineCell <T>]
+  (&self) Data located at (| handle | &mut handle.data)
 );
 time_steward_serialization_impls_for_handle!(
-  [B: Basics]
-  [EventHandle <B>]
-  (&self)
-  Data located at (| handle | &mut unimplemented!())
+  [B: Basics] [EventHandle <B>]
+  (&self) Data located at (| handle | &mut unimplemented!())
 );
 time_steward_serialization_impls_for_handle!(
-  [T: StewardData]
-  [DataHandle <T>]
-  (&self)
-  Data located at (| handle | &mut*handle.data)
+  [T: StewardData] [DataHandle <T>]
+  (&self) Data located at (| handle | &mut*handle.data)
 );
 
 #[derive (Debug)]

@@ -71,28 +71,28 @@ macro_rules! time_steward_common_impls_for_event_handle {
   };
 }
 
+
 #[doc (hidden)]
 #[macro_export]
-macro_rules! time_steward_crossover_impls_for_event_handles {
-  ([$($bounds:tt)*] [$($concrete_1:tt)*] [$($concrete_2:tt)*]) => {
-    time_steward_crossover_impls_for_event_handles!(directional [$($bounds)*] [$($concrete_1)*] [$($concrete_2)*]);
-    time_steward_crossover_impls_for_event_handles!(directional [$($bounds)*] [$($concrete_2)*] [$($concrete_1)*]);
-  };
-  (directional [$($bounds:tt)*] [$($concrete_1:tt)*] [$($concrete_2:tt)*]) => {
+macro_rules! time_steward_common_impls_for_uniquely_identified_handle {
+  ([$($bounds:tt)*] [$($concrete:tt)*] $self_hack: ident => ($id: expr): $Id: ty) => {
 
-
-    impl<T: Event> PartialEq <$($concrete_1)*> for $($concrete_2)* {
-      fn eq(&self, other: &$($concrete_1)*) -> bool {
-        self.extended_time().eq(other.extended_time())
-      }
-    }
-
-    impl<T: Event> PartialOrd<$($concrete_1)*> for $($concrete_2)* {
-      fn partial_cmp(&self, other: &$($concrete_1)*) -> Option<Ordering> {
-        Some(self.extended_time().cmp(other.extended_time()))
-      }
-    }
-
+impl <$($bounds)*>  $($concrete)* {
+  fn id (&$self_hack)->$Id {
+    $id
+  }
+}
+impl <$($bounds)*> Hash for $($concrete)* {
+  fn hash <H: Hasher> (&self, state: &mut H) {
+    self.id().hash (state);
+  }
+}
+impl <$($bounds)*> Eq for $($concrete)* {}
+impl <$($bounds)*> PartialEq for $($concrete)* {
+  fn eq(&self, other: &Self) -> bool {
+    self.id() == other.id()
+  }
+}
 
   };
 }
