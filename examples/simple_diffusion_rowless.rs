@@ -537,7 +537,7 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
             event_index += 1;
             stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
               coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
-              amount: (DeterministicRandomId::new (& event_index).data() [0] & ((1u64<<40)-1)) as i64 - (1<<39)
+              amount: (DeterministicRandomId::new (& event_index).data() [0] & ((1u64<<40)-1)) as i64 - (1<<38)
             }).unwrap();
           }
         },
