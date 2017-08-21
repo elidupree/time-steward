@@ -22,11 +22,10 @@ time_steward_steward_specific_api!();
 thread_local! {
   static NEXT_SERIAL_NUMBER: Cell <usize> = Cell::new (0);
 }
-#[derive (Debug, Serialize, Deserialize)]
-struct DataTimelineCell <T: DataTimeline> {
+#[derive (Debug)]
+pub struct DataTimelineCell <T: DataTimeline> {
   serial_number: usize,
   first_snapshot_not_updated: Cell<usize>,
-  #[serde(deserialize_with = "::serde::Deserialize::deserialize")] 
   data: RefCell<T>,
 }
 #[derive (Debug)]
@@ -64,17 +63,15 @@ impl <T: DataTimeline> DataTimelineInnerTrait <T::Basics> for DataTimelineInner 
 }*/
 
 
-#[derive (Debug, Serialize, Deserialize, Derivative)]
+#[derive (Debug, Derivative)]
 #[derivative (Clone (bound = ""))]
 pub struct DataHandle <T: StewardData> {
-  #[serde(deserialize_with = "::serde::Deserialize::deserialize")] 
   data: Rc<T>
 }
 
-#[derive (Debug, Serialize, Deserialize, Derivative)]
+#[derive (Debug, Derivative)]
 #[derivative (Clone (bound = ""))]
 pub struct EventHandle <B: Basics> {
-  #[serde(deserialize_with = "::serde::Deserialize::deserialize")] 
   data: Rc <EventInner<B>>
 }
 
@@ -83,7 +80,7 @@ impl <B: Basics> EventHandleTrait for EventHandle <B> {
   type Basics = B;
   fn extended_time (& self)->& ExtendedTime <B> {& self.data.time}
   fn downcast_ref <T: Any> (&self)->Option<&T> {
-    downcast_ref!(self.data.data, T, EventInnerTrait<B>)
+    downcast_ref!(&*self.data.data, T, EventInnerTrait<B>)
   }
 }
 
@@ -170,42 +167,24 @@ impl <T: DataTimeline> PartialEq for DataTimelineCell <T> {
 
 time_steward_common_impls_for_handles!();
 
-/*time_steward_serialization_impls_for_handle!(
+time_steward_serialization_impls_for_handle!(
   [T: DataTimeline]
-  [DataTimelineHandle <T>]
+  [DataTimelineCell <T>]
   (&self)
-  Uniquely identified by ((self.data.shared.serial_number): usize)
-  Data located at (| handle | &mut handle.data.data)
+  Data located at (| handle | &mut handle.data)
 );
 time_steward_serialization_impls_for_handle!(
   [B: Basics]
-  [DynamicDataTimelineHandle <B>]
+  [EventHandle <B>]
   (&self)
-  Uniquely identified by ((self.data.shared().serial_number): usize)
   Data located at (| handle | &mut unimplemented!())
 );
 time_steward_serialization_impls_for_handle!(
-  [T: Event]
-  [EventHandle <T>]
+  [T: StewardData]
+  [DataHandle <T>]
   (&self)
-  Uniquely identified by ((self.data.shared.time.id): DeterministicRandomId)
-  Data located at (| handle | &mut handle.data.data)
+  Data located at (| handle | &mut*handle.data)
 );
-time_steward_serialization_impls_for_handle!(
-  [B: Basics]
-  [DynamicEventHandle <B>]
-  (&self)
-  Uniquely identified by ((self.data.shared().time.id): DeterministicRandomId)
-  Data located at (| handle | &mut unimplemented!())
-);
-time_steward_serialization_impls_for_handle!(
-  [T: Event]
-  [PredictionHandle <T>]
-  (&self)
-  Uniquely identified by ((self.data.shared.time.id): DeterministicRandomId)
-  Data located at (| handle | &mut handle.data.data)
-);*/
-
 
 #[derive (Debug)]
 pub struct EventAccessorStruct <'a, B: Basics> {
@@ -471,4 +450,4 @@ impl<B: Basics> IncrementalTimeSteward for Steward<B> {
 }
 impl<B: Basics> CanonicalTimeSteward for Steward<B> {}
 
-//time_steward_define_simple_timeline!();
+time_steward_define_simple_timeline!();

@@ -10,7 +10,6 @@ macro_rules! time_steward_serialization_impls_for_handle {
     [$($bounds:tt)*]
     [$($concrete:tt)*]
     (&$self_hack: ident)
-    Uniquely identified by (($identifier: expr): $Identifier: ty)
     Data located at (| $handle: ident | &mut $data: expr)
   ) => {
 
@@ -29,7 +28,7 @@ impl <$($bounds)*> $crate::serde::Serialize for $($concrete)* {
       let mut map = &mut guard.unwrap().map;
       map.insert (
     })
-    $identifier.serialize (serializer)
+    identifier.serialize (serializer)
     */
   }
 }
@@ -38,7 +37,7 @@ impl <'a, $($bounds)*> $crate::serde::Deserialize <'a> for $($concrete)* {
   fn deserialize <D: $crate::serde::Deserializer<'a>> (deserializer: D)->Result <Self, D::Error> {
     unimplemented!()
     /*
-    let old_identifier = $Identifier::deserialize (deserializer)?;
+    let old_identifier = Identifier::deserialize (deserializer)?;
     DESERIALIZATION_CONTEXT.with (| cell | {
       let mut guard = cell.borrow_mut();
       let mut map = &mut guard.unwrap().map;

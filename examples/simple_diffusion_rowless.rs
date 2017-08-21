@@ -28,10 +28,10 @@ macro_rules! printlnerr(
 
 use std::cmp::{min, max};
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{self, StewardData, QueryOffset, TypedDataTimelineHandleTrait, ExtendedTime, Basics as BasicsTrait};
+use time_steward::rowless::api::{self, StewardData, QueryOffset, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_flat as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataTimelineHandle, PredictionHandle, Accessor, MomentaryAccessor, EventAccessor, UndoEventAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, ConstantTimeline, GetConstant, GetVarying, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, MomentaryAccessor, EventAccessor, UndoEventAccessor, SnapshotAccessor, simple_timeline};
+use simple_timeline::{SimpleTimeline, GetVarying, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
 
 use time_steward::support::rounding_error_tolerant_math::Range;
@@ -55,7 +55,7 @@ struct Globals {
   /// Maximum inaccuracy of transfers in ink-per-update
   max_inaccuracy: i64,
   
-  cells: Vec<CellHandle>,
+  cells: Vec<CellStuff>,
 }
 impl StewardData for Globals {}
 
@@ -80,16 +80,16 @@ struct Cell {
   ink_transfers: [i64; 2],
   transfer_change_times: [Time; 2],
   
-  next_transfer_change: Option <PredictionHandle <TransferChange>>,
+  next_transfer_change: Option <EventHandle <Basics>>,
 }
 impl StewardData for Cell {}
-type CellHandle = DataTimelineHandle <SimpleTimeline <(), Cell, Basics>>;
+type CellStuff = DataTimelineCell <SimpleTimeline <Cell, Basics>>;
 
 
-fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (accessor: &mut A, globals: & Globals, coordinates: [i32; 2]) {
-  if !in_bounds (globals, coordinates) {return;}
-  let (my_last_change, mut me) = query_cell (accessor, globals, coordinates).unwrap();
-  let my_accumulation_rate: i64 = get_accumulation_rate (accessor, globals, coordinates);
+fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (accessor: &mut A, coordinates: [i32; 2]) {
+  if !in_bounds (accessor.globals(), coordinates) {return;}
+  let (my_last_change, mut me) = query_cell (accessor, coordinates).unwrap();
+  let my_accumulation_rate: i64 = get_accumulation_rate (accessor, coordinates);
   
   if let Some (discarded) = me.next_transfer_change.take() {
     accessor.destroy_prediction (&discarded);
@@ -103,9 +103,9 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
     // the updates for the cells in the negative x and y directions.
     let mut neighbor_coordinates = coordinates;
     neighbor_coordinates [dimension] += 1;
-    if neighbor_coordinates [dimension] >= globals.size [dimension] {continue;}
-    let neighbor_accumulation_rate = get_accumulation_rate (accessor, globals, neighbor_coordinates);
-    let (neighbor_last_change, neighbor) = query_cell (accessor, globals, neighbor_coordinates).unwrap();
+    if neighbor_coordinates [dimension] >= accessor.globals().size [dimension] {continue;}
+    let neighbor_accumulation_rate = get_accumulation_rate (accessor, neighbor_coordinates);
+    let (neighbor_last_change, neighbor) = query_cell (accessor, neighbor_coordinates).unwrap();
     
     let last_change = me.transfer_change_times [dimension];
     let current_difference =
@@ -114,7 +114,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
     let current_difference_change_rate = my_accumulation_rate - neighbor_accumulation_rate;
     let current_transfer_rate = me.ink_transfers [dimension];
     
-    //let permissible_cumulative_error = globals.max_inaccuracy;
+    //let permissible_cumulative_error = accessor.globals().max_inaccuracy;
     //let permissible_cumulative_error = 8 + Range::exactly (current_difference.abs()).sqrt().unwrap().max();
     // if we're already fairly stable, require smaller error to avoid drift
     // let permissible_cumulative_error = 8 + Range::exactly (current_difference_change_rate.abs()).sqrt().unwrap().max()<<20;
@@ -182,9 +182,9 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
     // [current transfer rate - maximum inaccuracy, current transfer rate + maximum inaccuracy].
     // After a little algebra...
     /*let (min_difference, target_difference, max_difference) = (
-      (current_transfer_rate - globals.max_inaccuracy)*(2*SECOND),
+      (current_transfer_rate - accessor.globals().max_inaccuracy)*(2*SECOND),
       (current_transfer_rate                         )*(2*SECOND),
-      (current_transfer_rate + globals.max_inaccuracy)*(2*SECOND)
+      (current_transfer_rate + accessor.globals().max_inaccuracy)*(2*SECOND)
     );
     if current_difference < min_difference || current_difference > max_difference {
       printlnerr!( "predict wow! {:?} ! {:?}", me, neighbor);
@@ -229,7 +229,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
   // also updates the last change time for the cell as a whole
   me.ink_at_last_change += my_accumulation_rate*(now.base - my_last_change);
   
-  modify_cell (accessor, globals, coordinates, me) ;
+  modify_cell (accessor, coordinates, me) ;
 }
 
 /// A utility function used above. Gets the current rate of change of ink in a cell,
@@ -238,9 +238,9 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
 /// Since this function doesn't make predictions, it only needs to require trait Accessor,
 /// which is a supertrait of EventAccessor. Thus, it could also be used in Events,
 /// and with Snapshots, if needed.
-fn get_accumulation_rate <A: Accessor <Steward = Steward >> (accessor: &A, globals: & Globals, coordinates: [i32; 2])->i64 {
+fn get_accumulation_rate <A: Accessor <Steward = Steward >> (accessor: &A, coordinates: [i32; 2])->i64 {
   let mut result = 0;
-  let me: Cell = query_cell (accessor, globals, coordinates).unwrap().1;  
+  let me: Cell = query_cell (accessor, coordinates).unwrap().1;  
   for dimension in 0..2 {
     result -= me.ink_transfers [dimension];
     
@@ -249,7 +249,7 @@ fn get_accumulation_rate <A: Accessor <Steward = Steward >> (accessor: &A, globa
     
     // Adjacent cells might NOT exist (they could be out of bounds).
     // We could also have just done a bounds check on the coordinates, like above.
-    if let Some (neighbor) = query_cell (accessor, globals, neighbor_coordinates) {
+    if let Some (neighbor) = query_cell (accessor, neighbor_coordinates) {
       result += neighbor.1.ink_transfers [dimension];
     }
   }
@@ -263,15 +263,15 @@ fn in_bounds (globals: & Globals, coordinates: [i32; 2])->bool {
   coordinates [0] >= 0 && coordinates [0] < globals.size [0] &&
   coordinates [1] >= 0 && coordinates [1] < globals.size [1]
 }
-fn query_cell <A: Accessor <Steward = Steward >> (accessor: &A, globals: & Globals, coordinates: [i32; 2])->Option <(Time, Cell)> {
-  if in_bounds (globals, coordinates) {
-    let result = accessor.query (& globals.cells[cell_index (globals, coordinates)], & GetVarying, QueryOffset::After).expect ("cells should never not exist");
+fn query_cell <A: Accessor <Steward = Steward >> (accessor: &A, coordinates: [i32; 2])->Option <(Time, Cell)> {
+  if in_bounds (accessor.globals(), coordinates) {
+    let result = accessor.query (& accessor.globals().cells[cell_index (accessor.globals(), coordinates)], & GetVarying, QueryOffset::After).expect ("cells should never not exist");
     Some((result.0.base, result.1))
   }
   else { None }
 }
-fn modify_cell <A: EventAccessor <Steward = Steward >> (accessor: &A, globals: & Globals, coordinates: [i32; 2], value: Cell) {
-  modify_simple_timeline (accessor, & globals.cells [cell_index (globals, coordinates)], Some(value));
+fn modify_cell <A: EventAccessor <Steward = Steward >> (accessor: &A, coordinates: [i32; 2], value: Cell) {
+  modify_simple_timeline (accessor, & accessor.globals().cells [cell_index (accessor.globals(), coordinates)], Some(value));
 }
 
 /// The TransferChange event, as used above.
@@ -282,14 +282,13 @@ impl Event for TransferChange {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    let globals = accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After);
-    let (my_last_change, mut me) = query_cell (accessor, & globals, self.coordinates).expect("cell doesn't exist for TransferChange?");
+    let (my_last_change, mut me) = query_cell (accessor, self.coordinates).expect("cell doesn't exist for TransferChange?");
     let mut neighbor_coordinates = self.coordinates;
     neighbor_coordinates [self.dimension] += 1;
-    let (neighbor_last_change, mut neighbor) = query_cell (accessor, & globals, neighbor_coordinates).expect("neighbor doesn't exist for TransferChange?");
+    let (neighbor_last_change, mut neighbor) = query_cell (accessor, neighbor_coordinates).expect("neighbor doesn't exist for TransferChange?");
     
-    let my_current_ink = me.ink_at_last_change + get_accumulation_rate (accessor, & globals, self.coordinates)*(accessor.now() - my_last_change);
-    let neighbor_current_ink = neighbor.ink_at_last_change + get_accumulation_rate (accessor, & globals, neighbor_coordinates)*(accessor.now() - neighbor_last_change);
+    let my_current_ink = me.ink_at_last_change + get_accumulation_rate (accessor, self.coordinates)*(accessor.now() - my_last_change);
+    let neighbor_current_ink = neighbor.ink_at_last_change + get_accumulation_rate (accessor, neighbor_coordinates)*(accessor.now() - neighbor_last_change);
     let current_difference = my_current_ink - neighbor_current_ink;
  
     me.ink_at_last_change = my_current_ink;
@@ -297,14 +296,14 @@ impl Event for TransferChange {
     me.ink_transfers [self.dimension] = current_difference/(2*SECOND);
     me.transfer_change_times [self.dimension] = *accessor.now() ;
     
-    modify_cell (accessor, &globals, self.coordinates, me) ;
-    modify_cell (accessor, &globals, neighbor_coordinates, neighbor) ;
+    modify_cell (accessor, self.coordinates, me) ;
+    modify_cell (accessor, neighbor_coordinates, neighbor) ;
 
     // TODO: some of the ones at the corners don't need to be updated
     for offsx in -1.. (if self.dimension == 0 {2} else {1}) {
       for offsy in -1.. (if self.dimension == 1 {2} else {1}) {
         let coordinates = [self.coordinates [0] + offsx, self.coordinates [1] + offsy];
-        update_transfer_change_prediction (accessor, & globals, coordinates) ;
+        update_transfer_change_prediction (accessor, coordinates) ;
       }
     }
     
@@ -330,10 +329,10 @@ impl Event for Initialize {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    let globals = accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After);
+    let globals = accessor.globals();
     for x in 0..globals.size [0] {
       for y in 0..globals.size [1] {
-        modify_cell (accessor, &globals, [x,y], Cell {
+        modify_cell (accessor, [x,y], Cell {
           coordinates: [x, y],
           ink_at_last_change: 0,
           ink_transfers: [0, 0],
@@ -354,16 +353,15 @@ impl Event for AddInk {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    let globals = accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After);
-    let (my_last_change, mut me) = query_cell (accessor, & globals, self.coordinates).expect("cell doesn't exist for AddInk?");
-    let my_current_ink = me.ink_at_last_change + get_accumulation_rate (accessor, & globals, self.coordinates)*(accessor.now() - my_last_change);
+    let (my_last_change, mut me) = query_cell (accessor, self.coordinates).expect("cell doesn't exist for AddInk?");
+    let my_current_ink = me.ink_at_last_change + get_accumulation_rate (accessor, self.coordinates)*(accessor.now() - my_last_change);
     me.ink_at_last_change = my_current_ink + self.amount;
-    modify_cell (accessor, & globals, self.coordinates, me) ;
+    modify_cell (accessor, self.coordinates, me) ;
     // TODO: some of the ones at the corners don't need to be updated
     for offsx in -1..1 {
       for offsy in -1..1 {
         let coordinates = [self.coordinates [0] + offsx, self.coordinates [1] + offsy];
-        update_transfer_change_prediction (accessor, & globals, coordinates) ;
+        update_transfer_change_prediction (accessor, coordinates) ;
       }
     }
   }
@@ -372,18 +370,16 @@ impl Event for AddInk {
   }
 }
 
-fn make_global_timeline()-> <Basics as BasicsTrait>::GlobalTimeline {
-  <Basics as BasicsTrait>::GlobalTimeline::new ({
-    let mut cells = Vec::new();
-    for index in 0..60*60 {
-      cells.push (DataTimelineHandle::new (SimpleTimeline::new (())));
-    }
-    Globals {
-      size: [60, 60],
-      max_inaccuracy: 1 << 30,
-      cells: cells,
-    }
-  })
+fn make_globals()-> Globals {
+  let mut cells = Vec::new();
+  for index in 0..60*60 {
+    cells.push (DataTimelineCell::new (SimpleTimeline::new ()));
+  }
+  Globals {
+    size: [60, 60],
+    max_inaccuracy: 1 << 30,
+    cells: cells,
+  }
 }
 
 /// Finally, define the Basics type.
@@ -391,7 +387,7 @@ fn make_global_timeline()-> <Basics as BasicsTrait>::GlobalTimeline {
 struct Basics {}
 impl BasicsTrait for Basics {
   type Time = Time;
-  type GlobalTimeline = ConstantTimeline <Globals, Basics>;
+  type Globals = Globals;
 }
 
 
@@ -434,7 +430,7 @@ use std::net::{TcpListener, TcpStream};
 use std::io::{BufReader, BufWriter};
 
 fn main() {
-  let global_timeline = make_global_timeline();
+  let globals = make_globals();
 
   // For some reason, docopt checking the arguments caused build_glium() to fail in emscripten.
   /*if !cfg!(target_os = "emscripten") {
@@ -458,7 +454,7 @@ fn main() {
     }
   }*/
   {
-    let mut steward: Steward = Steward::from_global_timeline(global_timeline);
+    let mut steward: Steward = Steward::from_globals(globals);
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize{}).unwrap();
     run (steward, |_,_|());
   }
@@ -523,7 +519,7 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
       .expect("steward failed to provide snapshot");
     stew.forget_before (& time);
     settle (&mut stew, time);
-    let globals = accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After);
+    let globals = accessor.globals();
     
     for ev in display.poll_events() {
       match ev {
@@ -533,7 +529,7 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
           mouse_coordinates [1] = (display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32-(y as i32)) * 60 / display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32;
         },
         glium::glutin::Event::MouseInput (_,_) => {
-          if in_bounds (&globals, mouse_coordinates) {
+          if in_bounds (globals, mouse_coordinates) {
             event_index += 1;
             stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
               coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
@@ -561,8 +557,8 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
     
     for x in 0.. globals.size [0] {
       for y in 0.. globals.size [1] {
-        let (my_last_change, me) = query_cell (& accessor, & globals, [x,y]).unwrap();
-        let my_current_ink = (me.ink_at_last_change + get_accumulation_rate (& accessor, & globals, me.coordinates)*(accessor.now() - my_last_change)) as f32;
+        let (my_last_change, me) = query_cell (& accessor, [x,y]).unwrap();
+        let my_current_ink = (me.ink_at_last_change + get_accumulation_rate (& accessor, me.coordinates)*(accessor.now() - my_last_change)) as f32;
         
         vertices.extend(&[Vertex {
                             location: [((x) as f32)/30.0 -1.0,((y) as f32)/30.0 -1.0],
