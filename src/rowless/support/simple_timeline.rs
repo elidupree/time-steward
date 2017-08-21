@@ -58,13 +58,28 @@ impl <VaryingData: StewardData, B: Basics> SimpleTimeline <VaryingData, B> {
       }
     }
   }
+  
+  fn search_changes (&self, time: &ExtendedTime <B>) -> Result <usize, usize> {
+    // search at the end first, because we are usually in the present.
+    match self.changes.last() {
+      None => return Err(0),
+      Some (&(ref event, ref data)) => {
+        match event.extended_time().cmp(time) {
+          Ordering::Greater => (),
+          Ordering::Equal => return Ok(self.changes.len()-1),
+          Ordering::Less => return Err(self.changes.len()),
+        }
+      },
+    }
+    self.changes[..self.changes.len()-1].binary_search_by_key (&time, | change | change.0.extended_time())
+  }
 }
 
 impl <VaryingData: StewardData, B: Basics> DataTimeline for SimpleTimeline <VaryingData, B> {
   type Basics = B;
   
   fn clone_for_snapshot (&self, time: &ExtendedTime <Self::Basics>)->Self {
-    let slice = match self.changes.binary_search_by_key (&time, | change | change.0.extended_time()) {
+    let slice = match self.search_changes(&time) {
       Ok(index) => &self.changes [index.saturating_sub (1).. index+1],
       Err (index) => &self.changes [index.saturating_sub (1)..index],
     };
@@ -80,7 +95,7 @@ impl <VaryingData: StewardData, B: Basics> DataTimeline for SimpleTimeline <Vary
     mem::replace (&mut*dependencies, retained);
     
     if self.changes.len() > 0 && self.changes [self.changes.len()/2].0.extended_time() < time {
-      let keep_from_index = match self.changes.binary_search_by_key (&time, | change | change.0.extended_time()) {
+      let keep_from_index = match self.search_changes(&time) {
         Ok (index) => index,
         Err(index) => index - 1,
       };
@@ -92,7 +107,7 @@ impl <VaryingData: StewardData, B: Basics> DataTimelineQueriableWith<GetVarying>
   type QueryResult = Option <(ExtendedTime <B>, VaryingData)>;
 
   fn query (&self, _: &GetVarying, time: &ExtendedTime <Self::Basics>, offset: QueryOffset)->Self::QueryResult {
-    let previous_change_index = match self.changes.binary_search_by_key (&time, | change | change.0.extended_time()) {
+    let previous_change_index = match self.search_changes(&time) {
       Ok(index) => match offset {QueryOffset::After => index, QueryOffset::Before => index.wrapping_sub (1)},
       Err (index) => index.wrapping_sub (1),
     };
