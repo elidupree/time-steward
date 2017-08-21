@@ -62,8 +62,6 @@ impl StewardData for Globals {}
 // Derive all the traits required for field data types.
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Cell {
-  coordinates: [i32; 2],
-  
   /// The exact amount of ink present in this cell at the last time we updated it.
   ink_at_last_change: i64,
   
@@ -333,7 +331,6 @@ impl Event for Initialize {
     for x in 0..globals.size [0] {
       for y in 0..globals.size [1] {
         modify_cell (accessor, [x,y], Cell {
-          coordinates: [x, y],
           ink_at_last_change: 0,
           ink_transfers: [0, 0],
           transfer_change_times: [0, 0],
@@ -558,7 +555,7 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
     for x in 0.. globals.size [0] {
       for y in 0.. globals.size [1] {
         let (my_last_change, me) = query_cell (& accessor, [x,y]).unwrap();
-        let my_current_ink = (me.ink_at_last_change + get_accumulation_rate (& accessor, me.coordinates)*(accessor.now() - my_last_change)) as f32;
+        let my_current_ink = (me.ink_at_last_change + get_accumulation_rate (& accessor, [x,y])*(accessor.now() - my_last_change)) as f32;
         
         vertices.extend(&[Vertex {
                             location: [((x) as f32)/30.0 -1.0,((y) as f32)/30.0 -1.0],
