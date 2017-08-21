@@ -130,6 +130,8 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
     //
     // ideal transfer rate(t) = (my ink - other ink(t))/(SECOND*2)
     // = (current_difference + t*current_difference_change_rate)/(SECOND*2)
+    // (well… Sort of. current_difference_change_rate values can change when other transfers change,
+    //   making this formula behave somewhat weirdly)
     // 
     // so Cumulative error =
     // = t*(actual transfer rate) - integral_0^t (ideal transfer rate)
