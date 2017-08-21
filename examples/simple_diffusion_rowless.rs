@@ -164,7 +164,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
         let sign_b = if b <0 {-1} else {1};
         let direct_discriminant_sqrt = if sign_a == sign_b {None} else {(Range::exactly (b)*b-Range::exactly (4)*a*c*sign_a).sqrt()};
         if let Some(square_root) = direct_discriminant_sqrt {
-          time = Some ((-b - (square_root*sign_a).max()) / (2*a));
+          time = Some (max(0, (-b - (square_root*sign_a).max()) / (2*a)));
         }
         else {
           let later_discriminant = Range::exactly (b)*b-Range::exactly (-4)*a*c*sign_a;
