@@ -117,7 +117,8 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
     //let permissible_cumulative_error = globals.max_inaccuracy;
     //let permissible_cumulative_error = 8 + Range::exactly (current_difference.abs()).sqrt().unwrap().max();
     // if we're already fairly stable, require smaller error to avoid drift
-    let permissible_cumulative_error = 8 + Range::exactly (current_difference_change_rate.abs()).sqrt().unwrap().max()<<20;
+    // let permissible_cumulative_error = 8 + Range::exactly (current_difference_change_rate.abs()).sqrt().unwrap().max()<<20;
+    let permissible_cumulative_error = 16 + (current_difference.abs() >> 4);
     
     // We choose the target transfer rate to be the amount that would
     // equalize the two cells in one second.
