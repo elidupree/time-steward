@@ -59,11 +59,6 @@ struct Globals {
 }
 impl StewardData for Globals {}
 
-//HACK
-fn sqrt (argument: i64)->i64 {
-  (argument as f64).sqrt() as i64
-}
-
 // Derive all the traits required for field data types.
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Cell {
@@ -119,6 +114,11 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
     let current_difference_change_rate = my_accumulation_rate - neighbor_accumulation_rate;
     let current_transfer_rate = me.ink_transfers [dimension];
     
+    //let permissible_cumulative_error = globals.max_inaccuracy;
+    //let permissible_cumulative_error = 8 + Range::exactly (current_difference.abs()).sqrt().unwrap().max();
+    // if we're already fairly stable, require smaller error to avoid drift
+    let permissible_cumulative_error = 8 + Range::exactly (current_difference_change_rate.abs()).sqrt().unwrap().max()<<20;
+    
     // We choose the target transfer rate to be the amount that would
     // equalize the two cells in one second.
     // That is, the target transfer rate is (my ink - other ink)/(SECOND*2).
@@ -139,9 +139,10 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
     // set = to max_inaccuracy, and
     // multiply everything by (SECOND*2*2) to reduce rounding:
     // 0 = t^2(current_difference_change_rate) + t*2(actual transfer rate*SECOND*2 - current_difference) +/- max_inaccuracy*SECOND*2*2
+    
     let a = current_difference_change_rate;
     let b = current_transfer_rate*(SECOND*4) - current_difference*2;
-    let c = globals.max_inaccuracy*(SECOND*4);
+    let c = permissible_cumulative_error*(SECOND*4);
     // quadratic formula: t = (-b +/- \sqrt(b^2-4ac)) / 2a
     // if it's currently going up, we want the first result for positive inaccuracy and the second for negative inaccuracy, and vice versa
     let time;
@@ -171,7 +172,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
         }
       }
     }
-    printlnerr!( "predict {} {} {} {:?}",a,b,c,time);
+    //printlnerr!( "predict {} {} {} {:?}",a,b,c,time);
     
     // 
     // We need to notice when the target transfer rate goes outside of the range
