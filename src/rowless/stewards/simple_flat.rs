@@ -69,8 +69,7 @@ pub struct EventHandle <B: Basics> {
 }
 
 
-impl <B: Basics> EventHandleTrait for EventHandle <B> {
-  type Basics = B;
+impl <B: Basics> EventHandleTrait<B> for EventHandle <B> {
   fn extended_time (& self)->& ExtendedTime <B> {& self.data.time}
   fn downcast_ref <T: Any> (&self)->Option<&T> {
     downcast_ref!(&*self.data.data, T, EventInnerTrait<B>)
@@ -140,9 +139,6 @@ pub struct SnapshotInner <B: Basics> {
 pub struct SnapshotHandle <B: Basics> {
   data: Rc <SnapshotInner <B>>,
 }
-#[allow (unreachable_patterns, unreachable_code)]
-#[derive (Debug)]
-pub struct InvalidationAccessorStruct <B: Basics> (!, PhantomData <B>);
 
 type SnapshotsTree<B> = BTreeMap<usize, SnapshotHandle <B>>;
 
@@ -162,6 +158,9 @@ impl <B: Basics> Drop for SnapshotHandle <B> {
 impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
   type Steward = Steward <B>;
   fn globals (&self)->&B::Globals {&self.steward.globals}
+  fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
+    self.handle().extended_time()
+  }
   fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = B>> (&self, timeline: & DataTimelineCell <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
     DataTimelineQueriableWith::<Query>::query (&*timeline.data.borrow(), query, self.extended_now(), offset)
   }
@@ -169,6 +168,9 @@ impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
 impl <B: Basics> Accessor for SnapshotHandle <B> {
   type Steward = Steward <B>;
   fn globals (&self)->&B::Globals {&self.data.globals}
+  fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
+    & self.data.time
+  }
   fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
     let mut guard = self.data.clones.borrow_mut();
     let entry = guard.entry (timeline.serial_number);
@@ -177,11 +179,6 @@ impl <B: Basics> Accessor for SnapshotHandle <B> {
     ));
     let typed = boxref.downcast_ref::<T>().unwrap();
     DataTimelineQueriableWith::<Query>::query(typed, query, self.extended_now(), offset)
-  }
-}
-impl <B: Basics> MomentaryAccessor for SnapshotHandle <B> {
-  fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
-    & self.data.time
   }
 }
 impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
@@ -224,7 +221,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     assert!(self.steward.existent_predictions.remove (& prediction.clone()), "destroyed a prediction doesn't exist? Probably one that was already destroyed");
   }
   
-  fn invalidate <F: FnOnce(&<Self::Steward as TimeSteward>::InvalidationAccessor)> (&self, _: F) {
+  fn invalidate <I: Invalidator <Steward = Self::Steward>> (&self, _: I) {
     // There are never any future events. Do nothing.
   }
 }
@@ -242,21 +239,6 @@ impl <B: Basics> SnapshotAccessor for SnapshotHandle <B> {
   fn serialize_into <W: Write> (&self, writer: W) {
     unimplemented!()
   }
-}
-
-impl <B: Basics> Accessor for InvalidationAccessorStruct <B> {
-  type Steward = Steward <B>;
-  fn globals (&self)->&<<Self::Steward as TimeSteward>::Basics as Basics>::Globals { unreachable!() }
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, _: & DataTimelineCell <T>, _: &Query, _: QueryOffset)-> T::QueryResult { unreachable!() }
-}
-impl <B: Basics> MomentaryAccessor for InvalidationAccessorStruct <B> {
-  fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> { unreachable!() }
-}
-impl <B: Basics> PeekingAccessor for InvalidationAccessorStruct <B> {
-  fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&self, _: & DataTimelineCell <T>)->& T { unreachable!() }
-}
-impl <B: Basics> InvalidationAccessor for InvalidationAccessorStruct <B> {
-  fn invalidate (&self, _: & EventHandle <B>) { unreachable!() }
 }
 
 #[derive (Debug)]
@@ -291,7 +273,6 @@ impl<B: Basics> Steward<B> {
 impl<B: Basics> TimeSteward for Steward<B> {
   type Basics = B;
   type SnapshotAccessor = SnapshotHandle <B>;
-  type InvalidationAccessor = InvalidationAccessorStruct <B>;
   type EventHandle = EventHandle <B>;
 
   fn valid_since(&self) -> ValidSince<B::Time> {

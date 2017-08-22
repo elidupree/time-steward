@@ -6,7 +6,7 @@ use serde::de::DeserializeOwned;
 use std::any::Any;
 use std::fmt::Debug;
 //use std::cmp::Ordering;
-//use std::borrow::Borrow;
+use std::borrow::Borrow;
 use std::ops::Deref;
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
@@ -86,13 +86,12 @@ pub enum FiatEventOperationError {
   InvalidTime,
 }
 
-pub trait EventHandleTrait: Clone + Ord + Eq + Hash {
-  type Basics: Basics;
-  fn extended_time (&self)->& ExtendedTime <Self::Basics>;
-  fn time (&self)->& <Self::Basics as Basics>::Time {& self.extended_time().base}
+pub trait EventHandleTrait <B: Basics>: StewardData + Ord + Hash + Borrow<ExtendedTime <B>> {
+  fn extended_time (&self)->& ExtendedTime <B>;
+  fn time (&self)->& B::Time {& self.extended_time().base}
   fn downcast_ref <T: Any> (&self)->Option<&T>;
 }
-pub trait DataHandleTrait <T: StewardData>: Clone + Eq + Hash + Deref<Target = T> {
+pub trait DataHandleTrait <T: StewardData>: StewardData + Hash + Deref<Target = T> {
   fn new(data: T)->Self;
 }
 pub trait DataTimelineCellTrait <T: DataTimeline>: StewardData + Hash {
@@ -140,9 +139,16 @@ pub trait Event: StewardData {
   }
 }
 
+pub trait Invalidator {
+  type Steward: TimeSteward;
+  fn execute<Accessor: InvalidationAccessor <Steward = Self::Steward>> (self, accessor: &Accessor);
+}
+
 pub trait Accessor {
   type Steward: TimeSteward;
   fn globals (&self)->&<<Self::Steward as TimeSteward>::Basics as Basics>::Globals;
+  fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
+  fn now(&self) -> & <<Self::Steward as TimeSteward>::Basics as Basics>::Time {&self.extended_now().base}
   fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: &Query, offset: QueryOffset)-> T::QueryResult;
 }
 // Querying versus peeking:
@@ -151,11 +157,7 @@ pub trait Accessor {
 pub trait PeekingAccessor: Accessor {
   fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>)->& T;
 }
-pub trait MomentaryAccessor: Accessor {
-  fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
-  fn now(&self) -> & <<Self::Steward as TimeSteward>::Basics as Basics>::Time {&self.extended_now().base}
-}
-pub trait EventAccessor: MomentaryAccessor + Rng {
+pub trait EventAccessor: Accessor + Rng {
   fn handle (&self)->& <Self::Steward as TimeSteward>::EventHandle;
   
   // modification is done within a closure, to help prevent the event from extracting any information from DataTimelines except by querying. I'd like to make this a Fn instead of FnOnce, to prevent the user from putting &mut in it that could communicate back to the outer function, but it may be useful for optimization to be able move owned objects into the closure.
@@ -169,7 +171,7 @@ pub trait EventAccessor: MomentaryAccessor + Rng {
   
   // invalidation is done within a closure, to help prevent the event from extracting any information from the PeekingAccessor used for invalidation. I'd like to make this a Fn instead of FnOnce, to prevent the user from putting &mut in it that could communicate back to the outer function, but it may be useful for optimization to be able move owned objects into the closure.
   // audit: the event does the same thing if the closure isn't called
-  fn invalidate <F: FnOnce(&<Self::Steward as TimeSteward>::InvalidationAccessor)> (&self, invalidator: F);
+  fn invalidate <I: Invalidator <Steward = Self::Steward>> (&self, invalidator: I);
 }
 pub trait UndoEventAccessor: PeekingAccessor + EventAccessor {
   // note that query results wouldn't necessarily correspond to those observed by the original execution in any way
@@ -181,23 +183,16 @@ pub trait InvalidationAccessor: PeekingAccessor {
   fn invalidate (&self, handle: & <Self::Steward as TimeSteward>::EventHandle);
 }
 
-pub trait SnapshotAccessor: MomentaryAccessor {
+pub trait SnapshotAccessor: Accessor {
   /// note: SnapshotAccessor::serialize() matches TimeSteward::deserialize()
   fn serialize_into <W: Write> (&self, writer: W);
-}
-
-impl <T: EventAccessor> MomentaryAccessor for T {
-  fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
-    &self.handle().extended_time()
-  }
 }
 
 
 pub trait TimeSteward: Any + Sized + Debug {
   type Basics: Basics;
   type SnapshotAccessor: SnapshotAccessor <Steward = Self>;
-  type InvalidationAccessor: InvalidationAccessor <Steward = Self>;
-  type EventHandle: EventHandleTrait <Basics = Self::Basics>;
+  type EventHandle: EventHandleTrait <Self::Basics>;
   
   fn insert_fiat_event<E: Event <Steward = Self>>(&mut self, time: <Self::Basics as Basics>::Time, id: DeterministicRandomId, event: E)
                                                -> Result<(), FiatEventOperationError>;

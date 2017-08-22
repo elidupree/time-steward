@@ -18,16 +18,18 @@ impl StewardData for GetVarying {}
 
 
 
-#[derive (Clone, Serialize, Deserialize, Debug)]
-pub struct SimpleTimeline <VaryingData: StewardData, B: Basics> {
+#[serde(bound = "")]
+#[derive (Serialize, Deserialize, Debug, Derivative)]
+#[derivative (Clone (bound=""))]
+pub struct SimpleTimeline <VaryingData: StewardData, Steward: TimeSteward> {
   // Hacky workaround for https://github.com/rust-lang/rust/issues/41617 (see https://github.com/serde-rs/serde/issues/943)
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
-  changes: Vec<(EventHandle <B>, Option <VaryingData>)>,
+  changes: Vec<(<Steward as TimeSteward>::EventHandle, Option <VaryingData>)>,
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
-  other_dependent_events: RefCell<BTreeSet<EventHandle<B>>>,
+  other_dependent_events: RefCell<BTreeSet<<Steward as TimeSteward>::EventHandle>>,
 }
 
-impl <VaryingData: StewardData, B: Basics> SimpleTimeline <VaryingData, B> {
+impl <VaryingData: StewardData, Steward: TimeSteward> SimpleTimeline <VaryingData, Steward> {
   pub fn new ()->Self {
     SimpleTimeline {
       changes: Vec::new(),
@@ -35,7 +37,7 @@ impl <VaryingData: StewardData, B: Basics> SimpleTimeline <VaryingData, B> {
     }
   }
   
-  fn invalidate_after <Steward: TimeSteward <Basics = B, EventHandle = EventHandle<B>>, Accessor: InvalidationAccessor<Steward = Steward>> (&self, time: &ExtendedTime <B>, accessor: & Accessor) {
+  fn invalidate_after <Accessor: InvalidationAccessor<Steward = Steward>> (&self, time: &ExtendedTime <<Steward as TimeSteward>::Basics>, accessor: & Accessor) {
     let mut dependencies = self.other_dependent_events.borrow_mut();
     let removed = split_off_greater_set (&mut *dependencies, time);
     for event in removed {
@@ -50,7 +52,7 @@ impl <VaryingData: StewardData, B: Basics> SimpleTimeline <VaryingData, B> {
     }
   }
   
-  fn remove_from (&mut self, time: &ExtendedTime <B>) {
+  fn remove_from (&mut self, time: &ExtendedTime <Steward::Basics>) {
     while let Some (change) = self.changes.pop() {
       if change.0.extended_time() < time {
         self.changes.push (change);
@@ -59,7 +61,7 @@ impl <VaryingData: StewardData, B: Basics> SimpleTimeline <VaryingData, B> {
     }
   }
   
-  fn search_changes (&self, time: &ExtendedTime <B>) -> Result <usize, usize> {
+  fn search_changes (&self, time: &ExtendedTime <Steward::Basics>) -> Result <usize, usize> {
     // search at the end first, because we are usually in the present.
     match self.changes.last() {
       None => return Err(0),
@@ -75,8 +77,8 @@ impl <VaryingData: StewardData, B: Basics> SimpleTimeline <VaryingData, B> {
   }
 }
 
-impl <VaryingData: StewardData, B: Basics> DataTimeline for SimpleTimeline <VaryingData, B> {
-  type Basics = B;
+impl <VaryingData: StewardData, Steward: TimeSteward> DataTimeline for SimpleTimeline <VaryingData, Steward> {
+  type Basics = Steward::Basics;
   
   fn clone_for_snapshot (&self, time: &ExtendedTime <Self::Basics>)->Self {
     let slice = match self.search_changes(&time) {
@@ -103,8 +105,8 @@ impl <VaryingData: StewardData, B: Basics> DataTimeline for SimpleTimeline <Vary
     }
   }
 }
-impl <VaryingData: StewardData, B: Basics> DataTimelineQueriableWith<GetVarying> for SimpleTimeline <VaryingData, B> {
-  type QueryResult = Option <(ExtendedTime <B>, VaryingData)>;
+impl <VaryingData: StewardData, Steward: TimeSteward> DataTimelineQueriableWith<GetVarying> for SimpleTimeline <VaryingData, Steward> {
+  type QueryResult = Option <(ExtendedTime <Self::Basics>, VaryingData)>;
 
   fn query (&self, _: &GetVarying, time: &ExtendedTime <Self::Basics>, offset: QueryOffset)->Self::QueryResult {
     let previous_change_index = match self.search_changes(&time) {
@@ -115,15 +117,24 @@ impl <VaryingData: StewardData, B: Basics> DataTimelineQueriableWith<GetVarying>
   }
 }
 
+struct InvalidatorStruct <'a, Steward: TimeSteward, VaryingData: StewardData>{
+  handle: &'a DataTimelineCell <SimpleTimeline <VaryingData, Steward>>,
+}
+impl<'a, Steward: TimeSteward, VaryingData: StewardData> Invalidator for InvalidatorStruct<'a, Steward, VaryingData> {
+  type Steward = Steward;
+  fn execute<Accessor: InvalidationAccessor <Steward = Self::Steward>> (self, accessor: &Accessor) {
+    accessor.peek(self.handle).invalidate_after (accessor.extended_now(), accessor);
+  }
+}
 
-pub fn tracking_query <B: Basics, VaryingData: StewardData, Steward: TimeSteward <Basics = B, EventHandle = EventHandle<B>>, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward::Basics>>, offset: QueryOffset)->Option <(ExtendedTime <Steward::Basics>, VaryingData)> {
+pub fn tracking_query <VaryingData: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>, offset: QueryOffset)->Option <(ExtendedTime <Steward::Basics>, VaryingData)> {
   accessor.modify (handle, move |timeline| {
     let mut dependencies = timeline.other_dependent_events.borrow_mut();
     dependencies.insert (accessor.handle().clone());
   });
   accessor.query (handle, &GetVarying, offset)
 }
-pub fn modify_simple_timeline <B: Basics, VaryingData: StewardData, Steward: TimeSteward <Basics = B, EventHandle = EventHandle<B>>, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward::Basics>>, modification: Option <VaryingData>) {
+pub fn modify_simple_timeline <VaryingData: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>, modification: Option <VaryingData>) {
   match accessor.query (handle, &GetVarying, QueryOffset::After) {
     Some((time, data)) =>
       if let Some (new_data) = modification.as_ref() {
@@ -134,19 +145,15 @@ pub fn modify_simple_timeline <B: Basics, VaryingData: StewardData, Steward: Tim
     None =>
       if modification.is_none() {return}
   };
-  accessor.invalidate (| invalidator | {
-    invalidator.peek(handle).invalidate_after (accessor.extended_now(), invalidator);
-  });
+  accessor.invalidate (InvalidatorStruct{handle: handle});
   accessor.modify (handle, move |timeline| {
     timeline.remove_from (accessor.extended_now());
     timeline.changes.push ((accessor.handle().clone(), modification));
   });
 }
-pub fn unmodify_simple_timeline <B: Basics, VaryingData: StewardData, Steward: TimeSteward <Basics = B, EventHandle = EventHandle<B>>, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward::Basics>>) {
+pub fn unmodify_simple_timeline <VaryingData: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>) {
   if let Some((time, _)) = accessor.query (handle, &GetVarying, QueryOffset::After) { if &time == accessor.extended_now() {
-    accessor.invalidate (| invalidator | {
-      invalidator.peek(handle).invalidate_after (accessor.extended_now(), invalidator);
-    });
+    accessor.invalidate (InvalidatorStruct{handle: handle});
     accessor.modify (handle, move |timeline| {
       timeline.remove_from (accessor.extended_now());
     });

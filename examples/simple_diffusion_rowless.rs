@@ -30,7 +30,7 @@ use std::cmp::{min, max};
 use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{self, StewardData, QueryOffset, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_flat as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, MomentaryAccessor, EventAccessor, UndoEventAccessor, SnapshotAccessor, simple_timeline};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, UndoEventAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
 
@@ -81,7 +81,7 @@ struct Cell {
   next_transfer_change: Option <EventHandle <Basics>>,
 }
 impl StewardData for Cell {}
-type CellStuff = DataTimelineCell <SimpleTimeline <Cell, Basics>>;
+type CellStuff = DataTimelineCell <SimpleTimeline <Cell, Steward>>;
 
 
 fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (accessor: &mut A, coordinates: [i32; 2]) {
