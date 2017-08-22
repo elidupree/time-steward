@@ -123,7 +123,7 @@ struct InvalidatorStruct <'a, Steward: TimeSteward, VaryingData: StewardData>{
 impl<'a, Steward: TimeSteward, VaryingData: StewardData> Invalidator for InvalidatorStruct<'a, Steward, VaryingData> {
   type Steward = Steward;
   fn execute<Accessor: InvalidationAccessor <Steward = Self::Steward>> (self, accessor: &Accessor) {
-    accessor.peek(self.handle).invalidate_after (accessor.extended_now(), accessor);
+    accessor.peek(self.handle, | timeline | timeline.invalidate_after (accessor.extended_now(), accessor));
   }
 }
 

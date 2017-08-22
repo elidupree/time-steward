@@ -182,7 +182,7 @@ pub trait EventAccessor: Accessor + Rng {
 }
 pub trait UndoEventAccessor: PeekingAccessor + EventAccessor {
   // note that query results wouldn't necessarily correspond to those observed by the original execution in any way
-  fn undestroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, until: Option <&ExtendedTime <<Self::Steward as TimeSteward>::Basics>>);
+  fn undestroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, until: Option <&<Self::Steward as TimeSteward>::EventHandle>);
 }
 pub trait InvalidationAccessor: PeekingAccessor {
   // if you use queries, note that there may be multiple relevant times and this might be in an undo (see above)

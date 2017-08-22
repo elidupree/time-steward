@@ -45,6 +45,7 @@ struct ExecutionState {
 struct EventInner <B: Basics> {
   time: ExtendedTime <B>,
   data: Box <EventInnerTrait<B>>,
+  should_be_executed: Cell<bool>,
   prediction_created_by: RefCell<Option <EventHandle <B>>>,
   prediction_destroyed_by: RefCell<Option <EventHandle <B>>>,
   execution_state: RefCell<Option <ExecutionState>>,
@@ -59,7 +60,8 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
     let mut accessor = EventAccessorStruct {
       generic: GenericEventAccessor::new(&self_handle.extended_time()),
       handle: self_handle.clone(),
-      steward: steward,
+      globals: steward.globals.clone(),
+      steward: RefCell::new (steward),
     };
     let result = <T as Event>::execute (self, &mut accessor);
     mem::replace (&mut*self_handle.data.execution_state.borrow_mut(), Some (ExecutionState {
@@ -71,7 +73,8 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
     let mut accessor = EventAccessorStruct {
       generic: GenericEventAccessor::new(&self_handle.extended_time()),
       handle: self_handle.clone(),
-      steward: steward,
+      globals: steward.globals.clone(),
+      steward: RefCell::new (steward),
     };
     <T as Event>::undo (self, &mut accessor, *self_handle.data.execution_state.borrow_mut().take().unwrap().execution_data.downcast().unwrap());
   }
@@ -79,7 +82,8 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
     let mut accessor = EventAccessorStruct {
       generic: GenericEventAccessor::new(&self_handle.extended_time()),
       handle: self_handle.clone(),
-      steward: steward,
+      globals: steward.globals.clone(),
+      steward: RefCell::new (steward),
     };
     let result = <T as Event>::re_execute (self, &mut accessor, *self_handle.data.execution_state.borrow_mut().take().unwrap().execution_data.downcast().unwrap());
     mem::replace (&mut*self_handle.data.execution_state.borrow_mut(), Some (ExecutionState {
@@ -159,13 +163,14 @@ time_steward_serialization_impls_for_handle!(
 pub struct EventAccessorStruct <'a, B: Basics> {
   generic: GenericEventAccessor,
   handle: EventHandle <B>,
+  globals: Rc<B::Globals>,
   steward: RefCell<&'a mut Steward<B>>,
 }
 #[derive (Debug)]
 pub struct SnapshotInner <B: Basics> {
   index: usize,
   time: ExtendedTime <B>,
-  globals: B::Globals,
+  globals: Rc<B::Globals>,
   clones: RefCell<HashMap<usize, Box<Any>>>,
   snapshots_tree: Rc<RefCell<SnapshotsTree<B>>>,
 }
@@ -191,7 +196,7 @@ impl <B: Basics> Drop for SnapshotHandle <B> {
 
 impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
   type Steward = Steward <B>;
-  fn globals (&self)->&B::Globals {&self.steward.globals}
+  fn globals (&self)->&B::Globals {&*self.globals}
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
     self.handle().extended_time()
   }
@@ -201,7 +206,7 @@ impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
 }
 impl <B: Basics> Accessor for SnapshotHandle <B> {
   type Steward = Steward <B>;
-  fn globals (&self)->&B::Globals {&self.data.globals}
+  fn globals (&self)->&B::Globals {&*self.data.globals}
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
     & self.data.time
   }
@@ -222,18 +227,19 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
   
   fn modify <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, F: FnOnce(&mut T)> (&self, timeline: &DataTimelineCell <T>, modification: F) {
     let index = timeline.first_snapshot_not_updated.get ();
-    let guard = (*self.steward.snapshots).borrow();
+    let steward = self.steward.borrow();
+    let guard = (*steward.snapshots).borrow();
     let map: &SnapshotsTree<B> = &*guard;
     for (_,snapshot) in map.range ((Bound::Included(index), Bound::Unbounded)) {
       let mut guard = snapshot.data.clones.borrow_mut();
       let entry = guard.entry (timeline.serial_number);
       entry.or_insert_with (| | Box::new (timeline.data.borrow().clone_for_snapshot (self.extended_now())));
     }
-    timeline.first_snapshot_not_updated.set (self.steward.next_snapshot_index);
+    timeline.first_snapshot_not_updated.set (steward.next_snapshot_index);
     
     let mut modify_guard = timeline.data.borrow_mut();
     modification (&mut*modify_guard);
-    match &self.steward.invalid_before {
+    match &steward.invalid_before {
       &ValidSince::Before (ref time) => modify_guard.forget_before(&ExtendedTime::beginning_of (time.clone())),
       &ValidSince::After (ref time) => modify_guard.forget_before(&ExtendedTime::end_of(time.clone())),
       &ValidSince::TheBeginning => (),
@@ -246,22 +252,23 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
       data: Rc::new (EventInner {
         time: time,
         data: Box::new (event),
+        should_be_executed: Cell::new(true),
         prediction_created_by: RefCell::new (Some(self.handle().clone())),
         prediction_destroyed_by: RefCell::new (None),
         execution_state: RefCell::new (None),
       })
     };
-    assert!(self.steward.events_needing_attention.insert (handle.clone()), "created a prediction that already existed?!");
+    assert!(self.steward.borrow_mut().events_needing_attention.insert (handle.clone()), "created a prediction that already existed?!");
     handle
   }
   fn destroy_prediction (&mut self, prediction: &EventHandle<B>) {
     mem::replace (&mut*prediction.data.prediction_destroyed_by.borrow_mut(), Some(self.handle().clone()));
     if prediction != self.handle() {
-      self.steward.invalidate_event (prediction);
+      self.steward.borrow_mut().event_shouldnt_be_executed (prediction);
     }
   }
   
-  fn invalidate <I: Invalidator <Steward = Self::Steward>> (&mut self, invalidator: I) {
+  fn invalidate <I: Invalidator <Steward = Self::Steward>> (&self, invalidator: I) {
     invalidator.execute(self);
   }
 }
@@ -289,20 +296,26 @@ impl <'a, B: Basics> PeekingAccessor for EventAccessorStruct <'a, B> {
   }
 }
 impl <'a, B: Basics> UndoEventAccessor for EventAccessorStruct <'a, B> {
-  fn undestroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, until: Option <&ExtendedTime <<Self::Steward as TimeSteward>::Basics>>) {
-    unimplemented!()
+  fn undestroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, until: Option <&<Self::Steward as TimeSteward>::EventHandle>) {
+    mem::replace (&mut*prediction.data.prediction_destroyed_by.borrow_mut(), until.cloned());
+    if prediction != self.handle() {
+      if !prediction.data.should_be_executed.get() && prediction.data.execution_state.borrow().as_ref().map_or (true, | state | !state.valid) {
+        self.steward.borrow_mut().events_needing_attention.insert (prediction.clone());
+      }
+      prediction.data.should_be_executed.set(true);
+    }
   }
 }
 impl <'a, B: Basics> InvalidationAccessor for EventAccessorStruct <'a, B> {
-  fn invalidate (&mut self, handle: & <Self::Steward as TimeSteward>::EventHandle) {
-    self.steward.invalidate_event (handle);
+  fn invalidate (&self, handle: & <Self::Steward as TimeSteward>::EventHandle) {
+    self.steward.borrow_mut().invalidate_event_execution (handle);
   }
 }
 
 
 #[derive (Debug)]
 pub struct Steward <B: Basics> {
-  globals: B::Globals,
+  globals: Rc<B::Globals>,
   invalid_before: ValidSince <B::Time>,
   events_needing_attention: BTreeSet<EventHandle<B>>,
   fiat_events: BTreeSet<EventHandle <B>>,
@@ -318,22 +331,45 @@ impl<B: Basics> Steward<B> {
   
   fn do_event (&mut self, event: & EventHandle <B>) {
     self.events_needing_attention.remove (event);
-    if unimplemented!() {
-      event.data.data.execute (event, &mut*self);
-    }
-    else if unimplemented!() {
-      event.data.data.undo (event, &mut*self);
+    if event.data.should_be_executed.get() {
+      let currently_executed = match event.data.execution_state.borrow().as_ref() {
+        Some (state) => {
+          assert! (!state.valid);
+          true
+        },
+        None => false,
+      };
+      if currently_executed {
+        event.data.data.re_execute (event, &mut*self);
+      }
+      else {
+        event.data.data.execute (event, &mut*self);
+      }
     }
     else {
-      event.data.data.re_execute (event, &mut*self);
+      assert! (event.data.execution_state.borrow().as_ref().map_or (false, | state | !state.valid));
+      event.data.data.undo (event, &mut*self);
     }
   }
   
-  fn invalidate_event (&mut self, handle: & EventHandle<B>) {
+  
+  
+  fn invalidate_event_execution (&mut self, handle: & EventHandle<B>) {
     if let Some(state) = handle.data.execution_state.borrow_mut().as_mut() {
       if state.valid {self.events_needing_attention.insert (handle.clone());}
       state.valid = false;
     }
+  }
+  fn event_shouldnt_be_executed (&mut self, handle: & EventHandle<B>) {
+    if handle.data.should_be_executed.get() {
+      if handle.data.execution_state.borrow().as_ref().map_or (false, | state | state.valid) {
+        self.events_needing_attention.insert (handle.clone());
+      }
+      if handle.data.execution_state.borrow().is_none() {
+        self.events_needing_attention.remove (handle);
+      }
+    }
+    handle.data.should_be_executed.set(false);
   }
 }
 
@@ -355,15 +391,20 @@ impl<B: Basics> TimeSteward for Steward<B> {
     if self.valid_since() > time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    match self.fiat_events.insert(EventHandle {data: Rc::new (EventInner {
+    let handle = EventHandle {data: Rc::new (EventInner {
         time: extended_time_of_fiat_event(time, id),
         data: Box::new (event),
+        should_be_executed: Cell::new(true),
         prediction_created_by: RefCell::new (None),
         prediction_destroyed_by: RefCell::new (None),
         execution_state: RefCell::new (None),
-      })}) {
-      true => Ok(()),
+      })};
+    match self.fiat_events.insert(handle.clone()) {
       false => Err(FiatEventOperationError::InvalidInput),
+      true => {
+        self.events_needing_attention.insert (handle);
+        Ok(())
+      },
     }
   }
 
@@ -374,9 +415,12 @@ impl<B: Basics> TimeSteward for Steward<B> {
     if self.valid_since() > *time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    match self.fiat_events.remove(&extended_time_of_fiat_event(time.clone(), id)) {
-      false => Err(FiatEventOperationError::InvalidInput),
-      true => Ok(()),
+    match self.fiat_events.take(&extended_time_of_fiat_event(time.clone(), id)) {
+      None => Err(FiatEventOperationError::InvalidInput),
+      Some(handle) => {
+        self.event_shouldnt_be_executed (&handle);
+        Ok(())
+      },
     }
   }
   
@@ -411,7 +455,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
 impl <B: Basics> ConstructibleTimeSteward for Steward <B> {
   fn from_globals (globals: <Self::Basics as Basics>::Globals)->Self {
     Steward {
-      globals: globals,
+      globals: Rc::new (globals),
       invalid_before: ValidSince::TheBeginning,
       events_needing_attention: BTreeSet::new(),
       fiat_events: BTreeSet::new(),
