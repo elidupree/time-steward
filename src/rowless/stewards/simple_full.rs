@@ -159,7 +159,7 @@ time_steward_serialization_impls_for_handle!(
 pub struct EventAccessorStruct <'a, B: Basics> {
   generic: GenericEventAccessor,
   handle: EventHandle <B>,
-  steward: &'a mut Steward<B>,
+  steward: RefCell<&'a mut Steward<B>>,
 }
 #[derive (Debug)]
 pub struct SnapshotInner <B: Basics> {
@@ -251,14 +251,17 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
         execution_state: RefCell::new (None),
       })
     };
-    assert!(self.steward.existent_predictions.insert (handle.clone()), "created a prediction that already existed?!");
+    assert!(self.steward.events_needing_attention.insert (handle.clone()), "created a prediction that already existed?!");
     handle
   }
   fn destroy_prediction (&mut self, prediction: &EventHandle<B>) {
-    assert!(self.steward.existent_predictions.remove (& prediction.clone()), "destroyed a prediction doesn't exist? Probably one that was already destroyed");
+    mem::replace (&mut*prediction.data.prediction_destroyed_by.borrow_mut(), Some(self.handle().clone()));
+    if prediction != self.handle() {
+      self.steward.invalidate_event (prediction);
+    }
   }
   
-  fn invalidate <I: Invalidator <Steward = Self::Steward>> (&self, invalidator: I) {
+  fn invalidate <I: Invalidator <Steward = Self::Steward>> (&mut self, invalidator: I) {
     invalidator.execute(self);
   }
 }
@@ -281,24 +284,18 @@ impl <B: Basics> SnapshotAccessor for SnapshotHandle <B> {
 // EventAccessorStruct is also the undo accessor and invalidation accessor – its functionality is only restricted by what bounds the client code is allowed to place on it
 
 impl <'a, B: Basics> PeekingAccessor for EventAccessorStruct <'a, B> {
-  fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>)->& T {
-    timeline.data.borrow()
+  fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, R, F: FnOnce(&T)->R> (&self, timeline: & DataTimelineCell<T>, callback: F)->R {
+    callback(&*timeline.data.borrow())
   }
 }
 impl <'a, B: Basics> UndoEventAccessor for EventAccessorStruct <'a, B> {
-  // note that query results wouldn't necessarily correspond to those observed by the original execution in any way
   fn undestroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, until: Option <&ExtendedTime <<Self::Steward as TimeSteward>::Basics>>) {
     unimplemented!()
   }
 }
 impl <'a, B: Basics> InvalidationAccessor for EventAccessorStruct <'a, B> {
-  // if you use queries, note that there may be multiple relevant times and this might be in an undo (see above)
-  // audit: can't invalidate things in the past relative to the current event
-  fn invalidate (&self, handle: & <Self::Steward as TimeSteward>::EventHandle) {
-    if let Some(state) = handle.data.execution_state.borrow_mut().as_mut() {
-      if state.valid {self.steward.events_needing_attention.insert (handle.clone());}
-      state.valid = false;
-    }
+  fn invalidate (&mut self, handle: & <Self::Steward as TimeSteward>::EventHandle) {
+    self.steward.invalidate_event (handle);
   }
 }
 
@@ -329,6 +326,13 @@ impl<B: Basics> Steward<B> {
     }
     else {
       event.data.data.re_execute (event, &mut*self);
+    }
+  }
+  
+  fn invalidate_event (&mut self, handle: & EventHandle<B>) {
+    if let Some(state) = handle.data.execution_state.borrow_mut().as_mut() {
+      if state.valid {self.events_needing_attention.insert (handle.clone());}
+      state.valid = false;
     }
   }
 }

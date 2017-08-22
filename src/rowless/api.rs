@@ -155,7 +155,12 @@ pub trait Accessor {
 // Querying accessors are generally for things that can affect the physics. Querying uses an exact interface that can be tracked and audited in various ways to make sure the physics stays consistent.
 // Peeking accessors are generally for things that are required to do a specific job and don't have any leeway to change the physics. We allow them full read-only access with no tracking, and merely audit that they did the job they were asked to. Peeking accessors are also allowed to use the querying interface for convenience (so that they can call generic functions that take a querying accessor).
 pub trait PeekingAccessor: Accessor {
-  fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>)->& T;
+  // use a callback and prevent the reference from leaving the callback,
+  // because TimeSteward may use internal mutability like RefCell.
+  // In theory, that should probably mean returning a guard instead of taking a closure,
+  // but the type of the guard can't be specified without `impl Trait` or generic associated types,
+  // neither of which are available for this yet.
+  fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, R, F: FnOnce(&T)->R> (&self, timeline: & DataTimelineCell<T>, callback: F)->R;
 }
 pub trait EventAccessor: Accessor + Rng {
   fn handle (&self)->& <Self::Steward as TimeSteward>::EventHandle;
@@ -167,6 +172,8 @@ pub trait EventAccessor: Accessor + Rng {
   // audit: whenever an event is executed or undone, it creates/destroys the exact predictions that become existent/nonexistent between the serializations of the physics immediately before and after the event.
   // audit: never generates two predictions with the same id, except when rerunning the same event
   fn create_prediction <E: Event <Steward = Self::Steward>> (&mut self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)-><Self::Steward as TimeSteward>::EventHandle;
+  // audit: predicted events must destroy themselves
+  // audit: you can't destroy a fiat event as if it's a prediction
   fn destroy_prediction (&mut self, prediction: &<Self::Steward as TimeSteward>::EventHandle);
   
   // invalidation is done within a closure, to help prevent the event from extracting any information from the PeekingAccessor used for invalidation. I'd like to make this a Fn instead of FnOnce, to prevent the user from putting &mut in it that could communicate back to the outer function, but it may be useful for optimization to be able move owned objects into the closure.
