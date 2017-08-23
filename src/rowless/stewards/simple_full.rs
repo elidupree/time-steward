@@ -269,7 +269,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
         execution_state: RefCell::new (None),
       })
     };
-    assert!(self.steward.borrow_mut().events_needing_attention.insert (handle.clone()), "created a prediction that already existed?!");
+    assert!(self.steward.borrow_mut().events_needing_attention.insert (handle.clone()), "Created a prediction at the same time as one that already existed and has not yet been destroyed.");
     handle
   }
   fn destroy_prediction (&self, prediction: &EventHandle<B>) {
@@ -315,10 +315,7 @@ impl <'a, B: Basics> UndoEventAccessor for EventAccessorStruct <'a, B> {
   fn undestroy_prediction (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, until: Option <&<Self::Steward as TimeSteward>::EventHandle>) {
     mem::replace (&mut*prediction.data.prediction_destroyed_by.borrow_mut(), until.cloned());
     if prediction != self.handle() {
-      if !prediction.data.should_be_executed.get() && prediction.data.execution_state.borrow().as_ref().map_or (true, | state | !state.valid) {
-        self.steward.borrow_mut().events_needing_attention.insert (prediction.clone());
-      }
-      prediction.data.should_be_executed.set(true);
+      self.steward.borrow_mut().event_should_be_executed(prediction);
     }
   }
 }
@@ -378,6 +375,17 @@ impl<B: Basics> Steward<B> {
     if let Some(state) = handle.data.execution_state.borrow_mut().as_mut() {
       if state.valid {self.events_needing_attention.insert (handle.clone());}
       state.valid = false;
+    }
+  }
+  fn event_should_be_executed (&mut self, handle: & EventHandle<B>) {
+    if !handle.data.should_be_executed.get() {
+      if handle.data.execution_state.borrow().is_none() {
+        self.events_needing_attention.insert (handle.clone());
+      }
+      if handle.data.execution_state.borrow().as_ref().map_or (false, | state | state.valid) {
+        self.events_needing_attention.remove (handle);
+      }
+      handle.data.should_be_executed.set(true);
     }
   }
   fn event_shouldnt_be_executed (&mut self, handle: & EventHandle<B>) {

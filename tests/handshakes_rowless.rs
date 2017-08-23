@@ -124,13 +124,17 @@ impl Event for Shake {
 // println!("SHAKE!!! @{}. {}={}; {}={}", now, self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
 // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
 // IN THE SECOND TIME APPARENTLY
-    change_next_handshake_time (accessor, friend_id, & philosophers [friend_id], awaken_time_1);
+    if friend_id != self.whodunnit {
+      change_next_handshake_time (accessor, friend_id, & philosophers [friend_id], awaken_time_1);
+    }
     change_next_handshake_time (accessor, self.whodunnit, & philosophers [self.whodunnit], awaken_time_2);
   }
   fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let philosophers = accessor.globals();
-    unchange_next_handshake_time (accessor, & philosophers [friend_id]);
+    if friend_id != self.whodunnit {
+      unchange_next_handshake_time (accessor, & philosophers [friend_id]);
+    }
     unchange_next_handshake_time (accessor, & philosophers [self.whodunnit]);
   }
 }
