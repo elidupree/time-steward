@@ -10,7 +10,7 @@ extern crate serde_derive;
 
 use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{self, StewardData, QueryOffset, DataTimelineCellTrait, Basics as BasicsTrait};
-use time_steward::rowless::stewards::{simple_flat as steward_module};
+use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, UndoEventAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
@@ -72,9 +72,11 @@ fn unchange_next_handshake_time <Accessor: UndoEventAccessor <Steward = Steward>
   if let Some(prediction) = philosopher.next_handshake_prediction.take() {
     accessor.destroy_prediction (&prediction);
   }
-  let mut philosopher = accessor.query (handle, &GetVarying, QueryOffset::Before).expect ("philosophers should never not exist").1;
-  if let Some(prediction) = philosopher.next_handshake_prediction.take() {
-    accessor.undestroy_prediction (&prediction, None);
+  // philosophers MAY not exist in the Before of the initialize event
+  if let Some((_, mut philosopher)) = accessor.query (handle, &GetVarying, QueryOffset::Before) {
+    if let Some(prediction) = philosopher.next_handshake_prediction.take() {
+      accessor.undestroy_prediction (&prediction, None);
+    }
   }
   unmodify_simple_timeline (accessor, handle);
 }
@@ -148,7 +150,11 @@ impl Event for Initialize {
     }
   }
   fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
-    unimplemented!()
+    let philosophers = accessor.globals();
+    for i in 0..HOW_MANY_PHILOSOPHERS {
+      unchange_next_handshake_time (accessor, & philosophers [i]);
+      modify_simple_timeline (accessor, & philosophers [i], Some (Philosopher::new()));
+    }
   }
 }
 
@@ -167,7 +173,9 @@ impl Event for Tweak {
     change_next_handshake_time (accessor, friend_id, & philosophers [friend_id], awaken_time);
   }
   fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
-    unimplemented!()
+    let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
+    let philosophers = accessor.globals();
+    unchange_next_handshake_time (accessor, & philosophers [friend_id]);
   }
 }
 
@@ -193,20 +201,29 @@ impl Event for TweakUnsafe {
     change_next_handshake_time (accessor, friend_id, & philosophers [friend_id], awaken_time);
   }
   fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
-    unimplemented!()
+    let inconsistent = INCONSISTENT.with (| value | {
+      *value
+    });
+    let mut rng = ChaChaRng::from_seed (& [inconsistent, accessor.next_u32()]);
+    
+    let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
+    let philosophers = accessor.globals();
+    unchange_next_handshake_time (accessor, & philosophers [friend_id]);
   }
+}
+
+fn make_globals()-><Basics as BasicsTrait>::Globals {
+  let mut philosophers = Vec::new();
+  for _ in 0.. HOW_MANY_PHILOSOPHERS {
+    philosophers.push (DataTimelineCell::new (SimpleTimeline::new ()));
+  }
+  philosophers
 }
 
 #[test]
 pub fn handshakes_simple() {
   //type Steward = crossverified::Steward<Basics, inefficient_flat::Steward<Basics>, memoized_flat::Steward<Basics>>;
-  let mut stew: Steward = Steward::from_globals ({
-    let mut philosophers = Vec::new();
-    for _ in 0.. HOW_MANY_PHILOSOPHERS {
-      philosophers.push (DataTimelineCell::new (SimpleTimeline::new ()));
-    }
-    philosophers
-  });
+  let mut stew: Steward = Steward::from_globals (make_globals());
 
   stew.insert_fiat_event(0,
                        DeterministicRandomId::new(&0x32e1570766e768a7u64),
@@ -215,6 +232,24 @@ pub fn handshakes_simple() {
     
   for increment in 1..21 {
     let snapshot: <Steward as TimeSteward>::SnapshotAccessor = stew.snapshot_before(&(increment * 100i64)).unwrap();
+    display_snapshot(&snapshot);
+  }
+}
+
+
+#[test]
+fn handshakes_retroactive() {
+  let mut stew: Steward = Steward::from_globals (make_globals());
+
+  stew.insert_fiat_event(0,
+                       DeterministicRandomId::new(&0x32e1570766e768a7u64),
+                       Initialize{})
+    .unwrap();
+  
+  stew.snapshot_before(&(2000i64));
+  for increment in 1..21 {
+    stew.insert_fiat_event(increment * 100i64, DeterministicRandomId::new(&increment), Tweak{}).unwrap();
+    let snapshot: <Steward as TimeSteward>::SnapshotAccessor = stew.snapshot_before(&(2000i64)).unwrap();
     display_snapshot(&snapshot);
   }
 }
@@ -252,25 +287,6 @@ pub fn handshakes_reloading() {
     display_snapshot(&Steward::from_snapshot::<time_steward::FiatSnapshot<Basics>>(&deserialized).snapshot_before(deserialized.now()).unwrap());
   }
   // panic!("anyway")
-}
-
-#[test]
-fn handshakes_retroactive() {
-  type Steward = crossverified::Steward<Basics, amortized::Steward<Basics>, flat_to_inefficient_full::Steward<Basics, memoized_flat::Steward <Basics> >>;
-  let mut stew: Steward = Steward::from_constants(());
-
-  stew.insert_fiat_event(0,
-                       DeterministicRandomId::new(&0x32e1570766e768a7u64),
-                       Initialize::new())
-    .unwrap();
-
-  stew.snapshot_before(&(2000i64));
-  for increment in 1..21 {
-    stew.insert_fiat_event(increment * 100i64, DeterministicRandomId::new(&increment), Tweak::new()).unwrap();
-    let snapshot: <Steward as TimeSteward>::Snapshot = stew.snapshot_before(&(2000i64)).unwrap();
-    display_snapshot(&snapshot);
-  }
-
 }
 
 #[test]
