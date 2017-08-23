@@ -50,11 +50,6 @@ macro_rules! time_steward_common_impls_for_event_handle {
       fn borrow (&self)->& ExtendedTime <$($basics)*> {self.extended_time()}
     }
 
-    impl<$($bounds)*> Ord for $($concrete)* {
-      fn cmp(&self, other: &Self) -> Ordering {
-        self.extended_time().cmp(other.extended_time())
-      }
-    }
     /*impl<$($bounds)*> Eq for $($concrete)* {}
     impl<$($bounds)*> PartialEq for $($concrete)* {
       fn eq(&self, other: &Self) -> bool {

@@ -141,6 +141,17 @@ impl <T: StewardData> Deref for DataHandle <T> {
   }
 }
 
+impl<B: Basics> Ord for EventHandle <B> {
+  fn cmp(&self, other: &Self) -> Ordering {
+    self.extended_time().cmp(other.extended_time()).then_with(||
+      // when you delete an event and then re-create it, we want
+      // undoing the deleted event to come BEFORE executing the new one.
+      // (false comes before true)
+      self.data.should_be_executed.get().cmp(&other.data.should_be_executed.get())
+    )
+  }
+}
+
 time_steward_common_impls_for_handles!();
 time_steward_common_impls_for_uniquely_identified_handle! ([B: Basics] [EventHandle <B>] self => (&*self.data as *const EventInner<B>): *const EventInner<B>);
 time_steward_common_impls_for_uniquely_identified_handle! ([T: StewardData] [DataHandle <T>] self => (&*self.data as *const T): *const T);
@@ -377,8 +388,8 @@ impl<B: Basics> Steward<B> {
       if handle.data.execution_state.borrow().is_none() {
         self.events_needing_attention.remove (handle);
       }
+      handle.data.should_be_executed.set(false);
     }
-    handle.data.should_be_executed.set(false);
   }
 }
 
