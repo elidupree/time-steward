@@ -19,8 +19,8 @@ impl StewardData for GetVarying {}
 
 
 #[serde(bound = "")]
-#[derive (Serialize, Deserialize, Debug, Derivative)]
-#[derivative (Clone (bound=""))]
+#[derive (Serialize, Deserialize, Derivative)]
+#[derivative (Clone (bound=""), Debug (bound=""))]
 pub struct SimpleTimeline <VaryingData: StewardData, Steward: TimeSteward> {
   // Hacky workaround for https://github.com/rust-lang/rust/issues/41617 (see https://github.com/serde-rs/serde/issues/943)
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]

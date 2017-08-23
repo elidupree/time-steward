@@ -246,7 +246,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     }
   }
   
-  fn create_prediction <E: Event <Steward = Self::Steward>> (&mut self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)->EventHandle <B> {
+  fn create_prediction <E: Event <Steward = Self::Steward>> (&self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)->EventHandle <B> {
     let time = extended_time_of_predicted_event::<<Self::Steward as TimeSteward>::Basics> (time, id, self.extended_now()).expect("You can't create a prediction in the past.");
     let handle = EventHandle {
       data: Rc::new (EventInner {
@@ -261,7 +261,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     assert!(self.steward.borrow_mut().events_needing_attention.insert (handle.clone()), "created a prediction that already existed?!");
     handle
   }
-  fn destroy_prediction (&mut self, prediction: &EventHandle<B>) {
+  fn destroy_prediction (&self, prediction: &EventHandle<B>) {
     assert!(prediction.data.prediction_created_by.borrow().is_some(), "Attempted to destroy a fiat event as if it was a prediction.");
     let mut guard = prediction.data.prediction_destroyed_by.borrow_mut();
     if let Some (old_destroyer) = guard.as_ref() {
@@ -301,7 +301,7 @@ impl <'a, B: Basics> PeekingAccessor for EventAccessorStruct <'a, B> {
   }
 }
 impl <'a, B: Basics> UndoEventAccessor for EventAccessorStruct <'a, B> {
-  fn undestroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, until: Option <&<Self::Steward as TimeSteward>::EventHandle>) {
+  fn undestroy_prediction (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, until: Option <&<Self::Steward as TimeSteward>::EventHandle>) {
     mem::replace (&mut*prediction.data.prediction_destroyed_by.borrow_mut(), until.cloned());
     if prediction != self.handle() {
       if !prediction.data.should_be_executed.get() && prediction.data.execution_state.borrow().as_ref().map_or (true, | state | !state.valid) {

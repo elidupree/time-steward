@@ -171,10 +171,10 @@ pub trait EventAccessor: Accessor + Rng {
   
   // audit: whenever an event is executed or undone, it creates/destroys the exact predictions that become existent/nonexistent between the serializations of the physics immediately before and after the event.
   // audit: never generates two predictions with the same id, except when rerunning the same event
-  fn create_prediction <E: Event <Steward = Self::Steward>> (&mut self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)-><Self::Steward as TimeSteward>::EventHandle;
+  fn create_prediction <E: Event <Steward = Self::Steward>> (&self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)-><Self::Steward as TimeSteward>::EventHandle;
   // audit: predicted events must destroy themselves
   // audit: you can't destroy a fiat event as if it's a prediction
-  fn destroy_prediction (&mut self, prediction: &<Self::Steward as TimeSteward>::EventHandle);
+  fn destroy_prediction (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle);
   
   // invalidation is done within a closure, to help prevent the event from extracting any information from the PeekingAccessor used for invalidation. I'd like to make this a Fn instead of FnOnce, to prevent the user from putting &mut in it that could communicate back to the outer function, but it may be useful for optimization to be able move owned objects into the closure.
   // audit: the event does the same thing if the closure isn't called
@@ -182,7 +182,7 @@ pub trait EventAccessor: Accessor + Rng {
 }
 pub trait UndoEventAccessor: PeekingAccessor + EventAccessor {
   // note that query results wouldn't necessarily correspond to those observed by the original execution in any way
-  fn undestroy_prediction <E: Event <Steward = Self::Steward>> (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, until: Option <&<Self::Steward as TimeSteward>::EventHandle>);
+  fn undestroy_prediction (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, until: Option <&<Self::Steward as TimeSteward>::EventHandle>);
 }
 pub trait InvalidationAccessor: PeekingAccessor {
   // if you use queries, note that there may be multiple relevant times and this might be in an undo (see above)
