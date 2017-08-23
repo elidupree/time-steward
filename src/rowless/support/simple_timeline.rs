@@ -154,7 +154,9 @@ pub fn modify_simple_timeline <VaryingData: StewardData, Steward: TimeSteward, A
     timeline.remove_from (accessor.extended_now());
     timeline.changes.push ((accessor.handle().clone(), modification));
   });
+  #[cfg (debug_assertions)]
   debug_assert! (accessor.query (handle, &GetVarying, QueryOffset::Before) == confirm1);
+  #[cfg (debug_assertions)]
   debug_assert! (accessor.query (handle, &GetVarying, QueryOffset::After) == confirm2);
 }
 pub fn unmodify_simple_timeline <VaryingData: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>) {
@@ -166,7 +168,9 @@ pub fn unmodify_simple_timeline <VaryingData: StewardData, Steward: TimeSteward,
       timeline.remove_from (accessor.extended_now());
     });
   }}
+  #[cfg (debug_assertions)]
   debug_assert! (accessor.query (handle, &GetVarying, QueryOffset::Before) == confirm);
+  #[cfg (debug_assertions)]
   debug_assert! (accessor.query (handle, &GetVarying, QueryOffset::After) == confirm);
 }
 
