@@ -130,18 +130,13 @@ pub trait Event: StewardData {
   fn execute<Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor)->Self::ExecutionData;
   // audit: leaves self in its original state??
   // audit: after undoing, all query results immediately before and after the event are identical to each other (if the previous audit passes, this is more an audit of the DataTimeline types than this event type)
-  fn undo<Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, execution_data: Self::ExecutionData);
+  fn undo<Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, execution_data: Self::ExecutionData);
   // audit: should produce the same subsequent query results as doing undo() and then execute()
   // implementing this is simply an optimization that may allow you to invalidate fewer things, so we default-implement it
-  fn re_execute<Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, execution_data: Self::ExecutionData) {
+  fn re_execute<Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, execution_data: Self::ExecutionData) {
     self.undo (accessor, execution_data);
     self.execute (accessor);
   }
-}
-
-pub trait Invalidator {
-  type Steward: TimeSteward;
-  fn execute<Accessor: InvalidationAccessor <Steward = Self::Steward>> (self, accessor: &Accessor);
 }
 
 pub trait Accessor {
@@ -151,17 +146,7 @@ pub trait Accessor {
   fn now(&self) -> & <<Self::Steward as TimeSteward>::Basics as Basics>::Time {&self.extended_now().base}
   fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: &Query, offset: QueryOffset)-> T::QueryResult;
 }
-// Querying versus peeking:
-// Querying accessors are generally for things that can affect the physics. Querying uses an exact interface that can be tracked and audited in various ways to make sure the physics stays consistent.
-// Peeking accessors are generally for things that are required to do a specific job and don't have any leeway to change the physics. We allow them full read-only access with no tracking, and merely audit that they did the job they were asked to. Peeking accessors are also allowed to use the querying interface for convenience (so that they can call generic functions that take a querying accessor).
-pub trait PeekingAccessor: Accessor {
-  // use a callback and prevent the reference from leaving the callback,
-  // because TimeSteward may use internal mutability like RefCell.
-  // In theory, that should probably mean returning a guard instead of taking a closure,
-  // but the type of the guard can't be specified without `impl Trait` or generic associated types,
-  // neither of which are available for this yet.
-  fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, R, F: FnOnce(&T)->R> (&self, timeline: & DataTimelineCell<T>, callback: F)->R;
-}
+
 pub trait EventAccessor: Accessor + Rng {
   fn handle (&self)->& <Self::Steward as TimeSteward>::EventHandle;
   
@@ -176,18 +161,20 @@ pub trait EventAccessor: Accessor + Rng {
   // audit: you can't destroy a fiat event as if it's a prediction
   fn destroy_prediction (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle);
   
-  // invalidation is done within a closure, to help prevent the event from extracting any information from the PeekingAccessor used for invalidation. I'd like to make this a Fn instead of FnOnce, to prevent the user from putting &mut in it that could communicate back to the outer function, but it may be useful for optimization to be able move owned objects into the closure.
-  // audit: the event does the same thing if the closure isn't called
-  fn invalidate <I: Invalidator <Steward = Self::Steward>> (&self, invalidator: I);
+  type FutureCleanupAccessor: FutureCleanupAccessor<Steward = Self::Steward>;
+  fn future_cleanup(&self)->Option<&Self::FutureCleanupAccessor>;
 }
-pub trait UndoEventAccessor: PeekingAccessor + EventAccessor {
-  // note that query results wouldn't necessarily correspond to those observed by the original execution in any way
-  fn undestroy_prediction (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, until: Option <&<Self::Steward as TimeSteward>::EventHandle>);
-}
-pub trait InvalidationAccessor: PeekingAccessor {
-  // if you use queries, note that there may be multiple relevant times and this might be in an undo (see above)
+
+// Querying accessors are generally for things that can affect the canonical physics. Querying uses an exact interface that can be tracked and audited in various ways to make sure the physics stays consistent.
+// `FutureCleanupAccessor`s don't have any leeway to change the canonical physics. We allow them full access with no tracking, and merely audit that they did the job they were supposed to. They are also allowed to use the querying interface for convenience (so that they can call generic functions that take a regular accessor).
+pub trait FutureCleanupAccessor: EventAccessor {
+  // note that, when undoing events, query results don't necessarily correspond to those observed by the original execution in any way
+  fn peek <'a, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'a self, timeline: &'b DataTimelineCell<T>)->DataTimelineCellReadGuard<'b, T>;
+  fn peek_mut <'a, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'a self, timeline: &'b DataTimelineCell<T>)->DataTimelineCellWriteGuard<'b, T>;
+  // audit: can't change things in the past relative to the current event
+  fn change_prediction_destroyer (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, destroyer: Option <&<Self::Steward as TimeSteward>::EventHandle>);
   // audit: can't invalidate things in the past relative to the current event
-  fn invalidate (&self, handle: & <Self::Steward as TimeSteward>::EventHandle);
+  fn invalidate_execution (&self, handle: & <Self::Steward as TimeSteward>::EventHandle);
 }
 
 pub trait SnapshotAccessor: Accessor {

@@ -30,7 +30,7 @@ use std::cmp::{min, max};
 use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{self, StewardData, QueryOffset, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, UndoEventAccessor, SnapshotAccessor, simple_timeline};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
 
@@ -309,7 +309,7 @@ impl Event for TransferChange {
     // TODO: invalidation
   }
 
-  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
@@ -339,7 +339,7 @@ impl Event for Initialize {
       }
     }
   }
-  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
@@ -362,7 +362,7 @@ impl Event for AddInk {
       }
     }
   }
-  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }

@@ -1,5 +1,5 @@
 use std::mem;
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, RefCell, Ref, RefMut};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, Bound};
 use std::cmp::{Ordering, max};
 use std::borrow::Borrow;
@@ -36,6 +36,8 @@ pub struct DataTimelineCell <T: DataTimeline> {
   first_snapshot_not_updated: Cell<usize>,
   data: RefCell<T>,
 }
+type DataTimelineCellReadGuard<'a, T> = Ref<'a, T>;
+type DataTimelineCellWriteGuard<'a, T> = RefMut<'a, T>;
 #[derive (Debug)]
 struct ExecutionState {
   valid: bool,
@@ -284,8 +286,10 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     }
   }
   
-  fn invalidate <I: Invalidator <Steward = Self::Steward>> (&self, invalidator: I) {
-    invalidator.execute(self);
+  type FutureCleanupAccessor = Self;
+  fn future_cleanup(&self)->Option<&Self::FutureCleanupAccessor> {
+    // We're always ALLOWED to return Some, even if it would be more optimal not to.
+    Some(self)
   }
 }
 impl <'a, B: Basics> Rng for EventAccessorStruct <'a, B> {
@@ -298,33 +302,34 @@ impl <'a, B: Basics> Rng for EventAccessorStruct <'a, B> {
     }
 }
 
+// EventAccessorStruct is also the FutureCleanupAccessor – its functionality is only restricted by what bounds the client code is allowed to place on it
+impl <'a, B: Basics> FutureCleanupAccessor for EventAccessorStruct <'a, B> {
+  fn peek <'c, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'c self, timeline: &'b DataTimelineCell<T>)->DataTimelineCellReadGuard<'b, T> {
+    timeline.data.borrow()
+  }
+  fn peek_mut <'c, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'c self, timeline: &'b DataTimelineCell<T>)->DataTimelineCellWriteGuard<'b, T> {
+    timeline.data.borrow_mut()
+  }
+  fn change_prediction_destroyer (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, destroyer: Option <&<Self::Steward as TimeSteward>::EventHandle>) {
+    //TODO assertions
+    mem::replace (&mut*prediction.data.prediction_destroyed_by.borrow_mut(), destroyer.cloned());
+    if prediction != self.handle() {
+      self.steward.borrow_mut().event_should_be_executed(prediction);
+    }
+  }
+  fn invalidate_execution (&self, handle: & <Self::Steward as TimeSteward>::EventHandle) {
+    assert!(handle > self.handle(), "Only future events can be invalidated.");
+    self.steward.borrow_mut().invalidate_event_execution (handle);
+  }
+}
+
 impl <B: Basics> SnapshotAccessor for SnapshotHandle <B> {
   fn serialize_into <W: Write> (&self, writer: W) {
     unimplemented!()
   }
 }
 
-// EventAccessorStruct is also the undo accessor and invalidation accessor – its functionality is only restricted by what bounds the client code is allowed to place on it
 
-impl <'a, B: Basics> PeekingAccessor for EventAccessorStruct <'a, B> {
-  fn peek <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, R, F: FnOnce(&T)->R> (&self, timeline: & DataTimelineCell<T>, callback: F)->R {
-    callback(&*timeline.data.borrow())
-  }
-}
-impl <'a, B: Basics> UndoEventAccessor for EventAccessorStruct <'a, B> {
-  fn undestroy_prediction (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, until: Option <&<Self::Steward as TimeSteward>::EventHandle>) {
-    mem::replace (&mut*prediction.data.prediction_destroyed_by.borrow_mut(), until.cloned());
-    if prediction != self.handle() {
-      self.steward.borrow_mut().event_should_be_executed(prediction);
-    }
-  }
-}
-impl <'a, B: Basics> InvalidationAccessor for EventAccessorStruct <'a, B> {
-  fn invalidate (&self, handle: & <Self::Steward as TimeSteward>::EventHandle) {
-    assert!(handle > self.handle(), "Only future events can be invalidated.");
-    self.steward.borrow_mut().invalidate_event_execution (handle);
-  }
-}
 
 
 #[derive (Debug)]

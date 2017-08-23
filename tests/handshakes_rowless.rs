@@ -11,7 +11,7 @@ extern crate serde_derive;
 use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{self, StewardData, QueryOffset, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, UndoEventAccessor, SnapshotAccessor, simple_timeline};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
 
@@ -67,7 +67,7 @@ fn change_next_handshake_time <Accessor: EventAccessor <Steward = Steward>> (acc
 }
 
 
-fn unchange_next_handshake_time <Accessor: UndoEventAccessor <Steward = Steward>> (accessor: &Accessor, handle: & PhilosopherCell) {
+fn unchange_next_handshake_time <Accessor: FutureCleanupAccessor <Steward = Steward>> (accessor: &Accessor, handle: & PhilosopherCell) {
   let mut philosopher = accessor.query (handle, &GetVarying, QueryOffset::After).expect ("philosophers should never not exist").1;
   if let Some(prediction) = philosopher.next_handshake_prediction.take() {
     accessor.destroy_prediction (&prediction);
@@ -75,7 +75,7 @@ fn unchange_next_handshake_time <Accessor: UndoEventAccessor <Steward = Steward>
   // philosophers MAY not exist in the Before of the initialize event
   if let Some((_, mut philosopher)) = accessor.query (handle, &GetVarying, QueryOffset::Before) {
     if let Some(prediction) = philosopher.next_handshake_prediction.take() {
-      accessor.undestroy_prediction (&prediction, None);
+      accessor.change_prediction_destroyer (&prediction, None);
     }
   }
   unmodify_simple_timeline (accessor, handle);
@@ -129,7 +129,7 @@ impl Event for Shake {
     }
     change_next_handshake_time (accessor, self.whodunnit, & philosophers [self.whodunnit], awaken_time_2);
   }
-  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let philosophers = accessor.globals();
     if friend_id != self.whodunnit {
@@ -153,7 +153,7 @@ impl Event for Initialize {
       change_next_handshake_time (accessor, i, & philosophers [i], (i + 1) as Time);
     }
   }
-  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     let philosophers = accessor.globals();
     for i in 0..HOW_MANY_PHILOSOPHERS {
       unchange_next_handshake_time (accessor, & philosophers [i]);
@@ -176,7 +176,7 @@ impl Event for Tweak {
     let philosophers = accessor.globals();
     change_next_handshake_time (accessor, friend_id, & philosophers [friend_id], awaken_time);
   }
-  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let philosophers = accessor.globals();
     unchange_next_handshake_time (accessor, & philosophers [friend_id]);
@@ -204,7 +204,7 @@ impl Event for TweakUnsafe {
     let philosophers = accessor.globals();
     change_next_handshake_time (accessor, friend_id, & philosophers [friend_id], awaken_time);
   }
-  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     let inconsistent = INCONSISTENT.with (| value | {
       *value
     });

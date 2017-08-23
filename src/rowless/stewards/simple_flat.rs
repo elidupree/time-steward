@@ -1,5 +1,5 @@
 use std::mem;
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, RefCell, Ref, RefMut};
 use std::collections::{BTreeMap, BTreeSet, HashMap, Bound};
 use std::cmp::{Ordering, max};
 use std::borrow::Borrow;
@@ -36,6 +36,8 @@ pub struct DataTimelineCell <T: DataTimeline> {
   first_snapshot_not_updated: Cell<usize>,
   data: RefCell<T>,
 }
+type DataTimelineCellReadGuard<'a, T> = Ref<'a, T>;
+type DataTimelineCellWriteGuard<'a, T> = RefMut<'a, T>;
 #[derive (Debug)]
 struct EventInner <B: Basics> {
   time: ExtendedTime <B>,
@@ -230,8 +232,10 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     assert!(self.steward.borrow_mut().existent_predictions.remove (& prediction.clone()), "destroyed a prediction doesn't exist? Probably one that was already destroyed");
   }
   
-  fn invalidate <I: Invalidator <Steward = Self::Steward>> (&self, _: I) {
-    // There are never any future events. Do nothing.
+  type FutureCleanupAccessor = Self;
+  fn future_cleanup(&self)->Option<&Self::FutureCleanupAccessor> {
+    // There are never any future events to clean up.
+    None
   }
 }
 impl <'a, B: Basics> Rng for EventAccessorStruct <'a, B> {
@@ -242,6 +246,15 @@ impl <'a, B: Basics> Rng for EventAccessorStruct <'a, B> {
     fn next_f64(&mut self) -> f64 {
       panic!("Using floating point numbers in TimeSteward events is forbidden because it is nondeterministic across platforms.")
     }
+}
+
+impl <'a, B: Basics> FutureCleanupAccessor for EventAccessorStruct <'a, B> {
+  fn peek <'c, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'c self, timeline: &'b DataTimelineCell<T>)->DataTimelineCellReadGuard<'b, T> {unreachable!()}
+  fn peek_mut <'c, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'c self, timeline: &'b DataTimelineCell<T>)->DataTimelineCellWriteGuard<'b, T> {unreachable!()}
+  // audit: can't change things in the past relative to the current event
+  fn change_prediction_destroyer (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, destroyer: Option <&<Self::Steward as TimeSteward>::EventHandle>) {unreachable!()}
+  // audit: can't invalidate things in the past relative to the current event
+  fn invalidate_execution (&self, handle: & <Self::Steward as TimeSteward>::EventHandle) {unreachable!()}
 }
 
 impl <B: Basics> SnapshotAccessor for SnapshotHandle <B> {

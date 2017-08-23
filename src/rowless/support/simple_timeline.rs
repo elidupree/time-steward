@@ -26,37 +26,29 @@ pub struct SimpleTimeline <VaryingData: StewardData, Steward: TimeSteward> {
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   changes: Vec<(<Steward as TimeSteward>::EventHandle, Option <VaryingData>)>,
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
-  other_dependent_events: RefCell<BTreeSet<<Steward as TimeSteward>::EventHandle>>,
+  other_dependent_events: BTreeSet<<Steward as TimeSteward>::EventHandle>,
 }
 
 impl <VaryingData: StewardData, Steward: TimeSteward> SimpleTimeline <VaryingData, Steward> {
   pub fn new ()->Self {
     SimpleTimeline {
       changes: Vec::new(),
-      other_dependent_events: RefCell::new (BTreeSet::new()),
+      other_dependent_events: BTreeSet::new(),
     }
   }
   
-  fn invalidate_after <Accessor: InvalidationAccessor<Steward = Steward>> (&self, time: &ExtendedTime <<Steward as TimeSteward>::Basics>, accessor: & Accessor) {
-    let mut dependencies = self.other_dependent_events.borrow_mut();
-    let removed = split_off_greater_set (&mut *dependencies, time);
+  fn remove_from <Accessor: FutureCleanupAccessor<Steward = Steward>> (&mut self, time: &ExtendedTime <Steward::Basics>, accessor: &Accessor) {
+    let removed = split_off_greater_set (&mut self.other_dependent_events, time);
     for event in removed {
-      accessor.invalidate(&event);
+      accessor.invalidate_execution(&event);
     }
-    for change in self.changes.iter().rev() {
-      let event = &change.0;
-      if event.extended_time() <= time {
-        break
-      }
-      accessor.invalidate(&event);
-    }
-  }
-  
-  fn remove_from (&mut self, time: &ExtendedTime <Steward::Basics>) {
     while let Some (change) = self.changes.pop() {
       if change.0.extended_time() < time {
         self.changes.push (change);
         break
+      }
+      if change.0.extended_time() > time {
+        accessor.invalidate_execution(&change.0);
       }
     }
   }
@@ -87,14 +79,13 @@ impl <VaryingData: StewardData, Steward: TimeSteward> DataTimeline for SimpleTim
     };
     SimpleTimeline {
       changes: slice.to_vec(),
-      other_dependent_events: RefCell::new (BTreeSet::new()),
+      other_dependent_events: BTreeSet::new(),
     }
   }
   
   fn forget_before (&mut self, time: &ExtendedTime <Self::Basics>) {
-    let mut dependencies = self.other_dependent_events.borrow_mut();
-    let retained = dependencies.split_off (time);
-    mem::replace (&mut*dependencies, retained);
+    let retained = self.other_dependent_events.split_off (time);
+    mem::replace (&mut self.other_dependent_events, retained);
     
     if self.changes.len() > 0 && self.changes [self.changes.len()/2].0.extended_time() < time {
       let keep_from_index = match self.search_changes(&time) {
@@ -117,57 +108,48 @@ impl <VaryingData: StewardData, Steward: TimeSteward> DataTimelineQueriableWith<
   }
 }
 
-struct InvalidatorStruct <'a, Steward: TimeSteward, VaryingData: StewardData>{
-  handle: &'a DataTimelineCell <SimpleTimeline <VaryingData, Steward>>,
-}
-impl<'a, Steward: TimeSteward, VaryingData: StewardData> Invalidator for InvalidatorStruct<'a, Steward, VaryingData> {
-  type Steward = Steward;
-  fn execute<Accessor: InvalidationAccessor <Steward = Self::Steward>> (self, accessor: &Accessor) {
-    accessor.peek(self.handle, | timeline | timeline.invalidate_after (accessor.extended_now(), accessor));
-  }
-}
-
 pub fn tracking_query <VaryingData: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>, offset: QueryOffset)->Option <(ExtendedTime <Steward::Basics>, VaryingData)> {
-  accessor.modify (handle, move |timeline| {
-    let mut dependencies = timeline.other_dependent_events.borrow_mut();
-    dependencies.insert (accessor.handle().clone());
+  accessor.modify (handle, |timeline| {
+    timeline.other_dependent_events.insert (accessor.handle().clone());
   });
   accessor.query (handle, &GetVarying, offset)
 }
 pub fn modify_simple_timeline <VaryingData: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>, modification: Option <VaryingData>) {
   #[cfg (debug_assertions)]
   let confirm1 = accessor.query (handle, &GetVarying, QueryOffset::Before);
-  match accessor.query (handle, &GetVarying, QueryOffset::After) {
-    Some((time, data)) =>
-      if let Some (new_data) = modification.as_ref() {
-        if &time == accessor.extended_now() && &data == new_data {
-          return
-        }
-      },
-    None =>
-      if modification.is_none() {return}
-  };
-  accessor.invalidate (InvalidatorStruct{handle: handle});
   #[cfg (debug_assertions)]
   let confirm2 = modification.clone().map(|data|(accessor.extended_now().clone(), data));
+  
+  if let Some(accessor) = accessor.future_cleanup() {
+    match accessor.query (handle, &GetVarying, QueryOffset::After) {
+      Some((time, data)) =>
+        if let Some (new_data) = modification.as_ref() {
+          if &time == accessor.extended_now() && &data == new_data {
+            return
+          }
+        },
+      None =>
+        if modification.is_none() {return}
+    };
+    accessor.peek_mut(handle).remove_from (accessor.extended_now(), accessor);
+  }
   accessor.modify (handle, move |timeline| {
-    timeline.remove_from (accessor.extended_now());
     timeline.changes.push ((accessor.handle().clone(), modification));
   });
+  
   #[cfg (debug_assertions)]
   debug_assert! (accessor.query (handle, &GetVarying, QueryOffset::Before) == confirm1);
   #[cfg (debug_assertions)]
   debug_assert! (accessor.query (handle, &GetVarying, QueryOffset::After) == confirm2);
 }
-pub fn unmodify_simple_timeline <VaryingData: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>) {
+pub fn unmodify_simple_timeline <VaryingData: StewardData, Steward: TimeSteward, Accessor: FutureCleanupAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>) {
   #[cfg (debug_assertions)]
   let confirm = accessor.query (handle, &GetVarying, QueryOffset::Before);
+  
   if let Some((time, _)) = accessor.query (handle, &GetVarying, QueryOffset::After) { if &time == accessor.extended_now() {
-    accessor.invalidate (InvalidatorStruct{handle: handle});
-    accessor.modify (handle, move |timeline| {
-      timeline.remove_from (accessor.extended_now());
-    });
+    accessor.peek_mut(handle).remove_from (accessor.extended_now(), accessor);
   }}
+  
   #[cfg (debug_assertions)]
   debug_assert! (accessor.query (handle, &GetVarying, QueryOffset::Before) == confirm);
   #[cfg (debug_assertions)]
