@@ -247,7 +247,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
   }
   
   fn create_prediction <E: Event <Steward = Self::Steward>> (&mut self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)->EventHandle <B> {
-    let time = extended_time_of_predicted_event::<<Self::Steward as TimeSteward>::Basics> (time, id, self.extended_now()).unwrap();
+    let time = extended_time_of_predicted_event::<<Self::Steward as TimeSteward>::Basics> (time, id, self.extended_now()).expect("You can't create a prediction in the past.");
     let handle = EventHandle {
       data: Rc::new (EventInner {
         time: time,
@@ -262,7 +262,12 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     handle
   }
   fn destroy_prediction (&mut self, prediction: &EventHandle<B>) {
-    mem::replace (&mut*prediction.data.prediction_destroyed_by.borrow_mut(), Some(self.handle().clone()));
+    assert!(prediction.data.prediction_created_by.borrow().is_some(), "Attempted to destroy a fiat event as if it was a prediction.");
+    let mut guard = prediction.data.prediction_destroyed_by.borrow_mut();
+    if let Some (old_destroyer) = guard.as_ref() {
+      assert!(self.handle() < old_destroyer, "You can't destroy a prediction that was already destroyed. (A prediction is supposed to be destroyed exactly when it's no longer accessible in the simulation data. Double-destroying it implies that you held onto a handle to it somewhere, which is probably a bug.)");
+    }
+    mem::replace (&mut*guard, Some(self.handle().clone()));
     if prediction != self.handle() {
       self.steward.borrow_mut().event_shouldnt_be_executed (prediction);
     }
@@ -308,6 +313,7 @@ impl <'a, B: Basics> UndoEventAccessor for EventAccessorStruct <'a, B> {
 }
 impl <'a, B: Basics> InvalidationAccessor for EventAccessorStruct <'a, B> {
   fn invalidate (&self, handle: & <Self::Steward as TimeSteward>::EventHandle) {
+    assert!(handle > self.handle(), "Only future events can be invalidated.");
     self.steward.borrow_mut().invalidate_event_execution (handle);
   }
 }
@@ -344,6 +350,9 @@ impl<B: Basics> Steward<B> {
       }
       else {
         event.data.data.execute (event, &mut*self);
+      }
+      if event.data.prediction_created_by.borrow().is_some() {
+        assert!(event.data.prediction_destroyed_by.borrow().as_ref() == Some(event), "All predicted events must destroy the prediction that predicted them. (It's ambiguous what should happen if the prediction isn't destroyed. There are two natural meanings: either it continues existing meaninglessly, or it gets executed repeatedly until it destroys itself. Neither of these seems especially desirable, so we take the conservative approach and forbidden the whole situation from arising. This is also future-proofing in case we choose a specific behavior later.")
       }
     }
     else {
