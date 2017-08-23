@@ -135,6 +135,8 @@ pub fn tracking_query <VaryingData: StewardData, Steward: TimeSteward, Accessor:
   accessor.query (handle, &GetVarying, offset)
 }
 pub fn modify_simple_timeline <VaryingData: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>, modification: Option <VaryingData>) {
+  #[cfg (debug_assertions)]
+  let confirm1 = accessor.query (handle, &GetVarying, QueryOffset::Before);
   match accessor.query (handle, &GetVarying, QueryOffset::After) {
     Some((time, data)) =>
       if let Some (new_data) = modification.as_ref() {
@@ -146,18 +148,26 @@ pub fn modify_simple_timeline <VaryingData: StewardData, Steward: TimeSteward, A
       if modification.is_none() {return}
   };
   accessor.invalidate (InvalidatorStruct{handle: handle});
+  #[cfg (debug_assertions)]
+  let confirm2 = modification.clone().map(|data|(accessor.extended_now().clone(), data));
   accessor.modify (handle, move |timeline| {
     timeline.remove_from (accessor.extended_now());
     timeline.changes.push ((accessor.handle().clone(), modification));
   });
+  debug_assert! (accessor.query (handle, &GetVarying, QueryOffset::Before) == confirm1);
+  debug_assert! (accessor.query (handle, &GetVarying, QueryOffset::After) == confirm2);
 }
 pub fn unmodify_simple_timeline <VaryingData: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>) {
+  #[cfg (debug_assertions)]
+  let confirm = accessor.query (handle, &GetVarying, QueryOffset::Before);
   if let Some((time, _)) = accessor.query (handle, &GetVarying, QueryOffset::After) { if &time == accessor.extended_now() {
     accessor.invalidate (InvalidatorStruct{handle: handle});
     accessor.modify (handle, move |timeline| {
       timeline.remove_from (accessor.extended_now());
     });
   }}
+  debug_assert! (accessor.query (handle, &GetVarying, QueryOffset::Before) == confirm);
+  debug_assert! (accessor.query (handle, &GetVarying, QueryOffset::After) == confirm);
 }
 
 } //mod
