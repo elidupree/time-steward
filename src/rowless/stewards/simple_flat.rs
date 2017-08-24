@@ -106,14 +106,7 @@ impl <T: StewardData> Deref for DataHandle <T> {
   }
 }
 
-impl<B: Basics> Ord for EventHandle <B> {
-  fn cmp(&self, other: &Self) -> Ordering {
-    self.extended_time().cmp(other.extended_time())
-  }
-}
-
 time_steward_common_impls_for_handles!();
-time_steward_common_impls_for_uniquely_identified_handle! ([B: Basics] [EventHandle <B>] self => (&*self.data as *const EventInner<B>): *const EventInner<B>);
 time_steward_common_impls_for_uniquely_identified_handle! ([T: StewardData] [DataHandle <T>] self => (&*self.data as *const T): *const T);
 time_steward_common_impls_for_uniquely_identified_handle! ([T: DataTimeline] [DataTimelineCell <T>] self => (self.serial_number): usize);
 

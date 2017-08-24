@@ -143,19 +143,7 @@ impl <T: StewardData> Deref for DataHandle <T> {
   }
 }
 
-impl<B: Basics> Ord for EventHandle <B> {
-  fn cmp(&self, other: &Self) -> Ordering {
-    self.extended_time().cmp(other.extended_time()).then_with(||
-      // when you delete an event and then re-create it, we want
-      // undoing the deleted event to come BEFORE executing the new one.
-      // (false comes before true)
-      self.data.should_be_executed.get().cmp(&other.data.should_be_executed.get())
-    )
-  }
-}
-
 time_steward_common_impls_for_handles!();
-time_steward_common_impls_for_uniquely_identified_handle! ([B: Basics] [EventHandle <B>] self => (&*self.data as *const EventInner<B>): *const EventInner<B>);
 time_steward_common_impls_for_uniquely_identified_handle! ([T: StewardData] [DataHandle <T>] self => (&*self.data as *const T): *const T);
 time_steward_common_impls_for_uniquely_identified_handle! ([T: DataTimeline] [DataTimelineCell <T>] self => (self.serial_number): usize);
 
@@ -273,7 +261,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
         execution_state: RefCell::new (None),
       })
     };
-    assert!(self.steward.borrow_mut().events_needing_attention.insert (handle.clone()), "Created a prediction at the same time as one that already existed and has not yet been destroyed.");
+    assert!(self.steward.borrow_mut().events_needing_attention.insert (EventNeedingAttention {handle: handle.clone(), should_be_executed: true}), "Created a prediction at the same time as one that already existed and has not yet been destroyed.");
     handle
   }
   fn destroy_prediction (&self, prediction: &EventHandle<B>) {
@@ -342,12 +330,20 @@ impl <B: Basics> SnapshotAccessor for SnapshotHandle <B> {
 
 
 
+      // when you delete an event and then re-create it, we want
+      // undoing the deleted event to come BEFORE executing the new one.
+      // (false comes before true)
+#[derive (Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+struct EventNeedingAttention<B: Basics> {
+  handle: EventHandle<B>,
+  should_be_executed: bool,
+}
 
 #[derive (Debug)]
 pub struct Steward <B: Basics> {
   globals: Rc<B::Globals>,
   invalid_before: ValidSince <B::Time>,
-  events_needing_attention: BTreeSet<EventHandle<B>>,
+  events_needing_attention: BTreeSet<EventNeedingAttention<B>>,
   fiat_events: BTreeSet<EventHandle <B>>,
   snapshots: Rc<RefCell<SnapshotsTree<B>>>,
   next_snapshot_index: usize,
@@ -355,12 +351,13 @@ pub struct Steward <B: Basics> {
 
 
 impl<B: Basics> Steward<B> {
-  fn next_event_needing_attention (&self) -> Option<&EventHandle<B>> {
+  fn next_event_needing_attention (&self) -> Option<&EventNeedingAttention<B>> {
     self.events_needing_attention.iter().next()
   }
   
-  fn do_event (&mut self, event: & EventHandle <B>) {
+  fn do_event (&mut self, event: & EventNeedingAttention<B>) {
     self.events_needing_attention.remove (event);
+    let event = &event.handle;
     if event.data.should_be_executed.get() {
       let currently_executed = match event.data.execution_state.borrow().as_ref() {
         Some (state) => {
@@ -389,28 +386,36 @@ impl<B: Basics> Steward<B> {
   
   fn invalidate_event_execution (&mut self, handle: & EventHandle<B>) {
     if let Some(state) = handle.data.execution_state.borrow_mut().as_mut() {
-      if state.valid {self.events_needing_attention.insert (handle.clone());}
+      if handle.data.should_be_executed.get() && state.valid {
+        assert! (self.events_needing_attention.insert (EventNeedingAttention {handle: handle.clone(), should_be_executed: true}));
+      }
       state.valid = false;
     }
   }
   fn event_should_be_executed (&mut self, handle: & EventHandle<B>) {
     if !handle.data.should_be_executed.get() {
-      if handle.data.execution_state.borrow().is_none() {
-        self.events_needing_attention.insert (handle.clone());
+      if let Some(state) = handle.data.execution_state.borrow().as_ref() {
+        assert! (self.events_needing_attention.remove (&EventNeedingAttention {handle: handle.clone(), should_be_executed: false}));
+        if !state.valid {
+          assert! (self.events_needing_attention.insert (EventNeedingAttention {handle: handle.clone(), should_be_executed: true}));
+        }
       }
-      if handle.data.execution_state.borrow().as_ref().map_or (false, | state | state.valid) {
-        self.events_needing_attention.remove (handle);
+      else {
+        assert! (self.events_needing_attention.insert (EventNeedingAttention {handle: handle.clone(), should_be_executed: true}));
       }
       handle.data.should_be_executed.set(true);
     }
   }
   fn event_shouldnt_be_executed (&mut self, handle: & EventHandle<B>) {
     if handle.data.should_be_executed.get() {
-      if handle.data.execution_state.borrow().as_ref().map_or (false, | state | state.valid) {
-        self.events_needing_attention.insert (handle.clone());
+      if let Some(state) = handle.data.execution_state.borrow().as_ref() {
+        assert! (self.events_needing_attention.insert (EventNeedingAttention {handle: handle.clone(), should_be_executed: false}));
+        if !state.valid {
+          assert! (self.events_needing_attention.remove (&EventNeedingAttention {handle: handle.clone(), should_be_executed: true}));
+        }
       }
-      if handle.data.execution_state.borrow().is_none() {
-        self.events_needing_attention.remove (handle);
+      else {
+        assert! (self.events_needing_attention.remove (&EventNeedingAttention {handle: handle.clone(), should_be_executed: true}));
       }
       handle.data.should_be_executed.set(false);
     }
@@ -446,7 +451,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
     match self.fiat_events.insert(handle.clone()) {
       false => Err(FiatEventOperationError::InvalidInput),
       true => {
-        self.events_needing_attention.insert (handle);
+        self.events_needing_attention.insert (EventNeedingAttention {handle: handle.clone(), should_be_executed: true});
         Ok(())
       },
     }
@@ -520,7 +525,7 @@ impl<B: Basics> IncrementalTimeSteward for Steward<B> {
     }
   }
   fn updated_until_before(&self) -> Option<B::Time> {
-    self.next_event_needing_attention().map(|event| event.extended_time().base.clone())
+    self.next_event_needing_attention().map(|event| event.handle.extended_time().base.clone())
   }
 }
 impl<B: Basics> CanonicalTimeSteward for Steward<B> {}

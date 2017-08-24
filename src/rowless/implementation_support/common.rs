@@ -56,6 +56,11 @@ macro_rules! time_steward_common_impls_for_event_handle {
         self.extended_time().eq(other.extended_time())
       }
     }*/
+    impl<$($bounds)*> Ord for $($concrete)* {
+      fn cmp(&self, other: &Self) -> Ordering {
+        self.extended_time().cmp(other.extended_time())
+      }
+    }
     impl<$($bounds)*> PartialOrd for $($concrete)* {
       fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -97,6 +102,7 @@ impl <$($bounds)*> PartialEq for $($concrete)* {
 macro_rules! time_steward_common_impls_for_handles {
   () => {
     time_steward_common_impls_for_event_handle! ([B: Basics] [EventHandle <B>] [B]);
+    time_steward_common_impls_for_uniquely_identified_handle! ([B: Basics] [EventHandle <B>] self => (self.extended_time().id): DeterministicRandomId);
     
     impl <T: StewardData> StewardData for DataHandle <T> {}
     impl <B: Basics> StewardData for EventHandle <B> {}
