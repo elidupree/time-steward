@@ -9,10 +9,10 @@ extern crate serde;
 extern crate serde_derive;
 
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{self, StewardData, QueryOffset, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::rowless::api::{self, StewardData, QueryOffset, DataTimelineCellTrait, EventHandleTrait, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, GetVarying, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
+use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
 
 type Time = i64;
@@ -38,6 +38,14 @@ struct Philosopher {
   time_when_next_initiates_handshake: Time,
   next_handshake_prediction: Option <<Steward as TimeSteward>::EventHandle>,
 }
+impl IterateUniquelyOwnedPredictions <Steward> for Philosopher  {
+  fn iterate_predictions <F: FnMut (& <Steward as TimeSteward>::EventHandle)> (&self, callback: &mut F) {
+    if let Some (prediction) = self.next_handshake_prediction.as_ref() {
+      println!(" prediction got iterated {:?} {:?}", prediction.extended_time(), prediction.downcast_ref::<Shake>());
+      callback (prediction);
+    }
+  }
+}
 impl StewardData for Philosopher{}
 /*impl Column for Philosopher {
   type FieldType = Self;
@@ -55,29 +63,19 @@ impl Philosopher {
 
 fn change_next_handshake_time <Accessor: EventAccessor <Steward = Steward>> (accessor: &Accessor, index: usize, handle: & PhilosopherCell, time: Time) {
   let mut philosopher = tracking_query(accessor, handle, QueryOffset::After).expect ("philosophers should never not exist").1;
-  if let Some(prediction) = philosopher.next_handshake_prediction.take() {
-    accessor.destroy_prediction (&prediction);
-  }
   philosopher.time_when_next_initiates_handshake = time;
   if time >= *accessor.now() {
     let time_id = accessor.extended_now().id;
     philosopher.next_handshake_prediction = Some(accessor.create_prediction (time, DeterministicRandomId::new (& (time_id, index)), Shake {whodunnit: index}));
+  }
+  else {
+    philosopher.next_handshake_prediction = None;
   }
   modify_simple_timeline (accessor, handle, Some (philosopher));
 }
 
 
 fn unchange_next_handshake_time <Accessor: FutureCleanupAccessor <Steward = Steward>> (accessor: &Accessor, handle: & PhilosopherCell) {
-  let mut philosopher = accessor.query (handle, &GetVarying, QueryOffset::After).expect ("philosophers should never not exist").1;
-  if let Some(prediction) = philosopher.next_handshake_prediction.take() {
-    accessor.destroy_prediction (&prediction);
-  }
-  // philosophers MAY not exist in the Before of the initialize event
-  if let Some((_, mut philosopher)) = accessor.query (handle, &GetVarying, QueryOffset::Before) {
-    if let Some(prediction) = philosopher.next_handshake_prediction.take() {
-      accessor.change_prediction_destroyer (&prediction, None);
-    }
-  }
   unmodify_simple_timeline (accessor, handle);
 }
 
@@ -121,7 +119,7 @@ impl Event for Shake {
     let awaken_time_1 = now + accessor.gen_range(-1, 4);
     let awaken_time_2 = now + accessor.gen_range(-1, 7);
     let philosophers = accessor.globals();
-// println!("SHAKE!!! @{}. {}={}; {}={}", now, self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
+ println!("SHAKE!!! @{:?}. {}={}; {}={}", accessor.extended_now(), self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
 // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
 // IN THE SECOND TIME APPARENTLY
     if friend_id != self.whodunnit {
@@ -169,11 +167,11 @@ impl Event for Tweak {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    println!(" Tweak !!!!!");
     let now = *accessor.now();
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let awaken_time = now + accessor.gen_range(-1, 7);
     let philosophers = accessor.globals();
+    println!(" Tweak !!!!! @{:?}. {}={}", accessor.extended_now(), friend_id, awaken_time);
     change_next_handshake_time (accessor, friend_id, & philosophers [friend_id], awaken_time);
   }
   fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {

@@ -239,20 +239,22 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
   }
   
   fn modify <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, F: FnOnce(&mut T)> (&self, timeline: &DataTimelineCell <T>, modification: F) {
-    let index = timeline.first_snapshot_not_updated.get ();
-    let steward = self.steward.borrow();
-    let guard = (*steward.snapshots).borrow();
-    let map: &SnapshotsTree<B> = &*guard;
-    for (_,snapshot) in map.range ((Bound::Included(index), Bound::Unbounded)) {
-      let mut guard = snapshot.data.clones.borrow_mut();
-      let entry = guard.entry (timeline.serial_number);
-      entry.or_insert_with (| | Box::new (timeline.data.borrow().clone_for_snapshot (self.extended_now())));
+    {
+      let index = timeline.first_snapshot_not_updated.get ();
+      let steward = self.steward.borrow();
+      let guard = (*steward.snapshots).borrow();
+      let map: &SnapshotsTree<B> = &*guard;
+      for (_,snapshot) in map.range ((Bound::Included(index), Bound::Unbounded)) {
+        let mut guard = snapshot.data.clones.borrow_mut();
+        let entry = guard.entry (timeline.serial_number);
+        entry.or_insert_with (| | Box::new (timeline.data.borrow().clone_for_snapshot (self.extended_now())));
+      }
+      timeline.first_snapshot_not_updated.set (steward.next_snapshot_index);
     }
-    timeline.first_snapshot_not_updated.set (steward.next_snapshot_index);
     
     let mut modify_guard = timeline.data.borrow_mut();
     modification (&mut*modify_guard);
-    match &steward.invalid_before {
+    match &self.steward.borrow().invalid_before {
       &ValidSince::Before (ref time) => modify_guard.forget_before(&ExtendedTime::beginning_of (time.clone())),
       &ValidSince::After (ref time) => modify_guard.forget_before(&ExtendedTime::end_of(time.clone())),
       &ValidSince::TheBeginning => (),
@@ -312,13 +314,22 @@ impl <'a, B: Basics> FutureCleanupAccessor for EventAccessorStruct <'a, B> {
   }
   fn change_prediction_destroyer (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, destroyer: Option <&<Self::Steward as TimeSteward>::EventHandle>) {
     //TODO assertions
+    if let Some(destroyer) = destroyer {
+      assert!(destroyer >= self.handle(), "Tried to set of prediction's destruction time to a time in the past");
+    }
     mem::replace (&mut*prediction.data.prediction_destroyed_by.borrow_mut(), destroyer.cloned());
     if prediction != self.handle() {
-      self.steward.borrow_mut().event_should_be_executed(prediction);
+      if let Some(destroyer) = destroyer {
+        assert!(destroyer < prediction, "Tried to set of prediction's destruction time to after the prediction is supposed to be executed");
+        self.steward.borrow_mut().event_shouldnt_be_executed(prediction);
+      }
+      else {
+        self.steward.borrow_mut().event_should_be_executed(prediction);
+      }
     }
   }
   fn invalidate_execution (&self, handle: & <Self::Steward as TimeSteward>::EventHandle) {
-    assert!(handle > self.handle(), "Only future events can be invalidated.");
+    assert!(handle > self.handle(), "An event at {:?} tried to invalidate one at {:?}. Only future events can be invalidated.", self.extended_now(), handle.extended_time());
     self.steward.borrow_mut().invalidate_event_execution (handle);
   }
 }
@@ -365,7 +376,7 @@ impl<B: Basics> Steward<B> {
         event.data.data.execute (event, &mut*self);
       }
       if event.data.prediction_created_by.borrow().is_some() {
-        assert!(event.data.prediction_destroyed_by.borrow().as_ref() == Some(event), "All predicted events must destroy the prediction that predicted them. (It's ambiguous what should happen if the prediction isn't destroyed. There are two natural meanings: either it continues existing meaninglessly, or it gets executed repeatedly until it destroys itself. Neither of these seems especially desirable, so we take the conservative approach and forbidden the whole situation from arising. This is also future-proofing in case we choose a specific behavior later.")
+        assert!(event.data.prediction_destroyed_by.borrow().as_ref() == Some(event), "An event at {:?} should have destroyed itself, but its destruction time was {:?} instead. All predicted events must destroy the prediction that predicted them. (It's ambiguous what should happen if the prediction isn't destroyed. There are two natural meanings: either it continues existing meaninglessly, or it gets executed repeatedly until it destroys itself. Neither of these seems especially desirable, so we take the conservative approach and forbid the whole situation from arising. This is also future-proofing in case we choose a specific behavior later.", event.extended_time(), event.data.prediction_destroyed_by.borrow().as_ref().map (| destroyer | destroyer.extended_time()))
       }
     }
     else {

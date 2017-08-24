@@ -8,7 +8,7 @@ use serde::{Serialize};
 use bincode;
 
 /// A 128-bit random ID used for rows and ExtendedTimes.
-#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct DeterministicRandomId {
   data: [u64; 2],
 }
@@ -96,6 +96,11 @@ impl DeterministicRandomId {
   pub const MAX: DeterministicRandomId = DeterministicRandomId { data: [std::u64::MAX, std::u64::MAX] };
 }
 impl fmt::Display for DeterministicRandomId {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "id:{:016x}{:016x}", self.data[0], self.data[1])
+  }
+}
+impl fmt::Debug for DeterministicRandomId {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "id:{:016x}{:016x}", self.data[0], self.data[1])
   }

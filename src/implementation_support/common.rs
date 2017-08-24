@@ -46,6 +46,12 @@ pub fn split_off_greater_set<K: Ord + Borrow<Q>, Q: Ord + ?Sized>(input: &mut BT
   if let Some(whoops) = result.take(split) {
     input.insert(whoops);
   }
+  #[cfg(debug_assertions)]
+  {
+  if let Some(whoops) = result.take(split) {
+    panic!("Some code broke the Ord/Borrow rules for BTreeSet calls")
+  }
+  }
   result
 }
 

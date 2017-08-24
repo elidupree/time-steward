@@ -16,6 +16,9 @@ use implementation_support::common::{split_off_greater_set};
 pub struct GetVarying;
 impl StewardData for GetVarying {}
 
+pub trait IterateUniquelyOwnedPredictions <Steward: TimeSteward> {
+  fn iterate_predictions <F: FnMut (& Steward::EventHandle)> (&self, callback: &mut F) {}
+}
 
 
 #[serde(bound = "")]
@@ -36,23 +39,7 @@ impl <VaryingData: StewardData, Steward: TimeSteward> SimpleTimeline <VaryingDat
       other_dependent_events: BTreeSet::new(),
     }
   }
-  
-  fn remove_from <Accessor: FutureCleanupAccessor<Steward = Steward>> (&mut self, time: &ExtendedTime <Steward::Basics>, accessor: &Accessor) {
-    let removed = split_off_greater_set (&mut self.other_dependent_events, time);
-    for event in removed {
-      accessor.invalidate_execution(&event);
-    }
-    while let Some (change) = self.changes.pop() {
-      if change.0.extended_time() < time {
-        self.changes.push (change);
-        break
-      }
-      if change.0.extended_time() > time {
-        accessor.invalidate_execution(&change.0);
-      }
-    }
-  }
-  
+    
   fn search_changes (&self, time: &ExtendedTime <Steward::Basics>) -> Result <usize, usize> {
     // search at the end first, because we are usually in the present.
     match self.changes.last() {
@@ -66,6 +53,40 @@ impl <VaryingData: StewardData, Steward: TimeSteward> SimpleTimeline <VaryingDat
       },
     }
     self.changes[..self.changes.len()-1].binary_search_by_key (&time, | change | change.0.extended_time())
+  }
+}
+impl <VaryingData: StewardData + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward> SimpleTimeline <VaryingData, Steward> {
+  fn remove_present_and_future <Accessor: FutureCleanupAccessor<Steward = Steward>> (&mut self, accessor: &Accessor) {
+    let removed = split_off_greater_set (&mut self.other_dependent_events, accessor.extended_now());
+    for event in removed {
+      accessor.invalidate_execution(&event);
+    }
+    while let Some (change) = self.changes.pop() {
+      if change.0.extended_time() < accessor.extended_now() {
+        if let Some(data) = change.1.as_ref() {
+          IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (data, &mut | prediction | accessor.change_prediction_destroyer (prediction, None));
+        }
+        self.changes.push (change);
+        break
+      }
+      if let Some(data) = change.1.as_ref() {
+        IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (data, &mut | prediction | accessor.change_prediction_destroyer (prediction, Some(& change.0)));
+      }
+      if change.0.extended_time() > accessor.extended_now() {
+        accessor.invalidate_execution(&change.0);
+      }
+    }
+  }
+  
+  fn modify <Accessor: EventAccessor<Steward = Steward>> (&mut self, modification: Option <VaryingData>, accessor: &Accessor){
+    if let Some(last) = self.changes.last() {
+      assert!(& last.0 <= accessor.handle(), "All future changes should have been cleared before calling modify() ");
+      if let Some (data) = last.1.as_ref() {
+        IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (data, &mut | prediction | accessor.destroy_prediction (prediction));
+      }
+    }
+    // we don't need to create incoming predictions, because they can't be incoming unless they were already created
+    self.changes.push ((accessor.handle().clone(), modification));
   }
 }
 
@@ -114,40 +135,45 @@ pub fn tracking_query <VaryingData: StewardData, Steward: TimeSteward, Accessor:
   });
   accessor.query (handle, &GetVarying, offset)
 }
-pub fn modify_simple_timeline <VaryingData: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>, modification: Option <VaryingData>) {
+pub fn modify_simple_timeline <VaryingData: StewardData + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>, modification: Option <VaryingData>) {
   #[cfg (debug_assertions)]
   let confirm1 = accessor.query (handle, &GetVarying, QueryOffset::Before);
   #[cfg (debug_assertions)]
   let confirm2 = modification.clone().map(|data|(accessor.extended_now().clone(), data));
   
+  let mut do_modify = true;
   if let Some(accessor) = accessor.future_cleanup() {
     match accessor.query (handle, &GetVarying, QueryOffset::After) {
       Some((time, data)) =>
         if let Some (new_data) = modification.as_ref() {
           if &time == accessor.extended_now() && &data == new_data {
-            return
+            do_modify = false;
           }
         },
       None =>
-        if modification.is_none() {return}
+        if modification.is_none() {do_modify = false;}
     };
-    accessor.peek_mut(handle).remove_from (accessor.extended_now(), accessor);
+    if do_modify {
+      accessor.peek_mut(handle).remove_present_and_future (accessor);
+    }
   }
-  accessor.modify (handle, move |timeline| {
-    timeline.changes.push ((accessor.handle().clone(), modification));
-  });
+  if do_modify {
+    accessor.modify (handle, move |timeline| {
+      timeline.modify(modification, accessor);
+    });
+  }
   
   #[cfg (debug_assertions)]
   debug_assert! (accessor.query (handle, &GetVarying, QueryOffset::Before) == confirm1);
   #[cfg (debug_assertions)]
   debug_assert! (accessor.query (handle, &GetVarying, QueryOffset::After) == confirm2);
 }
-pub fn unmodify_simple_timeline <VaryingData: StewardData, Steward: TimeSteward, Accessor: FutureCleanupAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>) {
+pub fn unmodify_simple_timeline <VaryingData: StewardData + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward, Accessor: FutureCleanupAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>) {
   #[cfg (debug_assertions)]
   let confirm = accessor.query (handle, &GetVarying, QueryOffset::Before);
   
   if let Some((time, _)) = accessor.query (handle, &GetVarying, QueryOffset::After) { if &time == accessor.extended_now() {
-    accessor.peek_mut(handle).remove_from (accessor.extended_now(), accessor);
+    accessor.peek_mut(handle).remove_present_and_future (accessor);
   }}
   
   #[cfg (debug_assertions)]
