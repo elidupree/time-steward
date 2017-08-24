@@ -87,7 +87,14 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
       globals: steward.globals.clone(),
       steward: RefCell::new (steward),
     };
-    let result = <T as Event>::re_execute (self, &mut accessor, *self_handle.data.execution_state.borrow_mut().take().unwrap().execution_data.downcast().unwrap());
+    // TODO: call <T as Event>::re_execute instead,
+    // but we need to resolve the RNG issue first
+    // let result = <T as Event>::re_execute (self, &mut accessor, *self_handle.data.execution_state.borrow_mut().take().unwrap().execution_data.downcast().unwrap());
+    
+    <T as Event>::undo (self, &mut accessor, *self_handle.data.execution_state.borrow_mut().take().unwrap().execution_data.downcast().unwrap());
+    accessor.generic = GenericEventAccessor::new(&self_handle.extended_time());
+    let result = <T as Event>::execute (self, &mut accessor);
+    
     mem::replace (&mut*self_handle.data.execution_state.borrow_mut(), Some (ExecutionState {
       valid: true,
       execution_data: Box::new (result),
@@ -377,7 +384,7 @@ impl<B: Basics> Steward<B> {
       }
     }
     else {
-      assert! (event.data.execution_state.borrow().as_ref().map_or (false, | state | !state.valid));
+      assert! (event.data.execution_state.borrow().as_ref().is_some());
       event.data.data.undo (event, &mut*self);
     }
   }

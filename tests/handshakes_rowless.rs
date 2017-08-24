@@ -41,7 +41,7 @@ struct Philosopher {
 impl IterateUniquelyOwnedPredictions <Steward> for Philosopher  {
   fn iterate_predictions <F: FnMut (& <Steward as TimeSteward>::EventHandle)> (&self, callback: &mut F) {
     if let Some (prediction) = self.next_handshake_prediction.as_ref() {
-      println!(" prediction got iterated {:?} {:?}", prediction.extended_time(), prediction.downcast_ref::<Shake>());
+      //println!(" prediction got iterated {:?} {:?}", prediction.extended_time(), prediction.downcast_ref::<Shake>());
       callback (prediction);
     }
   }
@@ -96,6 +96,16 @@ fn display_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: & A
                .time_when_next_initiates_handshake);
   }
 }
+fn dump_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: & Accessor)->Vec<Time> {
+  let mut result = Vec::new() ;
+  for handle in accessor.globals() {
+    result.push (
+             accessor.query(handle, &GetVarying, QueryOffset::After)
+               .expect("missing philosopher").1
+               .time_when_next_initiates_handshake);
+  }
+  result
+}
 
 
 
@@ -119,7 +129,7 @@ impl Event for Shake {
     let awaken_time_1 = now + accessor.gen_range(-1, 4);
     let awaken_time_2 = now + accessor.gen_range(-1, 7);
     let philosophers = accessor.globals();
- println!("SHAKE!!! @{:?}. {}={}; {}={}", accessor.extended_now(), self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
+ //println!("SHAKE!!! @{:?}. {}={}; {}={}", accessor.extended_now(), self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
 // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
 // IN THE SECOND TIME APPARENTLY
     if friend_id != self.whodunnit {
@@ -130,6 +140,7 @@ impl Event for Shake {
   fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let philosophers = accessor.globals();
+    //println!("UNSHAKE!!! @{:?}. {} {}", accessor.extended_now(), self.whodunnit, friend_id);
     if friend_id != self.whodunnit {
       unchange_next_handshake_time (accessor, & philosophers [friend_id]);
     }
@@ -177,6 +188,7 @@ impl Event for Tweak {
   fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let philosophers = accessor.globals();
+    println!(" UnTweak !!!!! @{:?}. {}", accessor.extended_now(), friend_id);
     unchange_next_handshake_time (accessor, & philosophers [friend_id]);
   }
 }
@@ -248,12 +260,28 @@ fn handshakes_retroactive() {
                        Initialize{})
     .unwrap();
   
-  stew.snapshot_before(&(2000i64));
+  let first_dump;
+  {
+    let snapshot = stew.snapshot_before(&(2000i64)).unwrap();
+    first_dump = dump_snapshot (& snapshot);
+    display_snapshot(&snapshot);
+  }
   for increment in 1..21 {
     stew.insert_fiat_event(increment * 100i64, DeterministicRandomId::new(&increment), Tweak{}).unwrap();
     let snapshot: <Steward as TimeSteward>::SnapshotAccessor = stew.snapshot_before(&(2000i64)).unwrap();
     display_snapshot(&snapshot);
   }
+  for increment in 1..21 {
+    stew.remove_fiat_event(&(increment * 100i64), DeterministicRandomId::new(&increment)).unwrap();
+    let snapshot: <Steward as TimeSteward>::SnapshotAccessor = stew.snapshot_before(&(2000i64)).unwrap();
+    display_snapshot(&snapshot);
+  }
+  let last_dump;
+  {
+    let snapshot = stew.snapshot_before(&(2000i64)).unwrap();
+    last_dump = dump_snapshot (& snapshot);
+  }
+  assert_eq!(first_dump, last_dump);
 }
 
 /*
