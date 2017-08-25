@@ -1,3 +1,6 @@
+macro_rules! simple_full {
+  ($($auditing:tt)*) => {
+
 use std::mem;
 use std::cell::{Cell, RefCell, Ref, RefMut};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, Bound};
@@ -34,6 +37,8 @@ pub struct DataTimelineCell <T: DataTimeline> {
   serial_number: usize,
   first_snapshot_not_updated: Cell<usize>,
   data: RefCell<T>,
+  #[cfg($($auditing)*)]
+  queries: BTreeMap<ExtendedTime<T::Basics>, usize>,
 }
 type DataTimelineCellReadGuard<'a, T> = Ref<'a, T>;
 type DataTimelineCellWriteGuard<'a, T> = RefMut<'a, T>;
@@ -124,6 +129,8 @@ impl <T: DataTimeline> DataTimelineCellTrait <T> for DataTimelineCell <T> {
       serial_number: new_serial_number(),
       first_snapshot_not_updated: Cell::new (0),
       data: RefCell::new (data),
+      #[cfg($($auditing)*)]
+      queries: BTreeMap::new(),
     }
   }
 }
@@ -518,3 +525,21 @@ impl<B: Basics> IncrementalTimeSteward for Steward<B> {
 impl<B: Basics> CanonicalTimeSteward for Steward<B> {}
 
 time_steward_define_simple_timeline!();
+
+
+
+
+#[cfg($($auditing)*)]
+mod audits {
+  use super::*;
+  fn audit_timeline<T: DataTimeline> (timeline: & DataTimelineCell <T>) {
+    for query in timeline.queries.borrow() {
+      
+    }
+  }
+}
+
+  };
+}
+
+simple_full!(any());

@@ -110,7 +110,9 @@ pub mod rowless {
   pub mod support { #[macro_use] pub mod simple_timeline; }
   pub mod stewards {
     pub mod simple_flat;
+    #[macro_use]
     pub mod simple_full;
+    pub mod auditing;
   }
 }
 
