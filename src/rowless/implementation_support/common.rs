@@ -1,7 +1,6 @@
 use super::super::api::*;
 use std::cmp::Ordering;
 use ::DeterministicRandomId;
-use rand::{ChaChaRng, SeedableRng};
 
 macro_rules! downcast_rc {
   ($input: expr, $T: ty, $($Trait:tt)*) => {{
@@ -118,26 +117,6 @@ macro_rules! time_steward_common_impls_for_handles {
   fn deserialize_dynamic_event_handle (&mut self)->DynamicEventHandle;
   }*/
 
-fn generator_for_event(id: DeterministicRandomId) -> ChaChaRng {
-  ChaChaRng::from_seed(&[(id.data()[0] >> 32) as u32,
-      (id.data()[0] & 0xffffffff) as u32,
-      (id.data()[1] >> 32) as u32,
-      (id.data()[1] & 0xffffffff) as u32])
-}
-
-
-#[derive (Debug)]
-pub struct GenericEventAccessor {
-  pub generator: ChaChaRng,
-}
-impl GenericEventAccessor {
-  pub fn new<B: Basics>(now: &ExtendedTime<B>) -> Self {
-    let generator = generator_for_event(now.id);
-    GenericEventAccessor {
-generator: generator,
-    }
-  }
-}
 
 pub fn extended_time_of_fiat_event<B: Basics>(time: B::Time,
     id: DeterministicRandomId)

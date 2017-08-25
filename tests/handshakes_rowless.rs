@@ -125,9 +125,10 @@ impl Event for Shake {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let now = *accessor.now();
-    let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
-    let awaken_time_1 = now + accessor.gen_range(-1, 4);
-    let awaken_time_2 = now + accessor.gen_range(-1, 7);
+    let mut rng = accessor.id().to_rng();
+    let friend_id = rng.gen_range(0, HOW_MANY_PHILOSOPHERS);
+    let awaken_time_1 = now + rng.gen_range(-1, 4);
+    let awaken_time_2 = now + rng.gen_range(-1, 7);
     let philosophers = accessor.globals();
  //println!("SHAKE!!! @{:?}. {}={}; {}={}", accessor.extended_now(), self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
 // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
@@ -138,7 +139,8 @@ impl Event for Shake {
     change_next_handshake_time (accessor, self.whodunnit, & philosophers [self.whodunnit], awaken_time_2);
   }
   fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
-    let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
+    let mut rng = accessor.id().to_rng();
+    let friend_id = rng.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let philosophers = accessor.globals();
     //println!("UNSHAKE!!! @{:?}. {} {}", accessor.extended_now(), self.whodunnit, friend_id);
     if friend_id != self.whodunnit {
@@ -179,14 +181,16 @@ impl Event for Tweak {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let now = *accessor.now();
-    let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
-    let awaken_time = now + accessor.gen_range(-1, 7);
+    let mut rng = accessor.id().to_rng();
+    let friend_id = rng.gen_range(0, HOW_MANY_PHILOSOPHERS);
+    let awaken_time = now + rng.gen_range(-1, 7);
     let philosophers = accessor.globals();
     println!(" Tweak !!!!! @{:?}. {}={}", accessor.extended_now(), friend_id, awaken_time);
     change_next_handshake_time (accessor, friend_id, & philosophers [friend_id], awaken_time);
   }
   fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
-    let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
+    let mut rng = accessor.id().to_rng();
+    let friend_id = rng.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let philosophers = accessor.globals();
     println!(" UnTweak !!!!! @{:?}. {}", accessor.extended_now(), friend_id);
     unchange_next_handshake_time (accessor, & philosophers [friend_id]);
@@ -206,10 +210,10 @@ impl Event for TweakUnsafe {
     let inconsistent = INCONSISTENT.with (| value | {
       *value
     });
-    let mut rng = ChaChaRng::from_seed (& [inconsistent, accessor.next_u32()]);
+    let mut rng = ChaChaRng::from_seed (& [inconsistent, accessor.id().data() [1] as u32]);
     
     let now = *accessor.now();
-    let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
+    let friend_id = rng.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let awaken_time = now + rng.gen_range(-1, 7);
     let philosophers = accessor.globals();
     change_next_handshake_time (accessor, friend_id, & philosophers [friend_id], awaken_time);
@@ -218,9 +222,9 @@ impl Event for TweakUnsafe {
     let inconsistent = INCONSISTENT.with (| value | {
       *value
     });
-    let mut rng = ChaChaRng::from_seed (& [inconsistent, accessor.next_u32()]);
+    let mut rng = ChaChaRng::from_seed (& [inconsistent, accessor.id().data() [1] as u32]);
     
-    let friend_id = accessor.gen_range(0, HOW_MANY_PHILOSOPHERS);
+    let friend_id = rng.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let philosophers = accessor.globals();
     unchange_next_handshake_time (accessor, & philosophers [friend_id]);
   }

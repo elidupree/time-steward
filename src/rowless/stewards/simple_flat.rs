@@ -10,7 +10,6 @@ use std::marker::PhantomData;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use rand::Rng;
 
 use super::super::api::*;
 use super::super::implementation_support::common::*;
@@ -49,7 +48,6 @@ trait EventInnerTrait <B: Basics>: Any + Debug {
 impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
   fn execute (&self, self_handle: & EventHandle<B>, steward: &mut Steward <B>) {
     let mut accessor = EventAccessorStruct {
-      generic: GenericEventAccessor::new(&self_handle.extended_time()),
       handle: self_handle.clone(),
       globals: steward.globals.clone(),
       steward: RefCell::new (steward),
@@ -125,7 +123,6 @@ time_steward_serialization_impls_for_handle!(
 
 #[derive (Debug)]
 pub struct EventAccessorStruct <'a, B: Basics> {
-  generic: GenericEventAccessor,
   handle: EventHandle <B>,
   globals: Rc<B::Globals>,
   steward: RefCell<&'a mut Steward<B>>,
@@ -230,15 +227,6 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     // There are never any future events to clean up.
     None
   }
-}
-impl <'a, B: Basics> Rng for EventAccessorStruct <'a, B> {
-  fn next_u32(&mut self) -> u32 {self.generic.generator.next_u32()}
-    fn next_f32(&mut self) -> f32 {
-      panic!("Using floating point numbers in TimeSteward events is forbidden because it is nondeterministic across platforms.")
-    }
-    fn next_f64(&mut self) -> f64 {
-      panic!("Using floating point numbers in TimeSteward events is forbidden because it is nondeterministic across platforms.")
-    }
 }
 
 impl <'a, B: Basics> FutureCleanupAccessor for EventAccessorStruct <'a, B> {

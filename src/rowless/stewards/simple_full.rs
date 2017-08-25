@@ -10,7 +10,6 @@ use std::marker::PhantomData;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use rand::Rng;
 
 use super::super::api::*;
 use super::super::implementation_support::common::*;
@@ -60,7 +59,6 @@ trait EventInnerTrait <B: Basics>: Any + Debug {
 impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
   fn execute (&self, self_handle: & EventHandle<B>, steward: &mut Steward <B>) {
     let mut accessor = EventAccessorStruct {
-      generic: GenericEventAccessor::new(&self_handle.extended_time()),
       handle: self_handle.clone(),
       globals: steward.globals.clone(),
       steward: RefCell::new (steward),
@@ -73,7 +71,6 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
   }
   fn undo (&self, self_handle: & EventHandle<B>, steward: &mut Steward <B>) {
     let mut accessor = EventAccessorStruct {
-      generic: GenericEventAccessor::new(&self_handle.extended_time()),
       handle: self_handle.clone(),
       globals: steward.globals.clone(),
       steward: RefCell::new (steward),
@@ -82,18 +79,11 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
   }
   fn re_execute (&self, self_handle: & EventHandle<B>, steward: &mut Steward <B>) {
     let mut accessor = EventAccessorStruct {
-      generic: GenericEventAccessor::new(&self_handle.extended_time()),
       handle: self_handle.clone(),
       globals: steward.globals.clone(),
       steward: RefCell::new (steward),
     };
-    // TODO: call <T as Event>::re_execute instead,
-    // but we need to resolve the RNG issue first
-    // let result = <T as Event>::re_execute (self, &mut accessor, *self_handle.data.execution_state.borrow_mut().take().unwrap().execution_data.downcast().unwrap());
-    
-    <T as Event>::undo (self, &mut accessor, *self_handle.data.execution_state.borrow_mut().take().unwrap().execution_data.downcast().unwrap());
-    accessor.generic = GenericEventAccessor::new(&self_handle.extended_time());
-    let result = <T as Event>::execute (self, &mut accessor);
+    let result = <T as Event>::re_execute (self, &mut accessor, *self_handle.data.execution_state.borrow_mut().take().unwrap().execution_data.downcast().unwrap());
     
     mem::replace (&mut*self_handle.data.execution_state.borrow_mut(), Some (ExecutionState {
       valid: true,
@@ -169,7 +159,6 @@ time_steward_serialization_impls_for_handle!(
 
 #[derive (Debug)]
 pub struct EventAccessorStruct <'a, B: Basics> {
-  generic: GenericEventAccessor,
   handle: EventHandle <B>,
   globals: Rc<B::Globals>,
   steward: RefCell<&'a mut Steward<B>>,
@@ -288,15 +277,6 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     // We're always ALLOWED to return Some, even if it would be more optimal not to.
     Some(self)
   }
-}
-impl <'a, B: Basics> Rng for EventAccessorStruct <'a, B> {
-  fn next_u32(&mut self) -> u32 {self.generic.generator.next_u32()}
-    fn next_f32(&mut self) -> f32 {
-      panic!("Using floating point numbers in TimeSteward events is forbidden because it is nondeterministic across platforms.")
-    }
-    fn next_f64(&mut self) -> f64 {
-      panic!("Using floating point numbers in TimeSteward events is forbidden because it is nondeterministic across platforms.")
-    }
 }
 
 // EventAccessorStruct is also the FutureCleanupAccessor – its functionality is only restricted by what bounds the client code is allowed to place on it

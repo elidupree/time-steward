@@ -69,6 +69,11 @@ impl DeterministicRandomId {
   pub fn from_rng(rng: &mut ChaChaRng) -> DeterministicRandomId {
     DeterministicRandomId { data: [rng.gen::<u64>(), rng.gen::<u64>()] }
   }
+  pub fn to_rng(&self)->DeterministicRandomIdRng {
+    let mut result = DeterministicRandomIdRng {state: *self, index: 0};
+    result.reroll();
+    result
+  }
   /// Useful for creating out-of-band values which don't identify actual
   /// events, for implementations that need them. A common usage is to have
   /// "before all other events" sentinels.
@@ -113,6 +118,28 @@ impl Hash for DeterministicRandomId {
     self.data [1].hash (state);
   }
 }
+
+pub struct DeterministicRandomIdRng {
+  state: DeterministicRandomId,
+  index: u32,
+}
+impl DeterministicRandomIdRng {
+  fn reroll(&mut self) {
+    self.state= DeterministicRandomId::new (& self.state) ;
+  }
+}
+impl Rng for DeterministicRandomIdRng {
+  fn next_u32(&mut self) -> u32 {
+    let mut result = (self.state.data [(self.index >> 1) as usize] >> (32*(self.index & 1))) as u32;
+    self.index += 1;
+    if self.index >= 4 {
+      self.reroll();
+      self.index = 0;
+    }
+    result
+  }
+}
+
 
 #[cfg (test)]
 mod tests {
