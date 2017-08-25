@@ -50,7 +50,7 @@ struct EventInner <B: Basics> {
   time: ExtendedTime <B>,
   data: Box <EventInnerTrait<B>>,
   should_be_executed: Cell<bool>,
-  prediction_created_by: RefCell<Option <EventHandle <B>>>,
+  is_prediction: bool,
   prediction_destroyed_by: RefCell<Option <EventHandle <B>>>,
   execution_state: RefCell<Option <ExecutionState>>,
 }
@@ -257,7 +257,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
         time: time,
         data: Box::new (event),
         should_be_executed: Cell::new(true),
-        prediction_created_by: RefCell::new (Some(self.handle().clone())),
+        is_prediction: true,
         prediction_destroyed_by: RefCell::new (None),
         execution_state: RefCell::new (None),
       })
@@ -266,7 +266,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     handle
   }
   fn destroy_prediction (&self, prediction: &EventHandle<B>) {
-    assert!(prediction.data.prediction_created_by.borrow().is_some(), "Attempted to destroy a fiat event as if it was a prediction.");
+    assert!(prediction.data.is_prediction, "Attempted to destroy a fiat event as if it was a prediction.");
     let mut guard = prediction.data.prediction_destroyed_by.borrow_mut();
     if let Some (old_destroyer) = guard.as_ref() {
       assert!(self.handle() < old_destroyer, "You can't destroy a prediction that was already destroyed. (A prediction is supposed to be destroyed exactly when it's no longer accessible in the simulation data. Double-destroying it implies that you held onto a handle to it somewhere, which is probably a bug.)");
@@ -364,7 +364,7 @@ impl<B: Basics> Steward<B> {
       else {
         event.data.data.execute (event, &mut*self);
       }
-      if event.data.prediction_created_by.borrow().is_some() {
+      if event.data.is_prediction {
         assert!(event.data.prediction_destroyed_by.borrow().as_ref() == Some(event), "An event at {:?} should have destroyed itself, but its destruction time was {:?} instead. All predicted events must destroy the prediction that predicted them. (It's ambiguous what should happen if the prediction isn't destroyed. There are two natural meanings: either it continues existing meaninglessly, or it gets executed repeatedly until it destroys itself. Neither of these seems especially desirable, so we take the conservative approach and forbid the whole situation from arising. This is also future-proofing in case we choose a specific behavior later.", event.extended_time(), event.data.prediction_destroyed_by.borrow().as_ref().map (| destroyer | destroyer.extended_time()))
       }
     }
@@ -436,7 +436,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
         time: extended_time_of_fiat_event(time, id),
         data: Box::new (event),
         should_be_executed: Cell::new(true),
-        prediction_created_by: RefCell::new (None),
+        is_prediction: false,
         prediction_destroyed_by: RefCell::new (None),
         execution_state: RefCell::new (None),
       })};
