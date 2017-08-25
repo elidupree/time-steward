@@ -3,7 +3,7 @@
 macro_rules! time_steward_define_simple_timeline {
   () => {
 pub mod simple_timeline {
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 use std::mem;
 use std::cell::RefCell;
 use std::marker::PhantomData;
@@ -27,7 +27,7 @@ pub trait IterateUniquelyOwnedPredictions <Steward: TimeSteward> {
 pub struct SimpleTimeline <VaryingData: StewardData, Steward: TimeSteward> {
   // Hacky workaround for https://github.com/rust-lang/rust/issues/41617 (see https://github.com/serde-rs/serde/issues/943)
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
-  changes: Vec<(<Steward as TimeSteward>::EventHandle, Option <VaryingData>)>,
+  changes: VecDeque<(<Steward as TimeSteward>::EventHandle, Option <VaryingData>)>,
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   other_dependent_events: BTreeSet<<Steward as TimeSteward>::EventHandle>,
 }
@@ -35,14 +35,15 @@ pub struct SimpleTimeline <VaryingData: StewardData, Steward: TimeSteward> {
 impl <VaryingData: StewardData, Steward: TimeSteward> SimpleTimeline <VaryingData, Steward> {
   pub fn new ()->Self {
     SimpleTimeline {
-      changes: Vec::new(),
+      changes: VecDeque::new(),
       other_dependent_events: BTreeSet::new(),
     }
   }
     
   fn search_changes (&self, time: &ExtendedTime <Steward::Basics>) -> Result <usize, usize> {
     // search at the end first, because we are usually in the present.
-    match self.changes.last() {
+    
+    match self.changes.back() {
       None => return Err(0),
       Some (&(ref event, ref data)) => {
         match event.extended_time().cmp(time) {
@@ -52,7 +53,44 @@ impl <VaryingData: StewardData, Steward: TimeSteward> SimpleTimeline <VaryingDat
         }
       },
     }
-    self.changes[..self.changes.len()-1].binary_search_by_key (&time, | change | change.0.extended_time())
+    
+    let mut drop = 2;
+    let mut max = self.changes.len()-1;
+    let mut min;
+    loop {
+      if let Some(further) = self.changes.len().checked_sub (drop) {
+        let change = self.changes.get (further).unwrap();
+        match change.0.extended_time().cmp(time) {
+          Ordering::Greater => {
+            max = further;
+            drop *= 2;
+          },
+          Ordering::Equal => return Ok(further),
+          Ordering::Less => {
+            min = further;
+            break;
+          },
+        }
+      }
+      else {
+        min = 0;
+        break;
+      }
+    }
+    while max >= min+2 {
+      let mid = (max + min) >> 1;
+      let change = self.changes.get (mid).unwrap();
+      match change.0.extended_time().cmp(time) {
+        Ordering::Greater => max = mid,
+        Ordering::Equal => return Ok(mid),
+        Ordering::Less => min = mid,
+      }
+    }
+    
+    if self.changes.get (min).unwrap().0.extended_time() > time {
+      return Err (min)
+    }
+    Err(max)
   }
 }
 impl <VaryingData: StewardData + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward> SimpleTimeline <VaryingData, Steward> {
@@ -61,12 +99,12 @@ impl <VaryingData: StewardData + IterateUniquelyOwnedPredictions <Steward>, Stew
     for event in removed {
       accessor.invalidate_execution(&event);
     }
-    while let Some (change) = self.changes.pop() {
+    while let Some (change) = self.changes.pop_back() {
       if change.0.extended_time() < accessor.extended_now() {
         if let Some(data) = change.1.as_ref() {
           IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (data, &mut | prediction | accessor.change_prediction_destroyer (prediction, None));
         }
-        self.changes.push (change);
+        self.changes.push_back (change);
         break
       }
       if let Some(data) = change.1.as_ref() {
@@ -79,14 +117,14 @@ impl <VaryingData: StewardData + IterateUniquelyOwnedPredictions <Steward>, Stew
   }
   
   fn modify <Accessor: EventAccessor<Steward = Steward>> (&mut self, modification: Option <VaryingData>, accessor: &Accessor){
-    if let Some(last) = self.changes.last() {
+    if let Some(last) = self.changes.back() {
       assert!(& last.0 <= accessor.handle(), "All future changes should have been cleared before calling modify() ");
       if let Some (data) = last.1.as_ref() {
         IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (data, &mut | prediction | accessor.destroy_prediction (prediction));
       }
     }
     // we don't need to create incoming predictions, because they can't be incoming unless they were already created
-    self.changes.push ((accessor.handle().clone(), modification));
+    self.changes.push_back ((accessor.handle().clone(), modification));
   }
 }
 
@@ -94,12 +132,16 @@ impl <VaryingData: StewardData, Steward: TimeSteward> DataTimeline for SimpleTim
   type Basics = Steward::Basics;
   
   fn clone_for_snapshot (&self, time: &ExtendedTime <Self::Basics>)->Self {
-    let slice = match self.search_changes(&time) {
-      Ok(index) => &self.changes [index.saturating_sub (1).. index+1],
-      Err (index) => &self.changes [index.saturating_sub (1)..index],
+    let mut changes = VecDeque::new();
+    match self.search_changes(&time) {
+      Ok(index) => {
+        if let Some(previous) = index.checked_sub (1) {changes.push_back (self.changes [previous].clone());}
+        changes.push_back (self.changes [index].clone());
+      },
+      Err (index) => if let Some(previous) = index.checked_sub (1) {changes.push_back (self.changes [previous].clone());},
     };
     SimpleTimeline {
-      changes: slice.to_vec(),
+      changes: changes,
       other_dependent_events: BTreeSet::new(),
     }
   }
@@ -108,12 +150,8 @@ impl <VaryingData: StewardData, Steward: TimeSteward> DataTimeline for SimpleTim
     let retained = self.other_dependent_events.split_off (time);
     mem::replace (&mut self.other_dependent_events, retained);
     
-    if self.changes.len() > 0 && self.changes [self.changes.len()/2].0.extended_time() < time {
-      let keep_from_index = match self.search_changes(&time) {
-        Ok (index) => index,
-        Err(index) => index - 1,
-      };
-      self.changes = self.changes.split_off (keep_from_index);
+    while self.changes.front().map_or (false, | change | change.0.extended_time() < time) {
+      self.changes.pop_front ();
     }
   }
 }
