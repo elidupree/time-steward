@@ -1,4 +1,3 @@
-#[macro_use]
 extern crate time_steward;
 
 extern crate rand;
@@ -9,7 +8,7 @@ extern crate serde;
 extern crate serde_derive;
 
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{self, StewardData, QueryOffset, DataTimelineCellTrait, EventHandleTrait, Basics as BasicsTrait};
+use time_steward::rowless::api::{StewardData, QueryOffset, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};

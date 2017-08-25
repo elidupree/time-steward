@@ -5,8 +5,6 @@ macro_rules! time_steward_define_simple_timeline {
 pub mod simple_timeline {
 use std::collections::{BTreeSet, VecDeque};
 use std::mem;
-use std::cell::RefCell;
-use std::marker::PhantomData;
 
 use super::super::super::api::*;
 use super::*;
@@ -17,7 +15,7 @@ pub struct GetVarying;
 impl StewardData for GetVarying {}
 
 pub trait IterateUniquelyOwnedPredictions <Steward: TimeSteward> {
-  fn iterate_predictions <F: FnMut (& Steward::EventHandle)> (&self, callback: &mut F) {}
+  fn iterate_predictions <F: FnMut (& Steward::EventHandle)> (&self, _callback: &mut F) {}
 }
 
 
@@ -45,7 +43,7 @@ impl <VaryingData: StewardData, Steward: TimeSteward> SimpleTimeline <VaryingDat
     
     match self.changes.back() {
       None => return Err(0),
-      Some (&(ref event, ref data)) => {
+      Some (&(ref event, _)) => {
         match event.extended_time().cmp(time) {
           Ordering::Greater => (),
           Ordering::Equal => return Ok(self.changes.len()-1),

@@ -130,7 +130,7 @@ impl DeterministicRandomIdRng {
 }
 impl Rng for DeterministicRandomIdRng {
   fn next_u32(&mut self) -> u32 {
-    let mut result = (self.state.data [(self.index >> 1) as usize] >> (32*(self.index & 1))) as u32;
+    let result = (self.state.data [(self.index >> 1) as usize] >> (32*(self.index & 1))) as u32;
     self.index += 1;
     if self.index >= 4 {
       self.reroll();

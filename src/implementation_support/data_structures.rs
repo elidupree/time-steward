@@ -22,14 +22,6 @@ pub mod partially_persistent_nonindexed_set {
   use std::cell::UnsafeCell;
   use std::fmt::Debug;
 
-  macro_rules! printlnerr(
-    ($($arg:tt)*) => { {use std::io::Write;
-        let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
-        r.expect("failed printing to stderr");
-    } }
-);
-
-
   #[derive (Clone, Debug)]
   struct Entry<K: Clone + Eq> {
     key: K,

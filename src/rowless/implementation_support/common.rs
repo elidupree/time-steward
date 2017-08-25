@@ -2,7 +2,7 @@ use super::super::api::*;
 use std::cmp::Ordering;
 use ::DeterministicRandomId;
 
-macro_rules! downcast_rc {
+/*macro_rules! downcast_rc {
   ($input: expr, $T: ty, $($Trait:tt)*) => {{
     let result: Result <Rc<$T>, Rc<$($Trait)*>> = {
       let input = $input;
@@ -19,7 +19,7 @@ macro_rules! downcast_rc {
     };
     result
   }}
-}
+}*/
 macro_rules! downcast_ref {
   ($input: expr, $T: ty, $($Trait:tt)*) => {{
     let result: Option <&$T> = {

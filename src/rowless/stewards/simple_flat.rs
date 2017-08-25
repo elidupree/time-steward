@@ -1,4 +1,3 @@
-use std::mem;
 use std::cell::{Cell, RefCell, Ref, RefMut};
 use std::collections::{BTreeMap, BTreeSet, HashMap, Bound};
 use std::cmp::{Ordering, max};
@@ -6,14 +5,12 @@ use std::borrow::Borrow;
 use std::any::Any;
 use std::io::{Read, Write};
 use std::rc::Rc;
-use std::marker::PhantomData;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 use super::super::api::*;
 use super::super::implementation_support::common::*;
-use implementation_support::common::split_off_greater_set;
 use {DeterministicRandomId};
 
 time_steward_steward_specific_api!();
@@ -230,12 +227,12 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
 }
 
 impl <'a, B: Basics> FutureCleanupAccessor for EventAccessorStruct <'a, B> {
-  fn peek <'c, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'c self, timeline: &'b DataTimelineCell<T>)->DataTimelineCellReadGuard<'b, T> {unreachable!()}
-  fn peek_mut <'c, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'c self, timeline: &'b DataTimelineCell<T>)->DataTimelineCellWriteGuard<'b, T> {unreachable!()}
+  fn peek <'c, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'c self, _: &'b DataTimelineCell<T>)->DataTimelineCellReadGuard<'b, T> {unreachable!()}
+  fn peek_mut <'c, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'c self, _: &'b DataTimelineCell<T>)->DataTimelineCellWriteGuard<'b, T> {unreachable!()}
   // audit: can't change things in the past relative to the current event
-  fn change_prediction_destroyer (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, destroyer: Option <&<Self::Steward as TimeSteward>::EventHandle>) {unreachable!()}
+  fn change_prediction_destroyer (&self, _: &<Self::Steward as TimeSteward>::EventHandle, _: Option <&<Self::Steward as TimeSteward>::EventHandle>) {unreachable!()}
   // audit: can't invalidate things in the past relative to the current event
-  fn invalidate_execution (&self, handle: & <Self::Steward as TimeSteward>::EventHandle) {unreachable!()}
+  fn invalidate_execution (&self, _: & <Self::Steward as TimeSteward>::EventHandle) {unreachable!()}
 }
 
 impl <B: Basics> SnapshotAccessor for SnapshotHandle <B> {
