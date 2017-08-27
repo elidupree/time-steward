@@ -120,11 +120,11 @@ macro_rules! time_steward_serialization_impls {
   }
   
   struct SerializationContext {
-    time: Box<Any>,
-    data_handle_targets_observed: HashMap <*const (), u64>
-    data_handles_to_serialize_target: Vec<(u64, Box <SerializeTargetInto>)>;
-    event_handle_targets_observed: HashMap <*const (), u64>
-    event_handles_to_serialize_target: Vec<(u64, Box <SerializeTargetInto>)>;
+    snapshot: Box <Any>,
+    data_handle_targets_observed: HashMap <*const (), u64>,
+    data_handles_to_serialize_target: Vec<(u64, Box <SerializeTargetInto>)>,
+    event_handle_targets_observed: HashMap <*const (), u64>,
+    event_handles_to_serialize_target: Vec<(u64, Box <SerializeTargetInto>)>,
     next_object_identifier: u64,
   }
   struct DeserializationContext {
@@ -204,12 +204,14 @@ macro_rules! time_steward_serialization_impls {
   }
 
   
-  fn serialize_something <W: Write> (writer: &mut W)->$crate::bincode::Result <()> {
+  fn serialize_snapshot <B: Basics, W: Write> (writer: &mut W, snapshot: Snapshot <B>)->$crate::bincode::Result <()> {
     SERIALIZATION_CONTEXT.with (| cell | {
       {
         let guard = cell.borrow_mut();
         assert!(guard.is_none(), "serializing recursively breaks my hacks and probably makes no sense");
-        *guard = Some(SerializationContext::new());
+        *guard = Some(SerializationContext {
+        
+        });
       }
       // serialize inside a closure so that errors can be collected and we still clear the context afterwards
       let result = || {
