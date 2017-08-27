@@ -17,6 +17,8 @@ use super::super::api::*;
 use super::super::implementation_support::common::*;
 use {DeterministicRandomId};
 
+use implementation_support::insert_only;
+
 time_steward_steward_specific_api!();
 
 thread_local! {
@@ -173,12 +175,20 @@ pub struct SnapshotInner <B: Basics> {
   index: usize,
   time: ExtendedTime <B>,
   globals: Rc<B::Globals>,
-  clones: RefCell<HashMap<usize, Box<Any>>>,
+  clones: insert_only::HashMap<usize, Box<Any>>,
   snapshots_tree: Rc<RefCell<SnapshotsTree<B>>>,
 }
 #[derive (Debug, Clone)]
 pub struct SnapshotHandle <B: Basics> {
   data: Rc <SnapshotInner <B>>,
+}
+
+impl <B: Basics> SnapshotHandle <B> {
+  fn get_clone <T: DataTimeline <Basics = B>> (&self, timeline: & DataTimelineCell <T>)->&T {
+    self.data.clones.get_default (timeline.serial_number, | | Some(Box::new (
+      timeline.data.borrow().clone_for_snapshot (self.extended_now())
+    ))).unwrap ().downcast_ref::<T>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow")
+  }
 }
 
 type SnapshotsTree<B> = BTreeMap<usize, SnapshotHandle <B>>;
@@ -213,13 +223,7 @@ impl <B: Basics> Accessor for SnapshotHandle <B> {
     & self.data.time
   }
   fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
-    let mut guard = self.data.clones.borrow_mut();
-    let entry = guard.entry (timeline.serial_number);
-    let boxref = entry.or_insert_with (| | Box::new (
-      timeline.data.borrow().clone_for_snapshot (self.extended_now())
-    ));
-    let typed = boxref.downcast_ref::<T>().unwrap();
-    DataTimelineQueriableWith::<Query>::query(typed, query, self.extended_now(), offset)
+    DataTimelineQueriableWith::<Query>::query(self.get_clone (timeline), query, self.extended_now(), offset)
   }
 }
 impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
@@ -234,9 +238,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
       let guard = (*steward.snapshots).borrow();
       let map: &SnapshotsTree<B> = &*guard;
       for (_,snapshot) in map.range ((Bound::Included(index), Bound::Unbounded)) {
-        let mut guard = snapshot.data.clones.borrow_mut();
-        let entry = guard.entry (timeline.serial_number);
-        entry.or_insert_with (| | Box::new (timeline.data.borrow().clone_for_snapshot (self.extended_now())));
+        snapshot.get_clone (timeline) ;
       }
       timeline.first_snapshot_not_updated.set (steward.next_snapshot_index);
     }
@@ -482,7 +484,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
         index: self.next_snapshot_index,
         globals: self.globals.clone(),
         time: ExtendedTime::beginning_of(time.clone()),
-        clones: RefCell::new (HashMap::new()),
+        clones: insert_only::HashMap::new(),
         snapshots_tree: self.snapshots.clone(),
       })
     };

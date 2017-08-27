@@ -42,13 +42,10 @@ pub trait DataTimeline: Any + Clone + Serialize + DeserializeOwned + Debug {
 pub trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
   type QueryResult: StewardData;
   
-  // audit all functions: must be consistent with each other
   // audit: queries must not have side effects (do a separate action for manual dependency tracking)
   // audit: queries don't return PredictionHandles that don't exist at the time
   // TODO: allow queries to return references instead of values
   fn query (&self, query: &Query, time: &ExtendedTime <Self::Basics>, offset: QueryOffset)->Self::QueryResult;
-  // TODO: is this necessary? Or is it only used in invalidation code, which can peek anyway?
-  // fn query_range (&self, query: Query, time_range: TimeRange)->impl Iter <Item = (TimeRange, QueryResult)>;
 }
 
 
@@ -89,6 +86,7 @@ pub enum FiatEventOperationError {
 pub trait EventHandleTrait <B: Basics>: StewardData + Ord + Hash + Borrow<ExtendedTime <B>> {
   fn extended_time (&self)->& ExtendedTime <B>;
   fn time (&self)->& B::Time {& self.extended_time().base}
+  fn id (&self)->& DeterministicRandomId {& self.extended_time().id}
   fn downcast_ref <T: Any> (&self)->Option<&T>;
 }
 pub trait DataHandleTrait <T: StewardData>: StewardData + Hash + Deref<Target = T> {
