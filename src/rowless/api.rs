@@ -15,6 +15,20 @@ use std::ops::Deref;
 /// We used to require `Send + Sync` for this, but now that DataTimelineHandles can be part of StewardData, we have to omit that to support TimeSteward types that have !Send/!Sync handles (like Rc)
 pub trait StewardData: Any + Clone + Eq + Serialize + DeserializeOwned + Debug {}
 
+/// DataTimeline operations must be auditable. Their arguments have to be StewardData,
+/// so that they can be clone, stored, and compared to other values.
+///
+/// However, for optimization, we might want to pass a &StewardData instead of a StewardData.
+/// This trait includes both, and also complex such that as (&A, B, &C) where A, B, and C are StewardData.
+/// For auditing purposes, it must be able to convert back and forth from the underlying StewardData,
+/// so that the system can check that it is actually equivalent in information.
+pub trait PossiblyBorrowedStewardData <'a, Owned: StewardData> {
+  fn to_owned (self)->Owned;
+  fn clone_to_owned (&self)->Owned;
+  fn from_ref (source: &'a Owned)->Self;
+}
+
+
 
 // Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time, and the events must use invalidate() to collect future events that must be invalidated. (Although, for instance, modifications made for dependency tracking purposes might not change any results any queries, so they wouldn't create the need for any invalidation.)
 //To audit, we record all of the queries and query results. Then after each event that modifies one or more DataTimelines, we rerun all queries to those timelines made by still-valid future events. If any query has a different result than before, it's an error.
@@ -39,16 +53,14 @@ pub trait DataTimeline: Any + Clone + Serialize + DeserializeOwned + Debug {
   // audit: forget functions don't change any query results except those forgotten
   fn forget_before (&mut self, time: &ExtendedTime <Self::Basics>);
 }
-pub trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
-  type QueryResult: StewardData;
+pub trait DataTimelineQueriableWith<'a, Owned: StewardData, Query: PossiblyBorrowedStewardData <'a, Owned>>: DataTimeline {
+  type QueryResultOwned: StewardData;
+  type QueryResult: PossiblyBorrowedStewardData <'a, Self::QueryResultOwned>;
   
-  // audit all functions: must be consistent with each other
   // audit: queries must not have side effects (do a separate action for manual dependency tracking)
+  // audit: cloning and re-borrowing the
   // audit: queries don't return PredictionHandles that don't exist at the time
-  // TODO: allow queries to return references instead of values
-  fn query (&self, query: &Query, time: &ExtendedTime <Self::Basics>, offset: QueryOffset)->Self::QueryResult;
-  // TODO: is this necessary? Or is it only used in invalidation code, which can peek anyway?
-  // fn query_range (&self, query: Query, time_range: TimeRange)->impl Iter <Item = (TimeRange, QueryResult)>;
+  fn query (&self, query: Query, time: &ExtendedTime <Self::Basics>, offset: QueryOffset)->Self::QueryResult;
 }
 
 
@@ -145,7 +157,7 @@ pub trait Accessor {
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
   fn now(&self) -> & <<Self::Steward as TimeSteward>::Basics as Basics>::Time {&self.extended_now().base}
   fn id(&self) -> DeterministicRandomId {self.extended_now().id}
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: &Query, offset: QueryOffset)-> T::QueryResult;
+  fn query <'a, Owned: StewardData, Query: PossiblyBorrowedStewardData <'a, Owned>, T: DataTimelineQueriableWith<'a, Owned, Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: Query, offset: QueryOffset)-> T::QueryResult;
 }
 
 pub trait EventAccessor: Accessor {

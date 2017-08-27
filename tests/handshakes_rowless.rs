@@ -90,7 +90,7 @@ fn display_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: & A
   println!("snapshot for {}", accessor.now());
   for handle in accessor.globals() {
     println!("{}",
-             accessor.query(handle, &GetVarying, QueryOffset::After)
+             accessor.query(handle, GetVarying, QueryOffset::After)
                .expect("missing philosopher").1
                .time_when_next_initiates_handshake);
   }
@@ -99,7 +99,7 @@ fn dump_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: & Acce
   let mut result = Vec::new() ;
   for handle in accessor.globals() {
     result.push (
-             accessor.query(handle, &GetVarying, QueryOffset::After)
+             accessor.query(handle, GetVarying, QueryOffset::After)
                .expect("missing philosopher").1
                .time_when_next_initiates_handshake);
   }

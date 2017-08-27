@@ -34,7 +34,7 @@ In order to remain synchronized, all code executing within the simulation must b
 * Mutable global (static/thread_local) variables
 * Whether data has been reloaded from a serialized version
 
-In particular, you cannot use `f32`, `f64`, or `std::collections::HashMap`**.
+In particular, your physics cannot depend on `f32` or `f64` arithmetic, the iteration order of `std::collections::HashMap`**, or the capacity of `Vec`.
 
 TimeSteward provides some features to work around these limitations. It has a built-in deterministic PRNG. It will eventually also provide a deterministic alternative to HashMap and a deterministic plug-and-play replacement for f32/f64. (However, using floats may still be undesirable because floating-point emulation is much slower.)
 

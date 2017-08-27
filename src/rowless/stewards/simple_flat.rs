@@ -158,8 +158,8 @@ impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
     self.handle().extended_time()
   }
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = B>> (&self, timeline: & DataTimelineCell <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
-    DataTimelineQueriableWith::<Query>::query (&*timeline.data.borrow(), query, self.extended_now(), offset)
+  fn query <'b, Owned: StewardData, Query: PossiblyBorrowedStewardData <'b, Owned>, T: DataTimelineQueriableWith<'b, Owned, Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: Query, offset: QueryOffset)-> T::QueryResult {
+    DataTimelineQueriableWith::<'b, Owned, Query>::query (&*timeline.data.borrow(), query, self.extended_now(), offset)
   }
 }
 impl <B: Basics> Accessor for SnapshotHandle <B> {
@@ -168,14 +168,14 @@ impl <B: Basics> Accessor for SnapshotHandle <B> {
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
     & self.data.time
   }
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
+  fn query <'b, Owned: StewardData, Query: PossiblyBorrowedStewardData <'b, Owned>, T: DataTimelineQueriableWith<'b, Owned, Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: Query, offset: QueryOffset)-> T::QueryResult {
     let mut guard = self.data.clones.borrow_mut();
     let entry = guard.entry (timeline.serial_number);
     let boxref = entry.or_insert_with (| | Box::new (
       timeline.data.borrow().clone_for_snapshot (self.extended_now())
     ));
     let typed = boxref.downcast_ref::<T>().unwrap();
-    DataTimelineQueriableWith::<Query>::query(typed, query, self.extended_now(), offset)
+    DataTimelineQueriableWith::<'b, Owned, Query>::query(typed, query, self.extended_now(), offset)
   }
 }
 impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {

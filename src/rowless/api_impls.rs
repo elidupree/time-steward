@@ -38,6 +38,17 @@ impl <T: StewardData + Ord> StewardData for BTreeSet<T> {}
 
 impl <T: Basics> StewardData for ExtendedTime <T> {}
 
+impl <'a, Owned: StewardData> PossiblyBorrowedStewardData <'a, Owned> for Owned {
+  fn to_owned (self)->Owned {self}
+  fn clone_to_owned (&self)->Owned {self.clone()}
+  fn from_ref (source: &'a Owned)->Self {source.clone()}
+}
+impl <'a, Owned: StewardData> PossiblyBorrowedStewardData <'a, Owned> for & 'a Owned {
+  fn to_owned (self)->Owned {self.clone()}
+  fn clone_to_owned (&self)->Owned {(*self).clone()}
+  fn from_ref (source: &'a Owned)->Self {source}
+}
+
 
 use std::cmp::Ordering;
 
