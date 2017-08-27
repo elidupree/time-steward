@@ -300,8 +300,13 @@ impl <'a, B: Basics> FutureCleanupAccessor for EventAccessorStruct <'a, B> {
     mem::replace (&mut*prediction.data.prediction_destroyed_by.borrow_mut(), destroyer.cloned());
     if prediction != self.handle() {
       if let Some(destroyer) = destroyer {
-        assert!(destroyer < prediction, "Tried to set of prediction's destruction time to after the prediction is supposed to be executed");
-        self.steward.borrow_mut().event_shouldnt_be_executed(prediction);
+        if destroyer != prediction {
+          assert!(destroyer < prediction, "Tried to set of prediction's destruction time to after the prediction is supposed to be executed");
+          self.steward.borrow_mut().event_shouldnt_be_executed(prediction);
+        }
+        else {
+          self.steward.borrow_mut().event_should_be_executed(prediction);
+        }
       }
       else {
         self.steward.borrow_mut().event_should_be_executed(prediction);
