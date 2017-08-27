@@ -4,15 +4,6 @@ use std::collections::BTreeSet;
 use super::api::*;
 
 
-macro_rules! StewardData_tuple_impls {
-  ($TL: ident) => {};
-  ($TL: ident $(, $T: ident)*) => {
-    impl<$($T,)* $TL> StewardData for ($TL $(, $T)*)
-      where $($T: StewardData,)* $TL: StewardData {}
-    StewardData_tuple_impls! ($($T),*);
-  };
-}
-StewardData_tuple_impls!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
 macro_rules! StewardData_array_impls {
   () => {};
   ($num: expr $(, $rest: expr)*) => {
@@ -35,7 +26,6 @@ impl <T: StewardData> StewardData for Vec<T> {}
 impl <T: StewardData + Ord> StewardData for BTreeSet<T> {}
 
 
-
 impl <T: Basics> StewardData for ExtendedTime <T> {}
 
 impl <'a, Owned: StewardData> PossiblyBorrowedStewardData <'a, Owned> for Owned {
@@ -47,6 +37,140 @@ impl <'a, Owned: StewardData> PossiblyBorrowedStewardData <'a, Owned> for & 'a O
   fn to_owned (self)->Owned {self.clone()}
   fn clone_to_owned (&self)->Owned {(*self).clone()}
   fn from_ref (source: &'a Owned)->Self {source}
+}
+impl <'a, Owned: StewardData> PossiblyBorrowedStewardData <'a, Option<Owned>> for Option<& 'a Owned> {
+  fn to_owned (self)->Option<Owned> {self.cloned()}
+  fn clone_to_owned (&self)->Option<Owned> {self.cloned()}
+  fn from_ref (source: &'a Option<Owned>)->Self {source.as_ref()}
+}
+
+// macro for implementing n-ary tuple functions and operations, adapted from libcore
+macro_rules! tuple_impls {
+    ($(
+        $Tuple:ident {
+            $(($idx:tt) -> $T:ident $U:ident)+
+        }
+    )+) => {
+        $(
+            impl<$($T:StewardData),+> StewardData for ($($T,)+) {}
+            impl<'a, $($U:StewardData),+, $($T:PossiblyBorrowedStewardData <'a, $U>),+> PossiblyBorrowedStewardData <'a, ($($U,)+)> for UnnecessaryWrapper<($($T,)+)> {
+                fn to_owned (self)->($($U,)+) {
+                  ($((self.0).$idx.to_owned(),)+)
+                }
+                fn clone_to_owned (&self)->($($U,)+) {
+                  ($((self.0).$idx.clone_to_owned(),)+)
+                }
+                fn from_ref (source: &'a ($($U,)+))->Self {
+                  UnnecessaryWrapper(($($T::from_ref(&source.$idx),)+))
+                }
+            }
+        )+
+    }
+}
+
+tuple_impls! {
+    Tuple1 {
+        (0) -> A AA
+    }
+    Tuple2 {
+        (0) -> A AA
+        (1) -> B BB
+    }
+    Tuple3 {
+        (0) -> A AA
+        (1) -> B BB
+        (2) -> C CC
+    }
+    Tuple4 {
+        (0) -> A AA
+        (1) -> B BB
+        (2) -> C CC
+        (3) -> D DD
+    }
+    Tuple5 {
+        (0) -> A AA
+        (1) -> B BB
+        (2) -> C CC
+        (3) -> D DD
+        (4) -> E EE
+    }
+    Tuple6 {
+        (0) -> A AA
+        (1) -> B BB
+        (2) -> C CC
+        (3) -> D DD
+        (4) -> E EE
+        (5) -> F FF
+    }
+    Tuple7 {
+        (0) -> A AA
+        (1) -> B BB
+        (2) -> C CC
+        (3) -> D DD
+        (4) -> E EE
+        (5) -> F FF
+        (6) -> G GG
+    }
+    Tuple8 {
+        (0) -> A AA
+        (1) -> B BB
+        (2) -> C CC
+        (3) -> D DD
+        (4) -> E EE
+        (5) -> F FF
+        (6) -> G GG
+        (7) -> H HH
+    }
+    Tuple9 {
+        (0) -> A AA
+        (1) -> B BB
+        (2) -> C CC
+        (3) -> D DD
+        (4) -> E EE
+        (5) -> F FF
+        (6) -> G GG
+        (7) -> H HH
+        (8) -> I II
+    }
+    Tuple10 {
+        (0) -> A AA
+        (1) -> B BB
+        (2) -> C CC
+        (3) -> D DD
+        (4) -> E EE
+        (5) -> F FF
+        (6) -> G GG
+        (7) -> H HH
+        (8) -> I II
+        (9) -> J JJ
+    }
+    Tuple11 {
+        (0) -> A AA
+        (1) -> B BB
+        (2) -> C CC
+        (3) -> D DD
+        (4) -> E EE
+        (5) -> F FF
+        (6) -> G GG
+        (7) -> H HH
+        (8) -> I II
+        (9) -> J JJ
+        (10) -> K KK
+    }
+    Tuple12 {
+        (0) -> A AA
+        (1) -> B BB
+        (2) -> C CC
+        (3) -> D DD
+        (4) -> E EE
+        (5) -> F FF
+        (6) -> G GG
+        (7) -> H HH
+        (8) -> I II
+        (9) -> J JJ
+        (10) -> K KK
+        (11) -> L LL
+    }
 }
 
 

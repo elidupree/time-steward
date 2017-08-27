@@ -28,6 +28,8 @@ pub trait PossiblyBorrowedStewardData <'a, Owned: StewardData> {
   fn from_ref (source: &'a Owned)->Self;
 }
 
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default)]
+pub struct UnnecessaryWrapper<T>(pub T);
 
 
 // Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time, and the events must use invalidate() to collect future events that must be invalidated. (Although, for instance, modifications made for dependency tracking purposes might not change any results any queries, so they wouldn't create the need for any invalidation.)
@@ -60,7 +62,7 @@ pub trait DataTimelineQueriableWith<'a, Owned: StewardData, Query: PossiblyBorro
   // audit: queries must not have side effects (do a separate action for manual dependency tracking)
   // audit: cloning and re-borrowing the
   // audit: queries don't return PredictionHandles that don't exist at the time
-  fn query (&self, query: Query, time: &ExtendedTime <Self::Basics>, offset: QueryOffset)->Self::QueryResult;
+  fn query (&'a self, query: Query, time: &ExtendedTime <Self::Basics>, offset: QueryOffset)->Self::QueryResult;
 }
 
 
@@ -157,7 +159,12 @@ pub trait Accessor {
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
   fn now(&self) -> & <<Self::Steward as TimeSteward>::Basics as Basics>::Time {&self.extended_now().base}
   fn id(&self) -> DeterministicRandomId {self.extended_now().id}
-  fn query <'a, Owned: StewardData, Query: PossiblyBorrowedStewardData <'a, Owned>, T: DataTimelineQueriableWith<'a, Owned, Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: Query, offset: QueryOffset)-> T::QueryResult;
+  fn query <'a, 'b,
+    Owned: StewardData,
+    Query: PossiblyBorrowedStewardData <'b, Owned>,
+    T: DataTimelineQueriableWith<'b, Owned, Query, Basics = <Self::Steward as TimeSteward>::Basics>
+    > (&'a self, timeline: &'b DataTimelineCell<T>, query: Query, offset: QueryOffset)->
+      DataTimelineCellReadGuard<'b, T::QueryResult>;
 }
 
 pub trait EventAccessor: Accessor {

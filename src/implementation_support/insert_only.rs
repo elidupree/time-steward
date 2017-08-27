@@ -6,7 +6,7 @@ use std::borrow::Borrow;
 use std::cell::{Cell, UnsafeCell};
 use std::collections::hash_map::{self, Entry};
 
-pub struct HashMap<K: Eq + Hash, V, S: BuildHasher> {
+pub struct HashMap<K: Eq + Hash, V, S: BuildHasher = ::std::collections::hash_map::RandomState> {
   data: UnsafeCell<Interior<K, Box<V>, S>>,
   inserting: Cell<bool>,
 }

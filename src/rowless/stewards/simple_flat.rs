@@ -12,6 +12,7 @@ use std::ops::Deref;
 use super::super::api::*;
 use super::super::implementation_support::common::*;
 use {DeterministicRandomId};
+use implementation_support::insert_only;
 
 time_steward_steward_specific_api!();
 
@@ -129,7 +130,7 @@ pub struct SnapshotInner <B: Basics> {
   index: usize,
   time: ExtendedTime <B>,
   globals: Rc<B::Globals>,
-  clones: RefCell<HashMap<usize, Box<Any>>>,
+  clones: insert_only::HashMap<usize, Box<Any>>,
   snapshots_tree: Rc<RefCell<SnapshotsTree<B>>>,
 }
 #[derive (Debug, Clone)]
@@ -158,8 +159,13 @@ impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
     self.handle().extended_time()
   }
-  fn query <'b, Owned: StewardData, Query: PossiblyBorrowedStewardData <'b, Owned>, T: DataTimelineQueriableWith<'b, Owned, Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: Query, offset: QueryOffset)-> T::QueryResult {
-    DataTimelineQueriableWith::<'b, Owned, Query>::query (&*timeline.data.borrow(), query, self.extended_now(), offset)
+  fn query <'c, 'b,
+    Owned: StewardData,
+    Query: PossiblyBorrowedStewardData <'b, Owned>,
+    T: DataTimelineQueriableWith<'b, Owned, Query, Basics = <Self::Steward as TimeSteward>::Basics>
+    > (&'c self, timeline: &'b DataTimelineCell<T>, query: Query, offset: QueryOffset)->
+      DataTimelineCellReadGuard<'b, T::QueryResult> {
+    Ref::map (timeline.data.borrow(), | guard | DataTimelineQueriableWith::<'b, Owned, Query>::query (guard, query, self.extended_now(), offset))
   }
 }
 impl <B: Basics> Accessor for SnapshotHandle <B> {
@@ -168,14 +174,17 @@ impl <B: Basics> Accessor for SnapshotHandle <B> {
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
     & self.data.time
   }
-  fn query <'b, Owned: StewardData, Query: PossiblyBorrowedStewardData <'b, Owned>, T: DataTimelineQueriableWith<'b, Owned, Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: Query, offset: QueryOffset)-> T::QueryResult {
-    let mut guard = self.data.clones.borrow_mut();
-    let entry = guard.entry (timeline.serial_number);
-    let boxref = entry.or_insert_with (| | Box::new (
-      timeline.data.borrow().clone_for_snapshot (self.extended_now())
+  fn query <'c, 'b,
+    Owned: StewardData,
+    Query: PossiblyBorrowedStewardData <'b, Owned>,
+    T: DataTimelineQueriableWith<'b, Owned, Query, Basics = <Self::Steward as TimeSteward>::Basics>
+    > (&'c self, timeline: &'b DataTimelineCell<T>, query: Query, offset: QueryOffset)->
+      DataTimelineCellReadGuard<'b, T::QueryResult> {
+    let boxref = self.clones.get_default (| | Box::new (
+      DataTimelineCell::new (timeline.data.borrow().clone_for_snapshot (self.extended_now()))
     ));
-    let typed = boxref.downcast_ref::<T>().unwrap();
-    DataTimelineQueriableWith::<'b, Owned, Query>::query(typed, query, self.extended_now(), offset)
+    let typed = boxref.downcast_ref::<DataTimelineCell<T>>().unwrap();
+    Ref::map (typed.data.borrow(), | guard | DataTimelineQueriableWith::<'b, Owned, Query>::query (guard, query, self.extended_now(), offset))
   }
 }
 impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
