@@ -8,7 +8,7 @@ extern crate serde;
 extern crate serde_derive;
 
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{StewardData, QueryOffset, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::rowless::api::{PersistentTypeId, PersistentlyIdentifiedType, StewardData, QueryOffset, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
@@ -117,8 +117,11 @@ fn dump_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: & Acce
 });*/
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-struct Shake {whodunnit: usize} //, Basics, EventId (0x8987a0b8e7d3d624),
+struct Shake {whodunnit: usize}
 impl StewardData for Shake {}
+impl PersistentlyIdentifiedType for Shake {
+  const ID: PersistentTypeId = PersistentTypeId(0x8987a0b8e7d3d624);
+}
 impl Event for Shake {
   type Steward = Steward;
   type ExecutionData = ();
@@ -150,8 +153,11 @@ impl Event for Shake {
 }
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-struct Initialize {} //, Basics, EventId (0xd5e73d8ba6ec59a2),
+struct Initialize {}
 impl StewardData for Initialize {}
+impl PersistentlyIdentifiedType for Initialize {
+  const ID: PersistentTypeId = PersistentTypeId(0xd5e73d8ba6ec59a2);
+}
 impl Event for Initialize {
   type Steward = Steward;
   type ExecutionData = ();
@@ -173,8 +179,11 @@ impl Event for Initialize {
 }
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-struct Tweak {} //, Basics, EventId (0xfe9ff3047f9a9552),
+struct Tweak {}
 impl StewardData for Tweak {}
+impl PersistentlyIdentifiedType for Tweak {
+  const ID: PersistentTypeId = PersistentTypeId(0xfe9ff3047f9a9552);
+}
 impl Event for Tweak {
   type Steward = Steward;
   type ExecutionData = ();
@@ -200,8 +209,11 @@ use rand::{Rng, SeedableRng, ChaChaRng};
 thread_local! {static INCONSISTENT: u32 = rand::thread_rng().gen::<u32>();}
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-struct TweakUnsafe {} //, Basics, EventId (0xa1618440808703da),
+struct TweakUnsafe {}
 impl StewardData for TweakUnsafe {}
+impl PersistentlyIdentifiedType for TweakUnsafe {
+  const ID: PersistentTypeId = PersistentTypeId(0xa1618440808703da);
+}
 impl Event for TweakUnsafe {
   type Steward = Steward;
   type ExecutionData = ();
