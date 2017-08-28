@@ -9,6 +9,20 @@ use std::fmt::Debug;
 use std::borrow::Borrow;
 use std::ops::Deref;
 
+#[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug)]
+pub struct PersistentTypeId (pub u64);
+pub trait PersistentlyIdentifiedType {
+  const ID: PersistentTypeId;
+}
+pub trait DynamicPersistentlyIdentifiedType {
+  fn persistent_type_id (&self)->PersistentTypeId;
+}
+impl <T: PersistentlyIdentifiedType> DynamicPersistentlyIdentifiedType for T {
+  fn persistent_type_id (&self)->PersistentTypeId {
+    <T as PersistentlyIdentifiedType>::ID
+  }
+}
+
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
 /// TimeSteward has strong requirements for serializability. In addition to implementing these traits, a StewardData must have all its behavior be invariant under cloning and serialize-deserialize cycles, and identical to that of any other object that is == to it.
@@ -89,7 +103,7 @@ pub trait EventHandleTrait <B: Basics>: StewardData + Ord + Hash + Borrow<Extend
   fn id (&self)->& DeterministicRandomId {& self.extended_time().id}
   fn downcast_ref <T: Any> (&self)->Option<&T>;
 }
-pub trait DataHandleTrait <T: StewardData>: StewardData + Hash + Deref<Target = T> {
+pub trait DataHandleTrait <T: StewardData + PersistentlyIdentifiedType>: StewardData + Hash + Deref<Target = T> {
   fn new(data: T)->Self;
 }
 pub trait DataTimelineCellTrait <T: DataTimeline>: StewardData + Hash {
@@ -120,7 +134,7 @@ pub enum ValidSince<BaseTime> {
 macro_rules! time_steward_steward_specific_api {
   () => {
 
-pub trait Event: StewardData {
+pub trait Event: StewardData + PersistentlyIdentifiedType {
   type Steward: TimeSteward;
   type ExecutionData;
   // audit all functions: calls invalidate_event for everything whose queries would be changed

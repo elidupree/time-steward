@@ -58,7 +58,7 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
 
 #[derive (Debug, Derivative)]
 #[derivative (Clone (bound = ""))]
-pub struct DataHandle <T: StewardData> {
+pub struct DataHandle <T: StewardData + PersistentlyIdentifiedType> {
   data: Rc<T>
 }
 
@@ -76,7 +76,7 @@ impl <B: Basics> EventHandleTrait<B> for EventHandle <B> {
   }
 }
 
-impl <T: StewardData> DataHandleTrait <T> for DataHandle <T> {
+impl <T: StewardData + PersistentlyIdentifiedType> DataHandleTrait <T> for DataHandle <T> {
   fn new(data: T)->Self {
     DataHandle { data: Rc::new(data) }
   }
@@ -96,7 +96,7 @@ impl <T: DataTimeline> Clone for DataTimelineCell <T> {
   }
 }
 
-impl <T: StewardData> Deref for DataHandle <T> {
+impl <T: StewardData + PersistentlyIdentifiedType> Deref for DataHandle <T> {
   type Target = T;
   fn deref (&self) -> &T {
     &*self.data
@@ -104,7 +104,7 @@ impl <T: StewardData> Deref for DataHandle <T> {
 }
 
 time_steward_common_impls_for_handles!();
-time_steward_common_impls_for_uniquely_identified_handle! ([T: StewardData] [DataHandle <T>] self => (&*self.data as *const T): *const T);
+time_steward_common_impls_for_uniquely_identified_handle! ([T: StewardData + PersistentlyIdentifiedType] [DataHandle <T>] self => (&*self.data as *const T): *const T);
 time_steward_common_impls_for_uniquely_identified_handle! ([T: DataTimeline] [DataTimelineCell <T>] self => (self.serial_number): usize);
 
 time_steward_serialization_impls_for_handle!(
@@ -116,7 +116,7 @@ time_steward_serialization_impls_for_handle!(
   (&self) Data located at (| handle | &mut unimplemented!())
 );
 time_steward_serialization_impls_for_handle!(
-  [T: StewardData] [DataHandle <T>]
+  [T: StewardData + PersistentlyIdentifiedType] [DataHandle <T>]
   (&self) Data located at (| handle | &mut*handle.data)
 );
 

@@ -103,7 +103,7 @@ macro_rules! time_steward_common_impls_for_handles {
     time_steward_common_impls_for_event_handle! ([B: Basics] [EventHandle <B>] [B]);
     time_steward_common_impls_for_uniquely_identified_handle! ([B: Basics] [EventHandle <B>] self => (self.extended_time().id): DeterministicRandomId);
     
-    impl <T: StewardData> StewardData for DataHandle <T> {}
+    impl <T: StewardData + PersistentlyIdentifiedType> StewardData for DataHandle <T> {}
     impl <B: Basics> StewardData for EventHandle <B> {}
     impl <T: DataTimeline> StewardData for DataTimelineCell <T> {}
   };

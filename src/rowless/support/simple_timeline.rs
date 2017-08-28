@@ -14,6 +14,7 @@ use implementation_support::common::{split_off_greater_set};
 pub struct GetVarying;
 impl StewardData for GetVarying {}
 
+
 pub trait IterateUniquelyOwnedPredictions <Steward: TimeSteward> {
   fn iterate_predictions <F: FnMut (& Steward::EventHandle)> (&self, _callback: &mut F) {}
 }
