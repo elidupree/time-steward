@@ -83,7 +83,21 @@ impl DeserializationContext {
 #[macro_export]
 macro_rules! time_steward_serialization_impls {
   () => {
+  
+  trait StaticDowncast <T> {
+    fn static_downcast (self)->T;
+  }
+  impl <T> StaticDowncast <T> for T {
+    fn static_downcast (self)->T {self}
+  }
+  impl <T, U> StaticDowncast <T> for U {
+    default fn static_downcast (self)->T {panic!("Tried to do TimeSteward serialization with non-bincode serializer/deserializer. TimeSteward serialization only supports bincode")}
+  }
+  
+  use $crate::serde::{Serialize, Deserialize};
+  use $crate::serde::ser::Error;
     
+  #[derive (Serialize, Deserialize)]
   enum SerializationElement {
     DataHandleData(u64, PersistentTypeId),
     EventHandleData(u64, PersistentTypeId),
@@ -98,38 +112,38 @@ macro_rules! time_steward_serialization_impls {
   }
   impl<T: StewardData> SerializeTargetInto for DataHandle <T> {
     fn serialize_target_into(&self, writer: &mut Write, object_id: u64)->$crate::bincode::Result <()> {
-      $crate::bincode::serialize_into (writer, SerializationElement::DataHandleData (T::ID), $crate::bincode::Infinite)?;
-      $crate::bincode::serialize_into (writer, &*self.data, $crate::bincode::Infinite)?;
+      $crate::bincode::serialize_into (writer, & SerializationElement::DataHandleData (object_id, T::ID), $crate::bincode::Infinite)?;
+      $crate::bincode::serialize_into (writer, &*self.data, $crate::bincode::Infinite)
     }
   }
-  fn data_handle_initialize_function <T: StewardData>(reader: &mut Read, object_id: u64) {
+  fn data_handle_initialize_function <T: StewardData>(reader: &mut Read, object_id: u64)->$crate::bincode::Result <()> {
     with_deserialization_context (| context | {
       let handle = context.find_handle::<_, DataHandle <T>> (object_id, || {
         Box::new (DataHandle::new(unsafe {::std::mem::uninitialized()}))
       })?;
       unsafe {::std::ptr::write (
-        handle.data as *mut T,
-        ::bincode::deserialize_from (reader, $crate::bincode::Infinite)
-      )?;}
+        &mut*handle.data as *mut T,
+        $crate::bincode::deserialize_from (reader, $crate::bincode::Infinite)?
+      );}
     })
   }
   
   impl<B: Basics> SerializeTargetInto for EventHandle <B> {
     fn serialize_target_into(&self, writer: &mut Write, object_id: u64)->$crate::bincode::Result <()> {
-      $crate::bincode::serialize_into (writer, SerializationElement::DataHandleData (self.data.data.persistent_type_id()), $crate::bincode::Infinite)?;
+      $crate::bincode::serialize_into (writer, & SerializationElement::DataHandleData (object_id, self.data.data.persistent_type_id()), $crate::bincode::Infinite)?;
       $crate::bincode::serialize_into (writer, self.extended_time(), $crate::bincode::Infinite)?;
       self.data.data.serialize_into (writer)
     }
   }
-  impl<T: EventInnerTrait> SerializeInto for T {
+  impl<T: Serialize> SerializeInto for T {
     fn serialize_into(&self, writer: &mut Write)->$crate::bincode::Result <()> {
-      $crate::bincode::serialize_into (writer, self, $crate::bincode::Infinite)?;
+      $crate::bincode::serialize_into (writer, self, $crate::bincode::Infinite)
     }
   }
-  fn event_handle_initialize_function <T: Event>(reader: &mut Read, object_id: u64) {
+  fn event_handle_initialize_function <T: Event>(reader: &mut Read, object_id: u64)->$crate::bincode::Result <()> {
     with_deserialization_context (| context | {
       let handle = context.find_handle::<_, <T::Steward as TimeSteward>::EventHandle> (object_id, || {
-        Box::new (EventHandle::new(unsafe {::std::mem::uninitialized()}))
+        Box::new (EventHandle { data: unsafe {::std::mem::uninitialized()}})
       })?;
       let time = ::bincode::deserialize_from (reader, $crate::bincode::Infinite);
       let data = ::bincode::deserialize_from (reader, $crate::bincode::Infinite);
@@ -155,9 +169,9 @@ macro_rules! time_steward_serialization_impls {
   }
   struct DeserializationContext {
     data_handle_initialize_functions: ::std::collections::HashMap <
-      PersistentTypeId, fn (&mut Write)>,
+      PersistentTypeId, fn (&mut Write)->$crate::bincode::Result <()>>,
     event_handle_initialize_functions: ::std::collections::HashMap <
-      PersistentTypeId, fn (&mut Write)>,
+      PersistentTypeId, fn (&mut Write)->$crate::bincode::Result <()>>,
     handles: ::std::collections::HashMap <u64, Box <Any>>,
     uninitialized_handles: ::std::collections::HashSet <u64>,
   }
@@ -167,43 +181,43 @@ macro_rules! time_steward_serialization_impls {
     static DESERIALIZATION_CONTEXT: RefCell<Option <DeserializationContext>> = RefCell::new (None);
   }
   
-  fn with_serialization_context <S: $crate::serde::Serializer, R, F: FnOnce (&mut SerializationContext <Steward>)->R> (callback: F)->Result <R, S::Error> {
+  fn with_serialization_context <R, F: FnOnce (&mut SerializationContext)->R> (callback: F)->Result <R, $crate::bincode::Error> {
     SERIALIZATION_CONTEXT.with (| cell | {
       let mut guard = cell.borrow_mut();
-      let mut context = match guard.as_mut() {Some(x)=>x, None=>return S::Error::Custom("Tried to serialize TimeSteward data without a serialization context.")};
+      let mut context = match guard.as_mut() {Some(x)=>x, None=>return $crate::bincode::Error::custom("Tried to serialize TimeSteward data without a serialization context.")};
       callback (context)
     })
   }
-  fn with_deserialization_context <D: $crate::serde::Deserializer, Steward: TimeSteward, R, F: FnOnce (&mut DeserializationContext <Steward>)->R> (callback: F)->Result <R, D::Error> {
+  fn with_deserialization_context <R, F: FnOnce (&mut DeserializationContext)->R> (callback: F)->Result <R, $crate::bincode::Error> {
     DESERIALIZATION_CONTEXT.with (| cell | {
       let mut guard = cell.borrow_mut();
-      let mut context = match guard.as_mut() {Some(x)=>x, None=>return D::Error::Custom("Tried to deserialize TimeSteward data without a deserialization context.")};
+      let mut context = match guard.as_mut() {Some(x)=>x, None=>return $crate::bincode::Error::custom("Tried to deserialize TimeSteward data without a deserialization context.")};
       callback (context)
     })
   }
   
   impl SerializationContext {
-    fn find_handle <S: $crate::serde::Serializer, F: FnOnce()->Box <Any>, T> (&mut self, serializer: S, initialize: F)->Result<(), S::Error> {
+    fn find_handle <F: FnOnce()->Box <Any>, T> (&mut self, initialize: F)->Result<(), $crate::bincode::Error> {
       let object_identifier = self.handle_targets_observed.entry (self.data as *const ()).or_insert_with (|| {
         let result = self.next_object_identifier;
         self.next_object_identifier += 1;
         self.handles_to_serialize_target.insert (result, initialize());
         result
       });
-      object_identifier.serialize (serializer)
+      object_identifier
     }
   }
   
   impl DeserializationContext {
-    fn find_handle <D: $crate::serde::Deserializer, F: FnOnce()->Box <Any>, T> (&mut self, object_identifier: u64, initialize: F)->Result<&mut T, D::Error> {
+    fn find_handle <F: FnOnce()->Box <Any>, T> (&mut self, object_identifier: u64, initialize: F)->Result<&mut T, $crate::bincode::Error> {
       let entry = self.data_handles.entry (object_identifier).or_insert_with (|| {
         let created = initialize();
-        context.uninitialized_data_handles.insert (created.clone());
+        self.uninitialized_data_handles.insert (created.clone());
         created
       });
       match (*entry).downcast_mut::<T>() {
         Some (result) => Ok(result),
-        None => D::Error::Custom("In the serialized snapshot, DataHandles of different types pointed to the same object."),
+        None => $crate::bincode::Error::custom("In the serialized snapshot, DataHandles of different types pointed to the same object."),
       }
     }
   }
@@ -211,9 +225,10 @@ macro_rules! time_steward_serialization_impls {
   impl <T: StewardData> $crate::serde::Serialize for DataHandle <T> {
     fn serialize <S: $crate::serde::Serializer> (&self, serializer: S)->Result <S::Ok, S::Error> {
       with_serialization_context (| context | {
-        context.find_handle::<S, _, DataHandle <T>> (serializer, || {
+        let object_identifier = context.find_handle::<S, _, DataHandle <T>> (serializer, || {
           Box::new (self.clone())
-        })
+        })?;
+        object_identifier.serialize (serializer)
       })
     }
   }
@@ -231,9 +246,10 @@ macro_rules! time_steward_serialization_impls {
   impl <B: Basics> $crate::serde::Serialize for EventHandle <B> {
     fn serialize <S: $crate::serde::Serializer> (&self, serializer: S)->Result <S::Ok, S::Error> {
       with_serialization_context (| context | {
-        context.find_handle::<S, _, DataHandle <T>> (serializer, || {
+        let object_identifier = context.find_handle::<S, _, EventHandle <B>> (serializer, || {
           Box::new (self.clone())
-        })
+        })?;
+        object_identifier.serialize (serializer)
       })
     }
   }
@@ -268,7 +284,10 @@ macro_rules! time_steward_serialization_impls {
         let guard = cell.borrow_mut();
         assert!(guard.is_none(), "serializing recursively breaks my hacks and probably makes no sense");
         *guard = Some(SerializationContext {
-        
+          snapshot: Box::new (snapshot),
+          handle_targets_observed: HashMap::new(),
+          handles_to_serialize_target: Vec::new(),
+          next_object_identifier: 0,
         });
       }
       // serialize inside a closure so that errors can be collected and we still clear the context afterwards
@@ -277,11 +296,8 @@ macro_rules! time_steward_serialization_impls {
         $crate::bincode::serialize_into (writer, snapshot.globals(), $crate::bincode::Infinite)?;
     
         loop {
-          if let (object_identifier, handle_box) = cell.borrow().data_handles_to_serialize_target.pop() {
-            handle_box.serialize_into (writer);
-          }
-          if let (object_identifier, event_handle) = cell.borrow().event_handles_to_serialize_target.pop() {
-            event_handle.serialize_into (writer);
+          if let (object_identifier, handle_box) = cell.borrow().unwrap().handles_to_serialize_target.pop() {
+            handle_box.serialize_target_into (writer, object_identifier);
           }
         }
         
@@ -297,33 +313,38 @@ macro_rules! time_steward_serialization_impls {
     })
   }
   
-  fn deserialize_something <R: Read> (reader: &mut R)->$crate::bincode::Result <()> {
+  fn deserialize_something <B: Basics, R: Read> (reader: &mut R)->$crate::bincode::Result <()> {
     DESERIALIZATION_CONTEXT.with (| cell | {
       {
         let guard = cell.borrow_mut();
         assert!(guard.is_none(), "deserializing recursively breaks my hacks and probably makes no sense");
-        *guard = Some(DeserializationContext::new());
+        *guard = Some(DeserializationContext {
+          data_handle_initialize_functions: ::std::collections::HashMap::new(),
+          event_handle_initialize_functions: ::std::collections::HashMap::new(),
+          handles: ::std::collections::HashMap::new(),
+          uninitialized_handles: ::std::collections::HashSet::new(),
+        });
       }
       // deserialize inside a closure so that errors can be collected and we still clear the context afterwards
       let result = || {
-        let time: ExtendedTime <B> = $crate::bincode::deserialize_from (reader, ::std::mem::size_of::<ExtendedTime <B>>())?;
+        let time: ExtendedTime <B> = $crate::bincode::deserialize_from (reader, $crate::bincode::Bounded (::std::mem::size_of::<ExtendedTime <B>>()))?;
         let globals: B::Globals = $crate::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
     
-        while !cell.borrow().uninitialized_handles.is_empty() {
+        while !cell.borrow().unwrap().uninitialized_handles.is_empty() {
           // TODO: use actual size limits
           let next: SerializationElement = $crate::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
           match next {
-            SerializationElement::DataTimeline (object_id, type_id) => {
-              let deserialize_function = cell.borrow().data_handle_initialize_functions.get (type_id);
+            SerializationElement::DataHandleData (object_id, type_id) => {
+              let deserialize_function = cell.borrow().unwrap().data_handle_initialize_functions.get (type_id);
               (*deserialize_function)(reader, object_id);
             }
-            SerializationElement::Event (object_id, type_id) => {
-              let deserialize_function = cell.borrow().event_handle_initialize_functions.get (type_id);
+            SerializationElement::EventHandleData (object_id, type_id) => {
+              let deserialize_function = cell.borrow().unwrap().event_handle_initialize_functions.get (type_id);
               (*deserialize_function)(reader, object_id);
             }
             SerializationElement::Finished => {
               // TODO: clean up broken state
-              return $crate::bincode::Result::Custom("Premature end of serialized snapshot")
+              return Err($crate::bincode::Error::custom("Premature end of serialized snapshot"))
             }
           };
         }
@@ -332,7 +353,7 @@ macro_rules! time_steward_serialization_impls {
         match next {
           SerializationElement::Finished => (),
           _ => {
-            return $crate::bincode::Result::Custom("Serialized snapshot included additional elements after successfully deserializing the state")
+            return Err($crate::bincode::Error::custom("Serialized snapshot included additional elements after successfully deserializing the state"))
           }
         };
         
