@@ -213,10 +213,13 @@ macro_rules! time_steward_serialization_impls {
   
   impl SerializationContext {
     fn find_handle <F: FnOnce()->Box <SerializeTargetInto>, T> (&mut self, pointer: usize, create_serializable: F)->Result<u64, $crate::bincode::Error> {
-      let object_identifier = *self.handle_targets_observed.entry (pointer).or_insert_with (|| {
-        let result = self.next_object_identifier;
-        self.next_object_identifier += 1;
-        self.handles_to_serialize_target.push((result, create_serializable()));
+      let mut handle_targets_observed = &mut self.handle_targets_observed;
+      let mut handles_to_serialize_target = &mut self.handles_to_serialize_target;
+      let mut next_object_identifier = &mut self.next_object_identifier;
+      let object_identifier = *handle_targets_observed.entry (pointer).or_insert_with (|| {
+        let result = *next_object_identifier;
+        *next_object_identifier += 1;
+        handles_to_serialize_target.push((result, create_serializable()));
         result
       });
       Ok(object_identifier)
@@ -225,9 +228,11 @@ macro_rules! time_steward_serialization_impls {
   
   impl DeserializationContext {
     fn find_handle <F: FnOnce()->Box <Any>, T: Any> (&mut self, object_identifier: u64, create_uninitialized: F)->Result<&mut T, $crate::bincode::Error> {
-      let entry = self.handles.entry (object_identifier).or_insert_with (|| {
+      let mut handles = &mut self.handles;
+      let mut uninitialized_handles = &mut self.uninitialized_handles;
+      let entry = handles.entry (object_identifier).or_insert_with (|| {
         let created = create_uninitialized();
-        self.uninitialized_handles.insert (object_identifier);
+        uninitialized_handles.insert (object_identifier);
         created
       });
       match (*entry).downcast_mut::<T>() {
