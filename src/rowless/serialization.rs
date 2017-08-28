@@ -128,11 +128,11 @@ macro_rules! time_steward_serialization_impls {
   }
   fn data_handle_initialize_function <T: StewardData + PersistentlyIdentifiedType>(reader: &mut Read, object_id: u64)->$crate::bincode::Result <()> {
     with_deserialization_context (| context | {
-      let handle = context.find_handle::<_, DataHandle <T>> (object_id, || {
+      let mut handle = context.find_handle::<_, DataHandle <T>> (object_id, || {
         Box::new (DataHandle::<T>::new(unsafe {::std::mem::uninitialized()}))
       })?;
       unsafe {::std::ptr::write (
-        &mut*handle.data as *mut T,
+        &*handle.data as *const T as *mut T,
         $crate::bincode::deserialize_from (reader, $crate::bincode::Infinite)?
       );}
       Ok(())
@@ -153,14 +153,15 @@ macro_rules! time_steward_serialization_impls {
   }
   fn event_handle_initialize_function <B: Basics, T: Event <Steward = Steward <B> >>(reader: &mut Read, object_id: u64)->$crate::bincode::Result <()> {
     with_deserialization_context (| context | {
-      let handle = context.find_handle::<_, <T::Steward as TimeSteward>::EventHandle> (object_id, || {
+      let now = context.time.downcast_ref::<ExtendedTime <B>>().unwrap().clone();
+      let mut handle = context.find_handle::<_, <T::Steward as TimeSteward>::EventHandle> (object_id, || {
         Box::<<T::Steward as TimeSteward>::EventHandle>::new (EventHandle { data: unsafe {::std::mem::uninitialized()}}) as Box<Any>
       })?;
       let time: ExtendedTime <B> = ::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
-      let in_future = time > *context.time.downcast_ref::<ExtendedTime <B>>().unwrap();
+      let in_future = time > now;
       let data: T = ::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
       unsafe {::std::ptr::write (
-        &mut*handle.data as *mut EventInner<B>,
+        &*handle.data as *const EventInner<B> as *mut EventInner<B>,
         EventInner {
           time: time.clone(),
           data: Box::new (data),
@@ -295,10 +296,10 @@ macro_rules! time_steward_serialization_impls {
   fn serialize_snapshot <B: Basics, W: Write> (writer: &mut W, snapshot: SnapshotHandle <B>)->$crate::bincode::Result <()> {
     SERIALIZATION_CONTEXT.with (| cell | {
       {
-        let guard = cell.borrow_mut();
+        let mut guard = cell.borrow_mut();
         assert!(guard.is_none(), "serializing recursively breaks my hacks and probably makes no sense");
         *guard = Some(SerializationContext {
-          snapshot: Box::new (snapshot),
+          snapshot: Box::new (snapshot.clone()),
           handle_targets_observed: HashMap::new(),
           handles_to_serialize_target: Vec::new(),
           next_object_identifier: 0,
@@ -309,7 +310,7 @@ macro_rules! time_steward_serialization_impls {
         $crate::bincode::serialize_into (writer, snapshot.extended_now(), $crate::bincode::Bounded (::std::mem::size_of::<ExtendedTime <B>>() as u64))?;
         $crate::bincode::serialize_into (writer, snapshot.globals(), $crate::bincode::Infinite)?;
     
-        while let Some((object_identifier, handle_box)) = cell.borrow().unwrap().handles_to_serialize_target.pop() {
+        while let Some((object_identifier, handle_box)) = cell.borrow_mut().as_mut().unwrap().handles_to_serialize_target.pop() {
           handle_box.serialize_target_into (writer, object_identifier);
         }
         
@@ -317,7 +318,7 @@ macro_rules! time_steward_serialization_impls {
       })();
 
       {
-        let guard = cell.borrow_mut();
+        let mut guard = cell.borrow_mut();
         *guard = None;
       }
       result
@@ -328,7 +329,7 @@ macro_rules! time_steward_serialization_impls {
     let time: ExtendedTime <B> = $crate::bincode::deserialize_from (reader, $crate::bincode::Bounded (::std::mem::size_of::<ExtendedTime <B>>() as u64))?;
     DESERIALIZATION_CONTEXT.with (| cell | {
       {
-        let guard = cell.borrow_mut();
+        let mut guard = cell.borrow_mut();
         assert!(guard.is_none(), "deserializing recursively breaks my hacks and probably makes no sense");
         *guard = Some(DeserializationContext {
           time: Box::new (time.clone()),
@@ -347,12 +348,12 @@ macro_rules! time_steward_serialization_impls {
           let next: SerializationElement = $crate::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
           match next {
             SerializationElement::DataHandleData (object_id, type_id) => {
-              let deserialize_function = cell.borrow().as_ref().unwrap().data_handle_initialize_functions.get (&type_id).ok_or_else (|| $crate::bincode::Error::custom("Tried to deserialize a type that wasn't listed"))?;
-              (*deserialize_function)(reader, object_id);
+              let deserialize_function = *cell.borrow().as_ref().unwrap().data_handle_initialize_functions.get (&type_id).ok_or_else (|| $crate::bincode::Error::custom("Tried to deserialize a type that wasn't listed"))?;
+              deserialize_function(reader, object_id);
             }
             SerializationElement::EventHandleData (object_id, type_id) => {
-              let deserialize_function = cell.borrow().as_ref().unwrap().event_handle_initialize_functions.get (&type_id).ok_or_else (|| $crate::bincode::Error::custom("Tried to deserialize a type that wasn't listed"))?;
-              (*deserialize_function)(reader, object_id);
+              let deserialize_function = *cell.borrow().as_ref().unwrap().event_handle_initialize_functions.get (&type_id).ok_or_else (|| $crate::bincode::Error::custom("Tried to deserialize a type that wasn't listed"))?;
+              deserialize_function(reader, object_id);
             }
             SerializationElement::Finished => {
               // TODO: clean up broken state
@@ -369,11 +370,11 @@ macro_rules! time_steward_serialization_impls {
           }
         };
         
-        Ok(Steward::from_globals (globals, ValidSince::Before (time)))
+        Ok(Steward::from_globals (globals/*, ValidSince::Before (time)*/))
       })();
 
       {
-        let guard = cell.borrow_mut();
+        let mut guard = cell.borrow_mut();
         *guard = None;
       }
       result

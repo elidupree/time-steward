@@ -151,7 +151,8 @@ time_steward_common_impls_for_handles!();
 time_steward_common_impls_for_uniquely_identified_handle! ([T: StewardData + PersistentlyIdentifiedType] [DataHandle <T>] self => (&*self.data as *const T): *const T);
 time_steward_common_impls_for_uniquely_identified_handle! ([T: DataTimeline] [DataTimelineCell <T>] self => (self.serial_number): usize);
 
-time_steward_serialization_impls_for_handle!(
+time_steward_serialization_impls!();
+/*time_steward_serialization_impls_for_handle!(
   [T: DataTimeline] [DataTimelineCell <T>]
   (&self) Data located at (| handle | &mut handle.data)
 );
@@ -162,7 +163,7 @@ time_steward_serialization_impls_for_handle!(
 time_steward_serialization_impls_for_handle!(
   [T: StewardData + PersistentlyIdentifiedType] [DataHandle <T>]
   (&self) Data located at (| handle | &mut*handle.data)
-);
+);*/
 
 #[derive (Debug)]
 pub struct EventAccessorStruct <'a, B: Basics> {
