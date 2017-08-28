@@ -192,7 +192,7 @@ pub trait FutureCleanupAccessor: EventAccessor {
 
 pub trait SnapshotAccessor: Accessor {
   /// note: SnapshotAccessor::serialize() matches TimeSteward::deserialize()
-  fn serialize_into <W: Write> (&self, writer: W);
+  fn serialize_into <W: Write> (&self, writer: &mut W)->::bincode::Result <()>;
 }
 
 
@@ -216,7 +216,7 @@ pub trait TimeSteward: Any + Sized + Debug {
 pub trait ConstructibleTimeSteward: TimeSteward {
   fn from_globals (globals: <Self::Basics as Basics>::Globals)->Self;
   /// note: SnapshotAccessor::serialize() matches TimeSteward::deserialize()
-  fn deserialize_from <R: Read> (data: &mut R)->Self;
+  fn deserialize_from <R: Read> (data: &mut R)->::bincode::Result <Self>;
 }
 
 pub trait IncrementalTimeSteward: TimeSteward {

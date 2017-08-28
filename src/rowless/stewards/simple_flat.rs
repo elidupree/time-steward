@@ -238,7 +238,7 @@ impl <'a, B: Basics> FutureCleanupAccessor for EventAccessorStruct <'a, B> {
 }
 
 impl <B: Basics> SnapshotAccessor for SnapshotHandle <B> {
-  fn serialize_into <W: Write> (&self, writer: W) {
+  fn serialize_into <W: Write> (&self, writer: &mut W)->::bincode::Result <()> {
     unimplemented!()
   }
 }
@@ -352,7 +352,7 @@ impl <B: Basics> ConstructibleTimeSteward for Steward <B> {
     }
   }
   
-  fn deserialize_from <R: Read> (data: &mut R)->Self {
+  fn deserialize_from <R: Read> (data: &mut R)->::bincode::Result <Self> {
     unimplemented!()
   }
 }
