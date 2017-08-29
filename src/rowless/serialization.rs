@@ -107,7 +107,7 @@ macro_rules! time_steward_serialization_impls {
   use $crate::serde::{Serialize, Deserialize};
   use $crate::serde::ser::Error;
     
-  #[derive (Serialize, Deserialize)]
+  #[derive (Serialize, Deserialize, Debug)]
   enum SerializationElement {
     DataHandleData(u64, PersistentTypeId),
     EventHandleData(u64, PersistentTypeId),
@@ -142,7 +142,7 @@ macro_rules! time_steward_serialization_impls {
   
   impl<B: Basics> SerializeTargetInto for EventHandle <B> {
     fn serialize_target_into(&self, writer: &mut Write, object_id: u64)->$crate::bincode::Result <()> {
-      $crate::bincode::serialize_into (writer, & SerializationElement::DataHandleData (object_id, self.data.data.persistent_type_id()), $crate::bincode::Infinite)?;
+      $crate::bincode::serialize_into (writer, & SerializationElement::EventHandleData (object_id, self.data.data.persistent_type_id()), $crate::bincode::Infinite)?;
       $crate::bincode::serialize_into (writer, self.extended_time(), $crate::bincode::Infinite)?;
       self.data.data.serialize_into (writer)
     }
@@ -158,9 +158,10 @@ macro_rules! time_steward_serialization_impls {
       let now = context.time.downcast_ref::<ExtendedTime <B>>().unwrap().clone();
       let mut handle = context.find_handle::<_, <T::Steward as TimeSteward>::EventHandle> (object_id, || {
         Box::<<T::Steward as TimeSteward>::EventHandle>::new (EventHandle { data: Rc::new(unsafe {::std::mem::uninitialized()})}) as Box<Any>
-      })?;
+      })?.clone();
       let time: ExtendedTime <B> = ::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
       let in_future = time > now;
+      if in_future {context.predictions.insert (object_id);}
       let data: T = ::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
       unsafe {::std::ptr::write (
         &*handle.data as *const EventInner<B> as *mut EventInner<B>,
@@ -191,6 +192,21 @@ macro_rules! time_steward_serialization_impls {
       PersistentTypeId, fn (&mut Read, u64)->$crate::bincode::Result <()>>,
     handles: ::std::collections::HashMap <u64, Box <Any>>,
     uninitialized_handles: ::std::collections::HashSet <u64>,
+    predictions: ::std::collections::HashSet <u64>,
+    success: bool,
+  }
+  
+  impl Drop for DeserializationContext {
+    fn drop (&mut self) {
+      // Hack: if there was a deserialization error,
+      // the handles may be in a broken intermediate state;
+      // leak memory instead of segfaulting
+      // (there's probably a proper way to do free the memory, but
+      //   this whole system will probably be rewritten anyway)
+      if !self.success {
+        mem::forget (mem::replace (&mut self.handles, HashMap::new()));
+      }
+    }
   }
   
   thread_local! {
@@ -365,6 +381,8 @@ macro_rules! time_steward_serialization_impls {
           event_handle_initialize_functions: ::std::collections::HashMap::new(),
           handles: ::std::collections::HashMap::new(),
           uninitialized_handles: ::std::collections::HashSet::new(),
+          predictions: ::std::collections::HashSet::new(),
+          success: false,
         };
         B::Types::visit_all (&mut context);
         *guard = Some(context);
@@ -376,6 +394,7 @@ macro_rules! time_steward_serialization_impls {
         while !cell.borrow().as_ref().unwrap().uninitialized_handles.is_empty() {
           // TODO: use actual size limits
           let next: SerializationElement = $crate::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
+          //printlnerr!("{:?}", next);
           match next {
             SerializationElement::DataHandleData (object_id, type_id) => {
               let deserialize_function = *cell.borrow().as_ref().unwrap().data_handle_initialize_functions.get (&type_id).ok_or_else (|| $crate::bincode::Error::custom("Tried to deserialize a type that wasn't listed"))?;
@@ -399,10 +418,15 @@ macro_rules! time_steward_serialization_impls {
           }
         };
         
-        Ok(Steward::from_globals (globals/*, ValidSince::Before (time)*/))
+        let mut steward = Steward::from_globals (globals/*, ValidSince::Before (time)*/);
+        let mut guard = cell.borrow_mut();
+        let mut context = guard.as_mut().unwrap();
+        for prediction in context.predictions.iter() {
+          steward.events_needing_attention.insert (EventNeedingAttention {handle: context.handles.get (prediction).unwrap().downcast_ref::<EventHandle <B>>().unwrap().clone(), should_be_executed: true});
+        }
+        context.success = true;
+        Ok(steward)
       })();
-      
-      // TODO: clean up broken state
       
       {
         let mut guard = cell.borrow_mut();
