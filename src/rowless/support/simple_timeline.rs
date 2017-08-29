@@ -149,7 +149,7 @@ impl <VaryingData: StewardData, Steward: TimeSteward> DataTimeline for SimpleTim
     let retained = self.other_dependent_events.split_off (time);
     mem::replace (&mut self.other_dependent_events, retained);
     
-    while self.changes.front().map_or (false, | change | change.0.extended_time() < time) {
+    while self.changes.get(1).map_or (false, | change | change.0.extended_time() < time) {
       self.changes.pop_front ();
     }
   }
