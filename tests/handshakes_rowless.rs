@@ -299,6 +299,40 @@ fn handshakes_retroactive() {
   assert_eq!(first_dump, last_dump);
 }
 
+
+#[test]
+fn handshakes_reloading() {
+  let mut stew: Steward = Steward::from_globals (make_globals());
+
+  stew.insert_fiat_event(0,
+                       DeterministicRandomId::new(&0x32e1570766e768a7u64),
+                       Initialize{})
+    .unwrap();
+  
+  
+  let first_dump;
+  {
+    let snapshot = stew.snapshot_before(&(2000i64)).unwrap();
+    first_dump = dump_snapshot (& snapshot);
+    display_snapshot(&snapshot);
+  }
+  
+  
+  for increment in 1..21 {
+    stew.insert_fiat_event(increment * 100i64, DeterministicRandomId::new(&increment), Tweak{}).unwrap();
+    let earlier_snapshot: <Steward as TimeSteward>::SnapshotAccessor = stew.snapshot_before(&(increment * 100i64)).unwrap();
+    let mut serialized = Vec::new();
+    earlier_snapshot.serialize_into (&mut serialized).unwrap();
+    use std::io::Cursor;
+    let mut reader = Cursor::new(serialized);
+    stew = Steward::deserialize_from (&mut reader).unwrap();
+    let ending_snapshot: <Steward as TimeSteward>::SnapshotAccessor = stew.snapshot_before(&(2000i64)).unwrap();
+    let dump = dump_snapshot (& ending_snapshot) ;
+    display_snapshot(&earlier_snapshot);
+    assert_eq!(first_dump, dump);
+  }
+}
+
 /*
 
 #[test]
