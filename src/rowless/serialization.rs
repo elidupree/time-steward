@@ -424,6 +424,7 @@ macro_rules! time_steward_serialization_impls {
         for prediction in context.predictions.iter() {
           steward.events_needing_attention.insert (EventNeedingAttention {handle: context.handles.get (prediction).unwrap().downcast_ref::<EventHandle <B>>().unwrap().clone(), should_be_executed: true});
         }
+        steward.invalid_before = ValidSince::Before (time.base.clone()) ;
         context.success = true;
         Ok(steward)
       })();
