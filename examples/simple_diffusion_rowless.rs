@@ -28,10 +28,10 @@ macro_rules! printlnerr(
 
 use std::cmp::{min, max};
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{self, StewardData, QueryOffset, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
+use time_steward::rowless::api::{self, PersistentTypeId, PersistentlyIdentifiedType, ListedType, StewardData, QueryOffset, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, GetVarying, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
+use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
 
 use time_steward::support::rounding_error_tolerant_math::Range;
@@ -81,6 +81,13 @@ struct Cell {
   next_transfer_change: Option <EventHandle <Basics>>,
 }
 impl StewardData for Cell {}
+impl IterateUniquelyOwnedPredictions <Steward> for Cell {
+  fn iterate_predictions <F: FnMut (& <Steward as TimeSteward>::EventHandle)> (&self, callback: &mut F) {
+    if let Some (prediction) = self.next_transfer_change.as_ref() {
+      callback (prediction);
+    }
+  }
+}
 type CellStuff = DataTimelineCell <SimpleTimeline <Cell, Steward>>;
 
 
@@ -88,10 +95,6 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
   if !in_bounds (accessor.globals(), coordinates) {return;}
   let (my_last_change, mut me) = query_cell (accessor, coordinates).unwrap();
   let my_accumulation_rate: i64 = get_accumulation_rate (accessor, coordinates);
-  
-  if let Some (discarded) = me.next_transfer_change.take() {
-    accessor.destroy_prediction (&discarded);
-  }
   
   let mut best: Option <(Time, usize)> = None;
   
@@ -276,6 +279,9 @@ fn modify_cell <A: EventAccessor <Steward = Steward >> (accessor: &A, coordinate
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct TransferChange {coordinates: [i32; 2], dimension: usize}
 impl StewardData for TransferChange {}
+impl PersistentlyIdentifiedType for TransferChange {
+  const ID: PersistentTypeId = PersistentTypeId(0xd6621e9cfad1c765);
+}
 impl Event for TransferChange {
   type Steward = Steward;
   type ExecutionData = ();
@@ -323,6 +329,9 @@ impl Event for TransferChange {
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Initialize {}
 impl StewardData for Initialize {}
+impl PersistentlyIdentifiedType for Initialize {
+  const ID: PersistentTypeId = PersistentTypeId(0xf0d2d9134cfe9b49);
+}
 impl Event for Initialize {
   type Steward = Steward;
   type ExecutionData = ();
@@ -346,6 +355,9 @@ impl Event for Initialize {
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct AddInk {coordinates: [i32; 2], amount: i64}
 impl StewardData for AddInk {}
+impl PersistentlyIdentifiedType for AddInk {
+  const ID: PersistentTypeId = PersistentTypeId(0x3e6d029c3da8b9a2);
+}
 impl Event for AddInk {
   type Steward = Steward;
   type ExecutionData = ();
@@ -385,6 +397,7 @@ struct Basics {}
 impl BasicsTrait for Basics {
   type Time = Time;
   type Globals = Globals;
+  type Types = (ListedType <TransferChange>, ListedType <Initialize>, ListedType <AddInk>);
 }
 
 
