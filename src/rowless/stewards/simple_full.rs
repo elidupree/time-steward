@@ -38,7 +38,9 @@ pub struct DataTimelineCell <T: DataTimeline> {
   first_snapshot_not_updated: Cell<usize>,
   data: RefCell<T>,
   #[cfg($($auditing)*)]
-  queries: BTreeMap<ExtendedTime<T::Basics>, usize>,
+  queries: BTreeMap<EventHandle<T::Basics>, Vec<usize>>,
+  //#[cfg($($auditing)*)]
+  //modifiers: BTreeSet<EventHandle<T::Basics>>,
 }
 type DataTimelineCellReadGuard<'a, T> = Ref<'a, T>;
 type DataTimelineCellWriteGuard<'a, T> = RefMut<'a, T>;
@@ -538,9 +540,17 @@ time_steward_define_simple_timeline!();
 #[cfg($($auditing)*)]
 mod audits {
   use super::*;
-  fn audit_timeline<T: DataTimeline> (timeline: & DataTimelineCell <T>) {
-    for query in timeline.queries.borrow() {
-      
+  
+  impl<B: Basics> Steward <B> {
+    pub fn audit_timeline<T: DataTimeline> (&self, timeline: & DataTimelineCell <T>) {
+      for query in timeline.queries.borrow() {
+        
+      }
+    }
+    pub fn audit_after_event (&self, event: & EventHandle <B>) {
+      /*for timeline_id in event.modified.iter() {
+        
+      }*/
     }
   }
 }

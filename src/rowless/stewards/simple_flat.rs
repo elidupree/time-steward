@@ -216,10 +216,12 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
         data: Box::new (event),
       })
     };
+    //printlnerr!("at {:?}, creating prediction at {:?}", self.extended_now(), handle.extended_time());
     assert!(self.steward.borrow_mut().existent_predictions.insert (handle.clone()), "created a prediction that already existed?!");
     handle
   }
   fn destroy_prediction (&self, prediction: &EventHandle<B>) {
+    //printlnerr!("at {:?}, destroying prediction at {:?}", self.extended_now(), prediction.extended_time());
     assert!(self.steward.borrow_mut().existent_predictions.remove (& prediction.clone()), "destroyed a prediction that doesn't exist? Probably one that was already destroyed");
   }
   
