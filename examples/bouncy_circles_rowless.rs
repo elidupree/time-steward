@@ -5,6 +5,7 @@ extern crate time_steward;
 extern crate glium;
 
 extern crate nalgebra;
+extern crate rand;
 extern crate docopt;
 
 extern crate serde;
@@ -42,7 +43,7 @@ use glium::{DisplayBuild, Surface};
 use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, StewardData, QueryOffset, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
 #[path = "../dev-shared/bouncy_circles_rowless.rs"] mod bouncy_circles;
@@ -188,11 +189,11 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
       stew.forget_before(& time);
       settle (&mut stew, time);
       for handle in accessor.globals().iter() {
-        if let Some ((time, circle)) = accessor.query (handle, &GetVarying, QueryOffset::After){
+        if let Some ((time, circle)) = accessor.query (&handle.varying, &GetVarying, QueryOffset::After){
         let position = circle.position.updated_by(accessor.now() - time.base).unwrap().evaluate();
         let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,
                       position[1] as f32 / ARENA_SIZE as f32 - 0.5];
-        let radius = circle.radius as f32 / ARENA_SIZE as f32;
+        let radius = handle.radius as f32 / ARENA_SIZE as f32;
         // println!("drawing circ at {}, {}", center[0],center[1]);
         vertices.extend(&[Vertex {
                             center: center,

@@ -8,6 +8,7 @@ extern crate time_steward;
 extern crate glium;
 
 extern crate nalgebra;
+extern crate rand;
 extern crate docopt;
 
 extern crate serde;
