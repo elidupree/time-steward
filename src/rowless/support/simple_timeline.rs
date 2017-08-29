@@ -116,12 +116,17 @@ impl <VaryingData: StewardData + IterateUniquelyOwnedPredictions <Steward>, Stew
   }
   
   fn modify <Accessor: EventAccessor<Steward = Steward>> (&mut self, modification: Option <VaryingData>, accessor: &Accessor){
+    let mut pop = false;
     if let Some(last) = self.changes.back() {
       assert!(& last.0 <= accessor.handle(), "All future changes should have been cleared before calling modify() ");
       if let Some (data) = last.1.as_ref() {
         IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (data, &mut | prediction | accessor.destroy_prediction (prediction));
       }
+      if &last.0 == accessor.handle() {
+        pop = true;
+      }
     }
+    if pop {self.changes.pop_back();}
     // we don't need to create incoming predictions, because they can't be incoming unless they were already created
     self.changes.push_back ((accessor.handle().clone(), modification));
   }

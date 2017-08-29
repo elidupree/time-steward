@@ -188,18 +188,20 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
   }
   
   fn modify <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, F: FnOnce(&mut T)> (&self, timeline: &DataTimelineCell <T>, modification: F) {
-    let index = timeline.first_snapshot_not_updated.get ();
-    let steward = self.steward.borrow();
-    let guard = (*steward.snapshots).borrow();
-    let map: &SnapshotsTree<B> = &*guard;
-    for (_,snapshot) in map.range ((Bound::Included(index), Bound::Unbounded)) {
-      snapshot.get_clone(timeline);
+    {
+      let index = timeline.first_snapshot_not_updated.get ();
+      let steward = self.steward.borrow();
+      let guard = (*steward.snapshots).borrow();
+      let map: &SnapshotsTree<B> = &*guard;
+      for (_,snapshot) in map.range ((Bound::Included(index), Bound::Unbounded)) {
+        snapshot.get_clone(timeline);
+      }
+      timeline.first_snapshot_not_updated.set (steward.next_snapshot_index);
     }
-    timeline.first_snapshot_not_updated.set (steward.next_snapshot_index);
     
     let mut modify_guard = timeline.data.borrow_mut();
     modification (&mut*modify_guard);
-    match &steward.invalid_before {
+    match &self.steward.borrow().invalid_before {
       &ValidSince::Before (ref time) => modify_guard.forget_before(&ExtendedTime::beginning_of (time.clone())),
       &ValidSince::After (ref time) => modify_guard.forget_before(&ExtendedTime::end_of(time.clone())),
       &ValidSince::TheBeginning => (),
@@ -218,7 +220,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     handle
   }
   fn destroy_prediction (&self, prediction: &EventHandle<B>) {
-    assert!(self.steward.borrow_mut().existent_predictions.remove (& prediction.clone()), "destroyed a prediction doesn't exist? Probably one that was already destroyed");
+    assert!(self.steward.borrow_mut().existent_predictions.remove (& prediction.clone()), "destroyed a prediction that doesn't exist? Probably one that was already destroyed");
   }
   
   type FutureCleanupAccessor = Self;
