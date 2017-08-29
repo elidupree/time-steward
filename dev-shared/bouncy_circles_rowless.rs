@@ -5,10 +5,10 @@ use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
 
 
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{self, StewardData, QueryOffset, TypedDataTimelineHandleTrait, ExtendedTime, Basics as BasicsTrait};
-use time_steward::rowless::stewards::{simple_flat as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineHandle, PredictionHandle, MomentaryAccessor, EventAccessor, UndoEventAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, ConstantTimeline, GetConstant, GetVarying, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
+use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, StewardData, QueryOffset, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
+use time_steward::rowless::stewards::{simple_full as steward_module};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataHandle, DataTimelineCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
+use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
 
 pub type Time = i64;
@@ -28,7 +28,8 @@ pub const SECOND: Time = 1 << TIME_SHIFT;
 pub struct Basics {}
 impl BasicsTrait for Basics {
   type Time = Time;
-  type GlobalTimeline = ConstantTimeline <Vec<CircleHandle>, Basics>;
+  type Globals = Vec<CircleHandle>;
+  type Types = (ListedType <RelationshipChange>, ListedType <BoundaryChange>, ListedType <Initialize>, ListedType <Disturb>);
 }
 
 pub type Steward = steward_module::Steward <Basics>;
@@ -41,19 +42,19 @@ pub struct Circle {
   pub radius: SpaceCoordinate,
   pub relationships: Vec<RelationshipHandle>,
   pub boundary_induced_acceleration: Option <Vector2<SpaceCoordinate>>,
-  pub next_boundary_change: Option <PredictionHandle <BoundaryChange>>,
+  pub next_boundary_change: Option <<Steward as TimeSteward>::EventHandle>,
 }
 impl StewardData for Circle {}
-type CircleHandle = DataTimelineHandle <SimpleTimeline <(), Circle, Basics>>;
+type CircleHandle = DataHandle <DataTimelineCell <SimpleTimeline <Circle, Steward>>>;
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Relationship {
   pub circles: (CircleHandle, CircleHandle),
   pub induced_acceleration: Option <Vector2<SpaceCoordinate>>,
-  pub next_change: Option <PredictionHandle <RelationshipChange>>,
+  pub next_change: Option <<Steward as TimeSteward>::EventHandle>,
 }
 impl StewardData for Relationship {}
-type RelationshipHandle = DataTimelineHandle <SimpleTimeline <(), Relationship, Basics>>;
+type RelationshipHandle = DataHandle <DataTimelineCell <SimpleTimeline <Relationship, Steward>>>;
 
 pub fn query_relationship_circles <Accessor: EventAccessor <Steward = Steward>>(accessor: &mut Accessor, relationship: &Relationship)->((ExtendedTime <Basics>, Circle), (ExtendedTime <Basics>, Circle)) {
   (tracking_query (accessor, & relationship.circles.0, QueryOffset::After)
@@ -140,7 +141,7 @@ impl Event for RelationshipChange {
     update_predictions (accessor, &relationship.circles.1, & new.1);
   }
 
-  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
@@ -213,7 +214,7 @@ impl Event for BoundaryChange {
     update_predictions (accessor, &self.circle_handle, & new);
   }
 
-  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
@@ -226,7 +227,7 @@ impl Event for Initialize {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     
-    let circle_handles = accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After);
+    let circle_handles = accessor.globals();
     let mut circles = Vec::new();
     for index in 0..HOW_MANY_CIRCLES {
       let thingy = ARENA_SIZE / 20;
@@ -258,7 +259,7 @@ impl Event for Initialize {
           induced_acceleration: None,
           next_change: None,
         };
-        let relationship_handle = DataTimelineHandle::new (SimpleTimeline::new (()));
+        let relationship_handle = DataHandle::new (DataTimelineCell::new(SimpleTimeline::new (())));
         
         modify_simple_timeline (accessor, & relationship_handle, Some (relationship));
         circles [first].relationships.push (relationship_handle.clone()) ;
@@ -274,7 +275,7 @@ impl Event for Initialize {
     }
   }
 
-  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
@@ -287,7 +288,7 @@ impl Event for Disturb {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    let circles = accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After);
+    let circles = accessor.globals();
     let mut best_handle = None;
     let mut best_distance_squared = i64::max_value();
     for circle_handle in circles.iter() {
@@ -313,18 +314,16 @@ impl Event for Disturb {
     update_predictions (accessor, & best_handle, & new);
   }
 
-  fn undo <Accessor: UndoEventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
 
-pub fn make_global_timeline()-> <Basics as BasicsTrait>::GlobalTimeline {
-  <Basics as BasicsTrait>::GlobalTimeline::new ({
-    let mut circles = Vec::new();
-    for index in 0..HOW_MANY_CIRCLES {
-      circles.push (DataTimelineHandle::new (SimpleTimeline::new (())));
-    }
-    circles
-  })
+pub fn make_globals()-> <Basics as BasicsTrait>::Globals {
+  let mut circles = Vec::new();
+  for index in 0..HOW_MANY_CIRCLES {
+    circles.push (DataHandle::new (DataTimelineCell::new(SimpleTimeline::new (()))));
+  }
+  circles
 }
 

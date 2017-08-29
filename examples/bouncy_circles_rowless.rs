@@ -38,11 +38,12 @@ struct Args {
 
 use std::time::{Instant, Duration};
 use glium::{DisplayBuild, Surface};
-use time_steward::DeterministicRandomId;
-use time_steward::rowless::api::{QueryOffset, TypedDataTimelineHandleTrait, ExtendedTime, Basics as BasicsTrait};
-use time_steward::rowless::stewards::simple_flat as steward_module;
-use steward_module::{TimeSteward, IncrementalTimeSteward, ConstructibleTimeSteward, Accessor, MomentaryAccessor, SnapshotAccessor, DataTimelineHandle, simple_timeline};
-use simple_timeline::{SimpleTimeline, ConstantTimeline, GetConstant, GetVarying, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
+
+use time_steward::{DeterministicRandomId};
+use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, StewardData, QueryOffset, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::rowless::stewards::{simple_full as steward_module};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
+use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
 #[path = "../dev-shared/bouncy_circles_rowless.rs"] mod bouncy_circles;
 use bouncy_circles::*;
@@ -63,7 +64,6 @@ use std::net::{TcpListener, TcpStream};
 use std::io::{BufReader, BufWriter};
 
 fn main() {
-  let global_timeline = make_global_timeline();
   // For some reason, docopt checking the arguments caused build_glium() to fail in emscripten.
   /*if !cfg!(target_os = "emscripten") {
     let arguments: Args = Docopt::new(USAGE)
@@ -89,7 +89,7 @@ fn main() {
     //let mut steward: s::Steward<Basics,
                                 //inefficient_flat::Steward<Basics>,
                                 //memoized_flat::Steward<Basics>> = s::Steward::from_constants(());
-    let mut steward: Steward = Steward::from_global_timeline(global_timeline);
+    let mut steward: Steward = Steward::from_globals(make_globals());
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize{}).unwrap();
     run (steward, |_,_|());
   }
@@ -187,7 +187,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
         .expect("steward failed to provide snapshot");
       stew.forget_before(& time);
       settle (&mut stew, time);
-      for handle in accessor.query (accessor.global_timeline(), & GetConstant, QueryOffset::After).iter() {
+      for handle in accessor.globals().iter() {
         if let Some ((time, circle)) = accessor.query (handle, &GetVarying, QueryOffset::After){
         let position = circle.position.updated_by(accessor.now() - time.base).unwrap().evaluate();
         let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,
