@@ -332,19 +332,42 @@ macro_rules! time_steward_serialization_impls {
     })
   }
   
+  trait MaybeEvent { fn visit (context: &mut DeserializationContext); }
+  trait MaybeData { fn visit (context: &mut DeserializationContext); }
+  impl <T> MaybeEvent for T {default fn visit (_: &mut DeserializationContext) {} }
+  impl <T> MaybeData for T {default fn visit (_: &mut DeserializationContext) {} }
+  impl <B: Basics, T: Event <Steward = Steward <B>>> MaybeEvent for T {
+    fn visit (context: &mut DeserializationContext) {
+      context.event_handle_initialize_functions.insert (T::ID, event_handle_initialize_function::<B, T>);
+    }
+  }
+  impl <T: StewardData + PersistentlyIdentifiedType> MaybeData for T {
+    fn visit (context: &mut DeserializationContext) {
+      context.data_handle_initialize_functions.insert (T::ID, data_handle_initialize_function::<T>);
+    }
+  }
+  impl ListOfTypesVisitor for DeserializationContext {
+    fn visit <T> (&mut self) {
+      <T as MaybeEvent>::visit (self);
+      <T as MaybeData>::visit (self);
+    }
+  }
+  
   fn deserialize_something <B: Basics, R: Read> (reader: &mut R)->$crate::bincode::Result <Steward <B>> {
     let time: ExtendedTime <B> = $crate::bincode::deserialize_from (reader, $crate::bincode::Bounded (::std::mem::size_of::<ExtendedTime <B>>() as u64))?;
     DESERIALIZATION_CONTEXT.with (| cell | {
       {
         let mut guard = cell.borrow_mut();
         assert!(guard.is_none(), "deserializing recursively breaks my hacks and probably makes no sense");
-        *guard = Some(DeserializationContext {
+        let mut context = DeserializationContext {
           time: Box::new (time.clone()),
           data_handle_initialize_functions: ::std::collections::HashMap::new(),
           event_handle_initialize_functions: ::std::collections::HashMap::new(),
           handles: ::std::collections::HashMap::new(),
           uninitialized_handles: ::std::collections::HashSet::new(),
-        });
+        };
+        B::Types::visit_all (&mut context);
+        *guard = Some(context);
       }
       // deserialize inside a closure so that errors can be collected and we still clear the context afterwards
       let result = (|| {

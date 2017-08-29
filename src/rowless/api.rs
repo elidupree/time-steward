@@ -8,6 +8,7 @@ use std::fmt::Debug;
 //use std::cmp::Ordering;
 use std::borrow::Borrow;
 use std::ops::Deref;
+use std::marker::PhantomData;
 
 #[derive (Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug)]
 pub struct PersistentTypeId (pub u64);
@@ -21,6 +22,13 @@ impl <T: PersistentlyIdentifiedType> DynamicPersistentlyIdentifiedType for T {
   fn persistent_type_id (&self)->PersistentTypeId {
     <T as PersistentlyIdentifiedType>::ID
   }
+}
+pub struct ListedType<T>(PhantomData <T>, !);
+pub trait ListOfTypesVisitor {
+  fn visit <T> (&mut self);
+}
+pub trait ListOfTypes {
+  fn visit_all <Visitor: ListOfTypesVisitor>(visitor: &mut Visitor);
 }
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
@@ -71,6 +79,7 @@ pub trait Basics
   : Any + Send + Sync + Copy + Clone + Ord + Hash + Serialize + DeserializeOwned + Debug + Default {
   type Time: StewardData + Ord + Hash;
   type Globals: StewardData;
+  type Types: ListOfTypes;
   const MAX_ITERATION: IterationType = 65535;
 }
 

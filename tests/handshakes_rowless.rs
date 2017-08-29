@@ -8,7 +8,7 @@ extern crate serde;
 extern crate serde_derive;
 
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{PersistentTypeId, PersistentlyIdentifiedType, StewardData, QueryOffset, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, StewardData, QueryOffset, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
@@ -26,7 +26,7 @@ struct Basics {}
 impl BasicsTrait for Basics {
   type Time = Time;
   type Globals = Vec<PhilosopherCell>;
-  //type IncludedTypes = TimeStewardTypes;
+  type Types = TimeStewardTypes;
 }
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -79,12 +79,11 @@ fn unchange_next_handshake_time <Accessor: FutureCleanupAccessor <Steward = Stew
 }
 
  
-/*
-type TimeStewardTypes = (ListedType<SimpleTimeline <Philosopher>>,
-                         ListedType<Initialize>,
+
+type TimeStewardTypes = (ListedType<Initialize>,
                          ListedType<Tweak>,
                          ListedType<TweakUnsafe>,
-                         ListedType<Shake>);*/
+                         ListedType<Shake>);
 
 fn display_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: & Accessor) {
   println!("snapshot for {}", accessor.now());
