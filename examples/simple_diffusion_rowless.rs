@@ -569,6 +569,8 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
       for y in 0.. globals.size [1] {
         let (my_last_change, me) = query_cell (& accessor, [x,y]).unwrap();
         let my_current_ink = (me.ink_at_last_change + get_accumulation_rate (& accessor, [x,y])*(accessor.now() - my_last_change)) as f32;
+        //let my_current_ink = (get_accumulation_rate (&accessor, [x,y]) * SECOND) as f32;
+        //let my_current_ink = ((accessor.now() - my_last_change)*50000000000 / SECOND) as f32;
         
         vertices.extend(&[Vertex {
                             location: [((x) as f32)/30.0 -1.0,((y) as f32)/30.0 -1.0],
