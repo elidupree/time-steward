@@ -63,6 +63,7 @@ impl Philosopher {
 fn change_next_handshake_time <Accessor: EventAccessor <Steward = Steward>> (accessor: &Accessor, index: usize, handle: & PhilosopherCell, time: Time) {
   let mut philosopher = tracking_query(accessor, handle, QueryOffset::After).expect ("philosophers should never not exist").1;
   philosopher.time_when_next_initiates_handshake = time;
+  if let Some (discarded) = philosopher.next_handshake_prediction.take() {accessor.destroy_prediction (&discarded);}
   if time >= *accessor.now() {
     let time_id = accessor.extended_now().id;
     philosopher.next_handshake_prediction = Some(accessor.create_prediction (time, DeterministicRandomId::new (& (time_id, index)), Shake {whodunnit: index}));

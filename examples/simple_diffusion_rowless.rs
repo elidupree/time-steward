@@ -358,7 +358,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
   me.ink_at_last_change += my_accumulation_rate*(now.base - my_last_change);
   */
   
-  if let Some (discarded) = transfer.next_change.take() {accessor.destroy_prediction (&discarded) ;}
+  if let Some (discarded) = transfer.next_change.take() {accessor.destroy_prediction (&discarded);}
   transfer.next_change = time.map (|time| {
     accessor.create_prediction (
         time,

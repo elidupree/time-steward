@@ -93,23 +93,30 @@ impl <VaryingData: StewardData, Steward: TimeSteward> SimpleTimeline <VaryingDat
   }
 }
 impl <VaryingData: StewardData + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward> SimpleTimeline <VaryingData, Steward> {
-  fn remove_present_and_future <Accessor: FutureCleanupAccessor<Steward = Steward>> (&mut self, accessor: &Accessor) {
+  fn remove_future <Accessor: FutureCleanupAccessor<Steward = Steward>> (&mut self, accessor: &Accessor, also_present: bool) {
     let removed = split_off_greater_set (&mut self.other_dependent_events, accessor.extended_now());
     for event in removed {
       accessor.invalidate_execution(&event);
     }
     while let Some (change) = self.changes.pop_back() {
-      if change.0.extended_time() < accessor.extended_now() {
+      let ordering = change.0.extended_time().cmp(accessor.extended_now());
+      if ordering == Ordering::Less || (!also_present && ordering == Ordering::Equal) {
         if let Some(data) = change.1.as_ref() {
-          IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (data, &mut | prediction | accessor.change_prediction_destroyer (prediction, None));
+          IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (data, &mut | prediction | {
+            if also_present || accessor.get_prediction_destroyer (prediction).map_or (true, | destroyer | &destroyer > accessor.handle()) {
+              accessor.change_prediction_destroyer (prediction, None);
+            }
+          });
         }
         self.changes.push_back (change);
         break
       }
+      // if we are actually discarding the event, we need to clean up some stuff about it
       if let Some(data) = change.1.as_ref() {
         IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (data, &mut | prediction | accessor.change_prediction_destroyer (prediction, Some(& change.0)));
       }
-      if change.0.extended_time() > accessor.extended_now() {
+      // except don't re-invalidate the event we are currently in
+      if ordering == Ordering::Greater {
         accessor.invalidate_execution(&change.0);
       }
     }
@@ -119,9 +126,6 @@ impl <VaryingData: StewardData + IterateUniquelyOwnedPredictions <Steward>, Stew
     let mut pop = false;
     if let Some(last) = self.changes.back() {
       assert!(& last.0 <= accessor.handle(), "All future changes should have been cleared before calling modify() ");
-      if let Some (data) = last.1.as_ref() {
-        //IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (data, &mut | prediction | accessor.destroy_prediction (prediction));
-      }
       if &last.0 == accessor.handle() {
         pop = true;
       }
@@ -185,7 +189,11 @@ pub fn modify_simple_timeline <VaryingData: StewardData + IterateUniquelyOwnedPr
   
   let mut do_modify = true;
   if let Some(accessor) = accessor.future_cleanup() {
-    match accessor.query (handle, &GetVarying, QueryOffset::After) {
+    // currently, we can't do this culling because
+    // distinct predictions at the same time compare equal to each other, so
+    // updates that replace an older version of the prediction with a newer version
+    // would be incorrectly omitted (in fact, this occurred in bouncy_circles)
+    /*match accessor.query (handle, &GetVarying, QueryOffset::After) {
       Some((time, data)) =>
         if let Some (new_data) = modification.as_ref() {
           if &time == accessor.extended_now() && &data == new_data {
@@ -194,9 +202,9 @@ pub fn modify_simple_timeline <VaryingData: StewardData + IterateUniquelyOwnedPr
         },
       None =>
         if modification.is_none() {do_modify = false;}
-    };
+    };*/
     if do_modify {
-      accessor.peek_mut(handle).remove_present_and_future (accessor);
+      accessor.peek_mut(handle).remove_future (accessor, false);
     }
   }
   if do_modify {
@@ -215,7 +223,7 @@ pub fn unmodify_simple_timeline <VaryingData: StewardData + IterateUniquelyOwned
   let confirm = accessor.query (handle, &GetVarying, QueryOffset::Before);
   
   if let Some((time, _)) = accessor.query (handle, &GetVarying, QueryOffset::After) { if &time == accessor.extended_now() {
-    accessor.peek_mut(handle).remove_present_and_future (accessor);
+    accessor.peek_mut(handle).remove_future (accessor, true);
   }}
   
   #[cfg (debug_assertions)]
