@@ -135,49 +135,51 @@ fn more_stable_rate_and_cumulative_error_coefficients (cells: [&CellVarying; 2],
   let original_difference = ink_original [0] - ink_original [1];
   let difference_change_rate = accumulation_rates [0] - accumulation_rates [1];
   
-  let more_stable_rate = transfer.rate - (difference_change_rate/8 + difference_change_rate.signum());
+  // the absolute difference between the current rate and a hypothetical more stable rate, tolerating some rounding error
+  let rate_change_stability_thing = (difference_change_rate.abs()/8 + 2);
   // we trust the system not to that the ideal rate past more_stable_rate without doing an update, so error can increase no faster than abs(current_rate - more_stable_rate)
   
-  (more_stable_rate, ((transfer.rate - more_stable_rate).abs(), 0))
+  (rate_change_stability_thing, (rate_change_stability_thing, 0))
 }
 
 fn desired_transfer_change_time (cells: [&CellVarying; 2], accumulation_rates: [i64; 2], transfer: & TransferVarying, start: Time)->Option <Time> {
-  let (more_stable_rate, coefficients) = more_stable_rate_and_cumulative_error_coefficients (cells, accumulation_rates, transfer, start);
+  let (rate_change_stability_thing, coefficients) = more_stable_rate_and_cumulative_error_coefficients (cells, accumulation_rates, transfer, start);
   
   let original_difference = ink_at (cells [0], accumulation_rates [0], start) - ink_at (cells [1], accumulation_rates [1], start);
   let difference_change_rate = accumulation_rates [0] - accumulation_rates [1];
-  
-  let rate_change_stability_thing = (transfer.rate - more_stable_rate).abs();
   
   
     // We need to notice when the target transfer rate goes outside of the range
     // [current transfer rate - rate_change_stability_thing, current transfer rate + rate_change_stability_thing].
     // After a little algebra...
     let (min_difference, max_difference) = (
-      (transfer.rate - rate_change_stability_thing - 1)*(2*SECOND),
-      (transfer.rate + rate_change_stability_thing + 1)*(2*SECOND)
+      (transfer.rate - rate_change_stability_thing)*(2*SECOND),
+      (transfer.rate + rate_change_stability_thing)*(2*SECOND)
     );
     if original_difference < min_difference || original_difference > max_difference {
-      printlnerr!("predict wow! {:?}", (start, min_difference,original_difference, max_difference, rate_change_stability_thing));
+      //printlnerr!("predict wow! {:?}", (start, min_difference,original_difference, max_difference, rate_change_stability_thing));
       return Some(start);
     }
     //printlnerr!("{:?}", (start, min_difference,original_difference, max_difference));
   
   let mut previous_duration = i64::max_value();
-  if !(coefficients.0 == 0 && coefficients.1 == 0) {
+  if !(difference_change_rate == 0) {
+  
   previous_duration = 1;
   loop {
     let duration = previous_duration*2;
     let later_difference = ink_at (cells [0], accumulation_rates [0], start + duration) - ink_at (cells [1], accumulation_rates [1], start + duration);
     let minimum_difference = if original_difference.signum() != later_difference.signum() {0} else {min(original_difference.abs(), later_difference.abs())};
-    let permissible_cumulative_error = 16 + (minimum_difference >> 4);
+    let permissible_cumulative_error = 160000000 + (minimum_difference >> 4);
     //printlnerr!("{:?}", (duration, coefficients, permissible_cumulative_error ));
     let error = transfer.accumulated_error + duration*duration*coefficients.1 + duration*coefficients.0;
     //printlnerr!("{:?}", (error ));
     assert!(duration >0 );
     if error.abs() > permissible_cumulative_error {break}
     previous_duration = duration;
-  }}
+  }
+  
+  }
   
   
     if difference_change_rate > 0 {
@@ -763,7 +765,7 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
         let me = get_cell (& accessor, [x,y]).unwrap();
         let my_varying = accessor.query (&me.varying, & GetVarying, QueryOffset::After).unwrap().1;
         let my_current_ink = match display_state {
-          0 => (my_varying.ink_at_last_change + get_accumulation_rate (& accessor, [x,y])*(accessor.now() - my_varying.last_change)) as f32,
+          0 => ink_at (&my_varying, get_accumulation_rate (& accessor, [x,y]), *accessor.now()) as f32,
           1 => (get_accumulation_rate (&accessor, [x,y]) * SECOND) as f32,
           _ => ((accessor.now() - my_varying.last_change)*50000000000 / SECOND) as f32,
         };
