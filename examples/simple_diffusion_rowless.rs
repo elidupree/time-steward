@@ -29,7 +29,7 @@ macro_rules! printlnerr(
 use std::cmp::{min, max};
 use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{self, PersistentTypeId, PersistentlyIdentifiedType, ListedType, StewardData, QueryOffset, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
-use time_steward::rowless::stewards::{simple_full as steward_module};
+use time_steward::rowless::stewards::{simple_flat as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
@@ -137,8 +137,7 @@ fn cumulative_error_coefficients (cells: [&CellVarying; 2], accumulation_rates: 
   (transfer.rate*SECOND*4 - original_difference*2, current_difference_change_rate)
 }
 
-fn desired_transfer_change_time (cells: [&CellVarying; 2], accumulation_rates: [i64; 2], transfer: & TransferVarying)->Option <Time> {
-  let start = max (transfer.last_change, max (cells[0].last_change, cells[1].last_change));
+fn desired_transfer_change_time (cells: [&CellVarying; 2], accumulation_rates: [i64; 2], transfer: & TransferVarying, start: Time)->Option <Time> {
   let coefficients = cumulative_error_coefficients (cells, accumulation_rates, transfer, start);
   if coefficients.0 == 0 && coefficients.1 == 0 {return None}
   let original_difference = ink_at (cells [0], accumulation_rates [0], start) - ink_at (cells [1], accumulation_rates [1], start);
@@ -168,25 +167,62 @@ fn update_cell <A: EventAccessor <Steward = Steward>> (accessor: &A, coordinates
   modify_simple_timeline (accessor, & me.varying, Some(my_varying));
 }
 
+fn update_accumulated_error <A: EventAccessor <Steward = Steward>> (accessor: &A, coordinates: [i32; 2], dimension: usize) {
+  if !in_bounds (accessor.globals(), coordinates) {return;}
+  let mut neighbor_coordinates = coordinates;
+  neighbor_coordinates [dimension] += 1;
+  if neighbor_coordinates [dimension] >= accessor.globals().size [dimension] {return;}
+  
+  let cells = [
+    get_cell (accessor, coordinates).unwrap(),
+    get_cell (accessor, neighbor_coordinates).unwrap(),
+  ];
+  let varying = [
+    accessor.query (&cells[0].varying, & GetVarying, QueryOffset::After).unwrap().1,
+    accessor.query (&cells[1].varying, & GetVarying, QueryOffset::After).unwrap().1,
+  ];
+  let accumulation_rates = [
+    get_accumulation_rate (accessor, coordinates),
+    get_accumulation_rate (accessor, neighbor_coordinates),
+  ];
+  
+  let mut transfer = accessor.query (&cells[0].transfers [dimension], & GetVarying, QueryOffset::After).unwrap().1;
+  
+  let start = max (transfer.last_change, max (varying[0].last_change, varying[1].last_change));
+  let coefficients = cumulative_error_coefficients ([&varying[0], &varying[1]], accumulation_rates, &transfer, start);
+  
+  let duration = accessor.now() - start;
+  
+  transfer.accumulated_error += duration*duration*coefficients.1 + duration*coefficients.0;
+  modify_simple_timeline (accessor, & cells[0].transfers [dimension], Some(transfer));
+}
+
 fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (accessor: &A, coordinates: [i32; 2], dimension: usize) {
   if !in_bounds (accessor.globals(), coordinates) {return;}
-  let me = get_cell (accessor, coordinates).unwrap();
-  let my_varying = accessor.query (&me.varying, & GetVarying, QueryOffset::After).unwrap().1;
-  let my_accumulation_rate: i64 = get_accumulation_rate (accessor, coordinates);
-  
   // This update is only in charge of the transfer to the cell
   // in the positive x and y directions. The other transfers will be handled by
   // the updates for the cells in the negative x and y directions.
   let mut neighbor_coordinates = coordinates;
   neighbor_coordinates [dimension] += 1;
   if neighbor_coordinates [dimension] >= accessor.globals().size [dimension] {return;}
-  let neighbor = get_cell (accessor, neighbor_coordinates).unwrap();
-  let neighbor_varying = accessor.query (&neighbor.varying, & GetVarying, QueryOffset::After).unwrap().1;
-  let neighbor_accumulation_rate = get_accumulation_rate (accessor, neighbor_coordinates);
   
-  let mut transfer = accessor.query (&me.transfers [dimension], & GetVarying, QueryOffset::After).unwrap().1;
+  let cells = [
+    get_cell (accessor, coordinates).unwrap(),
+    get_cell (accessor, neighbor_coordinates).unwrap(),
+  ];
+  let varying = [
+    accessor.query (&cells[0].varying, & GetVarying, QueryOffset::After).unwrap().1,
+    accessor.query (&cells[1].varying, & GetVarying, QueryOffset::After).unwrap().1,
+  ];
+  let accumulation_rates = [
+    get_accumulation_rate (accessor, coordinates),
+    get_accumulation_rate (accessor, neighbor_coordinates),
+  ];
   
-  let time = desired_transfer_change_time ([&my_varying, &neighbor_varying], [my_accumulation_rate, neighbor_accumulation_rate], & transfer);
+  let mut transfer = accessor.query (&cells[0].transfers [dimension], & GetVarying, QueryOffset::After).unwrap().1;
+  
+  let time = desired_transfer_change_time ([&varying[0], &varying[1]], accumulation_rates, & transfer, *accessor.now());
+  
   
   /*
   let (neighbor_last_change, neighbor) = query_cell (accessor, neighbor_coordinates).unwrap();
@@ -286,6 +322,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
   me.ink_at_last_change += my_accumulation_rate*(now.base - my_last_change);
   */
   
+  if let Some (discarded) = transfer.next_change.take() {accessor.destroy_prediction (&discarded) ;}
   transfer.next_change = time.map (|time| {
     accessor.create_prediction (
         time,
@@ -294,7 +331,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
       )
   });
   
-  modify_simple_timeline (accessor, & me.transfers [dimension], Some(transfer));
+  modify_simple_timeline (accessor, & cells[0].transfers [dimension], Some(transfer));
 }
 
 /// A utility function used above. Gets the current rate of change of ink in a cell,
@@ -349,6 +386,16 @@ impl Event for TransferChange {
     //let (my_last_change, mut me) = query_cell (accessor, self.coordinates).expect("cell doesn't exist for TransferChange?");
     let mut neighbor_coordinates = self.coordinates;
     neighbor_coordinates [self.dimension] += 1;
+    
+    // TODO: some of the ones at the corners don't need to be updated
+    for offsx in -1.. (if self.dimension == 0 {2} else {1}) {
+      for offsy in -1.. (if self.dimension == 1 {2} else {1}) {
+        let coordinates = [self.coordinates [0] + offsx, self.coordinates [1] + offsy];
+        update_accumulated_error (accessor, coordinates, 0);
+        update_accumulated_error (accessor, coordinates, 1);
+      }
+    }
+    
     update_cell (accessor, self.coordinates);
     update_cell (accessor, neighbor_coordinates);
     
@@ -448,6 +495,13 @@ impl Event for AddInk {
     let my_current_ink = me.ink_at_last_change + get_accumulation_rate (accessor, self.coordinates)*(accessor.now() - my_last_change);
     me.ink_at_last_change = my_current_ink + self.amount;
     modify_cell (accessor, self.coordinates, me) ;*/
+    for offsx in -1..1 {
+      for offsy in -1..1 {
+        let coordinates = [self.coordinates [0] + offsx, self.coordinates [1] + offsy];
+        update_accumulated_error (accessor, coordinates, 0) ;
+        update_accumulated_error (accessor, coordinates, 1) ;
+      }
+    }
     update_cell (accessor, self.coordinates);
     let me = get_cell (accessor, self.coordinates).unwrap();
     let mut my_varying = accessor.query (&me.varying, & GetVarying, QueryOffset::After).unwrap().1;

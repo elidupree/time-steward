@@ -120,7 +120,7 @@ impl <VaryingData: StewardData + IterateUniquelyOwnedPredictions <Steward>, Stew
     if let Some(last) = self.changes.back() {
       assert!(& last.0 <= accessor.handle(), "All future changes should have been cleared before calling modify() ");
       if let Some (data) = last.1.as_ref() {
-        IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (data, &mut | prediction | accessor.destroy_prediction (prediction));
+        //IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (data, &mut | prediction | accessor.destroy_prediction (prediction));
       }
       if &last.0 == accessor.handle() {
         pop = true;
