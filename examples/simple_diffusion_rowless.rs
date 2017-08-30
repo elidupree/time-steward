@@ -665,6 +665,7 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
   stew.snapshot_before(&1);
   let start = Instant::now();
   let mut previous_time = 0;
+  let mut display_state = 0;
 
   let frame = || {
     let frame_begin = Instant::now();
@@ -695,6 +696,11 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
             }).unwrap();
           }
         },
+        glium::glutin::Event::KeyboardInput (state,_,_) => {
+          if state == glium::glutin::ElementState::Pressed {
+            display_state = (display_state + 1) % 3;
+          }
+        }
         _ => (),
       }
     }
@@ -702,11 +708,16 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
       // TODO duplicate code
       mouse_coordinates [0] = (x*60.0) as i32;
       mouse_coordinates [1] = ((1.0-y)*60.0) as i32;
-      event_index += 1;
-      stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
+      if in_bounds (globals, mouse_coordinates) {
+        event_index += 1;
+        stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
             coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
             amount: (DeterministicRandomId::new (& event_index).data() [0] & ((1u64<<40)-1)) as i64 - (1<<39)
           }).unwrap();
+      }
+      else {
+        display_state = (display_state + 1) % 3;
+      }
     }
 
     let mut target = display.draw();
@@ -717,9 +728,11 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
       for y in 0.. globals.size [1] {
         let me = get_cell (& accessor, [x,y]).unwrap();
         let my_varying = accessor.query (&me.varying, & GetVarying, QueryOffset::After).unwrap().1;
-        let my_current_ink = (my_varying.ink_at_last_change + get_accumulation_rate (& accessor, [x,y])*(accessor.now() - my_varying.last_change)) as f32;
-        //let my_current_ink = (get_accumulation_rate (&accessor, [x,y]) * SECOND) as f32;
-        //let my_current_ink = ((accessor.now() - my_last_change)*50000000000 / SECOND) as f32;
+        let my_current_ink = match display_state {
+          0 => (my_varying.ink_at_last_change + get_accumulation_rate (& accessor, [x,y])*(accessor.now() - my_varying.last_change)) as f32,
+          1 => (get_accumulation_rate (&accessor, [x,y]) * SECOND) as f32,
+          _ => ((accessor.now() - my_varying.last_change)*50000000000 / SECOND) as f32,
+        };
         
         vertices.extend(&[Vertex {
                             location: [((x) as f32)/30.0 -1.0,((y) as f32)/30.0 -1.0],
