@@ -104,7 +104,7 @@ fn ink_at (cell: &CellVarying, accumulation_rate: i64, time: Time)->i64 {
   cell.ink_at_last_change + accumulation_rate*(time - cell.last_change)
 }
 
-fn cumulative_error_coefficients (cells: [&CellVarying; 2], accumulation_rates: [i64; 2], transfer: & TransferVarying, start: Time)->(i64,i64) {
+fn more_stable_rate_and_cumulative_error_coefficients (cells: [&CellVarying; 2], accumulation_rates: [i64; 2], transfer: & TransferVarying, start: Time)->(i64, (i64,i64)) {
     
     // We choose the target transfer rate to be the amount that would
     // equalize the two cells in one second.
@@ -133,15 +133,39 @@ fn cumulative_error_coefficients (cells: [&CellVarying; 2], accumulation_rates: 
     ink_at (cells [1], accumulation_rates [1], start),
   ];
   let original_difference = ink_original [0] - ink_original [1];
-  let current_difference_change_rate = accumulation_rates [0] - accumulation_rates [1];
-  (transfer.rate*SECOND*4 - original_difference*2, current_difference_change_rate)
+  let difference_change_rate = accumulation_rates [0] - accumulation_rates [1];
+  
+  let more_stable_rate = transfer.rate - (difference_change_rate/8 + difference_change_rate.signum());
+  // we trust the system not to that the ideal rate past more_stable_rate without doing an update, so error can increase no faster than abs(current_rate - more_stable_rate)
+  
+  (more_stable_rate, ((transfer.rate - more_stable_rate).abs(), 0))
 }
 
 fn desired_transfer_change_time (cells: [&CellVarying; 2], accumulation_rates: [i64; 2], transfer: & TransferVarying, start: Time)->Option <Time> {
-  let coefficients = cumulative_error_coefficients (cells, accumulation_rates, transfer, start);
-  if coefficients.0 == 0 && coefficients.1 == 0 {return None}
+  let (more_stable_rate, coefficients) = more_stable_rate_and_cumulative_error_coefficients (cells, accumulation_rates, transfer, start);
+  
   let original_difference = ink_at (cells [0], accumulation_rates [0], start) - ink_at (cells [1], accumulation_rates [1], start);
-  let mut previous_duration = 1;
+  let difference_change_rate = accumulation_rates [0] - accumulation_rates [1];
+  
+  let rate_change_stability_thing = (transfer.rate - more_stable_rate).abs();
+  
+  
+    // We need to notice when the target transfer rate goes outside of the range
+    // [current transfer rate - rate_change_stability_thing, current transfer rate + rate_change_stability_thing].
+    // After a little algebra...
+    let (min_difference, max_difference) = (
+      (transfer.rate - rate_change_stability_thing - 1)*(2*SECOND),
+      (transfer.rate + rate_change_stability_thing + 1)*(2*SECOND)
+    );
+    if original_difference < min_difference || original_difference > max_difference {
+      printlnerr!("predict wow! {:?}", (start, min_difference,original_difference, max_difference, rate_change_stability_thing));
+      return Some(start);
+    }
+    //printlnerr!("{:?}", (start, min_difference,original_difference, max_difference));
+  
+  let mut previous_duration = i64::max_value();
+  if !(coefficients.0 == 0 && coefficients.1 == 0) {
+  previous_duration = 1;
   loop {
     let duration = previous_duration*2;
     let later_difference = ink_at (cells [0], accumulation_rates [0], start + duration) - ink_at (cells [1], accumulation_rates [1], start + duration);
@@ -151,9 +175,19 @@ fn desired_transfer_change_time (cells: [&CellVarying; 2], accumulation_rates: [
     let error = transfer.accumulated_error + duration*duration*coefficients.1 + duration*coefficients.0;
     //printlnerr!("{:?}", (error ));
     assert!(duration >0 );
-    if error.abs() > permissible_cumulative_error*(SECOND*4) {break}
+    if error.abs() > permissible_cumulative_error {break}
     previous_duration = duration;
-  }
+  }}
+  
+  
+    if difference_change_rate > 0 {
+      previous_duration = min (previous_duration, (max_difference-original_difference)/difference_change_rate);
+    }
+    else if difference_change_rate < 0 {
+      previous_duration = min (previous_duration, (min_difference-original_difference)/difference_change_rate);
+    }
+  
+  if previous_duration == i64::max_value() {return None;}
   //printlnerr!("{:?}", (cells, accumulation_rates, start, previous_duration));
   Some(start + previous_duration)
 }
@@ -189,7 +223,7 @@ fn update_accumulated_error <A: EventAccessor <Steward = Steward>> (accessor: &A
   let mut transfer = accessor.query (&cells[0].transfers [dimension], & GetVarying, QueryOffset::After).unwrap().1;
   
   let start = max (transfer.last_change, max (varying[0].last_change, varying[1].last_change));
-  let coefficients = cumulative_error_coefficients ([&varying[0], &varying[1]], accumulation_rates, &transfer, start);
+  let (_, coefficients) = more_stable_rate_and_cumulative_error_coefficients ([&varying[0], &varying[1]], accumulation_rates, &transfer, start);
   
   let duration = accessor.now() - start;
   
