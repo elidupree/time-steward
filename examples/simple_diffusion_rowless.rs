@@ -420,15 +420,22 @@ impl Event for TransferChange {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     //let (my_last_change, mut me) = query_cell (accessor, self.coordinates).expect("cell doesn't exist for TransferChange?");
+    let other_dimension = (self.dimension + 1) & 1;
     let mut neighbor_coordinates = self.coordinates;
     neighbor_coordinates [self.dimension] += 1;
     
-    // TODO: some of the ones at the corners don't need to be updated
-    for offsx in -1.. (if self.dimension == 0 {2} else {1}) {
-      for offsy in -1.. (if self.dimension == 1 {2} else {1}) {
-        let coordinates = [self.coordinates [0] + offsx, self.coordinates [1] + offsy];
-        update_accumulated_error (accessor, coordinates, 0);
-        update_accumulated_error (accessor, coordinates, 1);
+    // if the other algorithms are right, we only need to update exactly the
+    // seven transfers immediately adjacent to the two updated cells.
+    let mut walking_coordinates = self.coordinates.clone();
+    for offset in -1..2 {
+      walking_coordinates[self.dimension] = self.coordinates[self.dimension] + offset;
+      update_accumulated_error (accessor, walking_coordinates, self.dimension);
+    }
+    for offsa in 0..2 {
+      for offsb in -1..1 {
+        walking_coordinates[self.dimension] = self.coordinates[self.dimension] + offsa;
+        walking_coordinates[other_dimension] = self.coordinates[other_dimension] + offsb;
+        update_accumulated_error (accessor, walking_coordinates, other_dimension);
       }
     }
     
@@ -440,8 +447,22 @@ impl Event for TransferChange {
     let neighbor = get_cell (accessor, neighbor_coordinates).unwrap();
     let neighbor_varying = accessor.query (&neighbor.varying, & GetVarying, QueryOffset::After).unwrap().1;
     let mut transfer = accessor.query (&me.transfers [self.dimension], & GetVarying, QueryOffset::After).unwrap().1;
+    let mut accumulation_rates = [
+      get_accumulation_rate (accessor, self.coordinates),
+      get_accumulation_rate (accessor, neighbor_coordinates),
+    ];
+
+    // Plain old physics wants to equalize the AMOUNT OF INK between the 2 cells.
+    // We want to skew that a little bit, because we also want the simulation to become more stable –
+    // – which means that we want to equalize the ACCUMULATION RATE as well.
+    let physics_transfer_rate = (my_varying.ink_at_last_change - neighbor_varying.ink_at_last_change) / (2*SECOND);
+    accumulation_rates [0] -= physics_transfer_rate - transfer.rate;
+    accumulation_rates [1] += physics_transfer_rate - transfer.rate;
+    let difference_change_rate = accumulation_rates [0] - accumulation_rates [1];
+    let stability_adjustment = difference_change_rate.signum()*(difference_change_rate.abs()/8 + 2);
+    transfer.rate = physics_transfer_rate + stability_adjustment/2;
+        
     transfer.last_change = accessor.now().clone();
-    transfer.rate = (my_varying.ink_at_last_change - neighbor_varying.ink_at_last_change) / (2*SECOND);
     transfer.accumulated_error = 0;
 
     modify_simple_timeline (accessor, & me.transfers [self.dimension], Some(transfer));
@@ -460,15 +481,20 @@ impl Event for TransferChange {
     modify_cell (accessor, self.coordinates, me) ;
     modify_cell (accessor, neighbor_coordinates, neighbor) ;*/
 
-    // TODO: some of the ones at the corners don't need to be updated
-    for offsx in -1.. (if self.dimension == 0 {2} else {1}) {
-      for offsy in -1.. (if self.dimension == 1 {2} else {1}) {
-        let coordinates = [self.coordinates [0] + offsx, self.coordinates [1] + offsy];
-        update_transfer_change_prediction (accessor, coordinates, 0);
-        update_transfer_change_prediction (accessor, coordinates, 1);
+    // if the other algorithms are right, we only need to update exactly the
+    // seven transfers immediately adjacent to the two updated cells.
+    let mut walking_coordinates = self.coordinates.clone();
+    for offset in -1..2 {
+      walking_coordinates[self.dimension] = self.coordinates[self.dimension] + offset;
+      update_transfer_change_prediction (accessor, walking_coordinates, self.dimension);
+    }
+    for offsa in 0..2 {
+      for offsb in -1..1 {
+        walking_coordinates[self.dimension] = self.coordinates[self.dimension] + offsa;
+        walking_coordinates[other_dimension] = self.coordinates[other_dimension] + offsb;
+        update_transfer_change_prediction (accessor, walking_coordinates, other_dimension);
       }
     }
-    
     
     // TODO: invalidation
   }
