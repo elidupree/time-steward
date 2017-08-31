@@ -792,7 +792,7 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
         let my_varying = accessor.query (&me.varying, & GetVarying, QueryOffset::After).unwrap().1;
         let my_current_ink = match display_state {
           0 => ink_at (&my_varying, get_accumulation_rate (& accessor, [x,y]), *accessor.now()) as f32,
-          1 => (get_accumulation_rate (&accessor, [x,y]) * SECOND) as f32,
+          1 => (get_accumulation_rate (&accessor, [x,y]) * SECOND * 100) as f32,
           _ => ((accessor.now() - my_varying.last_change)*50000000000 / SECOND) as f32,
         };
         
