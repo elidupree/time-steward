@@ -70,6 +70,7 @@ struct CellVarying {
   /// The exact amount of ink present in this cell at the last time we updated it.
   last_change: Time,
   ink_at_last_change: i64,
+  fiat_accumulation_rate: i64,
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct TransferVarying {
@@ -377,8 +378,8 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
 /// which is a supertrait of EventAccessor. Thus, it could also be used in Events,
 /// and with Snapshots, if needed.
 fn get_accumulation_rate <A: Accessor <Steward = Steward >> (accessor: &A, coordinates: [i32; 2])->i64 {
-  let mut result = 0;
   let me = get_cell (accessor, coordinates).unwrap();
+  let mut result = accessor.query (&me.varying, & GetVarying, QueryOffset::After).unwrap().1.fiat_accumulation_rate;
   for dimension in 0..2 {
     result -= accessor.query (&me.transfers[dimension], & GetVarying, QueryOffset::After).unwrap().1.rate;
     
@@ -527,6 +528,7 @@ impl Event for Initialize {
         modify_simple_timeline (accessor, & cell.varying, Some(CellVarying {
           last_change: 0,
           ink_at_last_change: 0,
+          fiat_accumulation_rate: 0,
         }));
         for dimension in 0..2 {
           modify_simple_timeline (accessor, & cell.transfers [dimension], Some(TransferVarying {
@@ -544,7 +546,7 @@ impl Event for Initialize {
   }
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-struct AddInk {coordinates: [i32; 2], amount: i64}
+struct AddInk {coordinates: [i32; 2], amount: i64, accumulation: i64}
 impl StewardData for AddInk {}
 impl PersistentlyIdentifiedType for AddInk {
   const ID: PersistentTypeId = PersistentTypeId(0x3e6d029c3da8b9a2);
@@ -553,10 +555,6 @@ impl Event for AddInk {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    /*let (my_last_change, mut me) = query_cell (accessor, self.coordinates).expect("cell doesn't exist for AddInk?");
-    let my_current_ink = me.ink_at_last_change + get_accumulation_rate (accessor, self.coordinates)*(accessor.now() - my_last_change);
-    me.ink_at_last_change = my_current_ink + self.amount;
-    modify_cell (accessor, self.coordinates, me) ;*/
     for offsx in -1..1 {
       for offsy in -1..1 {
         let coordinates = [self.coordinates [0] + offsx, self.coordinates [1] + offsy];
@@ -568,6 +566,7 @@ impl Event for AddInk {
     let me = get_cell (accessor, self.coordinates).unwrap();
     let mut my_varying = accessor.query (&me.varying, & GetVarying, QueryOffset::After).unwrap().1;
     my_varying.ink_at_last_change += self.amount;
+    my_varying.fiat_accumulation_rate += self.accumulation;
     modify_simple_timeline (accessor, & me.varying, Some(my_varying));
     // TODO: some of the ones at the corners don't need to be updated
     for offsx in -1..1 {
@@ -732,6 +731,7 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
   let generic_amount = 333333333333; // threes to encourage rounding error
   let mut input_magnitude_shift = 0;
   let mut input_signum = 1;
+  let mut input_derivative = 0;
 
   let frame = || {
     let frame_begin = Instant::now();
@@ -760,7 +760,8 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
             event_index += 1;
             stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
               coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
-              amount: (generic_amount << input_magnitude_shift)*input_signum,
+              amount: ((input_derivative+1)%2)*(generic_amount << input_magnitude_shift)*input_signum,
+              accumulation: input_derivative*(generic_amount << input_magnitude_shift)*input_signum/SECOND,
             }).unwrap();
           }
         },
@@ -768,6 +769,9 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
           if state == glium::glutin::ElementState::Pressed {
             if code == glium::glutin::VirtualKeyCode::Space {
               display_state = (display_state + 1) % 3;
+            }
+            if code == glium::glutin::VirtualKeyCode::D {
+              input_derivative = (input_derivative + 1) % 2;
             }
             if code == glium::glutin::VirtualKeyCode::A {
               unrestricted_speed = !unrestricted_speed;
@@ -796,8 +800,9 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
         event_index += 1;
         stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
             coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
-            amount: (DeterministicRandomId::new (& event_index).data() [0] & ((1u64<<40)-1)) as i64 - (1<<39)
-          }).unwrap();
+            amount: ((input_derivative+1)%2)*(generic_amount << input_magnitude_shift)*input_signum,
+            accumulation: input_derivative*(generic_amount << input_magnitude_shift)*input_signum/SECOND,
+        }).unwrap();
       }
       else {
         display_state = (display_state + 1) % 3;
