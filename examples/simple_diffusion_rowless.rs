@@ -725,16 +725,19 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
 
   // take care of the expensive predictions before starting the timer
   stew.snapshot_before(&1);
-  let start = Instant::now();
-  let mut previous_time = 0;
+  let mut previous_real_time = Instant::now();
+  let mut previous_time = 1;
   let mut display_state = 0;
+  let mut unrestricted_speed = false;
 
   let frame = || {
     let frame_begin = Instant::now();
-    let time = min (previous_time + SECOND/10, 1 + ((start.elapsed().as_secs() as i64 * 1000000000i64) +
-                          start.elapsed().subsec_nanos() as i64) *
-                         SECOND / 1000000000i64);
+    let real_duration_in_simulation_units = ((previous_real_time.elapsed().as_secs() as i64 * 1000000000i64) +
+                              previous_real_time.elapsed().subsec_nanos() as i64)
+                             / (1000000000i64 / SECOND);
+    let time = previous_time + min (SECOND/10, real_duration_in_simulation_units);
     previous_time = time;
+    previous_real_time = frame_begin.clone();
     
     let accessor = stew.snapshot_before(& time)
       .expect("steward failed to provide snapshot");
@@ -758,9 +761,14 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
             }).unwrap();
           }
         },
-        glium::glutin::Event::KeyboardInput (state,_,_) => {
+        glium::glutin::Event::KeyboardInput (state,_,Some(code)) => {
           if state == glium::glutin::ElementState::Pressed {
-            display_state = (display_state + 1) % 3;
+            if code == glium::glutin::VirtualKeyCode::Space {
+              display_state = (display_state + 1) % 3;
+            }
+            if code == glium::glutin::VirtualKeyCode::A {
+              unrestricted_speed = !unrestricted_speed;
+            }
           }
         }
         _ => (),
@@ -833,7 +841,13 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
         .expect("failed target.draw");
 
     target.finish().expect("failed to finish drawing");
-      
+     
+    if unrestricted_speed {
+      while frame_begin.elapsed() < Duration::from_millis (10) {
+        for _ in 0..8 {stew.step();}
+        previous_time = stew.updated_until_before().expect("oops, the unrestricted speed system can't handle successfully simulating to the end of time in finite steps");
+      }
+    }
     /*while frame_begin.elapsed() < Duration::from_millis (10) && stew.updated_until_before().map_or (false, | limitation | limitation < time + SECOND) {
         for _ in 0..8 {stew.step();}
     }*/
