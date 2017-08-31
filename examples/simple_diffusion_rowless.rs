@@ -729,6 +729,9 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
   let mut previous_time = 1;
   let mut display_state = 0;
   let mut unrestricted_speed = false;
+  let generic_amount = 333333333333; // threes to encourage rounding error
+  let mut input_magnitude_shift = 0;
+  let mut input_signum = 1;
 
   let frame = || {
     let frame_begin = Instant::now();
@@ -757,7 +760,7 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
             event_index += 1;
             stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
               coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
-              amount: (DeterministicRandomId::new (& event_index).data() [0] & ((1u64<<40)-1)) as i64 - (1<<38)
+              amount: (generic_amount << input_magnitude_shift)*input_signum,
             }).unwrap();
           }
         },
@@ -769,6 +772,17 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
             if code == glium::glutin::VirtualKeyCode::A {
               unrestricted_speed = !unrestricted_speed;
             }
+            if code == glium::glutin::VirtualKeyCode::Grave { input_signum *= -1; }
+            if code == glium::glutin::VirtualKeyCode::Key1 { input_magnitude_shift = 0; }
+            if code == glium::glutin::VirtualKeyCode::Key2 { input_magnitude_shift = 1; }
+            if code == glium::glutin::VirtualKeyCode::Key3 { input_magnitude_shift = 2; }
+            if code == glium::glutin::VirtualKeyCode::Key4 { input_magnitude_shift = 3; }
+            if code == glium::glutin::VirtualKeyCode::Key5 { input_magnitude_shift = 4; }
+            if code == glium::glutin::VirtualKeyCode::Key6 { input_magnitude_shift = 5; }
+            if code == glium::glutin::VirtualKeyCode::Key7 { input_magnitude_shift = 6; }
+            if code == glium::glutin::VirtualKeyCode::Key8 { input_magnitude_shift = 7; }
+            if code == glium::glutin::VirtualKeyCode::Key9 { input_magnitude_shift = 8; }
+            
           }
         }
         _ => (),
