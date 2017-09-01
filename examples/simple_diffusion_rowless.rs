@@ -164,7 +164,9 @@ fn desired_transfer_change_time (cells: [&CellVarying; 2], accumulation_rates: [
     //printlnerr!("{:?}", (start, min_difference,original_difference, max_difference));
   
   let mut previous_duration = i64::max_value();
-  if !(difference_change_rate == 0) {
+  
+  // note: the fact that I've disabled this means that all of the other accumulated-error code is also not doing anything at the moment.
+  if false && !(difference_change_rate == 0) {
   
   previous_duration = 1;
   loop {
