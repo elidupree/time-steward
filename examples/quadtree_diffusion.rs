@@ -1,3 +1,5 @@
+#![feature (i128_type)]
+
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -34,7 +36,8 @@ type Distance = i64;
 type Amount = i128;
 const SECOND: Time = (1 as Time) << 20;
 const METER: Distance = (1 as Distance) << 20;
-const GENERIC_INK_AMOUNT: Amount = (METER*METER*SECOND) << 20;
+const GENERIC_DENSITY: Amount = SECOND << 20;
+const GENERIC_INK_AMOUNT: Amount = METER*METER*GENERIC_DENSITY;
 
 // Velocity is "ink units per space unit per time unit"
 // and slope is "ink density per space unit", i.e. "ink units per space unit^3"
@@ -52,30 +55,51 @@ type Steward = steward_module::Steward <Basics>;
 struct NodeData {
   width: Distance,
   center: [Distance ; 2],
-  parent: Option <DataHandle <NodeData>>,
+  parent: Option <NodeHandle>,
   varying: DataTimelineCell <SimpleTimeline <NodeVarying, Steward>>,
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct NodeVarying {
   last_change: Time,
   ink_at_last_change: Amount,
-  children: Vec<DataHandle <NodeData>>,
-  boundaries: [[Vec<DataHandle <BoundaryData>>;2];2],
+  children: Vec<NodeHandle>,
+  boundaries: [[Vec<BoundaryHandle>;2];2],
   
   accumulation_rate: Amount,
   slope: [Amount; 2],
 }
+type NodeHandle = DataHandle <NodeData>;
+impl StewardData for NodeData {}
+impl StewardData for NodeVarying {}
+impl PersistentlyIdentifiedType for NodeData {
+  const ID: PersistentTypeId = PersistentTypeId(0x734528f6aefdc1b9);
+}
+impl IterateUniquelyOwnedPredictions <Steward> for NodeVarying {}
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct BoundaryData {
   length: Distance,
   center: [Distance ; 2],
+  nodes: [NodeHandle; 2],
   varying: DataTimelineCell <SimpleTimeline <BoundaryVarying, Steward>>,
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct BoundaryVarying {
   transfer_velocity: Amount,
   next_change: Option <EventHandle <Basics>>,
+}
+type BoundaryHandle = DataHandle <BoundaryData>;
+impl StewardData for BoundaryData {}
+impl StewardData for BoundaryVarying {}
+impl PersistentlyIdentifiedType for BoundaryData {
+  const ID: PersistentTypeId = PersistentTypeId(0x9d643214b58b24dc);
+}
+impl IterateUniquelyOwnedPredictions <Steward> for BoundaryVarying {
+  fn iterate_predictions <F: FnMut (& <Steward as TimeSteward>::EventHandle)> (&self, callback: &mut F) {
+    if let Some (prediction) = self.next_change.as_ref() {
+      callback (prediction);
+    }
+  }
 }
 
 macro_rules! get {
@@ -87,7 +111,7 @@ macro_rules! set {
   ($accessor: expr, $cell: expr, $field: ident, $value: expr) => {
     {
       let mut value = $accessor.query ($cell, &GetVarying, QueryOffset::After).1.unwrap();
-      value.$field = value
+      value.$field = $value;
       modify_simple_timeline ($cell, Some (value));
     }
   }
@@ -125,58 +149,59 @@ impl<A: EventAccessor <Steward = Steward>> Drop for EventContext <A> {
   }
 }*/
 
-fn update_inferred_node_properties (node: &mut ?????) {
-  node.slope = [0, 0];
-  node.accumulation_rate = 0;
+fn update_inferred_node_properties <A: Accessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
+  let mut varying = accessor.query (&node.varying, &GetVarying, QueryOffset::After).1.unwrap();
+  varying.slope = [0, 0];
+  varying.accumulation_rate = 0;
   for dimension in 0..2 {
     for direction in 0..2 {
       let direction_signum = (direction*2)-1;
       for boundary in node.boundaries [dimension] [direction] {
         let transfer_rate = boundary.transfer_velocity*boundary.length;
-        node.accumulation_rate += transfer_rate*direction_signum;
-        node.slope [dimension] += transfer_rate; // divided by
+        varying.accumulation_rate += transfer_rate*direction_signum;
+        varying.slope [dimension] += transfer_rate; // divided by
         // (2*node.width*VELOCITY_PER_SLOPE), but we do that later as an optimization
       }
     }
-    result.slope [dimension] /= (2*node.width*VELOCITY_PER_SLOPE);
+    varying.slope [dimension] /= 2*node.width*VELOCITY_PER_SLOPE;
   }
-  result
+  modify_simple_timeline (&node.varying, Some (varying));
 }
 
-fn update_node (node: &mut ?????, time: Time) {
+fn update_node <A: Accessor <Steward = Steward >> (accessor: &A, node: &NodeHandle, time: Time) {
   node.ink_at_last_change = ink_at (node, node.center, time);
-  note.last_change = time;
+  node.last_change = time;
 }
 
-fn ink_at (node: &?????, time: Time) {
+fn ink_at (node: &NodeHandle, time: Time) {
   node.ink_at_last_change + node.accumulation_rate*(time - node.last_change)
 }
-fn density_at (node: &?????, time: Time) {
-  ink_at (node, time)/(node.width*node.width),
+fn density_at (node: &NodeHandle, time: Time) {
+  ink_at (node, time)/(node.width*node.width)
 }
 
-fn inferred_density_trajectory_at (node: &?????, location: [Amount; 2], time: Time)->[Amount; 2] {
+fn inferred_density_trajectory_at <A: Accessor <Steward = Steward >> (accessor: &A, node: &NodeHandle, location: [Amount; 2], time: Time)->[Amount; 2] {
   let area = node.width*node.width;
   [
     ink_at(node, time)/area
-      + node.slope [0]*(location [0] - note.center [0])
-      + node.slope [1]*(location [1] - note.center [1]),
+      + node.slope [0]*(location [0] - node.center [0])
+      + node.slope [1]*(location [1] - node.center [1]),
     node.accumulation_rate/area
   ]
 }
 
 
-fn density_difference_to_ideal_transfer_velocity (nodes: [& ?????;2], density_difference: Amount) {
+fn density_difference_to_ideal_transfer_velocity (nodes: [& NodeHandle; 2], density_difference: Amount) {
   let ideal_transfer_slope = density_difference*2/(nodes [0].width + nodes [1].width);
   ideal_transfer_slope*VELOCITY_PER_SLOPE
 }
-fn transfer_velocity_to_ideal_density_difference (nodes: [& ?????;2], transfer_velocity: Amount) {
+fn transfer_velocity_to_ideal_density_difference (nodes: [&NodeHandle;2], transfer_velocity: Amount) {
   let ideal_transfer_slope = transfer_velocity/VELOCITY_PER_SLOPE;
   ideal_transfer_slope*(nodes [0].width + nodes [1].width)/2
 }
 
 
-fn update_transfer_change_prediction (nodes: [& ?????;2], boundary:?) {
+fn update_transfer_change_prediction <A: Accessor <Steward = Steward >> (accessor: &A, nodes: [&NodeHandle;2], boundary: BoundaryHandle) {
   let densities = [
     density_at (nodes[0], *accessor.now()),
     density_at (nodes[1], *accessor.now()),
@@ -197,17 +222,17 @@ fn update_transfer_change_prediction (nodes: [& ?????;2], boundary:?) {
     transfer_velocity_to_ideal_density_difference(difference_now - permissible_error),
     transfer_velocity_to_ideal_density_difference(difference_now + permissible_error),
   );
-  let time = if original_difference < min_difference || original_difference > max_difference {
+  let time = if difference_now < min_difference || difference_now > max_difference {
     Some(*accessor.now())
   } else if accumulation_difference > 0 {
-    Some(*accessor.now() + (max_difference-original_difference)/difference_change_rate);
+    Some(*accessor.now() + (max_difference-difference_now)/accumulation_difference);
   }
   else if accumulation_difference < 0 {
-    Some(*accessor.now() + (min_difference-original_difference)/difference_change_rate);
+    Some(*accessor.now() + (min_difference-difference_now)/accumulation_difference);
   }
   else {
     None
-  }
+  };
   
   if let Some (discarded) = boundary.next_change.take() {accessor.destroy_prediction (&discarded);}
   boundary.next_change = time.map (|time| {
@@ -221,7 +246,7 @@ fn update_transfer_change_prediction (nodes: [& ?????;2], boundary:?) {
   modify_simple_timeline (accessor, & boundary, Some(boundary));
 }
 
-fn split (node: &mut ?????) {
+fn split <A: Accessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
   assert!(node.children.is_empty());
   let mut velocities = [[[0;2];2];2];
   let mut neighbors = [[[;2];2];2];
@@ -241,11 +266,11 @@ fn split (node: &mut ?????) {
           split (neighbor);
         }
         velocities [dimension] [direction] = [boundaries [0].transfer_velocity, boundaries [0].transfer_velocity];
-        neighbors [dimension] [direction] = [boundaries [0], [boundaries [0]];
+        neighbors [dimension] [direction] = [boundaries [0], boundaries [0]];
       }
       else {
         velocities [dimension] [direction] = [boundaries [0].transfer_velocity, boundaries [1].transfer_velocity];
-        neighbors [dimension] [direction] = [boundaries [0], [boundaries [1]];
+        neighbors [dimension] [direction] = [boundaries [0], boundaries [1]];
       }
     }
     middle_velocities [dimension] = [
@@ -323,18 +348,11 @@ struct Globals {
   size: [Amount; 2],
 
   
-  root: Node,
+  root: NodeHandle,
 }
 impl StewardData for Globals {}
 
-impl IterateUniquelyOwnedPredictions <Steward> for CellVarying {}
-impl IterateUniquelyOwnedPredictions <Steward> for Boundary {
-  fn iterate_predictions <F: FnMut (& <Steward as TimeSteward>::EventHandle)> (&self, callback: &mut F) {
-    if let Some (prediction) = self.next_change.as_ref() {
-      callback (prediction);
-    }
-  }
-}
+
 
 /// The TransferChange event, as used above.
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -347,17 +365,20 @@ impl Event for TransferChange {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    for node in self.boundary.nodes {
+    let nodes = get!(accessor, &self.boundary.varying, nodes);
+    for node in nodes {
       update_node (node);
     }
-    boundary.transfer_velocity = density_difference_to_ideal_transfer_velocity (self.boundary.nodes, density_at (nodes[0], *accessor.now())-
-        density_at (nodes[1], *accessor.now()));
+    set!(accessor, &self.boundary.varying, transfer_velocity,  density_difference_to_ideal_transfer_velocity (nodes,
+      density_at (nodes[0], *accessor.now())-
+      density_at (nodes[1], *accessor.now())
+    ));
     for node in self.boundary.nodes {
-      update_inferred_node_properties (node);
+      update_inferred_node_properties (accessor, node);
     }
     for node in self.boundary.nodes {
       for whatever in node.boundaries.iter() {for something in whatever.iter() {for other_boundary in something.iter() {
-        update_transfer_change_prediction (other_boundary);
+        update_transfer_change_prediction (accessor, other_boundary);
       }}}
     }
     
@@ -386,24 +407,14 @@ impl Event for Initialize {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let globals = accessor.globals();
-    for x in 0..globals.size [0] {
-      for y in 0..globals.size [1] {
-        let cell = get_cell (accessor, [x,y]).unwrap();
-        modify_simple_timeline (accessor, & cell.varying, Some(CellVarying {
-          last_change: 0,
-          ink_at_last_change: 0,
-          fiat_accumulation_rate: 0,
-        }));
-        for dimension in 0..2 {
-          modify_simple_timeline (accessor, & cell.transfers [dimension], Some(TransferVarying {
-            rate: 0,
-            last_change: 0,
-            accumulated_error: 0,
-            next_change: None,
-          }));
-        }
-      }
-    }
+    modify_simple_timeline (accessor, &globals.root.varying, Some (NodeVarying {
+      last_change: 0,
+      ink_at_last_change: 0,
+      children: Vec::new(),
+      boundaries: [[Vec::new();2];2],
+      accumulation_rate: 0,
+      slope: [0; 2],
+    }));
   }
   fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     unimplemented!()
@@ -428,7 +439,7 @@ impl Event for AddInk {
       node = node.children
         [if self.coordinates [0] > node.center [0] {1} else {0}]
         [if self.coordinates [1] > node.center [1] {1} else {0}];
-    )
+    }
     node.ink_at_last_change += self.amount;
     //node.fiat_accumulation_rate += self.accumulation;
   }
@@ -440,7 +451,12 @@ impl Event for AddInk {
 fn make_globals()-> Globals {
   Globals {
     size: [64*METER, 64*METER],
-    root: cells,
+    root: DataHandle::new (NodeData {
+      width: 64*METER,
+      center: [0; 2],
+      parent: None,
+      varying: DataTimelineCell::new (SimpleTimeline::new ()),
+    }),
   }
 }
 
@@ -549,14 +565,14 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
           mouse_coordinates [1] = (display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32-(y as i32)) * 60 / display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32;
         },
         glium::glutin::Event::MouseInput (_,_) => {
-          if in_bounds (globals, mouse_coordinates) {
+          //if in_bounds (globals, mouse_coordinates) {
             event_index += 1;
             stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
               coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
               amount: ((input_derivative+1)%2)*(generic_amount << input_magnitude_shift)*input_signum,
               accumulation: input_derivative*(generic_amount << input_magnitude_shift)*input_signum/SECOND,
             }).unwrap();
-          }
+          //}
         },
         glium::glutin::Event::KeyboardInput (state,_,Some(code)) => {
           if state == glium::glutin::ElementState::Pressed {
@@ -589,59 +605,56 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
       // TODO duplicate code
       mouse_coordinates [0] = (x*60.0) as i32;
       mouse_coordinates [1] = ((1.0-y)*60.0) as i32;
-      if in_bounds (globals, mouse_coordinates) {
+      //if in_bounds (globals, mouse_coordinates) {
         event_index += 1;
         stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
             coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
             amount: ((input_derivative+1)%2)*(generic_amount << input_magnitude_shift)*input_signum,
             accumulation: input_derivative*(generic_amount << input_magnitude_shift)*input_signum/SECOND,
         }).unwrap();
-      }
+      /*}
       else {
         display_state = (display_state + 1) % 3;
-      }
+      }*/
     }
 
     let mut target = display.draw();
     target.clear_color(1.0, 1.0, 1.0, 1.0);
     let mut vertices = Vec::<Vertex>::new();
     
-    for x in 0.. globals.size [0] {
-      for y in 0.. globals.size [1] {
-        let me = get_cell (& accessor, [x,y]).unwrap();
-        let my_varying = accessor.query (&me.varying, & GetVarying, QueryOffset::After).unwrap().1;
+    {
+      let draw;
+      draw = | handle | {
+        let varying = accessor.query (&handle.varying, & GetVarying, QueryOffset::After).unwrap().1;
+        if varying.children.len() > 0 {
+          for child in varying.children.iter() {
+            draw (child);
+          }
+          return
+        }
         let my_current_ink = match display_state {
-          0 => ink_at (&my_varying, get_accumulation_rate (& accessor, [x,y]), *accessor.now()) as f32,
-          1 => (get_accumulation_rate (&accessor, [x,y]) * SECOND * 100) as f32,
-          _ => ((accessor.now() - my_varying.last_change)*50000000000 / SECOND) as f32,
+          0 => (density_at (&handle, *accessor.now()) as f64 / (GENERIC_DENSITY as f64)) as f32,
+          1 => (
+              ((varying.accumulation_rate * SECOND * 100 / (handle.width*handle.width)) as f64)
+              / (GENERIC_DENSITY as f64)
+            ) as f32,
+          _ => ((accessor.now() - varying.last_change)*50000000000 / SECOND) as f32,
         };
-        
-        vertices.extend(&[Vertex {
-                            location: [((x) as f32)/30.0 -1.0,((y) as f32)/30.0 -1.0],
-                            ink: my_current_ink,
-                          },
-                          Vertex {
-                            location: [((x + 1) as f32)/30.0 -1.0,((y) as f32)/30.0 -1.0],
-                            ink: my_current_ink,
-                          },
-                          Vertex {
-                            location: [((x) as f32)/30.0 -1.0,((y + 1) as f32)/30.0 -1.0],
-                            ink: my_current_ink,
-                          },
-                          Vertex {
-                            location: [((x + 1) as f32)/30.0 -1.0,((y + 1) as f32)/30.0 -1.0],
-                            ink: my_current_ink,
-                          },
-                          Vertex {
-                            location: [((x + 1) as f32)/30.0 -1.0,((y) as f32)/30.0 -1.0],
-                            ink: my_current_ink,
-                          },
-                          Vertex {
-                            location: [((x) as f32)/30.0 -1.0,((y + 1) as f32)/30.0 -1.0],
-                            ink: my_current_ink,
-                          }]);
-
-      }
+        let center = handle.center;
+        let slope = varying.slope;
+        let offset = handle.width/2;
+        let vertex = |x,y| Vertex {
+          location: [center [0] + offset*x, center [1] + offset*y],
+          center: center,
+          slope: slope,
+          ink: my_current_ink,
+        };
+        vertices.extend(&[
+          vertex(-1,-1),vertex( 1,-1),vertex( 1, 1),
+          vertex(-1,-1),vertex( 1, 1),vertex(-1, 1)
+        ]);
+      };
+      draw (&accessor.globals().root);
     }
     
     target.draw(&glium::VertexBuffer::new(&display, &vertices)
