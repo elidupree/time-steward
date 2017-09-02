@@ -52,20 +52,78 @@ type Steward = steward_module::Steward <Basics>;
 struct NodeData {
   width: Distance,
   center: [Distance ; 2],
-    last_change: Time,
-      ink_at_last_change: i64,
-  parent: Option <DataHandle <>>,
-  children: Vec<Cell>,
+  parent: Option <DataHandle <NodeData>>,
+  varying: DataTimelineCell <SimpleTimeline <NodeVarying, Steward>>,
 }
-impl StewardData for Globals {}
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+struct NodeVarying {
+  last_change: Time,
+  ink_at_last_change: Amount,
+  children: Vec<DataHandle <NodeData>>,
+  boundaries: [[Vec<DataHandle <BoundaryData>>;2];2],
+  
+  accumulation_rate: Amount,
+  slope: [Amount; 2],
+}
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-struct Boundary {
+struct BoundaryData {
   length: Distance,
   center: [Distance ; 2],
+  varying: DataTimelineCell <SimpleTimeline <BoundaryVarying, Steward>>,
+}
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+struct BoundaryVarying {
   transfer_velocity: Amount,
   next_change: Option <EventHandle <Basics>>,
 }
+
+macro_rules! get {
+  ($accessor: expr, $cell: expr, $field: ident) => {
+    $accessor.query ($cell, &GetVarying, QueryOffset::After).1.unwrap().$field
+  }
+}
+macro_rules! set {
+  ($accessor: expr, $cell: expr, $field: ident, $value: expr) => {
+    {
+      let mut value = $accessor.query ($cell, &GetVarying, QueryOffset::After).1.unwrap();
+      value.$field = value
+      modify_simple_timeline ($cell, Some (value));
+    }
+  }
+}
+
+/*struct EventContext <'a, A: EventAccessor <Steward = Steward>> {
+  accessor: &'a A,
+  node_clones: HashMap <DataHandle <NodeData>, Rc<RefCell<Node>>,
+  boundary_clones: HashMap <DataHandle <NodeData>, Rc<RefCell<Node>>,
+}
+impl<A: EventAccessor <Steward = Steward>> EventContext <A> {
+  fn new (accessor: & A)->Self {
+    EventContext {
+      accessor: accessor,
+      node_clones: HashMap::new(),
+      boundary_clones: HashMap::new(),
+    }
+  }
+  fn get_node (&self, handle: & DataHandle <NodeData>)->Rc {
+    self.node_clones.insert_or (self.accessor.query (
+  }
+}
+impl<A: EventAccessor <Steward = Steward>> Drop for EventContext <A> {
+  fn drop (&mut self) {
+    for (handle, node) in self.node_clones.iter() {
+      if node.modified {
+        modify_simple_timeline (self.accessor, handle, Some(node.varying));
+      }
+    }
+    for (handle, boundary) in self.node_clones.iter() {
+      if boundary.modified {
+        modify_simple_timeline (self.accessor, handle, Some(boundary.varying));
+      }
+    }
+  }
+}*/
 
 fn update_inferred_node_properties (node: &mut ?????) {
   node.slope = [0, 0];
@@ -362,6 +420,7 @@ impl Event for AddInk {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let mut node = accessor.globals().root;
+    update_node (node);
     while node.width > METER {
       if node.children.is_empty() {
         split (node);
@@ -370,27 +429,8 @@ impl Event for AddInk {
         [if self.coordinates [0] > node.center [0] {1} else {0}]
         [if self.coordinates [1] > node.center [1] {1} else {0}];
     )
-    for offsx in -1..1 {
-      for offsy in -1..1 {
-        let coordinates = [self.coordinates [0] + offsx, self.coordinates [1] + offsy];
-        update_accumulated_error (accessor, coordinates, 0) ;
-        update_accumulated_error (accessor, coordinates, 1) ;
-      }
-    }
-    update_cell (accessor, self.coordinates);
-    let me = get_cell (accessor, self.coordinates).unwrap();
-    let mut my_varying = accessor.query (&me.varying, & GetVarying, QueryOffset::After).unwrap().1;
-    my_varying.ink_at_last_change += self.amount;
-    my_varying.fiat_accumulation_rate += self.accumulation;
-    modify_simple_timeline (accessor, & me.varying, Some(my_varying));
-    // TODO: some of the ones at the corners don't need to be updated
-    for offsx in -1..1 {
-      for offsy in -1..1 {
-        let coordinates = [self.coordinates [0] + offsx, self.coordinates [1] + offsy];
-        update_transfer_change_prediction (accessor, coordinates, 0) ;
-        update_transfer_change_prediction (accessor, coordinates, 1) ;
-      }
-    }
+    node.ink_at_last_change += self.amount;
+    //node.fiat_accumulation_rate += self.accumulation;
   }
   fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     unimplemented!()
@@ -398,20 +438,9 @@ impl Event for AddInk {
 }
 
 fn make_globals()-> Globals {
-  let mut cells = Vec::new();
-  for index in 0..60*60 {
-    cells.push (Cell{
-      varying: DataTimelineCell::new (SimpleTimeline::new ()),
-      transfers: [
-        DataTimelineCell::new (SimpleTimeline::new ()),
-        DataTimelineCell::new (SimpleTimeline::new ()),
-      ],
-    });
-  }
   Globals {
-    size: [60, 60],
-    max_inaccuracy: 1 << 30,
-    cells: cells,
+    size: [64*METER, 64*METER],
+    root: cells,
   }
 }
 
@@ -424,32 +453,6 @@ impl BasicsTrait for Basics {
   type Types = (ListedType <TransferChange>, ListedType <Initialize>, ListedType <AddInk>);
 }
 
-
-// User interface details.
-use docopt::Docopt;
-
-const USAGE: &'static str = "
-Simple diffusion, a TimeSteward usage example.
-
-Usage:
-  simple_diffusion
-  simple_diffusion (-l | --listen) <host> <port>
-  simple_diffusion (-c | --connect) <host> <port>
-  
-Options:
-  -l, --listen   Start a synchronized simulation by listening for TCP connections.
-  -c, --connect  Start a synchronized simulation by making a TCP connection.
-";
-
-#[derive(Debug, Deserialize)]
-struct Args {
-  flag_listen: bool,
-  flag_connect: bool,
-    
-  arg_host: Option <String>,
-  arg_port: Option <u16>,
-}
-
 use std::time::{Instant, Duration};
 use glium::{DisplayBuild, Surface};
 
@@ -460,38 +463,10 @@ struct Vertex {
 }
 implement_vertex!(Vertex, location, ink);
 
-use std::net::{TcpListener, TcpStream};
-use std::io::{BufReader, BufWriter};
-
 fn main() {
-  let globals = make_globals();
-
-  // For some reason, docopt checking the arguments caused build_glium() to fail in emscripten.
-  /*if !cfg!(target_os = "emscripten") {
-    let arguments: Args = Docopt::new(USAGE)
-                            .and_then(|d| d.deserialize())
-                            .unwrap_or_else(|e| e.exit());
-    
-    if arguments.flag_listen {
-      let listener = TcpListener::bind ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
-      let stream = listener.accept().unwrap().0;
-      let mut steward: simply_synchronized::Steward<Basics, DefaultSteward <Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3, constants, BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
-      steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
-      run (steward, |a,b| (a.settle_before (b)));
-      return;
-    }
-    else if arguments.flag_connect {
-      let stream = TcpStream::connect ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
-      let steward: simply_synchronized::Steward<Basics, DefaultSteward <Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 1u32), 0, SECOND>>3, constants, BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
-      run (steward, |a,b| (a.settle_before (b)));
-      return;
-    }
-  }*/
-  {
-    let mut steward: Steward = Steward::from_globals(globals);
-    steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize{}).unwrap();
-    run (steward, |_,_|());
-  }
+  let mut steward: Steward = Steward::from_globals(make_globals());
+  steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize{}).unwrap();
+  run (steward, |_,_|());
 }
 
 
@@ -501,22 +476,25 @@ fn run <F: Fn (&mut Steward, Time)>(mut stew: Steward, settle:F) {
   let vertex_shader_source = r#"
 #version 100
 attribute lowp vec2 location;
-attribute lowp float ink;
-varying lowp float ink_transfer;
+attribute lowp vec2 slope;
+attribute lowp vec2 direction;
+attribute lowp float density;
+varying lowp float density_transfer;
 
 void main() {
-gl_Position = vec4 (location, 0.0, 1.0);
-ink_transfer = ink;
+gl_Position = vec4 (location+direction, 0.0, 1.0);
+
+density_transfer = ink + dot(direction, slope);
 }
 
 "#;
 
   let fragment_shader_source = r#"
 #version 100
-varying lowp float ink_transfer;
+varying lowp float density_transfer;
 
 void main() {
-gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
+gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
 }
 
 "#;
