@@ -51,7 +51,7 @@ type Steward = steward_module::Steward <Basics>;
 struct NodeData {
   size: [i32; 2],
   
-  
+  parent: Option <DataHandle <>>,
   children: Vec<Cell>,
 }
 impl StewardData for Globals {}
@@ -66,25 +66,18 @@ fn update_inferred_node_properties (node: &mut ?????) {
       for boundary in node.boundaries [dimension] [direction] {
         let transfer_rate = boundary.transfer_velocity*boundary.length;
         node.accumulation_rate += transfer_rate*direction_signum;
-        node.gradient.slope [dimension] += transfer_rate; // divided by
+        node.slope [dimension] += transfer_rate; // divided by
         // (2*node.width*VELOCITY_PER_SLOPE), but we do that later as an optimization
       }
     }
     result.slope [dimension] /= (2*node.width*VELOCITY_PER_SLOPE);
   }
-  let center_density = node.ink_at_last_change/(node.width*node.width);
-  for dimension in 0..2 {
-    for direction in 0..2 {
-      let direction_signum = (direction*2)-1;
-      node.boundary_densities_at_last_change [dimension] [direction] =
-        center_density + node.gradient.slope [dimension]*node.width / 2;
-    }
-  }
   result
 }
 
-fn update_node (node: &mut ?????) {
-  
+fn update_node (node: &mut ?????, time: Time) {
+  node.ink_at_last_change = ink_at (node, node.center, time);
+  note.last_change = time;
 }
 
 fn ink_at (node: &?????, location: [Amount; 2], time: Time) {
@@ -124,6 +117,55 @@ fn update_transfer_change_prediction (nodes: [& ?????;2], boundary:?) {
     Some(*accessor.now())
   } else {
     Some(
+  }
+}
+
+fn split (node: &mut ?????) {
+  assert!(node.children.is_empty());
+  let mut velocities = [[[0;2];2];2];
+  let mut middle_velocities = [[0;2];2];
+  for dimension in 0..2 {
+    for direction in 0..2 {
+      //let direction_signum = (direction*2)-1;
+      //let other_direction = (direction + 1) & 1;
+      let boundaries = &node.boundaries [dimension] [direction];
+      if boundaries.len() == 1 {
+        loop {
+          let boundary = &boundaries [0];
+          let neighbor = boundary.nodes [direction];
+          if neighbor.width <= node.width {
+            break;
+          }
+          split (neighbor);
+        }
+        velocities [dimension] [direction] = [boundaries [0].transfer_velocity, boundaries [0].transfer_velocity];
+      }
+      else {
+        velocities [dimension] [direction] = [boundaries [0].transfer_velocity, boundaries [1].transfer_velocity];
+      }
+    }
+    middle_velocities [dimension] = [
+      (velocities [dimension] [0] [0] + velocities [dimension] [1] [0]) / 2,
+      (velocities [dimension] [0] [1] + velocities [dimension] [1] [1]) / 2,
+    ];
+  }
+  
+  
+  for x in 0..2 {
+    let x_signum = (x*2)-1;
+    for y in 0..2 {
+      let y_signum = (y*2)-1;
+      let center = [
+        node.center[0] + (node.width >> 2)*x_signum,
+        node.center[1] + (node.width >> 2)*y_signum,
+      ];
+      node.children.push (Node {
+        width: node.width >> 1,
+        center: center,
+        ink_at_last_change: 
+        last_change: time,
+      })
+    }
   }
 }
 
