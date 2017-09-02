@@ -50,6 +50,32 @@ const VELOCITY_PER_SLOPE: Amount = (METER as Amount)*(METER as Amount) / (SECOND
 
 type Steward = steward_module::Steward <Basics>;
 
+macro_rules! serialization_cheat {
+  (
+    [$($bounds:tt)*]
+    [$($concrete:tt)*]
+  ) => {
+
+/*thread_local! {
+  static SERIALIZATION_CONTEXT: RefCell<Option <SerializationContext>> = RefCell::new (None);
+  static DESERIALIZATION_CONTEXT: RefCell<Option <DeserializationContext>> = RefCell::new (None);
+}*/
+
+
+impl <$($bounds)*> $crate::serde::Serialize for $($concrete)* {
+  fn serialize <S: $crate::serde::Serializer> (&self, serializer: S)->Result <S::Ok, S::Error> {
+    unimplemented!()
+  }
+}
+
+impl <'a, $($bounds)*> $crate::serde::Deserialize <'a> for $($concrete)* {
+  fn deserialize <D: $crate::serde::Deserializer<'a>> (deserializer: D)->Result <Self, D::Error> {
+    unimplemented!()
+  }
+}
+
+  };
+}
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct NodeData {
@@ -58,7 +84,7 @@ struct NodeData {
   parent: Option <NodeHandle>,
   varying: DataTimelineCell <SimpleTimeline <NodeVarying, Steward>>,
 }
-#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[derive (Clone, PartialEq, Eq, Debug)]
 struct NodeVarying {
   last_change: Time,
   ink_at_last_change: Amount,
@@ -75,6 +101,7 @@ impl PersistentlyIdentifiedType for NodeData {
   const ID: PersistentTypeId = PersistentTypeId(0x734528f6aefdc1b9);
 }
 impl IterateUniquelyOwnedPredictions <Steward> for NodeVarying {}
+serialization_cheat!([][NodeVarying]);
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct BoundaryData {
@@ -83,7 +110,7 @@ struct BoundaryData {
   nodes: [NodeHandle; 2],
   varying: DataTimelineCell <SimpleTimeline <BoundaryVarying, Steward>>,
 }
-#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[derive (Clone, PartialEq, Eq, Debug)]
 struct BoundaryVarying {
   transfer_velocity: Amount,
   next_change: Option <EventHandle <Basics>>,
@@ -101,6 +128,7 @@ impl IterateUniquelyOwnedPredictions <Steward> for BoundaryVarying {
     }
   }
 }
+serialization_cheat!([][BoundaryVarying]);
 
 macro_rules! get {
   ($accessor: expr, $cell: expr) => {
@@ -165,7 +193,7 @@ fn update_inferred_node_properties <A: EventAccessor <Steward = Steward >> (acce
   for dimension in 0..2 {
     for direction in 0..2 {
       let direction_signum = (direction as Amount*2)-1;
-      for boundary in varying.boundaries [dimension] [direction] {
+      for boundary in varying.boundaries [dimension] [direction].iter() {
         let boundary_varying = get!(accessor, & boundary.varying);
         let transfer_rate = boundary_varying.transfer_velocity*boundary.length as Amount;
         varying.accumulation_rate += transfer_rate*direction_signum;
@@ -262,30 +290,31 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
 }
 
 fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
-  assert!(get!(accessor, &node.varying).children.is_empty());
+  set_with!(accessor, &node.varying, | varying | {
+  assert!(varying.children.is_empty());
   let mut velocities = [[[0;2];2];2];
-  let mut neighbors = [[[;2];2];2];
+  let mut old_boundaries = [[[None,None],[None,None]],[[None,None],[None,None]]];
   let mut middle_velocities = [[0;2];2];
   for dimension in 0..2 {
     for direction in 0..2 {
       //let direction_signum = (direction*2)-1;
       //let other_direction = (direction + 1) & 1;
-      let boundaries = &node.boundaries [dimension] [direction];
+      let boundaries = &varying.boundaries [dimension] [direction];
       if boundaries.len() == 1 {
         loop {
           let boundary = &boundaries [0];
-          let neighbor = boundary.nodes [direction];
+          let neighbor = &boundary.nodes [direction];
           if neighbor.width <= node.width {
             break;
           }
-          split (neighbor);
+          split (accessor, &neighbor);
         }
-        velocities [dimension] [direction] = [boundaries [0].transfer_velocity, boundaries [0].transfer_velocity];
-        neighbors [dimension] [direction] = [boundaries [0], boundaries [0]];
+        velocities [dimension] [direction] = [get!(accessor, &boundaries [0].varying).transfer_velocity, get!(accessor, &boundaries [0].varying).transfer_velocity];
+        old_boundaries [dimension] [direction] = [Some(boundaries [0].clone()), Some(boundaries [0].clone())];
       }
       else {
-        velocities [dimension] [direction] = [boundaries [0].transfer_velocity, boundaries [1].transfer_velocity];
-        neighbors [dimension] [direction] = [boundaries [0], boundaries [1]];
+        velocities [dimension] [direction] = [get!(accessor, &boundaries [0].varying).transfer_velocity, get!(accessor, &boundaries [1].varying).transfer_velocity];
+        old_boundaries [dimension] [direction] = [Some(boundaries [0].clone()), Some(boundaries [1].clone())];
       }
     }
     middle_velocities [dimension] = [
@@ -296,65 +325,108 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
   
   // TODO: more accurate computation of ideal middle velocities and ink amounts,
   // and conserve ink correctly
-  let mut new_children = [[[;2];2];2];
+  let mut new_children = [[[None,None],[None,None]],[[None,None],[None,None]]];
   for x in 0..2 {
-    let x_signum = (x*2)-1;
+    let x_signum = (x as Distance*2)-1;
     for y in 0..2 {
-      let y_signum = (y*2)-1;
+      let y_signum = (y as Distance*2)-1;
       let center = [
         node.center[0] + (node.width >> 2)*x_signum,
         node.center[1] + (node.width >> 2)*y_signum,
       ];
-      let new_child = Node {
+      let new_child = DataHandle::new (NodeData {
         width: node.width >> 1,
         center: center,
-        ink_at_last_change: node.ink_at_last_change >> 2,
-        last_change: time,
-        boundaries: Vec::new(),
-      }
-      node.children.push (new_child)
-      new_children [0][x][y] = new_child;
-      new_children [1][y][x] = new_child;
+        parent: Some (node.clone()),
+        varying: DataTimelineCell::new (SimpleTimeline::new ()),
+      });
+      modify_simple_timeline (accessor, &new_child.varying, Some (NodeVarying {
+        last_change: *accessor.now(),
+        ink_at_last_change: varying.ink_at_last_change >> 2,
+        children: Vec::new(),
+        boundaries: [[Vec::new(), Vec::new()], [Vec::new(), Vec::new()]],
+        accumulation_rate: 0,
+        slope: [0; 2],
+      }));
+      varying.children.push (new_child.clone());
+      new_children [0][x][y] = Some(new_child.clone());
+      new_children [1][y][x] = Some(new_child.clone());
     }
   }
   for dimension in 0..2 {
     for direction in 0..2 {
       let other_direction = (direction + 1) & 1;
       for which in 0..2 {
-        let neighbor = neighbors [dimension] [direction] [which];
-        neighbor.boundaries [dimension] [other_direction].clear();
+        if let Some(boundary) = old_boundaries [dimension] [direction] [which].as_ref() {
+          let neighbor = &boundary.nodes [direction];
+          set_with!(accessor, &neighbor.varying, | neighbor_varying | {
+            neighbor_varying.boundaries [dimension] [other_direction].clear();
+          });
+        }
       }
     }
   }
   for dimension in 0..2 {
+    let other_dimension = (dimension + 1) & 1;
     for direction in 0..2 {
       let other_direction = (direction + 1) & 1;
+      let direction_signum = (direction as Distance*2)-1;
       for which in 0..2 {
-        let neighbor = neighbors [dimension] [direction] [which];
-        let child = new_children [dimension] [direction] [which];
-        let new_boundary = Boundary {
-          length: node.width >> 1,
-          nodes: if direction == 0 { [neighbor, child] } else { [child, neighbor] },
-          transfer_velocity: velocities [dimension] [direction] [which],
-        };
-        child.boundaries [dimension] [direction].push(new_boundary);
-        neighbor.boundaries [dimension] [other_direction].push(new_boundary);
+        let which_signum = (which as Distance*2)-1;
+        if let Some(boundary) = old_boundaries [dimension] [direction] [which].as_ref() {
+          let child = new_children [dimension] [direction] [which].as_ref().unwrap();
+          let neighbor = &boundary.nodes [direction];
+          let mut center = node.center;
+          center [dimension] += (node.width >> 2)*direction_signum;
+          center [other_dimension] += (node.width >> 4)*which_signum;
+          let new_boundary = DataHandle::new (BoundaryData {
+            length: node.width >> 1,
+            center: center,
+            nodes: if direction == 0 { [neighbor.clone(), child.clone()] } else { [child.clone(), neighbor.clone()] },
+            varying: DataTimelineCell::new (SimpleTimeline::new ()),
+          });
+          modify_simple_timeline (accessor, &new_boundary.varying, Some (BoundaryVarying {
+            transfer_velocity: velocities [dimension] [direction] [which],
+            next_change: None,
+          }));
+          set_with!(accessor, &child.varying, | child_varying | {
+            child_varying.boundaries [dimension] [direction].push(new_boundary.clone());
+          });
+          set_with!(accessor, &neighbor.varying, | neighbor_varying | {
+            neighbor_varying.boundaries [dimension] [other_direction].push(new_boundary);
+          });
+        }
       }
     }
   }
   for dimension in 0..2 {
+    let other_dimension = (dimension + 1) & 1;
     for which in 0..2 {
-      let child0 = new_children [dimension] [0] [which];
-      let child1 = new_children [dimension] [0] [which];
-      let new_boundary = Boundary {
+      let which_signum = (which as Distance*2)-1;
+      let child0 = new_children [dimension] [0] [which].as_ref().unwrap();
+      let child1 = new_children [dimension] [0] [which].as_ref().unwrap();
+      let mut center = node.center;
+      center [other_dimension] += (node.width >> 4)*which_signum;
+      let new_boundary = DataHandle::new (BoundaryData {
         length: node.width >> 1,
-        nodes: [child0, child1],
+        center: center,
+        nodes: [child0.clone(), child1.clone()],
+        varying: DataTimelineCell::new (SimpleTimeline::new ()),
+      });
+      modify_simple_timeline (accessor, &new_boundary.varying, Some (BoundaryVarying {
         transfer_velocity: middle_velocities [dimension] [which],
-      };
-      child0.boundaries [dimension] [1].push(new_boundary);
-      child1.boundaries [dimension] [1].push(new_boundary);
+        next_change: None,
+      }));
+      set_with!(accessor, &child0.varying, | child0_varying | {
+        child0_varying.boundaries [dimension] [1].push(new_boundary.clone());
+      });
+      set_with!(accessor, &child1.varying, | child1_varying | {
+        child1_varying.boundaries [dimension] [0].push(new_boundary);
+      });
     }
   }
+  
+  });
 }
 
 
@@ -406,8 +478,9 @@ impl Event for TransferChange {
 }
 
 
-#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[derive (Clone, PartialEq, Eq, Debug)]
 struct AddInk {coordinates: [Distance; 2], amount: Amount, accumulation: Amount}
+serialization_cheat!([][AddInk]);
 impl StewardData for AddInk {}
 impl PersistentlyIdentifiedType for AddInk {
   const ID: PersistentTypeId = PersistentTypeId(0x3e6d029c3da8b9a2);
@@ -416,7 +489,7 @@ impl Event for AddInk {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    let mut node = accessor.globals().root;
+    let mut node = accessor.globals().root.clone();
     update_node (accessor, &node);
     while node.width > METER {
       if get!(accessor, &node.varying).children.is_empty() {
@@ -424,7 +497,7 @@ impl Event for AddInk {
       }
       node = get!(accessor, &node.varying).children
         [if self.coordinates [0] > node.center [0] {2} else {0}+
-         if self.coordinates [1] > node.center [1] {1} else {0}];
+         if self.coordinates [1] > node.center [1] {1} else {0}].clone();
     }
     set_with!(accessor, &node.varying, | varying | {
       varying.ink_at_last_change += self.amount;
@@ -452,7 +525,7 @@ impl Event for Initialize {
       last_change: 0,
       ink_at_last_change: 0,
       children: Vec::new(),
-      boundaries: [[Vec::new();2];2],
+      boundaries: [[Vec::new(), Vec::new()], [Vec::new(), Vec::new()]],
       accumulation_rate: 0,
       slope: [0; 2],
     }));
@@ -516,7 +589,7 @@ varying lowp float density_transfer;
 void main() {
 gl_Position = vec4 (center+direction, 0.0, 1.0);
 
-density_transfer = ink + dot(direction, slope);
+density_transfer = density + dot(direction, slope);
 }
 
 "#;
@@ -553,7 +626,6 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
   let mut previous_time = 1;
   let mut display_state = 0;
   let mut unrestricted_speed = false;
-  let generic_amount = 333333333333; // threes to encourage rounding error
   let mut input_magnitude_shift = 0;
   let mut input_signum = 1;
   let mut input_derivative = 0;
@@ -585,8 +657,8 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
             event_index += 1;
             stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
               coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
-              amount: ((input_derivative+1)%2)*(generic_amount << input_magnitude_shift)*input_signum,
-              accumulation: input_derivative*(generic_amount << input_magnitude_shift)*input_signum/(SECOND as Amount),
+              amount: ((input_derivative+1)%2)*(GENERIC_INK_AMOUNT << input_magnitude_shift)*input_signum,
+              accumulation: input_derivative*(GENERIC_INK_AMOUNT << input_magnitude_shift)*input_signum/(SECOND as Amount),
             }).unwrap();
           //}
         },
@@ -638,17 +710,15 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
     target.clear_color(1.0, 1.0, 1.0, 1.0);
     let mut vertices = Vec::<Vertex>::new();
     
-    {
-      let draw;
-      draw = | handle | {
-        let handle: & NodeHandle = handle;
-        let varying: NodeVarying = accessor.query (&handle.varying, & GetVarying, QueryOffset::After).unwrap().1;
-        if varying.children.len() > 0 {
-          for child in varying.children.iter() {
-            draw (child);
-          }
-          return
+    let mut to_draw = vec![accessor.globals().root.clone()];
+    while let Some(handle) = to_draw.pop() {
+      let varying: NodeVarying = get!(accessor, &handle.varying);
+      if varying.children.len() > 0 {
+        for child in varying.children.iter() {
+          to_draw.push(child.clone());
         }
+      }
+      else {
         let my_current_ink = match display_state {
           0 => (density_at (&accessor, &handle, *accessor.now()) as f64 / (GENERIC_DENSITY as f64)) as f32,
           1 => (
@@ -671,8 +741,7 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
           vertex(-1,-1),vertex( 1,-1),vertex( 1, 1),
           vertex(-1,-1),vertex( 1, 1),vertex(-1, 1)
         ]);
-      };
-      draw (&accessor.globals().root);
+      }
     }
     
     target.draw(&glium::VertexBuffer::new(&display, &vertices)
