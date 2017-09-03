@@ -24,7 +24,7 @@ macro_rules! printlnerr(
 use std::cmp::{min, max};
 use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{self, PersistentTypeId, PersistentlyIdentifiedType, ListedType, StewardData, QueryOffset, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
-use time_steward::rowless::stewards::{simple_flat as steward_module};
+use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
@@ -34,7 +34,7 @@ type Distance = i64;
 type Amount = i128;
 const SECOND: Time = (1 as Time) << 20;
 const METER: Distance = (1 as Distance) << 20;
-const GENERIC_DENSITY: Amount = (SECOND as Amount) << 30;
+const GENERIC_DENSITY: Amount = (SECOND as Amount) << 20;
 const GENERIC_INK_AMOUNT: Amount = (METER as Amount)*(METER as Amount)*GENERIC_DENSITY;
 
 // Velocity is "ink units per space unit per time unit"
@@ -242,6 +242,25 @@ fn transfer_velocity_to_ideal_density_difference (nodes: [&NodeHandle;2], transf
 }
 
 
+fn safer_scaling (value: Amount, numerator: Amount, denominator: Amount)->Amount {
+  if numerator.abs() > denominator.abs()*50 {
+    value*(numerator/denominator)
+  }
+  else if value.abs() > denominator.abs()*50 {
+    numerator*(value/denominator)
+  }
+  else if denominator.abs() > numerator.abs()*50 {
+    value/(denominator/numerator)
+  }
+  else if denominator.abs() > value.abs()*50 {
+    numerator/(denominator/value)
+  }
+  else {
+    (value*numerator)/denominator
+  }
+}
+
+
 fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (accessor: &A, boundary: &BoundaryHandle) {
   set_with!(accessor, &boundary.varying, | boundary_varying | {
   let nodes = &boundary.nodes;
@@ -258,19 +277,20 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
     get!(accessor, &nodes[0].varying).accumulation_rate,
     get!(accessor, &nodes[1].varying).accumulation_rate,
   ];
-  let density_accumulations = [
-    accumulation_rates [0]/((nodes[0].width*nodes[0].width) as Amount),
-    accumulation_rates [1]/((nodes[1].width*nodes[1].width) as Amount),
+  let scale_factor = areas [0]*areas [1];
+  let density_accumulations_scaled = [
+    accumulation_rates [0]*areas [1],
+    accumulation_rates [1]*areas [0],
   ];
   let difference_now = densities[0] - densities[1];
-  let density_accumulation_difference = density_accumulations [0] - density_accumulations [1];
+  let density_accumulation_difference_scaled = density_accumulations_scaled [0] - density_accumulations_scaled [1];
   let numerator = accumulation_rates [0] * areas[1] - accumulation_rates [1] * areas[0];
   let denominator = 4*(nodes[0].width as Amount * areas[1] + nodes[1].width as Amount * areas[0]);
   let max_reasonable_velocity_skew = numerator/denominator;
   
   // the more unstable the boundary is, the more error we permit
   let max_rounding_error = max(VELOCITY_PER_SLOPE, (nodes [0].width + nodes [1].width) as Amount);
-  let permissible_error = 2*max_rounding_error + max_reasonable_velocity_skew.abs() + GENERIC_INK_AMOUNT/(SECOND as Amount)/(METER as Amount)/1000000;// + density_accumulation_difference.abs()*boundary.length as Amount/8;
+  let permissible_error = 2*max_rounding_error + max_reasonable_velocity_skew.abs();// + GENERIC_INK_AMOUNT/(SECOND as Amount)/(METER as Amount)/100000000;// + density_accumulation_difference.abs()*boundary.length as Amount/8;
   
   // Note to self: it may look weird for the boundary conditions to be based on
   // the CURRENT transfer_velocity, when it can change, but remember
@@ -282,16 +302,17 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   );
   let time = if difference_now < min_difference || difference_now > max_difference {
     Some(*accessor.now())
-  } else if density_accumulation_difference > 0 {
-    Some(*accessor.now() + ((max_difference-difference_now)/density_accumulation_difference) as Time)
+  } else if density_accumulation_difference_scaled > 0 {
+    Some(*accessor.now() + safer_scaling (max_difference-difference_now, scale_factor, density_accumulation_difference_scaled) as Time)
   }
-  else if density_accumulation_difference < 0 {
-    Some(*accessor.now() + ((min_difference-difference_now)/density_accumulation_difference) as Time)
+  else if density_accumulation_difference_scaled < 0 {
+    Some(*accessor.now() + safer_scaling (min_difference-difference_now, scale_factor, density_accumulation_difference_scaled) as Time)
   }
   else {
     None
   };
-  //printlnerr!("{:?}", (*accessor.now(), time, densities, density_accumulations, density_accumulation_difference, max_reasonable_velocity_skew, (min_difference, difference_now, max_difference)));
+  //printlnerr!("{:?}", (density_accumulation_difference.signum(), max_reasonable_velocity_skew.signum()));
+  //printlnerr!("{:?}", (*accessor.now()*1000/SECOND, time.map(|time|time*1000/SECOND), difference_now, density_accumulation_difference_scaled*SECOND as Amount/scale_factor, max_reasonable_velocity_skew*boundary.length as Amount / areas[0], - max_reasonable_velocity_skew*boundary.length as Amount / areas[1], (min_difference, difference_now, max_difference), boundary_varying.transfer_velocity, density_difference_to_ideal_transfer_velocity ([&nodes[0], &nodes[1]], difference_now), max_reasonable_velocity_skew, permissible_error));
   
   if let Some (discarded) = boundary_varying.next_change.take() {accessor.destroy_prediction (&discarded);}
   boundary_varying.next_change = time.map (|time| {
