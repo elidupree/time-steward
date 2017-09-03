@@ -63,13 +63,13 @@ macro_rules! serialization_cheat {
 
 
 impl <$($bounds)*> $crate::serde::Serialize for $($concrete)* {
-  fn serialize <S: $crate::serde::Serializer> (&self, serializer: S)->Result <S::Ok, S::Error> {
+  fn serialize <S: $crate::serde::Serializer> (&self, _: S)->Result <S::Ok, S::Error> {
     unimplemented!()
   }
 }
 
 impl <'a, $($bounds)*> $crate::serde::Deserialize <'a> for $($concrete)* {
-  fn deserialize <D: $crate::serde::Deserializer<'a>> (deserializer: D)->Result <Self, D::Error> {
+  fn deserialize <D: $crate::serde::Deserializer<'a>> (_: D)->Result <Self, D::Error> {
     unimplemented!()
   }
 }
@@ -290,7 +290,11 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
 }
 
 fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
-  set_with!(accessor, &node.varying, | varying | {
+  let mut varying = get!(accessor, &node.varying);
+  //printlnerr!("{:?}", (node.width, node.center, varying.children.len()));
+  //if !varying.children.is_empty() {
+    //printlnerr!("{:?}", (node.width, node.center, varying.children.len()));
+  //}
   assert!(varying.children.is_empty());
   let mut velocities = [[[0;2];2];2];
   let mut old_boundaries = [[[None,None],[None,None]],[[None,None],[None,None]]];
@@ -298,24 +302,48 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
   for dimension in 0..2 {
     for direction in 0..2 {
       //let direction_signum = (direction*2)-1;
-      //let other_direction = (direction + 1) & 1;
-      let boundaries = &varying.boundaries [dimension] [direction];
-      if boundaries.len() == 1 {
-        loop {
-          let boundary = &boundaries [0];
-          let neighbor = &boundary.nodes [direction];
-          if neighbor.width <= node.width {
-            break;
+      let other_direction = (direction + 1) & 1;
+      
+      match varying.boundaries [dimension] [direction].len() {
+        1 => {
+          loop {
+            {
+              let boundary = &varying.boundaries [dimension] [direction] [0];
+              let neighbor = &boundary.nodes [direction];
+              if neighbor.width <= node.width {
+                break;
+              }
+              split (accessor, &neighbor);
+            }
+            varying = get!(accessor, &node.varying);
           }
-          split (accessor, &neighbor);
-        }
-        velocities [dimension] [direction] = [get!(accessor, &boundaries [0].varying).transfer_velocity, get!(accessor, &boundaries [0].varying).transfer_velocity];
-        old_boundaries [dimension] [direction] = [Some(boundaries [0].clone()), Some(boundaries [0].clone())];
-      }
-      else {
-        velocities [dimension] [direction] = [get!(accessor, &boundaries [0].varying).transfer_velocity, get!(accessor, &boundaries [1].varying).transfer_velocity];
-        old_boundaries [dimension] [direction] = [Some(boundaries [0].clone()), Some(boundaries [1].clone())];
-      }
+          let boundary = &varying.boundaries [dimension] [direction] [0];
+          assert!(&boundary.nodes[other_direction] == node);
+          velocities [dimension] [direction] = [
+            get!(accessor, &boundary.varying).transfer_velocity,
+            get!(accessor, &boundary.varying).transfer_velocity
+          ];
+          old_boundaries [dimension] [direction] = [
+            Some(boundary.clone()),
+            Some(boundary.clone()),
+          ];
+        },
+        2 => {
+          let boundaries = &varying.boundaries [dimension] [direction];
+          assert!(&boundaries[0].nodes[other_direction] == node);
+          assert!(&boundaries[1].nodes[other_direction] == node);
+          velocities [dimension] [direction] = [
+            get!(accessor, &boundaries [0].varying).transfer_velocity,
+            get!(accessor, &boundaries [1].varying).transfer_velocity,
+          ];
+          old_boundaries [dimension] [direction] = [
+            Some(boundaries [0].clone()),
+            Some(boundaries [1].clone()),
+          ];
+        },
+        0 => (),
+        _ => unreachable!(),
+      };
     }
     middle_velocities [dimension] = [
       (velocities [dimension] [0] [0] + velocities [dimension] [1] [0]) / 2,
@@ -359,7 +387,11 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
       for which in 0..2 {
         if let Some(boundary) = old_boundaries [dimension] [direction] [which].as_ref() {
           let neighbor = &boundary.nodes [direction];
+          assert!(neighbor.width <= node.width);
           set_with!(accessor, &neighbor.varying, | neighbor_varying | {
+            for b in neighbor_varying.boundaries [dimension] [other_direction].iter() {
+              assert!(&b.nodes[other_direction] == node);
+            }
             neighbor_varying.boundaries [dimension] [other_direction].clear();
           });
         }
@@ -404,7 +436,7 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
     for which in 0..2 {
       let which_signum = (which as Distance*2)-1;
       let child0 = new_children [dimension] [0] [which].as_ref().unwrap();
-      let child1 = new_children [dimension] [0] [which].as_ref().unwrap();
+      let child1 = new_children [dimension] [1] [which].as_ref().unwrap();
       let mut center = node.center;
       center [other_dimension] += (node.width >> 4)*which_signum;
       let new_boundary = DataHandle::new (BoundaryData {
@@ -425,8 +457,19 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
       });
     }
   }
+  for dimension in 0..2 {
+    for direction in 0..2 {
+      for which in 0..2 {
+        if let Some(boundary) = old_boundaries [dimension] [direction] [which].as_ref() {
+          modify_simple_timeline (accessor, &boundary.varying, None);
+        }
+      }
+    }
+  }
   
-  });
+  varying.boundaries = [[Vec::new(), Vec::new()], [Vec::new(), Vec::new()]];
+  
+  modify_simple_timeline (accessor, &node.varying, Some(varying));
 }
 
 
@@ -587,7 +630,7 @@ attribute lowp float density;
 varying lowp float density_transfer;
 
 void main() {
-gl_Position = vec4 (center+direction, 0.0, 1.0);
+gl_Position = vec4 (center+direction*0.95, 0.0, 1.0);
 
 density_transfer = density + dot(direction, slope);
 }
