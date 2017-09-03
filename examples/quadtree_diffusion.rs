@@ -233,12 +233,14 @@ fn density_at <A: Accessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
 
 
 fn density_difference_to_ideal_transfer_velocity (nodes: [& NodeHandle; 2], density_difference: Amount)->Amount {
-  let ideal_transfer_slope = density_difference*2/((nodes [0].width + nodes [1].width) as Amount);
-  ideal_transfer_slope*VELOCITY_PER_SLOPE
+  //let ideal_transfer_slope = density_difference*2/((nodes [0].width + nodes [1].width) as Amount);
+  //ideal_transfer_slope*VELOCITY_PER_SLOPE
+  density_difference*(2*VELOCITY_PER_SLOPE)/((nodes [0].width + nodes [1].width) as Amount)
 }
 fn transfer_velocity_to_ideal_density_difference (nodes: [&NodeHandle;2], transfer_velocity: Amount)->Amount {
-  let ideal_transfer_slope = transfer_velocity/VELOCITY_PER_SLOPE;
-  ideal_transfer_slope*((nodes [0].width + nodes [1].width) as Amount)/2
+  //let ideal_transfer_slope = transfer_velocity/VELOCITY_PER_SLOPE;
+  //ideal_transfer_slope*((nodes [0].width + nodes [1].width) as Amount)/2
+  transfer_velocity*((nodes [0].width + nodes [1].width) as Amount)/(2*VELOCITY_PER_SLOPE)
 }
 
 
@@ -256,14 +258,14 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   let difference_now = densities[0] - densities[1];
   let accumulation_difference = density_accumulations[0] - density_accumulations[1];
   // the more stable the boundary is, the less error we permit
-  let permissible_error = accumulation_difference.abs()/8 + 2;
+  let permissible_error = GENERIC_INK_AMOUNT/(SECOND as Amount)/(METER as Amount)/100;//accumulation_difference.abs()/8 + 2;
   // Note to self: it may look weird for the boundary conditions to be based on
-  // the CURRENT difference, when it's ever-changing, but remember
+  // the CURRENT transfer_velocity, when it can change, but remember
   // that "when the current gets too far from the ideal" is the same as
   // "when the ideal gets too far from the current"
   let (min_difference, max_difference) = (
-    transfer_velocity_to_ideal_density_difference([&nodes[0], &nodes[1]], difference_now - permissible_error),
-    transfer_velocity_to_ideal_density_difference([&nodes[0], &nodes[1]], difference_now + permissible_error),
+    transfer_velocity_to_ideal_density_difference([&nodes[0], &nodes[1]], boundary_varying.transfer_velocity - permissible_error),
+    transfer_velocity_to_ideal_density_difference([&nodes[0], &nodes[1]], boundary_varying.transfer_velocity + permissible_error),
   );
   let time = if difference_now < min_difference || difference_now > max_difference {
     Some(*accessor.now())
@@ -276,6 +278,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   else {
     None
   };
+  printlnerr!("{:?}", (*accessor.now(), time, densities, density_accumulations, (min_difference, difference_now, max_difference)));
   
   if let Some (discarded) = boundary_varying.next_change.take() {accessor.destroy_prediction (&discarded);}
   boundary_varying.next_change = time.map (|time| {
@@ -544,8 +547,12 @@ impl Event for AddInk {
     }
     set_with!(accessor, &node.varying, | varying | {
       varying.ink_at_last_change += self.amount;
+      //node.fiat_accumulation_rate += self.accumulation;
     });
-    //node.fiat_accumulation_rate += self.accumulation;
+    
+    for whatever in get!(accessor, &node.varying).boundaries.iter() {for something in whatever.iter() {for other_boundary in something.iter() {
+      update_transfer_change_prediction (accessor, other_boundary);
+    }}}
   }
   fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
     unimplemented!()
