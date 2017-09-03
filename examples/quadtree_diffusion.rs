@@ -305,6 +305,47 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   });
 }
 
+fn maybe_split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
+  if node.width <METER {return;}
+  let mut varying = get!(accessor, &node.varying);
+  let mut averaged_ideal_velocities = [0; 2];
+  for dimension in 0..2 {
+    for direction in 0..2 {
+      let direction_signum = (direction as Amount*2)-1;
+      for boundary in varying.boundaries [dimension] [direction].iter() {
+        let density_difference =
+          density_at (accessor, &boundary.nodes[0], *accessor.now()) - 
+          density_at (accessor, &boundary.nodes[1], *accessor.now());
+        let ideal_velocity = density_difference_to_ideal_transfer_velocity ([&boundary.nodes[0], &boundary.nodes[0]], density_difference);
+        let ideal_rate = ideal_velocity*boundary.length as Amount;
+        averaged_ideal_velocities [dimension] -= ideal_rate;
+      }
+    }
+    averaged_ideal_velocities [dimension] /= 2*node.width as Amount;
+  }
+  let mut close_enough = true;
+  for dimension in 0..2 {
+    for direction in 0..2 {
+      for boundary in varying.boundaries [dimension] [direction].iter() {
+        let density_difference =
+          density_at (accessor, &boundary.nodes[0], *accessor.now()) - 
+          density_at (accessor, &boundary.nodes[1], *accessor.now());
+        let ideal_velocity = density_difference_to_ideal_transfer_velocity ([&boundary.nodes[0], &boundary.nodes[0]], density_difference);
+        let averaged_velocity = averaged_ideal_velocities [dimension];
+        let discrepancy = (ideal_velocity - averaged_velocity).abs();
+        // TODO: should this be proportional in some way to the size of the node(s)?
+        if discrepancy*(boundary.length as Amount) > GENERIC_INK_AMOUNT/(SECOND as Amount) {
+          close_enough = false;
+        }
+      }
+    }
+  }
+  
+  if !close_enough {
+    split (accessor, node);
+  }
+}
+
 fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
   let mut varying = get!(accessor, &node.varying);
   //printlnerr!("{:?}", (node.width, node.center, varying.children.len()));
@@ -568,6 +609,12 @@ impl Event for TransferChange {
       for whatever in get!(accessor, &node.varying).boundaries.iter() {for something in whatever.iter() {for other_boundary in something.iter() {
         update_transfer_change_prediction (accessor, other_boundary);
       }}}
+    }
+    
+    for node in nodes.iter() {
+      if get!(accessor, &node.varying).children.is_empty() {
+        maybe_split (accessor, node);
+      }
     }
     
     // TODO: invalidation
