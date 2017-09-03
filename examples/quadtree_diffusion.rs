@@ -34,7 +34,7 @@ type Distance = i64;
 type Amount = i128;
 const SECOND: Time = (1 as Time) << 20;
 const METER: Distance = (1 as Distance) << 20;
-const GENERIC_DENSITY: Amount = (SECOND as Amount) << 20;
+const GENERIC_DENSITY: Amount = (SECOND as Amount) << 30;
 const GENERIC_INK_AMOUNT: Amount = (METER as Amount)*(METER as Amount)*GENERIC_DENSITY;
 
 // Velocity is "ink units per space unit per time unit"
@@ -245,6 +245,11 @@ fn transfer_velocity_to_ideal_density_difference (nodes: [&NodeHandle;2], transf
 fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (accessor: &A, boundary: &BoundaryHandle) {
   set_with!(accessor, &boundary.varying, | boundary_varying | {
   let nodes = &boundary.nodes;
+  
+  let areas = [
+    (nodes [0].width*nodes [0].width) as Amount,
+    (nodes [1].width*nodes [1].width) as Amount,
+  ];
   let densities = [
     density_at (accessor, &nodes[0], *accessor.now()),
     density_at (accessor, &nodes[1], *accessor.now()),
@@ -258,13 +263,14 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
     accumulation_rates [1]/((nodes[1].width*nodes[1].width) as Amount),
   ];
   let difference_now = densities[0] - densities[1];
-  let accumulation_difference = accumulation_rates [0] - accumulation_rates [1];
   let density_accumulation_difference = density_accumulations [0] - density_accumulations [1];
-  let max_reasonable_velocity_skew = accumulation_difference/(4*(nodes[0].width + nodes[1].width) as Amount);
+  let numerator = accumulation_rates [0] * areas[1] - accumulation_rates [1] * areas[0];
+  let denominator = 4*(nodes[0].width as Amount * areas[1] + nodes[1].width as Amount * areas[0]);
+  let max_reasonable_velocity_skew = numerator/denominator;
   
   // the more unstable the boundary is, the more error we permit
   let max_rounding_error = max(VELOCITY_PER_SLOPE, (nodes [0].width + nodes [1].width) as Amount);
-  let permissible_error = 2*max_rounding_error + max_reasonable_velocity_skew.abs();
+  let permissible_error = 2*max_rounding_error + max_reasonable_velocity_skew.abs() + GENERIC_INK_AMOUNT/(SECOND as Amount)/(METER as Amount)/1000000;// + density_accumulation_difference.abs()*boundary.length as Amount/8;
   
   // Note to self: it may look weird for the boundary conditions to be based on
   // the CURRENT transfer_velocity, when it can change, but remember
@@ -285,7 +291,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   else {
     None
   };
-  printlnerr!("{:?}", (*accessor.now(), time, densities, density_accumulations, (min_difference, difference_now, max_difference)));
+  //printlnerr!("{:?}", (*accessor.now(), time, densities, density_accumulations, density_accumulation_difference, max_reasonable_velocity_skew, (min_difference, difference_now, max_difference)));
   
   if let Some (discarded) = boundary_varying.next_change.take() {accessor.destroy_prediction (&discarded);}
   boundary_varying.next_change = time.map (|time| {
@@ -519,6 +525,10 @@ impl Event for TransferChange {
     for node in nodes.iter() {
       update_node (accessor, node);
     }
+    let areas = [
+      (nodes [0].width*nodes [0].width) as Amount,
+      (nodes [1].width*nodes [1].width) as Amount,
+    ];
     let densities = [
       density_at (accessor, &nodes[0], *accessor.now()),
       density_at (accessor, &nodes[1], *accessor.now()),
@@ -533,13 +543,23 @@ impl Event for TransferChange {
       // for the sake of this math, assume that the accumulation rates have already been updated based on the physics-wise ideal value
       accumulation_rates [0] -= (physics_ideal_velocity - boundary_varying.transfer_velocity)*self.boundary.length as Amount;
       accumulation_rates [1] += (physics_ideal_velocity - boundary_varying.transfer_velocity)*self.boundary.length as Amount;
-      // Select a velocity that would neutralize the relative accumulation if the rest of each node's perimeter was shifted in a similar way.
-      // accumulation0 - shift*perimeter0 == accumulation1 + shift*perimeter0.
+      // Select a velocity that would neutralize the relative density-accumulation if the rest of each node's perimeter was shifted in a similar way.
+      // (accumulation0 - shift*perimeter0)/w0^2 == (accumulation1 + shift*perimeter1)/w1^2.
       // After a little algebra, 
-      // (accumulation0-accumulation1)/(perimeter0+perimeter1) == shift.
-      let accumulation_difference = accumulation_rates [0] - accumulation_rates [1];
-      let max_reasonable_velocity_skew = accumulation_difference/(4*(nodes[0].width + nodes[1].width) as Amount);
-      boundary_varying.transfer_velocity = physics_ideal_velocity;// + accumulation_difference.signum()+max_reasonable_velocity_skew/4;
+      // (accumulation0*w1^2-accumulation1*w0^2)/(perimeter0*w1^2+perimeter1*w0^2) == shift.
+      let numerator = accumulation_rates [0] * areas[1] - accumulation_rates [1] * areas[0];
+      let denominator = 4*(nodes[0].width as Amount * areas[1] + nodes[1].width as Amount * areas[0]);
+      let max_reasonable_velocity_skew = numerator/denominator;
+      assert!(
+        (accumulation_rates [0]*areas[1]-accumulation_rates [1]*areas[0]).abs()
+        >=
+        (
+         (accumulation_rates [0] - max_reasonable_velocity_skew*self.boundary.length as Amount)*areas[1]
+        -(accumulation_rates [1] + max_reasonable_velocity_skew*self.boundary.length as Amount)*areas[0]
+        ).abs()
+      );
+      //printlnerr!("{:?}", max_reasonable_velocity_skew);
+      boundary_varying.transfer_velocity = physics_ideal_velocity + numerator.signum()+max_reasonable_velocity_skew/2;
     });
     for node in nodes.iter() {
       update_inferred_node_properties (accessor, node);
