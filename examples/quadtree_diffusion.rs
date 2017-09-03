@@ -692,8 +692,13 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
       match ev {
         glium::glutin::Event::Closed => return true,
         glium::glutin::Event::MouseMoved (x,y) => {
-          mouse_coordinates [0] = (x as Distance) * accessor.globals().size [0] / display.get_window().unwrap().get_inner_size_pixels().unwrap().0 as Distance;
-          mouse_coordinates [1] = (display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as Distance-(y as Distance)) * accessor.globals().size [1] / display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as Distance;
+          let display_size = display.get_window().unwrap().get_inner_size_pixels().unwrap();
+          mouse_coordinates [0] = 
+                                          (x as Distance)  * accessor.globals().size [0]
+            / display_size.0 as Distance - accessor.globals().size [0]/2;
+          mouse_coordinates [1] =
+            (display_size.1 as Distance - (y as Distance)) * accessor.globals().size [1]
+            / display_size.1 as Distance - accessor.globals().size [1]/2;
         },
         glium::glutin::Event::MouseInput (_,_) => {
           //if in_bounds (globals, mouse_coordinates) {
@@ -773,7 +778,7 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
         let center = handle.center;
         let slope = varying.slope;
         let offset = handle.width/2;
-        let size = accessor.globals().size [0] as f32;
+        let size = (accessor.globals().size [0]/2) as f32;
         let vertex = |x,y| Vertex {
           direction: [(offset*x) as f32/size, (offset*y) as f32/size],
           center: [center [0] as f32/size, center [1] as f32/size],
