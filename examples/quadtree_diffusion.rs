@@ -262,8 +262,9 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   let density_accumulation_difference = density_accumulations [0] - density_accumulations [1];
   let max_reasonable_velocity_skew = accumulation_difference/(4*(nodes[0].width + nodes[1].width) as Amount);
   
-  // the more stable the boundary is, the less error we permit
-  let permissible_error = GENERIC_INK_AMOUNT/(SECOND as Amount)/(METER as Amount)/10000 + max_reasonable_velocity_skew.abs();
+  // the more unstable the boundary is, the more error we permit
+  let max_rounding_error = max(VELOCITY_PER_SLOPE, (nodes [0].width + nodes [1].width) as Amount);
+  let permissible_error = 2*max_rounding_error + max_reasonable_velocity_skew.abs();
   
   // Note to self: it may look weird for the boundary conditions to be based on
   // the CURRENT transfer_velocity, when it can change, but remember
@@ -284,7 +285,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   else {
     None
   };
-  //printlnerr!("{:?}", (*accessor.now(), time, densities, density_accumulations, (min_difference, difference_now, max_difference)));
+  printlnerr!("{:?}", (*accessor.now(), time, densities, density_accumulations, (min_difference, difference_now, max_difference)));
   
   if let Some (discarded) = boundary_varying.next_change.take() {accessor.destroy_prediction (&discarded);}
   boundary_varying.next_change = time.map (|time| {
@@ -538,7 +539,7 @@ impl Event for TransferChange {
       // (accumulation0-accumulation1)/(perimeter0+perimeter1) == shift.
       let accumulation_difference = accumulation_rates [0] - accumulation_rates [1];
       let max_reasonable_velocity_skew = accumulation_difference/(4*(nodes[0].width + nodes[1].width) as Amount);
-      boundary_varying.transfer_velocity = physics_ideal_velocity + accumulation_difference.signum()+max_reasonable_velocity_skew/4;
+      boundary_varying.transfer_velocity = physics_ideal_velocity;// + accumulation_difference.signum()+max_reasonable_velocity_skew/4;
     });
     for node in nodes.iter() {
       update_inferred_node_properties (accessor, node);
