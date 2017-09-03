@@ -29,8 +29,6 @@ use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeStewa
 use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
 
 
-use time_steward::support::rounding_error_tolerant_math::Range;
-
 type Time = i64;
 type Distance = i64;
 type Amount = i128;
@@ -132,7 +130,7 @@ serialization_cheat!([][BoundaryVarying]);
 
 macro_rules! get {
   ($accessor: expr, $cell: expr) => {
-    ($accessor.query ($cell, &GetVarying, QueryOffset::After).unwrap().1)
+    $accessor.query ($cell, &GetVarying, QueryOffset::After).unwrap().1
   }
 }
 macro_rules! set {
@@ -196,8 +194,8 @@ fn update_inferred_node_properties <A: EventAccessor <Steward = Steward >> (acce
       for boundary in varying.boundaries [dimension] [direction].iter() {
         let boundary_varying = get!(accessor, & boundary.varying);
         let transfer_rate = boundary_varying.transfer_velocity*boundary.length as Amount;
-        varying.accumulation_rate += transfer_rate*direction_signum;
-        varying.slope [dimension] += transfer_rate; // divided by
+        varying.accumulation_rate -= transfer_rate*direction_signum;
+        varying.slope [dimension] -= transfer_rate; // divided by
         // (2*node.width*VELOCITY_PER_SLOPE), but we do that later as an optimization
       }
     }
@@ -257,8 +255,11 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   ];
   let difference_now = densities[0] - densities[1];
   let accumulation_difference = density_accumulations[0] - density_accumulations[1];
+  
   // the more stable the boundary is, the less error we permit
-  let permissible_error = GENERIC_INK_AMOUNT/(SECOND as Amount)/(METER as Amount)/100;//accumulation_difference.abs()/8 + 2;
+  let permissible_error = GENERIC_INK_AMOUNT/(SECOND as Amount)/(METER as Amount)/100;
+  //let permissible_error = accumulation_difference.abs()/8 + 2;
+  
   // Note to self: it may look weird for the boundary conditions to be based on
   // the CURRENT transfer_velocity, when it can change, but remember
   // that "when the current gets too far from the ideal" is the same as
@@ -278,7 +279,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   else {
     None
   };
-  printlnerr!("{:?}", (*accessor.now(), time, densities, density_accumulations, (min_difference, difference_now, max_difference)));
+  //printlnerr!("{:?}", (*accessor.now(), time, densities, density_accumulations, (min_difference, difference_now, max_difference)));
   
   if let Some (discarded) = boundary_varying.next_change.take() {accessor.destroy_prediction (&discarded);}
   boundary_varying.next_change = time.map (|time| {
@@ -401,6 +402,7 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
       }
     }
   }
+  let mut new_boundaries = Vec::new();
   for dimension in 0..2 {
     let other_dimension = (dimension + 1) & 1;
     for direction in 0..2 {
@@ -428,8 +430,9 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
             child_varying.boundaries [dimension] [direction].push(new_boundary.clone());
           });
           set_with!(accessor, &neighbor.varying, | neighbor_varying | {
-            neighbor_varying.boundaries [dimension] [other_direction].push(new_boundary);
+            neighbor_varying.boundaries [dimension] [other_direction].push(new_boundary.clone());
           });
+          new_boundaries.push (new_boundary);
         }
       }
     }
@@ -456,15 +459,19 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
         child0_varying.boundaries [dimension] [1].push(new_boundary.clone());
       });
       set_with!(accessor, &child1.varying, | child1_varying | {
-        child1_varying.boundaries [dimension] [0].push(new_boundary);
+        child1_varying.boundaries [dimension] [0].push(new_boundary.clone());
       });
+      new_boundaries.push (new_boundary);
     }
   }
   for dimension in 0..2 {
     for direction in 0..2 {
       for which in 0..2 {
         if let Some(boundary) = old_boundaries [dimension] [direction] [which].as_ref() {
-          modify_simple_timeline (accessor, &boundary.varying, None);
+          if let Some ((_, boundary_varying)) = accessor.query (&boundary.varying, &GetVarying, QueryOffset::After) {
+            if let Some (discarded) = boundary_varying.next_change {accessor.destroy_prediction (&discarded);}
+            modify_simple_timeline (accessor, &boundary.varying, None);
+          }
         }
       }
     }
@@ -473,6 +480,10 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
   varying.boundaries = [[Vec::new(), Vec::new()], [Vec::new(), Vec::new()]];
   
   modify_simple_timeline (accessor, &node.varying, Some(varying));
+  
+  for boundary in new_boundaries {
+    update_transfer_change_prediction (accessor, &boundary);
+  }
 }
 
 
@@ -518,7 +529,7 @@ impl Event for TransferChange {
     // TODO: invalidation
   }
 
-  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, _accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
@@ -554,7 +565,7 @@ impl Event for AddInk {
       update_transfer_change_prediction (accessor, other_boundary);
     }}}
   }
-  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, _accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
@@ -580,7 +591,7 @@ impl Event for Initialize {
       slope: [0; 2],
     }));
   }
-  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, _accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
@@ -693,7 +704,6 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
       .expect("steward failed to provide snapshot");
     stew.forget_before (& time);
     settle (&mut stew, time);
-    let globals = accessor.globals();
     
     for ev in display.poll_events() {
       match ev {
@@ -785,11 +795,12 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
         let center = handle.center;
         let slope = varying.slope;
         let offset = handle.width/2;
-        let size = (accessor.globals().size [0]/2) as f32;
+        let size_factor = (accessor.globals().size [0]/2) as f32;
+        let density_factor = (GENERIC_DENSITY) as f32;
         let vertex = |x,y| Vertex {
-          direction: [(offset*x) as f32/size, (offset*y) as f32/size],
-          center: [center [0] as f32/size, center [1] as f32/size],
-          slope: [slope [0] as f32*size, slope [1] as f32*size],
+          direction: [(offset*x) as f32/size_factor, (offset*y) as f32/size_factor],
+          center: [center [0] as f32/size_factor, center [1] as f32/size_factor],
+          slope: [slope [0] as f32*size_factor/density_factor, slope [1] as f32*size_factor/density_factor],
           density: my_current_ink,
         };
         vertices.extend(&[
