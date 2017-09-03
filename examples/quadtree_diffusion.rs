@@ -784,23 +784,26 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
         }
       }
       else {
-        let my_current_ink = match display_state {
-          0 => (density_at (&accessor, &handle, *accessor.now()) as f64 / (GENERIC_DENSITY as f64)) as f32,
-          1 => (
-              ((varying.accumulation_rate * (SECOND as Amount) * 100 / (handle.width*handle.width) as Amount) as f64)
-              / (GENERIC_DENSITY as f64)
-            ) as f32,
-          _ => ((accessor.now() - varying.last_change)*50000000000 / SECOND) as f32,
-        };
-        let center = handle.center;
-        let slope = varying.slope;
-        let offset = handle.width/2;
         let size_factor = (accessor.globals().size [0]/2) as f32;
         let density_factor = (GENERIC_DENSITY) as f32;
+        let (my_current_ink, slope) = match display_state {
+          0 => (
+             density_at (&accessor, &handle, *accessor.now()) as f32 / density_factor,
+             [varying.slope[0] as f32*size_factor/density_factor, varying.slope[1] as f32*size_factor/density_factor]
+          ),
+          1 => (
+             ((varying.accumulation_rate * (SECOND as Amount) * 100 / (handle.width*handle.width) as Amount) as f32) / density_factor,
+             [0.0,0.0]
+          ),
+          _ => ((accessor.now() - varying.last_change) as f32 / SECOND as f32, [0.0,0.0]),
+        };
+        let center = handle.center;
+        let offset = handle.width/2;
+        
         let vertex = |x,y| Vertex {
           direction: [(offset*x) as f32/size_factor, (offset*y) as f32/size_factor],
           center: [center [0] as f32/size_factor, center [1] as f32/size_factor],
-          slope: [slope [0] as f32*size_factor/density_factor, slope [1] as f32*size_factor/density_factor],
+          slope: slope,
           density: my_current_ink,
         };
         vertices.extend(&[
