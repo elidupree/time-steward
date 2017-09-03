@@ -22,6 +22,8 @@ macro_rules! printlnerr(
 
 
 use std::cmp::{min, max};
+use std::collections::HashSet;
+
 use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{self, PersistentTypeId, PersistentlyIdentifiedType, ListedType, StewardData, QueryOffset, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
@@ -151,6 +153,12 @@ macro_rules! set_with {
     }
   }
 }
+macro_rules! exists {
+  ($accessor: expr, $cell: expr) => {
+    $accessor.query ($cell, &GetVarying, QueryOffset::After).is_some()
+  }
+}
+
 
 /*struct EventContext <'a, A: EventAccessor <Steward = Steward>> {
   accessor: &'a A,
@@ -290,7 +298,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   
   // the more unstable the boundary is, the more error we permit
   let max_rounding_error = max(VELOCITY_PER_SLOPE, (nodes [0].width + nodes [1].width) as Amount);
-  let permissible_error = 2*max_rounding_error + max_reasonable_velocity_skew.abs();// + GENERIC_INK_AMOUNT/(SECOND as Amount)/(METER as Amount)/100000000;// + density_accumulation_difference.abs()*boundary.length as Amount/8;
+  let permissible_error = 2*max_rounding_error + max_reasonable_velocity_skew.abs() + GENERIC_INK_AMOUNT/(SECOND as Amount)/(METER as Amount)/1000000;// + density_accumulation_difference.abs()*boundary.length as Amount/8;
   
   // Note to self: it may look weird for the boundary conditions to be based on
   // the CURRENT transfer_velocity, when it can change, but remember
@@ -326,13 +334,37 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   });
 }
 
-fn maybe_split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
-  if node.width <METER {return;}
-  let mut varying = get!(accessor, &node.varying);
+
+fn audit <A: EventAccessor <Steward = Steward >> (accessor: &A) {
+  audit_node (accessor, &accessor.globals().root);
+}
+fn audit_node <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
+  let varying = get!(accessor, &node.varying);
+  for dimension in 0..2 {
+    for direction in 0..2 {
+      for boundary in varying.boundaries [dimension] [direction].iter() {
+        assert!(&boundary.nodes[(direction+1)&1] == node);
+        audit_boundary (accessor, boundary);
+      }
+    }
+  }
+  for child in varying.children.iter() {
+    audit_node (accessor, child);
+  }
+}
+fn audit_boundary <A: EventAccessor <Steward = Steward >> (accessor: &A, boundary: &BoundaryHandle) {
+  get!(accessor, &boundary.varying);
+  for direction in 0..2 {
+    assert!(get!(accessor, &boundary.nodes [direction].varying).boundaries.iter().any(|whatever| whatever[(direction+1)&1].iter().any(| other_boundary| other_boundary == boundary)));
+  }
+}
+
+fn maybe_split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle)->bool {
+  if node.width <METER {return false;}
+  let varying = get!(accessor, &node.varying);
   let mut averaged_ideal_velocities = [0; 2];
   for dimension in 0..2 {
     for direction in 0..2 {
-      let direction_signum = (direction as Amount*2)-1;
       for boundary in varying.boundaries [dimension] [direction].iter() {
         let density_difference =
           density_at (accessor, &boundary.nodes[0], *accessor.now()) - 
@@ -365,6 +397,7 @@ fn maybe_split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &Nod
   if !close_enough {
     split (accessor, node);
   }
+  !close_enough
 }
 
 fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
@@ -558,6 +591,156 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
   for boundary in new_boundaries {
     update_transfer_change_prediction (accessor, &boundary);
   }
+  
+}
+
+
+fn maybe_merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle)->bool {
+  if !exists!(accessor, &node.varying) { return false; }
+  let varying = get!(accessor, &node.varying);
+  if varying.children.is_empty() {
+    for child in varying.children.iter() {
+      if maybe_merge(accessor, child) { return true; }
+    }
+    return false;
+  }
+  let mut averaged_ideal_velocities = [0; 2];
+  for dimension in 0..2 {
+    for direction in 0..2 {
+      for child in varying.children.iter() {
+        let child_varying = get!(accessor, &child.varying);
+        if child_varying.children.len() >0 {return false;}
+        if child_varying.boundaries [dimension] [direction].len() >1 {return false;}
+        for boundary in child_varying.boundaries [dimension] [direction].iter() {
+          let density_difference =
+            density_at (accessor, &boundary.nodes[0], *accessor.now()) - 
+            density_at (accessor, &boundary.nodes[1], *accessor.now());
+          let ideal_velocity = density_difference_to_ideal_transfer_velocity ([&boundary.nodes[0], &boundary.nodes[0]], density_difference);
+          let ideal_rate = ideal_velocity*boundary.length as Amount;
+          averaged_ideal_velocities [dimension] -= ideal_rate;
+        }
+      }
+    }
+    averaged_ideal_velocities [dimension] /= 4*node.width as Amount;
+  }
+  let mut close_enough = true;
+  for dimension in 0..2 {
+    for direction in 0..2 {
+      for child in varying.children.iter() {
+        let child_varying = get!(accessor, &child.varying);
+        for boundary in child_varying.boundaries [dimension] [direction].iter() {
+          let density_difference =
+            density_at (accessor, &boundary.nodes[0], *accessor.now()) - 
+            density_at (accessor, &boundary.nodes[1], *accessor.now());
+          let ideal_velocity = density_difference_to_ideal_transfer_velocity ([&boundary.nodes[0], &boundary.nodes[0]], density_difference);
+          let averaged_velocity = averaged_ideal_velocities [dimension];
+          let discrepancy = (ideal_velocity - averaged_velocity).abs();
+          // TODO: should this be proportional in some way to the size of the node(s)?
+          if discrepancy*(boundary.length as Amount) > GENERIC_INK_AMOUNT/(SECOND as Amount)/4 {
+            close_enough = false;
+          }
+        }
+      }
+    }
+  }
+  
+  if close_enough {
+    merge (accessor, node);
+  }
+  close_enough
+}
+
+fn merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
+  let mut varying = get!(accessor, &node.varying);
+  assert!(!varying.children.is_empty());
+  
+  varying.last_change =*accessor.now();
+  varying.ink_at_last_change = 0;
+  let mut prior_boundaries = Vec::new();
+  let mut discovered_prior_boundaries = HashSet::new();
+  let mut prior_children = HashSet::new();
+  let mut neighbors = Vec::new();
+  let mut discovered_neighbors = HashSet::new();
+  for child in varying.children.iter() {
+    update_node(accessor, child);
+    let child_varying = get!(accessor, &child.varying);
+    assert!(child_varying.children.is_empty());
+    assert!(child_varying.last_change == *accessor.now());
+    varying.ink_at_last_change += child_varying.ink_at_last_change;
+    for (dimension, whatever) in child_varying.boundaries.iter().enumerate() {for (direction, something) in whatever.iter().enumerate() {for other_boundary in something.iter() {
+      if discovered_prior_boundaries.insert (other_boundary.clone()) {
+        prior_boundaries.push ((dimension, direction, other_boundary.clone()));
+      }
+    }}}
+    prior_children.insert (child.clone()) ;
+
+    modify_simple_timeline (accessor, &child.varying, None);
+  }
+  
+  let mut new_boundaries = Vec::new();
+  for (dimension, direction, boundary) in prior_boundaries {
+    let boundary_varying = get!(accessor, &boundary.varying);
+    if let Some (discarded) = boundary_varying.next_change {accessor.destroy_prediction (&discarded);}
+    let neighbor = if !prior_children.contains (&boundary.nodes [1]) {
+      Some (boundary.nodes [1].clone())
+    } else if !prior_children.contains (&boundary.nodes [0]) {
+      Some (boundary.nodes [0].clone())
+    } else {None};
+    if let Some(neighbor) = neighbor {
+      if discovered_neighbors.insert (neighbor.clone()) {
+        neighbors.push (neighbor.clone());
+        let other_direction = (direction+1)&1;
+        set_with!(accessor, &neighbor.varying, | neighbor_varying | {
+          for b in neighbor_varying.boundaries [dimension] [other_direction].iter() {
+            assert!(prior_children.contains(&b.nodes[other_direction]));
+          }
+          neighbor_varying.boundaries [dimension] [other_direction].clear();
+        });
+        let mut center = boundary.center;
+        if neighbor.width == node.width {
+          center = [
+            (node.center[0] + neighbor.center [0]) >> 1,
+            (node.center[1] + neighbor.center [1]) >> 1,
+          ];
+        }
+        let nodes = if direction == 1 {[node.clone(), neighbor.clone()]}else{[neighbor.clone(), node.clone()]};
+        let new_boundary = DataHandle::new (BoundaryData {
+          length: neighbor.width,
+          center: center,
+          nodes: nodes.clone(),
+          varying: DataTimelineCell::new (SimpleTimeline::new ()),
+        });
+        modify_simple_timeline (accessor, &new_boundary.varying, Some (BoundaryVarying {
+          transfer_velocity: boundary_varying.transfer_velocity,
+          next_change: None,
+        }));
+        set_with!(accessor, &neighbor.varying, | neighbor_varying | {
+          neighbor_varying.boundaries [dimension] [other_direction].push(new_boundary.clone());
+        });
+        varying.boundaries [dimension] [direction].push(new_boundary.clone());
+        new_boundaries.push (new_boundary);
+      }
+    }
+    modify_simple_timeline (accessor, &boundary.varying, None);
+  }
+  
+  varying.children.clear();
+  modify_simple_timeline (accessor, &node.varying, Some(varying));
+  update_inferred_node_properties (accessor, node);
+  
+  for boundary in new_boundaries {
+    update_transfer_change_prediction (accessor, &boundary);
+  }
+
+  if let Some(parent) = node.parent.as_ref() {
+    //audit(accessor);
+    maybe_merge (accessor, parent);
+    //audit(accessor);
+  }
+  
+  for neighbor in neighbors {
+    maybe_merge (accessor, &neighbor);
+  }
 }
 
 
@@ -632,9 +815,22 @@ impl Event for TransferChange {
       }}}
     }
     
+    let mut split = false;
     for node in nodes.iter() {
-      if get!(accessor, &node.varying).children.is_empty() {
-        maybe_split (accessor, node);
+      let varying = get!(accessor, &node.varying);
+      if varying.children.is_empty() {
+        //audit(accessor);
+        if maybe_split (accessor, node) {split=true;}
+        //audit(accessor);
+      }
+    }
+    if !split {
+      for node in nodes.iter() {
+        if let Some(parent) = node.parent.as_ref() {
+          //audit(accessor);
+          maybe_merge (accessor, parent);
+          //audit(accessor);
+        }
       }
     }
     
