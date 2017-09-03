@@ -29,4 +29,4 @@ fnv = "1.0"
 debug = true
 
 [replace]
-"backtrace:0.2.3" = { git = "https://github.com/badboy/backtrace-rs", branch = "emscripten-fix" }
+"backtrace:0.2.3" = { git = "https://github.com/elidupree/backtrace-rs", branch = "emscripten-fix" }
