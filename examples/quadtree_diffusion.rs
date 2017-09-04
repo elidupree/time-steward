@@ -33,10 +33,10 @@ use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPrediction
 
 type Time = i64;
 type Distance = i64;
-type Amount = i128;
-const SECOND: Time = (1 as Time) << 20;
-const METER: Distance = (1 as Distance) << 20;
-const GENERIC_DENSITY: Amount = (SECOND as Amount) << 20;
+type Amount = i64;
+const SECOND: Time = (1 as Time) << 10;
+const METER: Distance = (1 as Distance) << 10;
+const GENERIC_DENSITY: Amount = (SECOND as Amount) << 10;
 const GENERIC_INK_AMOUNT: Amount = (METER as Amount)*(METER as Amount)*GENERIC_DENSITY;
 
 // Velocity is "ink units per space unit per time unit"
@@ -251,6 +251,7 @@ fn transfer_velocity_to_ideal_density_difference (nodes: [&NodeHandle;2], transf
 
 
 fn safer_scaling (value: Amount, numerator: Amount, denominator: Amount)->Amount {
+  if value == 0 || numerator == 0 { return 0; }
   if numerator.abs() > denominator.abs()*50 {
     value*(numerator/denominator)
   }
@@ -1062,22 +1063,22 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
         _ => (),
       }
     }
-    /*while let Some ((x,y)) = emscripten_compatibility::pop_click() {
+    while let Some ((x,y)) = emscripten_compatibility::pop_click() {
       // TODO duplicate code
-      mouse_coordinates [0] = (x*60.0) as i32;
-      mouse_coordinates [1] = ((1.0-y)*60.0) as i32;
+      mouse_coordinates [0] = ((x-0.5)*accessor.globals().size [0] as f64) as Distance;
+      mouse_coordinates [1] = ((0.5-y)*accessor.globals().size [0] as f64) as Distance;
       //if in_bounds (globals, mouse_coordinates) {
         event_index += 1;
         stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
             coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
-            amount: ((input_derivative+1)%2)*(generic_amount << input_magnitude_shift)*input_signum,
-            accumulation: input_derivative*(generic_amount << input_magnitude_shift)*input_signum/SECOND,
+            amount: ((input_derivative+1)%2)*(GENERIC_INK_AMOUNT*8 << input_magnitude_shift)*input_signum,
+            accumulation: input_derivative*(GENERIC_INK_AMOUNT*8 << input_magnitude_shift)*input_signum/(SECOND as Amount),
         }).unwrap();
       /*}
       else {
         display_state = (display_state + 1) % 3;
       }*/
-    }*/
+    }
 
     let mut target = display.draw();
     target.clear_color(1.0, 1.0, 1.0, 1.0);
