@@ -25,7 +25,7 @@ use std::cmp::{min, max};
 use std::collections::HashSet;
 
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{self, PersistentTypeId, PersistentlyIdentifiedType, ListedType, StewardData, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
+use time_steward::rowless::api::{self, PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
@@ -95,8 +95,6 @@ struct NodeVarying {
   slope: [Amount; 2],
 }
 type NodeHandle = DataHandle <NodeData>;
-impl StewardData for NodeData {}
-impl StewardData for NodeVarying {}
 impl PersistentlyIdentifiedType for NodeData {
   const ID: PersistentTypeId = PersistentTypeId(0x734528f6aefdc1b9);
 }
@@ -116,8 +114,6 @@ struct BoundaryVarying {
   next_change: Option <EventHandle <Basics>>,
 }
 type BoundaryHandle = DataHandle <BoundaryData>;
-impl StewardData for BoundaryData {}
-impl StewardData for BoundaryVarying {}
 impl PersistentlyIdentifiedType for BoundaryData {
   const ID: PersistentTypeId = PersistentTypeId(0x9d643214b58b24dc);
 }
@@ -752,14 +748,12 @@ struct Globals {
   
   root: NodeHandle,
 }
-impl StewardData for Globals {}
 
 
 
 /// The TransferChange event, as used above.
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct TransferChange {boundary: BoundaryHandle}
-impl StewardData for TransferChange {}
 impl PersistentlyIdentifiedType for TransferChange {
   const ID: PersistentTypeId = PersistentTypeId(0xd6621e9cfad1c765);
 }
@@ -847,7 +841,6 @@ impl Event for TransferChange {
 #[derive (Clone, PartialEq, Eq, Debug)]
 struct AddInk {coordinates: [Distance; 2], amount: Amount, accumulation: Amount}
 serialization_cheat!([][AddInk]);
-impl StewardData for AddInk {}
 impl PersistentlyIdentifiedType for AddInk {
   const ID: PersistentTypeId = PersistentTypeId(0x3e6d029c3da8b9a2);
 }
@@ -882,7 +875,6 @@ impl Event for AddInk {
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Initialize {}
-impl StewardData for Initialize {}
 impl PersistentlyIdentifiedType for Initialize {
   const ID: PersistentTypeId = PersistentTypeId(0xf0d2d9134cfe9b49);
 }

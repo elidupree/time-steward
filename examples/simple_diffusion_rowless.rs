@@ -28,7 +28,7 @@ macro_rules! printlnerr(
 
 use std::cmp::{min, max};
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{self, PersistentTypeId, PersistentlyIdentifiedType, ListedType, StewardData, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
+use time_steward::rowless::api::{self, PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_flat as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
@@ -57,7 +57,6 @@ struct Globals {
   
   cells: Vec<Cell>,
 }
-impl StewardData for Globals {}
 
 // Derive all the traits required for field data types.
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -89,9 +88,6 @@ struct TransferVarying {
   accumulated_error: i64,
   next_change: Option <EventHandle <Basics>>,
 }
-impl StewardData for Cell {}
-impl StewardData for CellVarying {}
-impl StewardData for TransferVarying {}
 impl IterateUniquelyOwnedPredictions <Steward> for CellVarying {}
 impl IterateUniquelyOwnedPredictions <Steward> for TransferVarying {
   fn iterate_predictions <F: FnMut (& <Steward as TimeSteward>::EventHandle)> (&self, callback: &mut F) {
@@ -414,7 +410,6 @@ fn get_cell <A: Accessor <Steward = Steward >> (accessor: &A, coordinates: [i32;
 /// The TransferChange event, as used above.
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct TransferChange {coordinates: [i32; 2], dimension: usize}
-impl StewardData for TransferChange {}
 impl PersistentlyIdentifiedType for TransferChange {
   const ID: PersistentTypeId = PersistentTypeId(0xd6621e9cfad1c765);
 }
@@ -515,7 +510,6 @@ impl Event for TransferChange {
 /// For these simple events, we lazily use the pseudo-closure syntax.
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Initialize {}
-impl StewardData for Initialize {}
 impl PersistentlyIdentifiedType for Initialize {
   const ID: PersistentTypeId = PersistentTypeId(0xf0d2d9134cfe9b49);
 }
@@ -549,7 +543,6 @@ impl Event for Initialize {
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct AddInk {coordinates: [i32; 2], amount: i64, accumulation: i64}
-impl StewardData for AddInk {}
 impl PersistentlyIdentifiedType for AddInk {
   const ID: PersistentTypeId = PersistentTypeId(0x3e6d029c3da8b9a2);
 }

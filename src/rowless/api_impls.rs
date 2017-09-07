@@ -4,32 +4,6 @@ use std::collections::BTreeSet;
 use super::api::*;
 
 
-macro_rules! StewardData_array_impls {
-  () => {};
-  ($num: expr $(, $rest: expr)*) => {
-    impl<T: StewardData + Copy> StewardData for [T; $num] {}
-    StewardData_array_impls! ($($rest),*);
-  };
-}
-StewardData_array_impls! (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32);
-macro_rules! StewardData_primitive_impls {
-  () => {};
-  ($prim: ty $(, $rest: ty)*) => {
-    impl StewardData for $prim {}
-    StewardData_primitive_impls! ($($rest),*);
-  };
-}
-StewardData_primitive_impls!((), u8, i8, u16, i16, u32, i32, u64, i64, usize, isize);
-
-impl <T: StewardData> StewardData for Option <T> {}
-impl <T: StewardData> StewardData for Vec<T> {}
-impl <T: StewardData + Ord> StewardData for BTreeSet<T> {}
-
-
-
-impl <T: Basics> StewardData for ExtendedTime <T> {}
-
-
 impl<T> ListOfTypes for ListedType <T> {
   fn visit_all <Visitor: ListOfTypesVisitor>(visitor: &mut Visitor) {
     visitor.visit::<T>();
@@ -45,7 +19,6 @@ macro_rules! tuple_impls {
         }
     )+) => {
         $(
-            impl<$($T:StewardData),+> StewardData for ($($T,)+) {}
             impl<$($T:ListOfTypes),+> ListOfTypes for ($($T,)+) {
               fn visit_all <Visitor: ListOfTypesVisitor>(visitor: &mut Visitor) {
                 $($T::visit_all(visitor);)*

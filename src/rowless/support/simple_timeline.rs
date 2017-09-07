@@ -12,8 +12,9 @@ use implementation_support::common::{split_off_greater_set};
 
 #[derive (Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 pub struct GetVarying;
-impl StewardData for GetVarying {}
-
+impl PersistentlyIdentifiedType for GetVarying {
+  const ID: PersistentTypeId = PersistentTypeId(0x8912fbb263c46434);
+}
 
 pub trait IterateUniquelyOwnedPredictions <Steward: TimeSteward> {
   fn iterate_predictions <F: FnMut (& Steward::EventHandle)> (&self, _callback: &mut F) {}
@@ -23,7 +24,7 @@ pub trait IterateUniquelyOwnedPredictions <Steward: TimeSteward> {
 #[serde(bound = "")]
 #[derive (Serialize, Deserialize, Derivative)]
 #[derivative (Clone (bound=""), Debug (bound=""))]
-pub struct SimpleTimeline <VaryingData: StewardData, Steward: TimeSteward> {
+pub struct SimpleTimeline <VaryingData: QueryResult, Steward: TimeSteward> {
   // Hacky workaround for https://github.com/rust-lang/rust/issues/41617 (see https://github.com/serde-rs/serde/issues/943)
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   changes: VecDeque<(<Steward as TimeSteward>::EventHandle, Option <VaryingData>)>,
@@ -31,7 +32,7 @@ pub struct SimpleTimeline <VaryingData: StewardData, Steward: TimeSteward> {
   other_dependent_events: BTreeSet<<Steward as TimeSteward>::EventHandle>,
 }
 
-impl <VaryingData: StewardData, Steward: TimeSteward> SimpleTimeline <VaryingData, Steward> {
+impl <VaryingData: QueryResult, Steward: TimeSteward> SimpleTimeline <VaryingData, Steward> {
   pub fn new ()->Self {
     SimpleTimeline {
       changes: VecDeque::new(),
@@ -92,7 +93,7 @@ impl <VaryingData: StewardData, Steward: TimeSteward> SimpleTimeline <VaryingDat
     Err(max)
   }
 }
-impl <VaryingData: StewardData + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward> SimpleTimeline <VaryingData, Steward> {
+impl <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward> SimpleTimeline <VaryingData, Steward> {
   fn remove_future <Accessor: FutureCleanupAccessor<Steward = Steward>> (&mut self, accessor: &Accessor, also_present: bool) {
     let removed = split_off_greater_set (&mut self.other_dependent_events, accessor.extended_now());
     for event in removed {
@@ -136,7 +137,7 @@ impl <VaryingData: StewardData + IterateUniquelyOwnedPredictions <Steward>, Stew
   }
 }
 
-impl <VaryingData: StewardData, Steward: TimeSteward> DataTimeline for SimpleTimeline <VaryingData, Steward> {
+impl <VaryingData: QueryResult, Steward: TimeSteward> DataTimeline for SimpleTimeline <VaryingData, Steward> {
   type Basics = Steward::Basics;
   
   fn clone_for_snapshot (&self, time: &ExtendedTime <Self::Basics>)->Self {
@@ -163,7 +164,7 @@ impl <VaryingData: StewardData, Steward: TimeSteward> DataTimeline for SimpleTim
     }
   }
 }
-impl <VaryingData: StewardData, Steward: TimeSteward> DataTimelineQueriableWith<GetVarying> for SimpleTimeline <VaryingData, Steward> {
+impl <VaryingData: QueryResult, Steward: TimeSteward> DataTimelineQueriableWith<GetVarying> for SimpleTimeline <VaryingData, Steward> {
   type QueryResult = Option <(ExtendedTime <Self::Basics>, VaryingData)>;
 
   fn query (&self, _: &GetVarying, time: &ExtendedTime <Self::Basics>)->Self::QueryResult {
@@ -175,13 +176,13 @@ impl <VaryingData: StewardData, Steward: TimeSteward> DataTimelineQueriableWith<
   }
 }
 
-pub fn tracking_query <VaryingData: StewardData, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>)->Option <(ExtendedTime <Steward::Basics>, VaryingData)> {
+pub fn tracking_query <VaryingData: QueryResult, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>)->Option <(ExtendedTime <Steward::Basics>, VaryingData)> {
   accessor.modify (handle, |timeline| {
     timeline.other_dependent_events.insert (accessor.handle().clone());
   });
   accessor.query (handle, &GetVarying)
 }
-pub fn modify_simple_timeline <VaryingData: StewardData + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>, modification: Option <VaryingData>) {
+pub fn modify_simple_timeline <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>, modification: Option <VaryingData>) {
   //#[cfg (debug_assertions)]
   //let confirm1 = accessor.query (handle, &GetVarying, QueryOffset::Before);
   #[cfg (debug_assertions)]
@@ -218,7 +219,7 @@ pub fn modify_simple_timeline <VaryingData: StewardData + IterateUniquelyOwnedPr
   #[cfg (debug_assertions)]
   debug_assert! (accessor.query (handle, &GetVarying) == confirm2);
 }
-pub fn unmodify_simple_timeline <VaryingData: StewardData + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward, Accessor: FutureCleanupAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>) {
+pub fn unmodify_simple_timeline <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward, Accessor: FutureCleanupAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>) {
   //#[cfg (debug_assertions)]
   //let confirm = accessor.query (handle, &GetVarying, QueryOffset::Before);
   

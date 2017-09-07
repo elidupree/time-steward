@@ -102,7 +102,7 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
 
 #[derive (Debug, Derivative)]
 #[derivative (Clone (bound = ""))]
-pub struct DataHandle <T: StewardData + PersistentlyIdentifiedType> {
+pub struct DataHandle <T: SimulationStateData + PersistentlyIdentifiedType> {
   data: Rc<T>
 }
 
@@ -120,7 +120,7 @@ impl <B: Basics> EventHandleTrait<B> for EventHandle <B> {
   }
 }
 
-impl <T: StewardData + PersistentlyIdentifiedType> DataHandleTrait <T> for DataHandle <T> {
+impl <T: SimulationStateData + PersistentlyIdentifiedType> DataHandleTrait <T> for DataHandle <T> {
   fn new(data: T)->Self {
     DataHandle { data: Rc::new(data) }
   }
@@ -142,7 +142,7 @@ impl <T: DataTimeline> Clone for DataTimelineCell <T> {
   }
 }
 
-impl <T: StewardData + PersistentlyIdentifiedType> Deref for DataHandle <T> {
+impl <T: SimulationStateData + PersistentlyIdentifiedType> Deref for DataHandle <T> {
   type Target = T;
   fn deref (&self) -> &T {
     &*self.data
@@ -150,7 +150,7 @@ impl <T: StewardData + PersistentlyIdentifiedType> Deref for DataHandle <T> {
 }
 
 time_steward_common_impls_for_handles!();
-time_steward_common_impls_for_uniquely_identified_handle! ([T: StewardData + PersistentlyIdentifiedType] [DataHandle <T>] self => (&*self.data as *const T): *const T);
+time_steward_common_impls_for_uniquely_identified_handle! ([T: SimulationStateData + PersistentlyIdentifiedType] [DataHandle <T>] self => (&*self.data as *const T): *const T);
 time_steward_common_impls_for_uniquely_identified_handle! ([T: DataTimeline] [DataTimelineCell <T>] self => (self.serial_number): usize);
 
 time_steward_serialization_impls!();
@@ -163,7 +163,7 @@ time_steward_serialization_impls_for_handle!(
   (&self) Data located at (| handle | &mut unimplemented!())
 );
 time_steward_serialization_impls_for_handle!(
-  [T: StewardData + PersistentlyIdentifiedType] [DataHandle <T>]
+  [T: SimulationStateData + PersistentlyIdentifiedType] [DataHandle <T>]
   (&self) Data located at (| handle | &mut*handle.data)
 );*/
 
@@ -215,8 +215,8 @@ impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
     self.handle().extended_time()
   }
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = B>> (&self, timeline: & DataTimelineCell <T>, query: &Query)-> T::QueryResult {
-    DataTimelineQueriableWith::<Query>::query (&*timeline.data.borrow(), query, self.extended_now())
+  fn query <Q: Query, T: DataTimelineQueriableWith<Q, Basics = B>> (&self, timeline: & DataTimelineCell <T>, query: &Q)-> T::QueryResult {
+    DataTimelineQueriableWith::<Q>::query (&*timeline.data.borrow(), query, self.extended_now())
   }
 }
 impl <B: Basics> Accessor for SnapshotHandle <B> {
@@ -225,8 +225,8 @@ impl <B: Basics> Accessor for SnapshotHandle <B> {
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
     & self.data.time
   }
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell <T>, query: &Query)-> T::QueryResult {
-    DataTimelineQueriableWith::<Query>::query(self.get_clone (timeline), query, self.extended_now())
+  fn query <Q: Query, T: DataTimelineQueriableWith<Q, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell <T>, query: &Q)-> T::QueryResult {
+    DataTimelineQueriableWith::<Q>::query(self.get_clone (timeline), query, self.extended_now())
   }
 }
 impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {

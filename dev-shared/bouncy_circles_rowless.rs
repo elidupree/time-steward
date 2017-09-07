@@ -5,7 +5,7 @@ use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
 
 
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, StewardData, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
+use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
@@ -49,8 +49,6 @@ pub struct CircleVarying {
   pub boundary_induced_acceleration: Option <Vector2<SpaceCoordinate>>,
   pub next_boundary_change: Option <<Steward as TimeSteward>::EventHandle>,
 }
-impl StewardData for Circle {}
-impl StewardData for CircleVarying {}
 impl PersistentlyIdentifiedType for Circle {
   const ID: PersistentTypeId = PersistentTypeId(0xd711cc7240c71607);
 }
@@ -73,8 +71,6 @@ pub struct RelationshipVarying {
   pub induced_acceleration: Option <Vector2<SpaceCoordinate>>,
   pub next_change: Option <<Steward as TimeSteward>::EventHandle>,
 }
-impl StewardData for Relationship {}
-impl StewardData for RelationshipVarying {}
 impl PersistentlyIdentifiedType for Relationship {
   const ID: PersistentTypeId = PersistentTypeId(0xa1010b5e80c3465a);
 }
@@ -133,7 +129,6 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct RelationshipChange {pub relationship_handle: RelationshipHandle} //, Basics, EventId (0x2312e29e341a2495),
-impl StewardData for RelationshipChange {}
 impl PersistentlyIdentifiedType for RelationshipChange {
   const ID: PersistentTypeId = PersistentTypeId(0x08c4b60ad5d0ed08);
 }
@@ -221,7 +216,6 @@ pub fn update_predictions <Accessor: EventAccessor <Steward = Steward>>(accessor
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct BoundaryChange {pub circle_handle: CircleHandle} //, Basics, EventId (0x59732d675b2329ad),
-impl StewardData for BoundaryChange {}
 impl PersistentlyIdentifiedType for BoundaryChange {
   const ID: PersistentTypeId = PersistentTypeId(0x6fc5127ff6aeb50d);
 }
@@ -255,7 +249,6 @@ impl Event for BoundaryChange {
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Initialize {} //, Basics, EventId (0xa2a17317b84f96e5),
-impl StewardData for Initialize {}
 impl PersistentlyIdentifiedType for Initialize {
   const ID: PersistentTypeId = PersistentTypeId(0xbf7ba1ff2ab76640);
 }
@@ -316,7 +309,6 @@ impl Event for Initialize {
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Disturb {pub coordinates: [SpaceCoordinate; 2]} //, Basics, EventId (0x058cb70d89116605),
-impl StewardData for Disturb {}
 impl PersistentlyIdentifiedType for Disturb {
   const ID: PersistentTypeId = PersistentTypeId(0xb8bbf65eaaf08d0e);
 }

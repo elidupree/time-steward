@@ -33,10 +33,16 @@ pub trait ListOfTypes {
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
-/// TimeSteward has strong requirements for serializability. In addition to implementing these traits, a StewardData must have all its behavior be invariant under cloning and serialize-deserialize cycles, and identical to that of any other object that is == to it.
-/// We used to require `Send + Sync` for this, but now that DataTimelineHandles can be part of StewardData, we have to omit that to support TimeSteward types that have !Send/!Sync handles (like Rc)
-pub trait StewardData: Any + Clone + Eq + Serialize + DeserializeOwned + Debug {}
+/// We used to require `Send + Sync` for SimulationStateData, but now that DataTimelineHandles can be part of SimulationStateData, we have to omit that to support TimeSteward types that have !Send/!Sync handles (like Rc)
+pub trait SimulationStateData: Any + Debug + Serialize + DeserializeOwned {}
+impl<T: Any + Debug + Serialize + DeserializeOwned> SimulationStateData for T {}
 
+/// Queries need PersistentlyIdentifiedType in case I want to serialize them to compare with the same queries on other devices.
+/// Results don't need it because they can be identified using the same id as the query.
+pub trait Query:       Any + Debug + Clone + Eq + Serialize + DeserializeOwned + PersistentlyIdentifiedType {}
+impl<T: Any + Debug + Clone + Eq + Serialize + DeserializeOwned + PersistentlyIdentifiedType> Query for T {}
+pub trait QueryResult: Any + Debug + Clone + Eq + Serialize + DeserializeOwned {}
+impl<T: Any + Debug + Clone + Eq + Serialize + DeserializeOwned> QueryResult for T {}
 
 // Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time, and the events must use invalidate() to collect future events that must be invalidated. (Although, for instance, modifications made for dependency tracking purposes might not change any results any queries, so they wouldn't create the need for any invalidation.)
 //To audit, we record all of the queries and query results. Then after each event that modifies one or more DataTimelines, we rerun all queries to those timelines made by still-valid future events. If any query has a different result than before, it's an error.
@@ -57,13 +63,13 @@ pub trait DataTimeline: Any + Clone + Serialize + DeserializeOwned + Debug {
   // audit: forget functions don't change any query results except those forgotten
   fn forget_before (&mut self, time: &ExtendedTime <Self::Basics>);
 }
-pub trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
-  type QueryResult: StewardData;
+pub trait DataTimelineQueriableWith<Q: Query>: DataTimeline {
+  type QueryResult: QueryResult;
   
   // audit: queries must not have side effects (do a separate action for manual dependency tracking)
   // audit: queries don't return PredictionHandles that don't exist at the time
   // TODO: allow queries to return references instead of values
-  fn query (&self, query: &Query, time: &ExtendedTime <Self::Basics>)->Self::QueryResult;
+  fn query (&self, query: &Q, time: &ExtendedTime <Self::Basics>)->Self::QueryResult;
 }
 
 
@@ -73,8 +79,8 @@ This is intended to be implemented on an empty struct. Requiring Clone etc. is a
 */
 pub trait Basics
   : Any + Send + Sync + Copy + Clone + Ord + Hash + Serialize + DeserializeOwned + Debug + Default {
-  type Time: StewardData + Ord + Hash;
-  type Globals: StewardData;
+  type Time: SimulationStateData + Send + Sync + Clone + Ord + Hash;
+  type Globals: SimulationStateData;
   type Types: ListOfTypes;
   const MAX_ITERATION: IterationType = 65535;
 }
@@ -102,16 +108,16 @@ pub enum FiatEventOperationError {
   InvalidTime,
 }
 
-pub trait EventHandleTrait <B: Basics>: StewardData + Ord + Hash + Borrow<ExtendedTime <B>> {
+pub trait EventHandleTrait <B: Basics>: SimulationStateData + Clone + Ord + Hash + Borrow<ExtendedTime <B>> {
   fn extended_time (&self)->& ExtendedTime <B>;
   fn time (&self)->& B::Time {& self.extended_time().base}
   fn id (&self)->& DeterministicRandomId {& self.extended_time().id}
   fn downcast_ref <T: Any> (&self)->Option<&T>;
 }
-pub trait DataHandleTrait <T: StewardData + PersistentlyIdentifiedType>: StewardData + Hash + Deref<Target = T> {
+pub trait DataHandleTrait <T: SimulationStateData + PersistentlyIdentifiedType>: SimulationStateData + Clone + Hash + Deref<Target = T> {
   fn new(data: T)->Self;
 }
-pub trait DataTimelineCellTrait <T: DataTimeline>: StewardData + Hash {
+pub trait DataTimelineCellTrait <T: DataTimeline>: SimulationStateData + Hash {
   fn new(data: T)->Self;
 }
 
@@ -139,7 +145,7 @@ pub enum ValidSince<BaseTime> {
 macro_rules! time_steward_steward_specific_api {
   () => {
 
-pub trait Event: StewardData + PersistentlyIdentifiedType {
+pub trait Event: SimulationStateData + PersistentlyIdentifiedType {
   type Steward: TimeSteward;
   type ExecutionData;
   // audit all functions: calls invalidate_event for everything whose queries would be changed
@@ -162,7 +168,7 @@ pub trait Accessor {
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
   fn now(&self) -> & <<Self::Steward as TimeSteward>::Basics as Basics>::Time {&self.extended_now().base}
   fn id(&self) -> DeterministicRandomId {self.extended_now().id}
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: &Query)-> T::QueryResult;
+  fn query <Q: Query, T: DataTimelineQueriableWith<Q, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: &Q)-> T::QueryResult;
 }
 
 pub trait EventAccessor: Accessor {

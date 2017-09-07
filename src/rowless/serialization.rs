@@ -120,13 +120,13 @@ macro_rules! time_steward_serialization_impls {
   trait SerializeInto {
     fn serialize_into(&self, writer: &mut Write)->$crate::bincode::Result <()>;
   }
-  impl<T: StewardData + PersistentlyIdentifiedType> SerializeTargetInto for DataHandle <T> {
+  impl<T: SimulationStateData + PersistentlyIdentifiedType> SerializeTargetInto for DataHandle <T> {
     fn serialize_target_into(&self, writer: &mut Write, object_id: u64)->$crate::bincode::Result <()> {
       $crate::bincode::serialize_into (writer, & SerializationElement::DataHandleData (object_id, T::ID), $crate::bincode::Infinite)?;
       $crate::bincode::serialize_into (writer, &*self.data, $crate::bincode::Infinite)
     }
   }
-  fn data_handle_initialize_function <T: StewardData + PersistentlyIdentifiedType>(reader: &mut Read, object_id: u64)->$crate::bincode::Result <()> {
+  fn data_handle_initialize_function <T: SimulationStateData + PersistentlyIdentifiedType>(reader: &mut Read, object_id: u64)->$crate::bincode::Result <()> {
     with_deserialization_context (| context | {
       context.uninitialized_handles.remove(&object_id);
       let mut handle = context.find_handle::<_, DataHandle <T>> (object_id, || {
@@ -260,7 +260,7 @@ macro_rules! time_steward_serialization_impls {
     }
   }
   
-  impl <T: StewardData + PersistentlyIdentifiedType> $crate::serde::Serialize for DataHandle <T> {
+  impl <T: SimulationStateData + PersistentlyIdentifiedType> $crate::serde::Serialize for DataHandle <T> {
     fn serialize <S: $crate::serde::Serializer> (&self, serializer: S)->Result <S::Ok, S::Error> {
       bincode_error_to_generic(with_serialization_context (| context | {
         let object_identifier = context.find_handle::<_, DataHandle <T>> (&*self.data as *const _ as usize, || {
@@ -270,7 +270,7 @@ macro_rules! time_steward_serialization_impls {
       }))
     }
   }
-  impl <'a, T: StewardData + PersistentlyIdentifiedType> $crate::serde::Deserialize <'a> for DataHandle <T> {
+  impl <'a, T: SimulationStateData + PersistentlyIdentifiedType> $crate::serde::Deserialize <'a> for DataHandle <T> {
     fn deserialize <D: $crate::serde::Deserializer<'a>> (deserializer: D)->Result <Self, D::Error> {
       bincode_error_to_generic(with_deserialization_context (| context | {
         let object_identifier = generic_error_to_bincode(u64::deserialize (deserializer))?;
@@ -357,7 +357,7 @@ macro_rules! time_steward_serialization_impls {
       context.event_handle_initialize_functions.insert (T::ID, event_handle_initialize_function::<B, T>);
     }
   }
-  impl <T: StewardData + PersistentlyIdentifiedType> MaybeData for T {
+  impl <T: SimulationStateData + PersistentlyIdentifiedType> MaybeData for T {
     fn visit (context: &mut DeserializationContext) {
       context.data_handle_initialize_functions.insert (T::ID, data_handle_initialize_function::<T>);
     }
