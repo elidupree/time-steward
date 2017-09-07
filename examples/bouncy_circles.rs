@@ -183,7 +183,6 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
 
       let snapshot = stew.snapshot_before(& time)
         .expect("steward failed to provide snapshot");
-      stew.forget_before(& time);
       
       settle (&mut stew, time);
       for index in 0..HOW_MANY_CIRCLES {
