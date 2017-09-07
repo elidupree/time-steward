@@ -5,7 +5,7 @@ use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
 
 
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, StewardData, QueryOffset, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
+use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, StewardData, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
@@ -88,16 +88,16 @@ impl IterateUniquelyOwnedPredictions <Steward> for RelationshipVarying {
 type RelationshipHandle = DataHandle <Relationship>;
 
 pub fn query_relationship_circles <Accessor: EventAccessor <Steward = Steward>>(accessor: &Accessor, relationship: &Relationship)->((ExtendedTime <Basics>, CircleVarying), (ExtendedTime <Basics>, CircleVarying)) {
-  (tracking_query (accessor, & relationship.circles.0.varying, QueryOffset::After)
+  (tracking_query (accessor, & relationship.circles.0.varying)
       .expect("a relationship exists for a circle that doesn't"),
-   tracking_query (accessor, & relationship.circles.1.varying, QueryOffset::After)
+   tracking_query (accessor, & relationship.circles.1.varying)
       .expect("a relationship exists for a circle that doesn't"))
 }
 
 pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward = Steward>>(accessor: &Accessor, relationship_handle: &RelationshipHandle) {
   let circles = &relationship_handle.circles;
   let now = accessor.extended_now().clone();
-  let (_, mut relationship_varying) = tracking_query (accessor, & relationship_handle.varying, QueryOffset::After).unwrap();
+  let (_, mut relationship_varying) = tracking_query (accessor, & relationship_handle.varying).unwrap();
 
   let us = query_relationship_circles (accessor, & relationship_handle);
 
@@ -142,7 +142,7 @@ impl Event for RelationshipChange {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let circles = &self.relationship_handle.circles;
-    let (_, relationship_varying) = tracking_query (accessor, &self.relationship_handle.varying, QueryOffset::After).unwrap();
+    let (_, relationship_varying) = tracking_query (accessor, &self.relationship_handle.varying).unwrap();
     let us = query_relationship_circles (accessor, & self.relationship_handle);
     let mut new_relationship = relationship_varying.clone();
     let mut new = ((us.0).1.clone(), (us.1).1.clone());
@@ -185,7 +185,7 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
                                               MAX_DISTANCE_TRAVELED_AT_ONCE,
                                               [ARENA_SIZE / 2, ARENA_SIZE / 2, 0, 0, 0, 0]);
   let now = accessor.extended_now().clone();
-  let (time, mut varying) = tracking_query (accessor, & circle_handle.varying, QueryOffset::After)
+  let (time, mut varying) = tracking_query (accessor, & circle_handle.varying)
     .expect("circles should never not exist");
 
   let time = QuadraticTrajectory::approximately_when_distance_passes(ARENA_SIZE - circle_handle.radius,
@@ -229,7 +229,7 @@ impl Event for BoundaryChange {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    let (time, current_varying) = tracking_query (accessor, &self.circle_handle.varying, QueryOffset::After)
+    let (time, current_varying) = tracking_query (accessor, &self.circle_handle.varying)
       .expect("circles should never not exist");
     let mut new = current_varying.clone();
     new.position.update_by(accessor.now() - time.base);
@@ -328,7 +328,7 @@ impl Event for Disturb {
     let mut best_handle = None;
     let mut best_distance_squared = i64::max_value();
     for circle in circles.iter() {
-      let (time, varying) = tracking_query (accessor, &circle.varying, QueryOffset::After).expect ("circles should never not exist");
+      let (time, varying) = tracking_query (accessor, &circle.varying).expect ("circles should never not exist");
       let position = varying.position.updated_by(accessor.now() - time.base).unwrap().evaluate();
       let distance_squared = (self.coordinates [0] - position [0]) * (self.coordinates [0] - position [0]) + (self.coordinates [1] - position [1]) * (self.coordinates [1] - position [1]);
       if distance_squared <best_distance_squared {
@@ -338,7 +338,7 @@ impl Event for Disturb {
     }
     
     let best_handle = best_handle.unwrap() ;
-    let (time, best) = tracking_query (accessor, & best_handle.varying, QueryOffset::After).expect ("uhhhh");
+    let (time, best) = tracking_query (accessor, & best_handle.varying).expect ("uhhhh");
     let mut new = best.clone();
     new.position.update_by(accessor.now() - time.base);
     let impulse = -(new.position.evaluate() -

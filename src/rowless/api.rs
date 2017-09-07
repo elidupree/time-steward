@@ -47,10 +47,6 @@ pub trait StewardData: Any + Clone + Eq + Serialize + DeserializeOwned + Debug {
 //These would be associated type constructors if Rust supported those: DataTimelineHandle, EventHandle, DynamicEventHandle, PredictionHandle
 
 
-pub enum QueryOffset {
-  Before, After
-}
-
 pub trait DataTimeline: Any + Clone + Serialize + DeserializeOwned + Debug {
   type Basics: Basics;
 
@@ -67,7 +63,7 @@ pub trait DataTimelineQueriableWith<Query: StewardData>: DataTimeline {
   // audit: queries must not have side effects (do a separate action for manual dependency tracking)
   // audit: queries don't return PredictionHandles that don't exist at the time
   // TODO: allow queries to return references instead of values
-  fn query (&self, query: &Query, time: &ExtendedTime <Self::Basics>, offset: QueryOffset)->Self::QueryResult;
+  fn query (&self, query: &Query, time: &ExtendedTime <Self::Basics>)->Self::QueryResult;
 }
 
 
@@ -166,7 +162,7 @@ pub trait Accessor {
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics>;
   fn now(&self) -> & <<Self::Steward as TimeSteward>::Basics as Basics>::Time {&self.extended_now().base}
   fn id(&self) -> DeterministicRandomId {self.extended_now().id}
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: &Query, offset: QueryOffset)-> T::QueryResult;
+  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: &Query)-> T::QueryResult;
 }
 
 pub trait EventAccessor: Accessor {

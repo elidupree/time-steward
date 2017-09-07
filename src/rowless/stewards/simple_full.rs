@@ -215,8 +215,8 @@ impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
     self.handle().extended_time()
   }
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = B>> (&self, timeline: & DataTimelineCell <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
-    DataTimelineQueriableWith::<Query>::query (&*timeline.data.borrow(), query, self.extended_now(), offset)
+  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = B>> (&self, timeline: & DataTimelineCell <T>, query: &Query)-> T::QueryResult {
+    DataTimelineQueriableWith::<Query>::query (&*timeline.data.borrow(), query, self.extended_now())
   }
 }
 impl <B: Basics> Accessor for SnapshotHandle <B> {
@@ -225,8 +225,8 @@ impl <B: Basics> Accessor for SnapshotHandle <B> {
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
     & self.data.time
   }
-  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell <T>, query: &Query, offset: QueryOffset)-> T::QueryResult {
-    DataTimelineQueriableWith::<Query>::query(self.get_clone (timeline), query, self.extended_now(), offset)
+  fn query <Query: StewardData, T: DataTimelineQueriableWith<Query, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell <T>, query: &Query)-> T::QueryResult {
+    DataTimelineQueriableWith::<Query>::query(self.get_clone (timeline), query, self.extended_now())
   }
 }
 impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {

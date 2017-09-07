@@ -8,7 +8,7 @@ extern crate serde;
 extern crate serde_derive;
 
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, StewardData, QueryOffset, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, StewardData, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
@@ -61,7 +61,7 @@ impl Philosopher {
 }
 
 fn change_next_handshake_time <Accessor: EventAccessor <Steward = Steward>> (accessor: &Accessor, index: usize, handle: & PhilosopherCell, time: Time) {
-  let mut philosopher = tracking_query(accessor, handle, QueryOffset::After).expect ("philosophers should never not exist").1;
+  let mut philosopher = tracking_query(accessor, handle).expect ("philosophers should never not exist").1;
   philosopher.time_when_next_initiates_handshake = time;
   if let Some (discarded) = philosopher.next_handshake_prediction.take() {accessor.destroy_prediction (&discarded);}
   if time >= *accessor.now() {
@@ -90,7 +90,7 @@ fn display_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: & A
   println!("snapshot for {}", accessor.now());
   for handle in accessor.globals() {
     println!("{}",
-             accessor.query(handle, &GetVarying, QueryOffset::After)
+             accessor.query(handle, &GetVarying)
                .expect("missing philosopher").1
                .time_when_next_initiates_handshake);
   }
@@ -99,7 +99,7 @@ fn dump_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: & Acce
   let mut result = Vec::new() ;
   for handle in accessor.globals() {
     result.push (
-             accessor.query(handle, &GetVarying, QueryOffset::After)
+             accessor.query(handle, &GetVarying)
                .expect("missing philosopher").1
                .time_when_next_initiates_handshake);
   }

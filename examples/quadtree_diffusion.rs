@@ -25,7 +25,7 @@ use std::cmp::{min, max};
 use std::collections::HashSet;
 
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{self, PersistentTypeId, PersistentlyIdentifiedType, ListedType, StewardData, QueryOffset, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
+use time_steward::rowless::api::{self, PersistentTypeId, PersistentlyIdentifiedType, ListedType, StewardData, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
@@ -132,13 +132,13 @@ serialization_cheat!([][BoundaryVarying]);
 
 macro_rules! get {
   ($accessor: expr, $cell: expr) => {
-    $accessor.query ($cell, &GetVarying, QueryOffset::After).unwrap().1
+    $accessor.query ($cell, &GetVarying).unwrap().1
   }
 }
 macro_rules! set {
   ($accessor: expr, $cell: expr, $field: ident, $value: expr) => {
     {
-      let mut value = $accessor.query ($cell, &GetVarying, QueryOffset::After).unwrap().1;
+      let mut value = $accessor.query ($cell, &GetVarying).unwrap().1;
       value.$field = $value;
       modify_simple_timeline ($accessor, $cell, Some (value));
     }
@@ -147,7 +147,7 @@ macro_rules! set {
 macro_rules! set_with {
   ($accessor: expr, $cell: expr, | $varying: ident | $actions: expr) => {
     {
-      let mut $varying = $accessor.query ($cell, &GetVarying, QueryOffset::After).unwrap().1;
+      let mut $varying = $accessor.query ($cell, &GetVarying).unwrap().1;
       $actions;
       modify_simple_timeline ($accessor, $cell, Some ($varying));
     }
@@ -155,7 +155,7 @@ macro_rules! set_with {
 }
 macro_rules! exists {
   ($accessor: expr, $cell: expr) => {
-    $accessor.query ($cell, &GetVarying, QueryOffset::After).is_some()
+    $accessor.query ($cell, &GetVarying).is_some()
   }
 }
 
@@ -193,7 +193,7 @@ impl<A: EventAccessor <Steward = Steward>> Drop for EventContext <A> {
 }*/
 
 fn update_inferred_node_properties <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
-  let mut varying = accessor.query (&node.varying, &GetVarying, QueryOffset::After).unwrap().1;
+  let mut varying = accessor.query (&node.varying, &GetVarying).unwrap().1;
   varying.slope = [0, 0];
   varying.accumulation_rate = 0;
   for dimension in 0..2 {
@@ -576,7 +576,7 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
     for direction in 0..2 {
       for which in 0..2 {
         if let Some(boundary) = old_boundaries [dimension] [direction] [which].as_ref() {
-          if let Some ((_, boundary_varying)) = accessor.query (&boundary.varying, &GetVarying, QueryOffset::After) {
+          if let Some ((_, boundary_varying)) = accessor.query (&boundary.varying, &GetVarying) {
             if let Some (discarded) = boundary_varying.next_change {accessor.destroy_prediction (&discarded);}
             modify_simple_timeline (accessor, &boundary.varying, None);
           }

@@ -41,7 +41,7 @@ use std::time::{Instant, Duration};
 use glium::{DisplayBuild, Surface};
 
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, StewardData, QueryOffset, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, StewardData, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
@@ -189,7 +189,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
       stew.forget_before(& time);
       settle (&mut stew, time);
       for handle in accessor.globals().iter() {
-        if let Some ((time, circle)) = accessor.query (&handle.varying, &GetVarying, QueryOffset::After){
+        if let Some ((time, circle)) = accessor.query (&handle.varying, &GetVarying){
         let position = circle.position.updated_by(accessor.now() - time.base).unwrap().evaluate();
         let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,
                       position[1] as f32 / ARENA_SIZE as f32 - 0.5];
