@@ -34,6 +34,7 @@ extern crate serde;
 extern crate serde_derive;
 extern crate bincode;
 extern crate crossbeam;
+#[cfg_attr(test, macro_use)]
 extern crate quickcheck;
 #[macro_use]
 extern crate derivative;
