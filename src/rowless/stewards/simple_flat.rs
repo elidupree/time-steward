@@ -34,8 +34,8 @@ pub struct DataTimelineCell <T: DataTimeline> {
   first_snapshot_not_updated: Cell<usize>,
   data: RefCell<T>,
 }
-type DataTimelineCellReadGuard<'a, T> = Ref<'a, T>;
-type DataTimelineCellWriteGuard<'a, T> = RefMut<'a, T>;
+pub type DataTimelineCellReadGuard<'a, T> = Ref<'a, T>;
+pub type DataTimelineCellWriteGuard<'a, T> = RefMut<'a, T>;
 #[derive (Debug)]
 struct EventInner <B: Basics> {
   time: ExtendedTime <B>,

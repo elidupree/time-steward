@@ -194,6 +194,18 @@ impl <VaryingData: QueryResult, Steward: TimeSteward> DataTimelineQueriableWith<
     self.changes.get (previous_change_index).expect("Tried to query a SimpleTimeline before it was first set").1.clone()
   }
 }
+impl <VaryingData: QueryResult, Steward: TimeSteward> DataTimelineQueryRefableWith<GetVarying> for SimpleTimeline <VaryingData, Steward> {
+  fn query_ref (&self, _: &GetVarying, time: &ExtendedTime <Self::Basics>)->&Self::QueryResult {
+    if self.destroyer.as_ref().map_or(false, |event| event.extended_time() <= time) {
+      panic!("Tried to query a SimpleTimeline after it was destroyed")
+    }
+    let previous_change_index = match self.search_changes(&time) {
+      Ok(index) => index,
+      Err (index) => index.wrapping_sub (1),
+    };
+    &self.changes.get (previous_change_index).expect("Tried to query a SimpleTimeline before it was first set").1
+  }
+}
 impl <VaryingData: QueryResult, Steward: TimeSteward> DataTimelineQueriableWith<JustDestroyed> for SimpleTimeline <VaryingData, Steward> {
   type QueryResult = bool;
 
@@ -214,6 +226,15 @@ pub fn tracking_query <VaryingData: QueryResult, Steward: TimeSteward, Accessor:
     timeline.other_dependent_events.insert (accessor.handle().clone());
   });
   query (accessor, handle)
+}
+pub fn query_ref <'timeline, VaryingData: QueryResult, Steward: TimeSteward, A: Accessor <Steward = Steward>> (accessor: &'timeline A, handle: &'timeline DataTimelineCell <SimpleTimeline <VaryingData, Steward>>)->DataTimelineCellReadGuard<'timeline, VaryingData> {
+  accessor.query_ref (handle, &GetVarying)
+}
+pub fn tracking_query_ref <'timeline, VaryingData: QueryResult, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: &'timeline Accessor, handle: &'timeline DataTimelineCell <SimpleTimeline <VaryingData, Steward>>)->DataTimelineCellReadGuard<'timeline, VaryingData> {
+  accessor.modify (handle, |timeline| {
+    timeline.other_dependent_events.insert (accessor.handle().clone());
+  });
+  query_ref (accessor, handle)
 }
 pub fn set <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>, modification: VaryingData) {
   //#[cfg (debug_assertions)]

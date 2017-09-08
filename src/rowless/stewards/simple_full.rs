@@ -42,8 +42,8 @@ pub struct DataTimelineCell <T: DataTimeline> {
   //#[cfg($($auditing)*)]
   //modifiers: BTreeSet<EventHandle<T::Basics>>,
 }
-type DataTimelineCellReadGuard<'a, T> = Ref<'a, T>;
-type DataTimelineCellWriteGuard<'a, T> = RefMut<'a, T>;
+pub type DataTimelineCellReadGuard<'a, T> = Ref<'a, T>;
+pub type DataTimelineCellWriteGuard<'a, T> = RefMut<'a, T>;
 #[derive (Debug)]
 struct ExecutionState {
   valid: bool,

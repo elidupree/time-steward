@@ -8,7 +8,7 @@ use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, set, unset};
+use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, tracking_query_ref, set, unset};
 
 use rand::Rng;
 
@@ -84,17 +84,13 @@ impl IterateUniquelyOwnedPredictions <Steward> for RelationshipVarying {
 }
 type RelationshipHandle = DataHandle <Relationship>;
 
-pub fn query_relationship_circles <Accessor: EventAccessor <Steward = Steward>>(accessor: &Accessor, relationship: &Relationship)->(CircleVarying, CircleVarying) {
-  (tracking_query (accessor, & relationship.circles.0.varying),
-   tracking_query (accessor, & relationship.circles.1.varying))
-}
-
 pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward = Steward>>(accessor: &Accessor, relationship_handle: &RelationshipHandle) {
   let circles = &relationship_handle.circles;
   let now = accessor.extended_now().clone();
   let mut relationship_varying = tracking_query (accessor, & relationship_handle.varying);
-
-  let us = query_relationship_circles (accessor, & relationship_handle);
+  let us = (
+    tracking_query_ref (accessor, & circles.0.varying),
+    tracking_query_ref (accessor, & circles.1.varying));
 
   let time = QuadraticTrajectory::approximately_when_distance_passes(circles.0.radius +
                                                                    circles.1.radius,
@@ -136,12 +132,12 @@ impl Event for RelationshipChange {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let circles = &self.relationship_handle.circles;
-    let relationship_varying = tracking_query (accessor, &self.relationship_handle.varying);
-    let us = query_relationship_circles (accessor, & self.relationship_handle);
-    let mut new_relationship = relationship_varying.clone();
-    let mut new = us.clone();
-    new.0.position.update_by(accessor.now() - us.0.last_change);
-    new.1.position.update_by(accessor.now() - us.1.last_change);
+    let mut relationship_varying = tracking_query (accessor, &self.relationship_handle.varying);
+    let mut new = (
+      tracking_query (accessor, & circles.0.varying),
+      tracking_query (accessor, & circles.1.varying));
+    new.0.position.update_by(accessor.now() - new.0.last_change);
+    new.1.position.update_by(accessor.now() - new.1.last_change);
     new.0.last_change = accessor.now().clone();
     new.1.last_change = accessor.now().clone();
     if let Some(induced_acceleration) = relationship_varying.induced_acceleration {
@@ -151,7 +147,7 @@ impl Event for RelationshipChange {
       new.1
         .position
         .add_acceleration(induced_acceleration);
-      new_relationship.induced_acceleration = None;
+      relationship_varying.induced_acceleration = None;
       //println!("Parted {} At {}", self.id, mutator.now());
     } else {
       let acceleration = (new.0.position.evaluate() -
@@ -160,10 +156,10 @@ impl Event for RelationshipChange {
                            (circles.0.radius + circles.1.radius));
       new.0.position.add_acceleration(acceleration);
       new.1.position.add_acceleration(-acceleration);
-      new_relationship.induced_acceleration = Some(acceleration);
+      relationship_varying.induced_acceleration = Some(acceleration);
         //println!("Joined {} At {}", self.id, mutator.now());
     }
-    set (accessor, & self.relationship_handle.varying, new_relationship);
+    set (accessor, & self.relationship_handle.varying, relationship_varying);
     set (accessor, & circles.0.varying, new.0.clone());
     set (accessor, & circles.1.varying, new.1.clone());
     // TODO no repeating the relationship between these 2 in particular
@@ -223,11 +219,11 @@ impl Event for BoundaryChange {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    let current_varying = tracking_query (accessor, &self.circle_handle.varying);
-    let mut new = current_varying.clone();
-    new.position.update_by(accessor.now() - current_varying.last_change);
+    let mut new = tracking_query (accessor, &self.circle_handle.varying);
+    
+    new.position.update_by(accessor.now() - new.last_change);
     new.last_change = accessor.now().clone();
-    if let Some(induced_acceleration) = current_varying.boundary_induced_acceleration {
+    if let Some(induced_acceleration) = new.boundary_induced_acceleration {
       new.position.add_acceleration(-induced_acceleration);
       new.boundary_induced_acceleration = None;
     } else {
@@ -319,9 +315,10 @@ impl Event for Disturb {
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let circles = accessor.globals();
     let mut best_handle = None;
+    {
     let mut best_distance_squared = i64::max_value();
     for circle in circles.iter() {
-      let varying = tracking_query (accessor, &circle.varying);
+      let varying = tracking_query_ref (accessor, &circle.varying);
       let position = varying.position.updated_by(accessor.now() - varying.last_change).unwrap().evaluate();
       let distance_squared = (self.coordinates [0] - position [0]) * (self.coordinates [0] - position [0]) + (self.coordinates [1] - position [1]) * (self.coordinates [1] - position [1]);
       if distance_squared <best_distance_squared {
@@ -329,10 +326,13 @@ impl Event for Disturb {
         best_handle = Some (circle.clone());
       }
     }
+    }
     
     let best_handle = best_handle.unwrap() ;
-    let best = tracking_query (accessor, & best_handle.varying);
-    let mut new = best.clone();
+    let mut new;
+    {
+    let best = tracking_query_ref (accessor, & best_handle.varying);
+    new = best.clone();
     new.position.update_by(accessor.now() - best.last_change);
     new.last_change = accessor.now().clone();
     let impulse = -(new.position.evaluate() -
@@ -340,6 +340,7 @@ impl Event for Disturb {
                                          ARENA_SIZE / 2)) *
                           (ARENA_SIZE * 4 / (ARENA_SIZE ));
     new.position.add_velocity(impulse);
+    }
     set (accessor, & best_handle.varying, new.clone());
     update_predictions (accessor, & best_handle, & new);
   }
