@@ -68,8 +68,10 @@ pub trait DataTimelineQueriableWith<Q: Query>: DataTimeline {
   
   // audit: queries must not have side effects (do a separate action for manual dependency tracking)
   // audit: queries don't return PredictionHandles that don't exist at the time
-  // TODO: allow queries to return references instead of values
   fn query (&self, query: &Q, time: &ExtendedTime <Self::Basics>)->Self::QueryResult;
+}
+pub trait DataTimelineQueryRefableWith<Q: Query>: DataTimelineQueriableWith<Q> {
+  fn query_ref (&self, query: &Q, time: &ExtendedTime <Self::Basics>)->&<Self as DataTimelineQueriableWith<Q>>::QueryResult;
 }
 
 
@@ -169,6 +171,7 @@ pub trait Accessor {
   fn now(&self) -> & <<Self::Steward as TimeSteward>::Basics as Basics>::Time {&self.extended_now().base}
   fn id(&self) -> DeterministicRandomId {self.extended_now().id}
   fn query <Q: Query, T: DataTimelineQueriableWith<Q, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell<T>, query: &Q)-> T::QueryResult;
+  fn query_ref <'timeline, Q: Query, T: DataTimelineQueryRefableWith<Q, Basics = <Self::Steward as TimeSteward>::Basics>> (&'timeline self, timeline: &'timeline DataTimelineCell<T>, query: &Q)-> DataTimelineCellReadGuard<'timeline, T::QueryResult>;
 }
 
 pub trait EventAccessor: Accessor {

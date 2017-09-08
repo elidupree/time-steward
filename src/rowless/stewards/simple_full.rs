@@ -187,10 +187,10 @@ pub struct SnapshotHandle <B: Basics> {
 }
 
 impl <B: Basics> SnapshotHandle <B> {
-  fn get_clone <T: DataTimeline <Basics = B>> (&self, timeline: & DataTimelineCell <T>)->&T {
+  fn get_clone <T: DataTimeline <Basics = B>> (&self, timeline: & DataTimelineCell <T>)->& DataTimelineCell <T> {
     self.data.clones.get_default (timeline.serial_number, | | Some(Box::new (
-      timeline.data.borrow().clone_for_snapshot (self.extended_now())
-    ))).unwrap ().downcast_ref::<T>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow")
+      DataTimelineCell::new (timeline.data.borrow().clone_for_snapshot (self.extended_now()))
+    ))).unwrap ().downcast_ref::<DataTimelineCell <T>>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow")
   }
 }
 
@@ -218,6 +218,9 @@ impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
   fn query <Q: Query, T: DataTimelineQueriableWith<Q, Basics = B>> (&self, timeline: & DataTimelineCell <T>, query: &Q)-> T::QueryResult {
     DataTimelineQueriableWith::<Q>::query (&*timeline.data.borrow(), query, self.extended_now())
   }
+  fn query_ref <'timeline, Q: Query, T: DataTimelineQueryRefableWith<Q, Basics = <Self::Steward as TimeSteward>::Basics>> (&'timeline self, timeline: &'timeline DataTimelineCell<T>, query: &Q)-> DataTimelineCellReadGuard<'timeline, T::QueryResult> {
+    Ref::map(timeline.data.borrow(), |timeline| DataTimelineQueryRefableWith::<Q>::query_ref (timeline, query, self.extended_now()))
+  }
 }
 impl <B: Basics> Accessor for SnapshotHandle <B> {
   type Steward = Steward <B>;
@@ -226,7 +229,10 @@ impl <B: Basics> Accessor for SnapshotHandle <B> {
     & self.data.time
   }
   fn query <Q: Query, T: DataTimelineQueriableWith<Q, Basics = <Self::Steward as TimeSteward>::Basics>> (&self, timeline: & DataTimelineCell <T>, query: &Q)-> T::QueryResult {
-    DataTimelineQueriableWith::<Q>::query(self.get_clone (timeline), query, self.extended_now())
+    DataTimelineQueriableWith::<Q>::query(&*self.get_clone (timeline).data.borrow(), query, self.extended_now())
+  }
+  fn query_ref <'timeline, Q: Query, T: DataTimelineQueryRefableWith<Q, Basics = <Self::Steward as TimeSteward>::Basics>> (&'timeline self, timeline: &'timeline DataTimelineCell<T>, query: &Q)-> DataTimelineCellReadGuard<'timeline, T::QueryResult> {
+    Ref::map(self.get_clone (timeline).data.borrow(), |timeline| DataTimelineQueryRefableWith::<Q>::query_ref (timeline, query, self.extended_now()))
   }
 }
 impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
