@@ -28,7 +28,7 @@ use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{self, PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
+use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, query, set, destroy, just_destroyed};
 
 
 type Time = i64;
@@ -128,24 +128,24 @@ serialization_cheat!([][BoundaryVarying]);
 
 macro_rules! get {
   ($accessor: expr, $cell: expr) => {
-    $accessor.query ($cell, &GetVarying).unwrap().1
+    query ($accessor, $cell)
   }
 }
 macro_rules! set {
   ($accessor: expr, $cell: expr, $field: ident, $value: expr) => {
     {
-      let mut value = $accessor.query ($cell, &GetVarying).unwrap().1;
+      let mut value = query ($accessor, $cell);
       value.$field = $value;
-      modify_simple_timeline ($accessor, $cell, Some (value));
+      set ($accessor, $cell, value);
     }
   }
 }
 macro_rules! set_with {
   ($accessor: expr, $cell: expr, | $varying: ident | $actions: expr) => {
     {
-      let mut $varying = $accessor.query ($cell, &GetVarying).unwrap().1;
+      let mut $varying = query ($accessor, $cell);
       $actions;
-      modify_simple_timeline ($accessor, $cell, Some ($varying));
+      set ($accessor, $cell, $varying);
     }
   }
 }
@@ -177,19 +177,19 @@ impl<A: EventAccessor <Steward = Steward>> Drop for EventContext <A> {
   fn drop (&mut self) {
     for (handle, node) in self.node_clones.iter() {
       if node.modified {
-        modify_simple_timeline (self.accessor, handle, Some(node.varying));
+        set (self.accessor, handle, node.varying);
       }
     }
     for (handle, boundary) in self.node_clones.iter() {
       if boundary.modified {
-        modify_simple_timeline (self.accessor, handle, Some(boundary.varying));
+        set (self.accessor, handle, boundary.varying);
       }
     }
   }
 }*/
 
 fn update_inferred_node_properties <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
-  let mut varying = accessor.query (&node.varying, &GetVarying).unwrap().1;
+  let mut varying = query (accessor, &node.varying);
   varying.slope = [0, 0];
   varying.accumulation_rate = 0;
   for dimension in 0..2 {
@@ -205,7 +205,7 @@ fn update_inferred_node_properties <A: EventAccessor <Steward = Steward >> (acce
     }
     varying.slope [dimension] /= (2*node.width as Amount)*VELOCITY_PER_SLOPE;
   }
-  modify_simple_timeline (accessor, &node.varying, Some (varying));
+  set (accessor, &node.varying, varying);
 }
 
 fn update_node <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
@@ -476,14 +476,14 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
         parent: Some (node.clone()),
         varying: DataTimelineCell::new (SimpleTimeline::new ()),
       });
-      modify_simple_timeline (accessor, &new_child.varying, Some (NodeVarying {
+      set (accessor, &new_child.varying, NodeVarying {
         last_change: *accessor.now(),
         ink_at_last_change: varying.ink_at_last_change >> 2,
         children: Vec::new(),
         boundaries: [[Vec::new(), Vec::new()], [Vec::new(), Vec::new()]],
         accumulation_rate: 0,
         slope: [0; 2],
-      }));
+      });
       varying.children.push (new_child.clone());
       new_children [0][x][y] = Some(new_child.clone());
       new_children [1][y][x] = Some(new_child.clone());
@@ -526,10 +526,10 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
             nodes: if direction == 0 { [neighbor.clone(), child.clone()] } else { [child.clone(), neighbor.clone()] },
             varying: DataTimelineCell::new (SimpleTimeline::new ()),
           });
-          modify_simple_timeline (accessor, &new_boundary.varying, Some (BoundaryVarying {
+          set (accessor, &new_boundary.varying, BoundaryVarying {
             transfer_velocity: velocities [dimension] [direction] [which],
             next_change: None,
-          }));
+          });
           set_with!(accessor, &child.varying, | child_varying | {
             child_varying.boundaries [dimension] [direction].push(new_boundary.clone());
           });
@@ -555,10 +555,10 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
         nodes: [child0.clone(), child1.clone()],
         varying: DataTimelineCell::new (SimpleTimeline::new ()),
       });
-      modify_simple_timeline (accessor, &new_boundary.varying, Some (BoundaryVarying {
+      set (accessor, &new_boundary.varying, BoundaryVarying {
         transfer_velocity: middle_velocities [dimension] [which],
         next_change: None,
-      }));
+      });
       set_with!(accessor, &child0.varying, | child0_varying | {
         child0_varying.boundaries [dimension] [1].push(new_boundary.clone());
       });
@@ -572,9 +572,10 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
     for direction in 0..2 {
       for which in 0..2 {
         if let Some(boundary) = old_boundaries [dimension] [direction] [which].as_ref() {
-          if let Some ((_, boundary_varying)) = accessor.query (&boundary.varying, &GetVarying) {
+          if !just_destroyed (accessor, & boundary.varying) {
+            let boundary_varying = query (accessor, &boundary.varying);
             if let Some (discarded) = boundary_varying.next_change {accessor.destroy_prediction (&discarded);}
-            modify_simple_timeline (accessor, &boundary.varying, None);
+            destroy (accessor, &boundary.varying);
           }
         }
       }
@@ -583,7 +584,7 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
   
   varying.boundaries = [[Vec::new(), Vec::new()], [Vec::new(), Vec::new()]];
   
-  modify_simple_timeline (accessor, &node.varying, Some(varying));
+  set (accessor, &node.varying, varying);
   
   for boundary in new_boundaries {
     update_transfer_change_prediction (accessor, &boundary);
@@ -593,7 +594,7 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
 
 
 fn maybe_merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle)->bool {
-  if !exists!(accessor, &node.varying) { return false; }
+  if just_destroyed (accessor, &node.varying) { return false; }
   let varying = get!(accessor, &node.varying);
   if varying.children.is_empty() {
     for child in varying.children.iter() {
@@ -671,7 +672,7 @@ fn merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
     }}}
     prior_children.insert (child.clone()) ;
 
-    modify_simple_timeline (accessor, &child.varying, None);
+    destroy (accessor, &child.varying);
   }
   
   let mut new_boundaries = Vec::new();
@@ -707,10 +708,10 @@ fn merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
           nodes: nodes.clone(),
           varying: DataTimelineCell::new (SimpleTimeline::new ()),
         });
-        modify_simple_timeline (accessor, &new_boundary.varying, Some (BoundaryVarying {
+        set (accessor, &new_boundary.varying, BoundaryVarying {
           transfer_velocity: boundary_varying.transfer_velocity,
           next_change: None,
-        }));
+        });
         set_with!(accessor, &neighbor.varying, | neighbor_varying | {
           neighbor_varying.boundaries [dimension] [other_direction].push(new_boundary.clone());
         });
@@ -718,11 +719,11 @@ fn merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
         new_boundaries.push (new_boundary);
       }
     }
-    modify_simple_timeline (accessor, &boundary.varying, None);
+    destroy (accessor, &boundary.varying);
   }
   
   varying.children.clear();
-  modify_simple_timeline (accessor, &node.varying, Some(varying));
+  set (accessor, &node.varying, varying);
   update_inferred_node_properties (accessor, node);
   
   for boundary in new_boundaries {
@@ -883,14 +884,14 @@ impl Event for Initialize {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let globals = accessor.globals();
-    modify_simple_timeline (accessor, &globals.root.varying, Some (NodeVarying {
+    set (accessor, &globals.root.varying, NodeVarying {
       last_change: 0,
       ink_at_last_change: 0,
       children: Vec::new(),
       boundaries: [[Vec::new(), Vec::new()], [Vec::new(), Vec::new()]],
       accumulation_rate: 0,
       slope: [0; 2],
-    }));
+    });
   }
   fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, _accessor: &mut Accessor, _: ()) {
     unimplemented!()
@@ -1078,7 +1079,7 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
     
     let mut to_draw = vec![accessor.globals().root.clone()];
     while let Some(handle) = to_draw.pop() {
-      let varying: NodeVarying = get!(accessor, &handle.varying);
+      let varying: NodeVarying = get!(&accessor, &handle.varying);
       if varying.children.len() > 0 {
         for child in varying.children.iter() {
           to_draw.push(child.clone());

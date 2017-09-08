@@ -8,7 +8,7 @@ use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
+use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, set, unset};
 
 use rand::Rng;
 
@@ -45,6 +45,7 @@ pub struct Circle {
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct CircleVarying {
   pub position: QuadraticTrajectory,
+  pub last_change: Time,
   pub relationships: Vec<RelationshipHandle>,
   pub boundary_induced_acceleration: Option <Vector2<SpaceCoordinate>>,
   pub next_boundary_change: Option <<Steward as TimeSteward>::EventHandle>,
@@ -83,17 +84,15 @@ impl IterateUniquelyOwnedPredictions <Steward> for RelationshipVarying {
 }
 type RelationshipHandle = DataHandle <Relationship>;
 
-pub fn query_relationship_circles <Accessor: EventAccessor <Steward = Steward>>(accessor: &Accessor, relationship: &Relationship)->((ExtendedTime <Basics>, CircleVarying), (ExtendedTime <Basics>, CircleVarying)) {
-  (tracking_query (accessor, & relationship.circles.0.varying)
-      .expect("a relationship exists for a circle that doesn't"),
-   tracking_query (accessor, & relationship.circles.1.varying)
-      .expect("a relationship exists for a circle that doesn't"))
+pub fn query_relationship_circles <Accessor: EventAccessor <Steward = Steward>>(accessor: &Accessor, relationship: &Relationship)->(CircleVarying, CircleVarying) {
+  (tracking_query (accessor, & relationship.circles.0.varying),
+   tracking_query (accessor, & relationship.circles.1.varying))
 }
 
 pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward = Steward>>(accessor: &Accessor, relationship_handle: &RelationshipHandle) {
   let circles = &relationship_handle.circles;
   let now = accessor.extended_now().clone();
-  let (_, mut relationship_varying) = tracking_query (accessor, & relationship_handle.varying).unwrap();
+  let mut relationship_varying = tracking_query (accessor, & relationship_handle.varying);
 
   let us = query_relationship_circles (accessor, & relationship_handle);
 
@@ -104,10 +103,10 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
                                                                    } else {
                                                                      1
                                                                    },
-                                                                   ((us.0).0.base.clone(),
-                                                                    &(us.0).1.position),
-                                                                   ((us.1).0.base.clone(),
-                                                                    &(us.1).1.position));
+                                                                   ((us.0).last_change,
+                                                                    &(us.0).position),
+                                                                   ((us.1).last_change,
+                                                                    &(us.1).position));
   // println!("Planning for {} At {}, {}", id, (us.0).1, (us.1).1);
   if time.is_none() && relationship_varying.induced_acceleration.is_some() {
     panic!(" fail {:?} {:?} {:?}", relationship_handle, relationship_varying, us)
@@ -124,7 +123,7 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
       ));
     }
   }
-  modify_simple_timeline (accessor, & relationship_handle.varying, Some (relationship_varying)) ;
+  set (accessor, & relationship_handle.varying, relationship_varying);
 }
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -137,12 +136,14 @@ impl Event for RelationshipChange {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let circles = &self.relationship_handle.circles;
-    let (_, relationship_varying) = tracking_query (accessor, &self.relationship_handle.varying).unwrap();
+    let relationship_varying = tracking_query (accessor, &self.relationship_handle.varying);
     let us = query_relationship_circles (accessor, & self.relationship_handle);
     let mut new_relationship = relationship_varying.clone();
-    let mut new = ((us.0).1.clone(), (us.1).1.clone());
-    new.0.position.update_by(accessor.now() - (us.0).0.base);
-    new.1.position.update_by(accessor.now() - (us.1).0.base);
+    let mut new = us.clone();
+    new.0.position.update_by(accessor.now() - us.0.last_change);
+    new.1.position.update_by(accessor.now() - us.1.last_change);
+    new.0.last_change = accessor.now().clone();
+    new.1.last_change = accessor.now().clone();
     if let Some(induced_acceleration) = relationship_varying.induced_acceleration {
       new.0
         .position
@@ -162,9 +163,9 @@ impl Event for RelationshipChange {
       new_relationship.induced_acceleration = Some(acceleration);
         //println!("Joined {} At {}", self.id, mutator.now());
     }
-    modify_simple_timeline (accessor, & self.relationship_handle.varying, Some (new_relationship)) ;
-    modify_simple_timeline (accessor, & circles.0.varying, Some(new.0.clone()));
-    modify_simple_timeline (accessor, & circles.1.varying, Some(new.1.clone()));
+    set (accessor, & self.relationship_handle.varying, new_relationship);
+    set (accessor, & circles.0.varying, new.0.clone());
+    set (accessor, & circles.1.varying, new.1.clone());
     // TODO no repeating the relationship between these 2 in particular
     update_predictions (accessor, &circles.0, & new.0);
     update_predictions (accessor, &circles.1, & new.1);
@@ -180,8 +181,7 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
                                               MAX_DISTANCE_TRAVELED_AT_ONCE,
                                               [ARENA_SIZE / 2, ARENA_SIZE / 2, 0, 0, 0, 0]);
   let now = accessor.extended_now().clone();
-  let (time, mut varying) = tracking_query (accessor, & circle_handle.varying)
-    .expect("circles should never not exist");
+  let mut varying = tracking_query (accessor, & circle_handle.varying);
 
   let time = QuadraticTrajectory::approximately_when_distance_passes(ARENA_SIZE - circle_handle.radius,
                                                                    if varying.boundary_induced_acceleration.is_some() {
@@ -189,7 +189,7 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
                                                                    } else {
                                                                      1
                                                                    },
-                                                                   (time.base.clone(),
+                                                                   (varying.last_change,
                                                                     & varying.position),
                                                                     (0, & arena_center));
  
@@ -204,7 +204,7 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
       ));
     }
   }
-  modify_simple_timeline (accessor, & circle_handle.varying, Some(varying));
+  set (accessor, & circle_handle.varying, varying);
 }
 
 pub fn update_predictions <Accessor: EventAccessor <Steward = Steward>>(accessor: &Accessor, circle_handle: &CircleHandle, varying: &CircleVarying) {
@@ -223,10 +223,10 @@ impl Event for BoundaryChange {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    let (time, current_varying) = tracking_query (accessor, &self.circle_handle.varying)
-      .expect("circles should never not exist");
+    let current_varying = tracking_query (accessor, &self.circle_handle.varying);
     let mut new = current_varying.clone();
-    new.position.update_by(accessor.now() - time.base);
+    new.position.update_by(accessor.now() - current_varying.last_change);
+    new.last_change = accessor.now().clone();
     if let Some(induced_acceleration) = current_varying.boundary_induced_acceleration {
       new.position.add_acceleration(-induced_acceleration);
       new.boundary_induced_acceleration = None;
@@ -238,7 +238,7 @@ impl Event for BoundaryChange {
       new.position.add_acceleration(acceleration);
       new.boundary_induced_acceleration = Some(acceleration);
     }
-    modify_simple_timeline (accessor, &self.circle_handle.varying, Some(new.clone()));
+    set (accessor, &self.circle_handle.varying, new.clone());
     update_predictions (accessor, &self.circle_handle, & new);
   }
 
@@ -271,6 +271,7 @@ impl Event for Initialize {
                                0]);
       varying.push (CircleVarying {
         position: position,
+        last_change: 0,
         relationships: Vec::new(),
         boundary_induced_acceleration: None,
         next_boundary_change: None,
@@ -282,10 +283,10 @@ impl Event for Initialize {
           circles: (circles [first].clone(), circles [second].clone()),
           varying: DataTimelineCell::new(SimpleTimeline::new ()),
         };
-        modify_simple_timeline (accessor, & relationship.varying, Some (RelationshipVarying {
+        set (accessor, & relationship.varying, RelationshipVarying {
             induced_acceleration: None,
             next_change: None,
-          }));
+          });
         let relationship_handle = DataHandle::new (relationship);
         
         varying [first].relationships.push (relationship_handle.clone()) ;
@@ -294,7 +295,7 @@ impl Event for Initialize {
     }
     
     for index in 0..HOW_MANY_CIRCLES {
-      modify_simple_timeline (accessor, & circles [index].varying, Some(varying [index].clone()));
+      set (accessor, & circles [index].varying, varying [index].clone());
     }
     for index in 0..HOW_MANY_CIRCLES {
       update_predictions (accessor, & circles [index], & varying [index]);
@@ -320,8 +321,8 @@ impl Event for Disturb {
     let mut best_handle = None;
     let mut best_distance_squared = i64::max_value();
     for circle in circles.iter() {
-      let (time, varying) = tracking_query (accessor, &circle.varying).expect ("circles should never not exist");
-      let position = varying.position.updated_by(accessor.now() - time.base).unwrap().evaluate();
+      let varying = tracking_query (accessor, &circle.varying);
+      let position = varying.position.updated_by(accessor.now() - varying.last_change).unwrap().evaluate();
       let distance_squared = (self.coordinates [0] - position [0]) * (self.coordinates [0] - position [0]) + (self.coordinates [1] - position [1]) * (self.coordinates [1] - position [1]);
       if distance_squared <best_distance_squared {
         best_distance_squared = distance_squared;
@@ -330,15 +331,16 @@ impl Event for Disturb {
     }
     
     let best_handle = best_handle.unwrap() ;
-    let (time, best) = tracking_query (accessor, & best_handle.varying).expect ("uhhhh");
+    let best = tracking_query (accessor, & best_handle.varying);
     let mut new = best.clone();
-    new.position.update_by(accessor.now() - time.base);
+    new.position.update_by(accessor.now() - best.last_change);
+    new.last_change = accessor.now().clone();
     let impulse = -(new.position.evaluate() -
                             Vector2::new(ARENA_SIZE / 2,
                                          ARENA_SIZE / 2)) *
                           (ARENA_SIZE * 4 / (ARENA_SIZE ));
     new.position.add_velocity(impulse);
-    modify_simple_timeline (accessor, & best_handle.varying, Some(new.clone()));
+    set (accessor, & best_handle.varying, new.clone());
     update_predictions (accessor, & best_handle, & new);
   }
 

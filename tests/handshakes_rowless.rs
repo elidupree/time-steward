@@ -11,7 +11,7 @@ use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
+use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, query, tracking_query, set, unset};
 
 
 type Time = i64;
@@ -60,7 +60,7 @@ impl Philosopher {
 }
 
 fn change_next_handshake_time <Accessor: EventAccessor <Steward = Steward>> (accessor: &Accessor, index: usize, handle: & PhilosopherCell, time: Time) {
-  let mut philosopher = tracking_query(accessor, handle).expect ("philosophers should never not exist").1;
+  let mut philosopher = tracking_query(accessor, handle);
   philosopher.time_when_next_initiates_handshake = time;
   if let Some (discarded) = philosopher.next_handshake_prediction.take() {accessor.destroy_prediction (&discarded);}
   if time >= *accessor.now() {
@@ -70,12 +70,12 @@ fn change_next_handshake_time <Accessor: EventAccessor <Steward = Steward>> (acc
   else {
     philosopher.next_handshake_prediction = None;
   }
-  modify_simple_timeline (accessor, handle, Some (philosopher));
+  set (accessor, handle, philosopher);
 }
 
 
 fn unchange_next_handshake_time <Accessor: FutureCleanupAccessor <Steward = Steward>> (accessor: &Accessor, handle: & PhilosopherCell) {
-  unmodify_simple_timeline (accessor, handle);
+  unset (accessor, handle);
 }
 
  
@@ -88,19 +88,13 @@ type TimeStewardTypes = (ListedType<Initialize>,
 fn display_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: & Accessor) {
   println!("snapshot for {}", accessor.now());
   for handle in accessor.globals() {
-    println!("{}",
-             accessor.query(handle, &GetVarying)
-               .expect("missing philosopher").1
-               .time_when_next_initiates_handshake);
+    println!("{}", query(accessor, handle).time_when_next_initiates_handshake);
   }
 }
 fn dump_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: & Accessor)->Vec<Time> {
   let mut result = Vec::new() ;
   for handle in accessor.globals() {
-    result.push (
-             accessor.query(handle, &GetVarying)
-               .expect("missing philosopher").1
-               .time_when_next_initiates_handshake);
+    result.push (query(accessor, handle).time_when_next_initiates_handshake);
   }
   result
 }
@@ -162,7 +156,7 @@ impl Event for Initialize {
     println!("FIAT!!!!!");
     let philosophers = accessor.globals();
     for i in 0..HOW_MANY_PHILOSOPHERS {
-      modify_simple_timeline (accessor, & philosophers [i], Some (Philosopher::new()));
+      set (accessor, & philosophers [i], Philosopher::new());
       change_next_handshake_time (accessor, i, & philosophers [i], (i + 1) as Time);
     }
   }
@@ -170,7 +164,7 @@ impl Event for Initialize {
     let philosophers = accessor.globals();
     for i in 0..HOW_MANY_PHILOSOPHERS {
       unchange_next_handshake_time (accessor, & philosophers [i]);
-      modify_simple_timeline (accessor, & philosophers [i], Some (Philosopher::new()));
+      set (accessor, & philosophers [i], Philosopher::new());
     }
   }
 }

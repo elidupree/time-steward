@@ -44,7 +44,7 @@ use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, modify_simple_timeline, unmodify_simple_timeline};
+use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, query};
 
 #[path = "../dev-shared/bouncy_circles_rowless.rs"] mod bouncy_circles;
 use bouncy_circles::*;
@@ -154,7 +154,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
 
     let frame = || {
       let frame_begin = Instant::now();
-      let time =((start.elapsed().as_secs() as i64 * 1000000000i64) +
+      let time = 1+((start.elapsed().as_secs() as i64 * 1000000000i64) +
                             start.elapsed().subsec_nanos() as i64) *
                            SECOND / 1000000000i64;
       for ev in display.poll_events() {
@@ -189,8 +189,8 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
       stew.forget_before(& time);
       settle (&mut stew, time);
       for handle in accessor.globals().iter() {
-        if let Some ((time, circle)) = accessor.query (&handle.varying, &GetVarying){
-        let position = circle.position.updated_by(accessor.now() - time.base).unwrap().evaluate();
+        let circle = query (& accessor, &handle.varying);
+        let position = circle.position.updated_by(accessor.now() - circle.last_change).unwrap().evaluate();
         let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,
                       position[1] as f32 / ARENA_SIZE as f32 - 0.5];
         let radius = handle.radius as f32 / ARENA_SIZE as f32;
@@ -225,7 +225,6 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
                             radius: radius,
                             direction: [0.0, -1.0],
                           }]);
-}
       }
       target.draw(&glium::VertexBuffer::new(&display, &vertices)
                 .expect("failed to generate glium Vertex buffer"),

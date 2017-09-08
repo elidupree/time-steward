@@ -16,6 +16,12 @@ impl PersistentlyIdentifiedType for GetVarying {
   const ID: PersistentTypeId = PersistentTypeId(0x8912fbb263c46434);
 }
 
+#[derive (Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
+pub struct JustDestroyed;
+impl PersistentlyIdentifiedType for JustDestroyed {
+  const ID: PersistentTypeId = PersistentTypeId(0x4ee4ba51f56f884d);
+}
+
 pub trait IterateUniquelyOwnedPredictions <Steward: TimeSteward> {
   fn iterate_predictions <F: FnMut (& Steward::EventHandle)> (&self, _callback: &mut F) {}
 }
@@ -27,7 +33,9 @@ pub trait IterateUniquelyOwnedPredictions <Steward: TimeSteward> {
 pub struct SimpleTimeline <VaryingData: QueryResult, Steward: TimeSteward> {
   // Hacky workaround for https://github.com/rust-lang/rust/issues/41617 (see https://github.com/serde-rs/serde/issues/943)
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
-  changes: VecDeque<(<Steward as TimeSteward>::EventHandle, Option <VaryingData>)>,
+  changes: VecDeque<(<Steward as TimeSteward>::EventHandle, VaryingData)>,
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
+  destroyer: Option<<Steward as TimeSteward>::EventHandle>,
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   other_dependent_events: BTreeSet<<Steward as TimeSteward>::EventHandle>,
 }
@@ -36,6 +44,7 @@ impl <VaryingData: QueryResult, Steward: TimeSteward> SimpleTimeline <VaryingDat
   pub fn new ()->Self {
     SimpleTimeline {
       changes: VecDeque::new(),
+      destroyer: None,
       other_dependent_events: BTreeSet::new(),
     }
   }
@@ -95,6 +104,12 @@ impl <VaryingData: QueryResult, Steward: TimeSteward> SimpleTimeline <VaryingDat
 }
 impl <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward> SimpleTimeline <VaryingData, Steward> {
   fn remove_future <Accessor: FutureCleanupAccessor<Steward = Steward>> (&mut self, accessor: &Accessor, also_present: bool) {
+    if self.destroyer.as_ref().map_or(false, |event| {
+        let ordering = event.extended_time().cmp(accessor.extended_now());
+        ordering == Ordering::Greater || (!also_present && ordering == Ordering::Equal)
+      }) {
+      self.destroyer = None;
+    }
     let removed = split_off_greater_set (&mut self.other_dependent_events, accessor.extended_now());
     for event in removed {
       accessor.invalidate_execution(&event);
@@ -102,20 +117,17 @@ impl <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Steward>, Stew
     while let Some (change) = self.changes.pop_back() {
       let ordering = change.0.extended_time().cmp(accessor.extended_now());
       if ordering == Ordering::Less || (!also_present && ordering == Ordering::Equal) {
-        if let Some(data) = change.1.as_ref() {
-          IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (data, &mut | prediction | {
-            if also_present || accessor.get_prediction_destroyer (prediction).map_or (true, | destroyer | &destroyer > accessor.handle()) {
-              accessor.change_prediction_destroyer (prediction, None);
-            }
-          });
-        }
+        IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (&change.1, &mut | prediction | {
+          if also_present || accessor.get_prediction_destroyer (prediction).map_or (true, | destroyer | &destroyer > accessor.handle()) {
+            accessor.change_prediction_destroyer (prediction, None);
+          }
+        });
         self.changes.push_back (change);
         break
       }
       // if we are actually discarding the event, we need to clean up some stuff about it
-      if let Some(data) = change.1.as_ref() {
-        IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (data, &mut | prediction | accessor.change_prediction_destroyer (prediction, Some(& change.0)));
-      }
+      IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (&change.1, &mut | prediction | accessor.change_prediction_destroyer (prediction, Some(& change.0)));
+      
       // except don't re-invalidate the event we are currently in
       if ordering == Ordering::Greater {
         accessor.invalidate_execution(&change.0);
@@ -123,7 +135,10 @@ impl <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Steward>, Stew
     }
   }
   
-  fn modify <Accessor: EventAccessor<Steward = Steward>> (&mut self, modification: Option <VaryingData>, accessor: &Accessor){
+  fn modify <Accessor: EventAccessor<Steward = Steward>> (&mut self, modification: VaryingData, accessor: &Accessor){
+    if self.destroyer.as_ref().map_or(false, |event| event.extended_time() <= accessor.extended_now()) {
+      panic!("Tried to modify a SimpleTimeline after it was destroyed")
+    }
     let mut pop = false;
     if let Some(last) = self.changes.back() {
       assert!(& last.0 <= accessor.handle(), "All future changes should have been cleared before calling modify() ");
@@ -151,6 +166,7 @@ impl <VaryingData: QueryResult, Steward: TimeSteward> DataTimeline for SimpleTim
     };
     SimpleTimeline {
       changes: changes,
+      destroyer: self.destroyer.clone(),
       other_dependent_events: BTreeSet::new(),
     }
   }
@@ -165,28 +181,45 @@ impl <VaryingData: QueryResult, Steward: TimeSteward> DataTimeline for SimpleTim
   }
 }
 impl <VaryingData: QueryResult, Steward: TimeSteward> DataTimelineQueriableWith<GetVarying> for SimpleTimeline <VaryingData, Steward> {
-  type QueryResult = Option <(ExtendedTime <Self::Basics>, VaryingData)>;
+  type QueryResult = VaryingData;
 
   fn query (&self, _: &GetVarying, time: &ExtendedTime <Self::Basics>)->Self::QueryResult {
+    if self.destroyer.as_ref().map_or(false, |event| event.extended_time() <= time) {
+      panic!("Tried to query a SimpleTimeline after it was destroyed")
+    }
     let previous_change_index = match self.search_changes(&time) {
       Ok(index) => index,
       Err (index) => index.wrapping_sub (1),
     };
-    self.changes.get (previous_change_index).and_then (| change | change.1.as_ref().map (| data | (change.0.extended_time().clone(), data.clone())))
+    self.changes.get (previous_change_index).expect("Tried to query a SimpleTimeline before it was first set").1.clone()
+  }
+}
+impl <VaryingData: QueryResult, Steward: TimeSteward> DataTimelineQueriableWith<JustDestroyed> for SimpleTimeline <VaryingData, Steward> {
+  type QueryResult = bool;
+
+  fn query (&self, _: &JustDestroyed, time: &ExtendedTime <Self::Basics>)->Self::QueryResult {
+    match self.destroyer.as_ref().map_or(Ordering::Greater, |event| event.extended_time().cmp(time)) {
+      Ordering::Greater => false,
+      Ordering::Equal => true,
+      Ordering::Less => panic!("Tried to query a SimpleTimeline after it was destroyed"),
+    }
   }
 }
 
-pub fn tracking_query <VaryingData: QueryResult, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>)->Option <(ExtendedTime <Steward::Basics>, VaryingData)> {
+pub fn query <VaryingData: QueryResult, Steward: TimeSteward, A: Accessor <Steward = Steward>> (accessor: & A, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>)->VaryingData {
+  accessor.query (handle, &GetVarying)
+}
+pub fn tracking_query <VaryingData: QueryResult, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>)->VaryingData {
   accessor.modify (handle, |timeline| {
     timeline.other_dependent_events.insert (accessor.handle().clone());
   });
-  accessor.query (handle, &GetVarying)
+  query (accessor, handle)
 }
-pub fn modify_simple_timeline <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>, modification: Option <VaryingData>) {
+pub fn set <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>, modification: VaryingData) {
   //#[cfg (debug_assertions)]
   //let confirm1 = accessor.query (handle, &GetVarying, QueryOffset::Before);
   #[cfg (debug_assertions)]
-  let confirm2 = modification.clone().map(|data|(accessor.extended_now().clone(), data));
+  let confirm2 = modification.clone();
   
   let mut do_modify = true;
   if let Some(accessor) = accessor.future_cleanup() {
@@ -219,19 +252,37 @@ pub fn modify_simple_timeline <VaryingData: QueryResult + IterateUniquelyOwnedPr
   #[cfg (debug_assertions)]
   debug_assert! (accessor.query (handle, &GetVarying) == confirm2);
 }
-pub fn unmodify_simple_timeline <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward, Accessor: FutureCleanupAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>) {
+pub fn unset <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward, Accessor: FutureCleanupAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>) {
   //#[cfg (debug_assertions)]
   //let confirm = accessor.query (handle, &GetVarying, QueryOffset::Before);
   
-  if let Some((time, _)) = accessor.query (handle, &GetVarying) { if &time == accessor.extended_now() {
-    accessor.peek_mut(handle).remove_future (accessor, true);
-  }}
+  let mut guard = accessor.peek_mut(handle);
+  if guard.search_changes(accessor.extended_now()).is_ok() {
+    guard.remove_future (accessor, true);
+  }
   
   //#[cfg (debug_assertions)]
   //debug_assert! (accessor.query (handle, &GetVarying, QueryOffset::Before) == confirm);
   //#[cfg (debug_assertions)]
   //debug_assert! (accessor.query (handle, &GetVarying) == confirm);
 }
+
+pub fn destroy <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Steward>, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>) {
+  if let Some(accessor) = accessor.future_cleanup() {
+    accessor.peek_mut(handle).remove_future (accessor, false);
+  }
+  accessor.modify (handle, move |timeline| {
+    timeline.destroyer = Some(accessor.handle().clone());
+  });
+}
+
+/// You're supposed to destroy a SimpleTimeline when there are no more handles to it in the simulation state. In that situation, there might be some handles left on the stack. As a convenience, we provide this way of querying whether a handle is in that state, so that you don't have to keep track of it yourself.
+///
+/// Note that this will still panic if you check on a timeline in a later event after it's been destroyed.
+pub fn just_destroyed <VaryingData: QueryResult, Steward: TimeSteward, A: Accessor <Steward = Steward>> (accessor: & A, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>)->bool {
+  accessor.query (handle, & JustDestroyed)
+}
+
 
 } //mod
 
