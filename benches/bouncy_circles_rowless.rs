@@ -19,7 +19,7 @@ extern crate serde_derive;
 use test::Bencher;
 
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, StewardData, QueryOffset, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying};
@@ -30,7 +30,7 @@ use bouncy_circles::*;
 #[bench]
 fn bouncy_circles_straightforward(bencher: &mut Bencher) {
   bencher.iter(|| {
-    let mut steward: Steward = Steward::from_global_timeline (make_globals());
+    let mut steward: Steward = Steward::from_globals (make_globals());
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize {}).unwrap();
     // make sure to check for inefficiencies in the forgetting code
     steward.forget_before(& 0);
@@ -42,7 +42,7 @@ fn bouncy_circles_straightforward(bencher: &mut Bencher) {
 #[bench]
 fn bouncy_circles_disturbed (bencher: &mut Bencher) {
   bencher.iter(|| {
-    let mut steward: Steward = Steward::from_global_timeline (make_globals());
+    let mut steward: Steward = Steward::from_globals (make_globals());
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize {}).unwrap();
     for index in 1..10 {
       steward.insert_fiat_event (index*SECOND/10, DeterministicRandomId::new (& index), Disturb{ coordinates: [ARENA_SIZE/3,ARENA_SIZE/3]}).unwrap();
