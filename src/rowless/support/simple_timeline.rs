@@ -158,10 +158,7 @@ impl <VaryingData: QueryResult, Steward: TimeSteward> DataTimeline for SimpleTim
   fn clone_for_snapshot (&self, time: &ExtendedTime <Self::Basics>)->Self {
     let mut changes = VecDeque::new();
     match self.search_changes(&time) {
-      Ok(index) => {
-        if let Some(previous) = index.checked_sub (1) {changes.push_back (self.changes [previous].clone());}
-        changes.push_back (self.changes [index].clone());
-      },
+      Ok(index) => changes.push_back (self.changes [index].clone()),
       Err (index) => if let Some(previous) = index.checked_sub (1) {changes.push_back (self.changes [previous].clone());},
     };
     SimpleTimeline {
