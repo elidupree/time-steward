@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell, Ref, RefMut};
-use std::collections::{BTreeMap, BTreeSet, Bound};
+use std::collections::{BTreeMap, BTreeSet, HashMap, Bound};
 use std::cmp::{Ordering, max};
 use std::borrow::Borrow;
 use std::any::Any;
@@ -8,6 +8,7 @@ use std::rc::Rc;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
+use std::mem;
 
 use super::super::api::*;
 use super::super::implementation_support::common::*;
@@ -41,7 +42,7 @@ struct EventInner <B: Basics> {
   time: ExtendedTime <B>,
   data: Box <EventInnerTrait<B>>,
 }
-trait EventInnerTrait <B: Basics>: Any + Debug {
+trait EventInnerTrait <B: Basics>: Any + Debug + SerializeInto + DynamicPersistentlyIdentifiedType {
   fn execute (&self, self_handle: & EventHandle <B>, steward: &mut Steward <B>);
 }
 impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
@@ -107,18 +108,16 @@ time_steward_common_impls_for_handles!();
 time_steward_common_impls_for_uniquely_identified_handle! ([T: SimulationStateData + PersistentlyIdentifiedType] [DataHandle <T>] self => (&*self.data as *const T): *const T);
 time_steward_common_impls_for_uniquely_identified_handle! ([T: DataTimeline] [DataTimelineCell <T>] self => (self.serial_number): usize);
 
-time_steward_serialization_impls_for_handle!(
-  [T: DataTimeline] [DataTimelineCell <T>]
-  (&self) Data located at (| handle | &mut handle.data)
-);
-time_steward_serialization_impls_for_handle!(
-  [B: Basics] [EventHandle <B>]
-  (&self) Data located at (| handle | &mut unimplemented!())
-);
-time_steward_serialization_impls_for_handle!(
-  [T: SimulationStateData + PersistentlyIdentifiedType] [DataHandle <T>]
-  (&self) Data located at (| handle | &mut*handle.data)
-);
+time_steward_serialization_impls!();
+fn deserialization_create_event_inner <B: Basics, T: Event<Steward = Steward<B>>> (time: ExtendedTime <B>, data: T, _in_future: bool)->EventInner<B> {
+  EventInner {
+    time: time,
+    data: Box::new (data),
+  }
+}
+fn deserialization_create_prediction <B: Basics> (steward: &mut Steward <B>, prediction: EventHandle <B>) {
+  steward.existent_predictions.insert (prediction);
+}
 
 #[derive (Debug)]
 pub struct EventAccessorStruct <'a, B: Basics> {

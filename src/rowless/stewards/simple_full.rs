@@ -154,18 +154,19 @@ time_steward_common_impls_for_uniquely_identified_handle! ([T: SimulationStateDa
 time_steward_common_impls_for_uniquely_identified_handle! ([T: DataTimeline] [DataTimelineCell <T>] self => (self.serial_number): usize);
 
 time_steward_serialization_impls!();
-/*time_steward_serialization_impls_for_handle!(
-  [T: DataTimeline] [DataTimelineCell <T>]
-  (&self) Data located at (| handle | &mut handle.data)
-);
-time_steward_serialization_impls_for_handle!(
-  [B: Basics] [EventHandle <B>]
-  (&self) Data located at (| handle | &mut unimplemented!())
-);
-time_steward_serialization_impls_for_handle!(
-  [T: SimulationStateData + PersistentlyIdentifiedType] [DataHandle <T>]
-  (&self) Data located at (| handle | &mut*handle.data)
-);*/
+fn deserialization_create_event_inner <B: Basics, T: Event<Steward = Steward<B>>> (time: ExtendedTime <B>, data: T, in_future: bool)->EventInner<B> {
+  EventInner {
+    time: time,
+    data: Box::new (data),
+    should_be_executed: Cell::new (in_future),
+    is_prediction: in_future,
+    prediction_destroyed_by: RefCell::new (None),
+    execution_state: RefCell::new (None),
+  }
+}
+fn deserialization_create_prediction <B: Basics> (steward: &mut Steward <B>, prediction: EventHandle <B>) {
+  steward.events_needing_attention.insert (EventNeedingAttention {handle: prediction, should_be_executed: true});
+}
 
 #[derive (Debug)]
 pub struct EventAccessorStruct <'a, B: Basics> {

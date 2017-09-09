@@ -165,14 +165,7 @@ macro_rules! time_steward_serialization_impls {
       let data: T = ::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
       unsafe {::std::ptr::write (
         &*handle.data as *const EventInner<B> as *mut EventInner<B>,
-        EventInner {
-          time: time.clone(),
-          data: Box::new (data),
-          should_be_executed: Cell::new (in_future),
-          is_prediction: in_future,
-          prediction_destroyed_by: RefCell::new (None),
-          execution_state: RefCell::new (None),
-        }
+        deserialization_create_event_inner(time.clone(), data, in_future)
       );}
       Ok(())
     })
@@ -425,7 +418,7 @@ macro_rules! time_steward_serialization_impls {
         let mut guard = cell.borrow_mut();
         let context = guard.as_mut().unwrap();
         for prediction in context.predictions.iter() {
-          steward.events_needing_attention.insert (EventNeedingAttention {handle: context.handles.get (prediction).unwrap().downcast_ref::<EventHandle <B>>().unwrap().clone(), should_be_executed: true});
+          deserialization_create_prediction(&mut steward, context.handles.get (prediction).unwrap().downcast_ref::<EventHandle <B>>().unwrap().clone());
         }
         steward.invalid_before = ValidSince::Before (time.base.clone()) ;
         context.success = true;
