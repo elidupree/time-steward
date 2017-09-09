@@ -20,11 +20,12 @@
 //
 //
 
-#![feature(unboxed_closures, fn_traits, specialization, never_type, shared, raw, get_type_id)]
+#![feature(unboxed_closures, fn_traits, specialization, never_type, raw, get_type_id)]
+// #![feature (shared)]
 // #![feature (plugin, custom_derive)]
 // #![plugin (serde_macros)]
 // #![plugin (quickcheck_macros)]
-#![cfg_attr(test,feature(core_intrinsics))]
+//#![cfg_attr(test,feature(core_intrinsics))]
 
 extern crate rand;
 extern crate nalgebra;
@@ -33,7 +34,7 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate bincode;
-extern crate crossbeam;
+//extern crate crossbeam;
 #[cfg_attr(test, macro_use)]
 extern crate quickcheck;
 #[macro_use]

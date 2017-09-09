@@ -28,13 +28,11 @@ macro_rules! printlnerr(
 
 use std::cmp::{min, max};
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{self, PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
+use time_steward::rowless::api::{PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_flat as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, query, tracking_query, set, unset};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
+use simple_timeline::{SimpleTimeline, IterateUniquelyOwnedPredictions, query, set, unset};
 
-
-use time_steward::support::rounding_error_tolerant_math::Range;
 
 /// i64 makes a good time type:
 /// It's big enough to subdivide down to the nanosecond, allowing a smooth simulation,
@@ -129,11 +127,11 @@ fn more_stable_rate_and_cumulative_error_coefficients (cells: [&CellVarying; 2],
     ink_at (cells [0], accumulation_rates [0], start),
     ink_at (cells [1], accumulation_rates [1], start),
   ];
-  let original_difference = ink_original [0] - ink_original [1];
+  //let original_difference = ink_original [0] - ink_original [1];
   let difference_change_rate = accumulation_rates [0] - accumulation_rates [1];
   
   // the absolute difference between the current rate and a hypothetical more stable rate, tolerating some rounding error
-  let rate_change_stability_thing = (difference_change_rate.abs()/8 + 2);
+  let rate_change_stability_thing = difference_change_rate.abs()/8 + 2;
   // we trust the system not to that the ideal rate past more_stable_rate without doing an update, so error can increase no faster than abs(current_rate - more_stable_rate)
   
   (rate_change_stability_thing, (rate_change_stability_thing, 0))
@@ -579,7 +577,7 @@ impl Event for AddInk {
 
 fn make_globals()-> Globals {
   let mut cells = Vec::new();
-  for index in 0..60*60 {
+  for _ in 0..60*60 {
     cells.push (Cell{
       varying: DataTimelineCell::new (SimpleTimeline::new ()),
       transfers: [

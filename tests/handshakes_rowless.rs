@@ -1,7 +1,6 @@
 extern crate time_steward;
 
 extern crate rand;
-extern crate bincode;
 
 extern crate serde;
 #[macro_use]
@@ -11,7 +10,7 @@ use time_steward::{DeterministicRandomId};
 use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, query, tracking_query, set, unset};
+use simple_timeline::{SimpleTimeline, IterateUniquelyOwnedPredictions, query, tracking_query, set, unset};
 
 
 type Time = i64;

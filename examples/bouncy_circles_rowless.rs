@@ -1,4 +1,3 @@
-#[macro_use]
 extern crate time_steward;
 
 #[macro_use]
@@ -41,10 +40,9 @@ use std::time::{Instant, Duration};
 use glium::{DisplayBuild, Surface};
 
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::rowless::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, query};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, Accessor, SnapshotAccessor, simple_timeline};
+use simple_timeline::{query};
 
 #[path = "../dev-shared/bouncy_circles_rowless.rs"] mod bouncy_circles;
 use bouncy_circles::*;

@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell, Ref, RefMut};
-use std::collections::{BTreeMap, BTreeSet, HashMap, Bound};
+use std::collections::{BTreeMap, BTreeSet, Bound};
 use std::cmp::{Ordering, max};
 use std::borrow::Borrow;
 use std::any::Any;
@@ -241,7 +241,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
 impl <'a, B: Basics> FutureCleanupAccessor for EventAccessorStruct <'a, B> {
   fn peek <'c, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'c self, _: &'b DataTimelineCell<T>)->DataTimelineCellReadGuard<'b, T> {unreachable!()}
   fn peek_mut <'c, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'c self, _: &'b DataTimelineCell<T>)->DataTimelineCellWriteGuard<'b, T> {unreachable!()}
-  fn get_prediction_destroyer (&self, event: &<Self::Steward as TimeSteward>::EventHandle)->Option <<Self::Steward as TimeSteward>::EventHandle> {unreachable!()}
+  fn get_prediction_destroyer (&self, _: &<Self::Steward as TimeSteward>::EventHandle)->Option <<Self::Steward as TimeSteward>::EventHandle> {unreachable!()}
   fn change_prediction_destroyer (&self, _: &<Self::Steward as TimeSteward>::EventHandle, _: Option <&<Self::Steward as TimeSteward>::EventHandle>) {unreachable!()}
   fn invalidate_execution (&self, _: & <Self::Steward as TimeSteward>::EventHandle) {unreachable!()}
 }

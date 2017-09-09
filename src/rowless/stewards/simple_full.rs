@@ -552,11 +552,11 @@ mod audits {
   
   impl<B: Basics> Steward <B> {
     pub fn audit_timeline<T: DataTimeline> (&self, timeline: & DataTimelineCell <T>) {
-      for query in timeline.queries.borrow() {
+      for _query in timeline.queries.borrow() {
         
       }
     }
-    pub fn audit_after_event (&self, event: & EventHandle <B>) {
+    pub fn audit_after_event (&self, _event: & EventHandle <B>) {
       /*for timeline_id in event.modified.iter() {
         
       }*/

@@ -1,5 +1,4 @@
 use std::fmt;
-use std::collections::BTreeSet;
 
 use super::api::*;
 
