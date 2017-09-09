@@ -34,7 +34,7 @@ In order to remain synchronized, all code executing within the simulation must b
 * Mutable global (static/thread_local) variables
 * Whether data has been reloaded from a serialized version
 
-In particular, you cannot use `f32`, `f64`, or `std::collections::HashMap`**.
+In particular, your physics cannot depend on `f32` or `f64` arithmetic, the iteration order of `std::collections::HashMap`**, or the capacity of `Vec`.
 
 TimeSteward provides some features to work around these limitations. It has a built-in deterministic PRNG. It will eventually also provide a deterministic alternative to HashMap and a deterministic plug-and-play replacement for f32/f64. (However, using floats may still be undesirable because floating-point emulation is much slower.)
 
@@ -79,33 +79,16 @@ An **Event** is sort of like an object of type `Fn(simulation state) -> results`
 Imagine that one Event makes a ball is move towards a wall. From the current trajectory of the ball and the location of the wall, the event computes the time when the ball will hit the wall, then creates a Prediction of a collision at that time.
 
 ```rust
-time_steward_predictor!{
-  struct BallHitsWallPredictor,
-  ...
-  |&self, accessor| {
-    let ball: &Ball = self.ball.query (accessor, ());
-    ... // Examine various fields and compute the time when the ball hits the wall
-    accessor.predict_at_time (time, BallHitsWallEvent::new (...));
-  }
-})
+let ball: Ball = accessor.query (...);
+let time = ... // Examine various fields and compute the time when the ball hits the wall
+let prediction = accessor.create_prediction (time, BallHitsWallEvent {...});
 ```
-
-```rust
-time_steward_event!{
-  struct BallHitsWallEvent {ball_row_id: RowId, wall_row_id: RowId},
-  ...
-  |&self, mutator| {
-    let mut ball: Ball = accessor.get::<Ball>(ball_row_id).clone();
-    ... // Examine various fields and compute the new trajectory of the ball
-    mutator.set::<Ball>(ball_id, ball);
-  }
-})
 ```
 
 If a later Event changes the motion of the ball, it should then destroy the original Prediction and create a new one based on the new trajectory.
 
 
-As shown above, Events interact with the simulation through "accessor" objects. These objects are the way we track what queries and operations were made. Generally, it is an error for an Event to get information by any means other than the accessor.
+As shown above, Events interact with the simulation through "accessor" objects. These objects are the way we track what queries and operations were made. Generally, it is an error for an Event to get information by any means other than the accessor (and `self`).
 
 This system – Events automatically creating Predictions, Predictions automatically running Events – can implement a complete ongoing physics. The only thing missing is the way to add user input.
 
@@ -150,20 +133,20 @@ struct ExtendedTime {
 ExtendedTimes are lexicographically ordered by the fields listed above. TimeSteward users usually don't need to be aware of ExtendedTimes (just implement your Events in terms of regular time, and they will likely turn out fine). However, it *is* possible for TimeSteward users to examine ExtendedTimes, which can be useful for debugging and loop detection.
 
 
-### TypeIds and serialization
+### PersistentTypeIds and serialization
 
-All the physics-related data of a TimeSteward forms a network of DataTimelines, Events, and Predictions. These objects can contain opaque handles to each other. The handles are essentially pointers, but can't be dereferenced except through the TimeSteward protocol. However, TimeSteward does provide a way to serialize and deserialize the collection as a whole.
+All the physics-related data of a TimeSteward forms a network of DataTimelines, Events, and Predictions. These objects can contain handles to each other. DataTimeline changes are a form of interior mutability, which allows the formation of cyclic data structures. This makes them tricky to serialize, but TimeSteward does provide a way to serialize and deserialize the collection as a whole.
 
-For various reasons, it's convenient to allow the handles to *not know the concrete type* of the objects they're pointing to, like trait objects. This complicates serialization, because we need to store some record of what type the objects are. Rust exposes TypeIds, but they're explicitly nondeterministic over multiple builds.
+For various reasons, it's sometimes convenient to allow the handles to *not know the concrete type* of the objects they're pointing to, like trait objects. This complicates serialization, because we need to store some record of what type the objects are. Rust exposes TypeIds, but they're explicitly nondeterministic over multiple builds.
 
-So, we require that all DataTimeline types and Event types have hard-coded IDs. These IDs are simply one random u64 for each type. (Because there are fewer of them, they don't need to have as many bits to stay unique. Thanks to the [birthday problem](https://en.wikipedia.org/wiki/Birthday_problem), this would have a >1% chance of a collision with a mere 700 million types. I don't think we need to worry about this. 128 bit IDs are necessary for events, because computers can generate billions of them easily, but this isn't the same situation.) The documentation provides a convenient way to generate these IDs. We could theoretically have these IDs be automatically generated from the type name and module path, which would make them unique, but hard-coding them helps keep serialization consistent from version to version of your program. (You wouldn't want savefiles to be incompatible just because you reorganized some modules.)
+So, we require that some of the types used in simulation state to have hard-coded IDs. These IDs are simply one random u64 for each type. (Because there are fewer of them, they don't need to have as many bits to stay unique. Thanks to the [birthday problem](https://en.wikipedia.org/wiki/Birthday_problem), this would have a >1% chance of a collision with a mere 700 million types. I don't think we need to worry about this. 128 bit IDs are necessary for events, because computers can generate billions of them easily, but this isn't the same situation.) The documentation provides a convenient way to generate these IDs. We could theoretically have these IDs be automatically generated from the type name and module path, which would make them unique, but hard-coding them helps keep serialization consistent from version to version of your program. (You wouldn't want savefiles to be incompatible just because you reorganized some modules.)
 
 
 ### Invalidation, invariants, and auditing
 
 A TimeSteward may run events out of order. Let's define the **canonical state** to be the exact history that results if you run all of the events **in order**. We want the history to eventually reach the canonical state regardless of what order the events are run. In particular, if a later event runs first, then an earlier event may change some data that the later event queried, making the later event invalid. If that happens, the later event must be rerun with the new inputs.
 
-Each event must:
+Each Event must:
 * implement a way for the event to be undone.
 * whenever the event modifies a DataTimeline, inform the TimeSteward of all future events whose queries to that DataTimeline would return a different result. (False-positives are okay, but false-negatives are not.)
 
@@ -181,7 +164,7 @@ Time 0 – Undone event E – Invalidated, but not undone, event F – Valid eve
 
 Then the state after F could legitimately depend on whether F's execution happened *before* or *after* E was undone. So we need a weaker invariant.
 
-Luckily, we can check the canonicity of individual DataTimelines. So specifically, "For any DataTimeline D, D's history **prior to the first noncanonical event that modifies D** is always in the canonical state." Again, we need to clarify the definition of noncanonical event – this includes both **events that have been executed with noncanonical inputs and modified D**, and also **events that canonically modify D, but have not been executed canonically**. (Can we prove that this is stricter than the first invariant? What do we need to know in order to know that there can't be any noncanonical events prior to the first invalid event?)
+Luckily, we can check the canonicity of individual DataTimelines. So specifically, "For any DataTimeline D, D's history **prior to the first noncanonical event that modifies D** is always in the canonical state." Again, we need to clarify the definition of noncanonical event – this includes both **events that have been executed with noncanonical inputs and modified D**, and also **events that canonically modify D, but have not been executed canonically**. (TODO: Can we prove that this is stricter than the first invariant? What do we need to know in order to know that there can't be any noncanonical events prior to the first invalid event?)
 
 
 
@@ -198,7 +181,7 @@ Coming later...
 
 ## Keywords
 
-TimeSteward uses **incremental processing** to be a **retroactive data structure**. The Predictor concept is a type of **reactive programming**. I didn't need these terms for the explanation, but I want them to appear in this document to attract people who are doing web searches for "reactive programming game physics" or similar.
+TimeSteward uses **incremental processing** to be a **retroactive data structure**. It's also a **partially persistent data structure**, in the sense that snapshots don't change even if you make retroactive modifications after taking them. I didn't need these terms for the explanation, but I want them to appear in this document to attract people who are doing web searches for "incremental processing game physics" or similar.
 
 
 ## License
