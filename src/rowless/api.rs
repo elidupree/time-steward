@@ -53,7 +53,7 @@ impl<T: Any + Debug + Clone + Eq + Serialize + DeserializeOwned> QueryResult for
 //These would be associated type constructors if Rust supported those: DataTimelineHandle, EventHandle, DynamicEventHandle, PredictionHandle
 
 
-pub trait DataTimeline: Any + Clone + Serialize + DeserializeOwned + Debug {
+pub trait DataTimeline: Any + Clone + Serialize + DeserializeOwned + Default + Debug {
   type Basics: Basics;
 
   /// Make a clone of only the data necessary to report accurately at a specific time.

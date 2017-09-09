@@ -29,7 +29,7 @@ pub trait IterateUniquelyOwnedPredictions <Steward: TimeSteward> {
 
 #[serde(bound = "")]
 #[derive (Serialize, Deserialize, Derivative)]
-#[derivative (Clone (bound=""), Debug (bound=""))]
+#[derivative (Clone (bound=""), Debug (bound=""), Default (bound=""))]
 pub struct SimpleTimeline <VaryingData: QueryResult, Steward: TimeSteward> {
   // Hacky workaround for https://github.com/rust-lang/rust/issues/41617 (see https://github.com/serde-rs/serde/issues/943)
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
