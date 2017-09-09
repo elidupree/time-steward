@@ -55,8 +55,6 @@ macro_rules! printlnerr(
 /// considered very unstable at present.
 #[macro_use]
 pub mod implementation_support {
-  #[macro_use]
-  pub mod list_of_types;
   pub mod insert_only;
   pub mod data_structures;
   #[macro_use]
@@ -73,48 +71,29 @@ pub mod dynamic {
 
 mod deterministic_random_id;
 pub use deterministic_random_id::*;
+
 #[macro_use]
 mod api;
-#[macro_use]
-mod api_macros;
 pub use api::*;
-pub use implementation_support::list_of_types::{ColumnType, EventType, PredictorType};
-
-#[macro_use]
-pub mod stewards {
-  pub mod inefficient_flat;
-  pub mod memoized_flat;
-  pub mod amortized;
-  //pub mod optimized;
-
-  pub mod flat_to_inefficient_full;
-  pub mod crossverified;
-  pub mod simply_synchronized;
-}
+pub mod api_impls;
 
 #[macro_use]
 pub mod support {
   pub mod rounding_error_tolerant_math;
   pub mod time_functions;
-  pub mod collision_detection;
+  #[macro_use] pub mod simple_timeline;
+}
+
+#[macro_use]
+pub mod serialization;
+
+pub mod stewards {
+  pub mod simple_flat;
+  #[macro_use]
+  pub mod simple_full;
+  pub mod auditing;
 }
 
 
-pub mod rowless {
-  #[macro_use]
-  pub mod implementation_support { #[macro_use] pub mod common; }
-  #[macro_use]
-  pub mod serialization;
-  #[macro_use]
-  pub mod api;
-  pub mod api_impls;
-  #[macro_use]
-  pub mod support { #[macro_use] pub mod simple_timeline; }
-  pub mod stewards {
-    pub mod simple_flat;
-    #[macro_use]
-    pub mod simple_full;
-    pub mod auditing;
-  }
-}
+
 

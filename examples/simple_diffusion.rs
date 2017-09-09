@@ -11,8 +11,6 @@ extern crate serde_derive;
 #[macro_use]
 extern crate time_steward;
 
-extern crate fnv;
-
 // Imports for the UI
 #[macro_use]
 extern crate glium;
@@ -29,8 +27,11 @@ macro_rules! printlnerr(
 
 
 use std::cmp::{min, max};
-use time_steward::{DefaultSteward, Accessor, MomentaryAccessor, PredictorAccessor, Mutator, DeterministicRandomId, TimeSteward, TimeStewardFromConstants, IncrementalTimeSteward, Column, ColumnId, RowId, EventId, PredictorId, ColumnType, PredictorType, EventType};
-use time_steward::stewards::simply_synchronized;
+use time_steward::{DeterministicRandomId};
+use time_steward::{PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::stewards::{simple_flat as steward_module};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
+use simple_timeline::{SimpleTimeline, IterateUniquelyOwnedPredictions, query, set, unset};
 
 
 /// i64 makes a good time type:
@@ -39,27 +40,37 @@ use time_steward::stewards::simply_synchronized;
 type Time = i64;
 const SECOND: Time = 1i64 << 20;
 
+type Steward = steward_module::Steward <Basics>;
+
 
 /// A type defining simulation constants.
 /// This obviously isn't needed for compile-time constants, which can be done normally,
 /// but it's useful for things like game settings or commandline parameters.
-#[derive (Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-struct Constants {
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+struct Globals {
   size: [i32; 2],
   
-  /// Maximum inaccuracy of transfers in ink-per-time-unit
+  /// Maximum inaccuracy of transfers in ink-per-update
   max_inaccuracy: i64,
+  
+  cells: Vec<Cell>,
 }
 
-
 // Derive all the traits required for field data types.
-#[derive (Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Cell {
-  coordinates: [i32; 2],
-  
+  varying: DataTimelineCell <SimpleTimeline <CellVarying, Steward>>,
+  transfers: [DataTimelineCell <SimpleTimeline <TransferVarying, Steward>>; 2],
+}
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+struct CellVarying {
   /// The exact amount of ink present in this cell at the last time we updated it.
+  last_change: Time,
   ink_at_last_change: i64,
-  
+  fiat_accumulation_rate: i64,
+}
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+struct TransferVarying {
   /// The rate at which this cell is currently transferring ink to other cells.
   /// 
   /// The mathematically accurate transfer function between just 2 cells would be
@@ -70,204 +81,423 @@ struct Cell {
   /// The values here represent the transfer TOWARDS the cells in the POSITIVE
   /// x and y directions. Transfers from the cells in the negative x and y directions
   /// are stored in the data of *those* cells.
-  ink_transfers: [i64; 2],
+  rate: i64,
+  last_change: Time,
+  accumulated_error: i64,
+  next_change: Option <EventHandle <Basics>>,
 }
-
-/// impl the trait Column, to identify Cell as something that
-/// can be stored in a TimeSteward field.
-impl Column for Cell {
-  /// Column Cell has the field type Cell.
-  /// The *Column* type is essentially just the name. The *Field* type is the data stored.
-  /// Thus, you can have multiple Columns with the same data type,
-  /// and you can have a Column with a data type from a different crate.
-  /// In this case, we don't need to do that, so we conveniently just name it after itself.
-  type FieldType = Self;
-  
-  fn column_id()->ColumnId {
-    // A randomly generated id for this column.
-    // For your own code, generate a new random id.
-    // The documentation provides an easy way to do this.
-    ColumnId(0x66484c24cbec1484)
+impl IterateUniquelyOwnedPredictions <Steward> for CellVarying {}
+impl IterateUniquelyOwnedPredictions <Steward> for TransferVarying {
+  fn iterate_predictions <F: FnMut (& <Steward as TimeSteward>::EventHandle)> (&self, callback: &mut F) {
+    if let Some (prediction) = self.next_change.as_ref() {
+      callback (prediction);
+    }
   }
 }
 
-/// To be able to respond when transfers have become too inaccurate,
-/// we need a Predictor.
-///
-/// This macro creates a new unit struct that can be given to a TimeSteward.
-time_steward_predictor!{
-  struct TransferChangePredictor,
-  
-  // Basics is a type that we will define later, which is used to inform TimeSteward
-  // of all the types we will use with it (including TransferChangePredictor itself).
-  // In C++, this would create a mess of forward-declarations, but in Rust, it's trivial.
-  Basics,
-  
-  // A random id for this predictor, generated using the documentation.
-  PredictorId(0x364a67f059741d7f),
-  
-  // TransferChangePredictor 'watches' Cell.
-  watching Cell,
-  
-  // This parameter identifies the predictor function itself.
-  // You can also write the function in the macro directly, as a pseudo-closure:
-  // |accessor, id| { ...code... }
-  // But for complex predictors, it's generally better to use a free-standing
-  // function, because it is easier to debug and profile.
-  fn transfer_change_predictor
+fn ink_at (cell: &CellVarying, accumulation_rate: i64, time: Time)->i64 {
+  cell.ink_at_last_change + accumulation_rate*(time - cell.last_change)
 }
 
-fn transfer_change_predictor <PA: PredictorAccessor <Basics = Basics>> (accessor: &mut PA, id: RowId) {
-  // The Predictor is *always* called with the idea of an existent Cell, so
-  // we can safely get and unwrap it.
-  // To get field data, we call in Accessor method, which takes the Column type
-  // (as a generic parameter) and the RowId (as a function argument).
-  let (me, my_last_change) = accessor.data_and_last_change::<Cell>(id).unwrap();
-  let my_accumulation_rate: i64 = get_accumulation_rate (accessor, me.coordinates);
-  for dimension in 0..2 {
-    // This call to the Predictor is only in charge of the transfers to the cells
-    // in the positive x and y directions. The other transfers will be handled by
-    // the Predictor calls for the cells in the negative x and y directions.
-    let mut neighbor_coordinates = me.coordinates;
-    neighbor_coordinates [dimension] += 1;
-    if neighbor_coordinates [dimension] >= accessor.constants().size [dimension] {continue;}
-    let neighbor_id = cell_id(neighbor_coordinates);
-    let neighbor_accumulation_rate = get_accumulation_rate (accessor, neighbor_coordinates);
-    let (neighbor, neighbor_last_change) = accessor.data_and_last_change::<Cell>(neighbor_id).unwrap();
+fn more_stable_rate_and_cumulative_error_coefficients (cells: [&CellVarying; 2], accumulation_rates: [i64; 2], transfer: & TransferVarying, start: Time)->(i64, (i64,i64)) {
     
-    let last_change = max (my_last_change, neighbor_last_change);
+    // We choose the target transfer rate to be the amount that would
+    // equalize the two cells in one second.
+    // That is, the target transfer rate is (my ink - other ink)/(SECOND*2).
+    //
+    // Cumulative error = integral_0^t (actual transfer rate - ideal transfer rate)
+    // = integral_0^t (actual transfer rate) - integral_0^t (ideal transfer rate)
+    // = t*(actual transfer rate) - integral_0^t (ideal transfer rate)
+    //
+    // ideal transfer rate(t) = (my ink - other ink(t))/(SECOND*2)
+    // = (current_difference + t*current_difference_change_rate)/(SECOND*2)
+    // (well… Sort of. current_difference_change_rate values can change when other transfers change,
+    //   making this formula behave somewhat weirdly)
+    // 
+    // so Cumulative error =
+    // = t*(actual transfer rate) - integral_0^t (ideal transfer rate)
+    // = t*(actual transfer rate) - integral_0^t ((current_difference + t*current_difference_change_rate)/(SECOND*2))
+    // = t*(actual transfer rate - current_difference/(SECOND*2)) - integral_0^t ((t*current_difference_change_rate)/(SECOND*2))
+    // = t*(actual transfer rate - current_difference/(SECOND*2)) - (0.5t^2)*current_difference_change_rate/(SECOND*2)
+  
+  assert!(cells [0].last_change <= start) ;
+  assert!(cells [1].last_change <= start) ;
+  assert!(transfer.last_change <= start) ;
+  let ink_original = [
+    ink_at (cells [0], accumulation_rates [0], start),
+    ink_at (cells [1], accumulation_rates [1], start),
+  ];
+  //let original_difference = ink_original [0] - ink_original [1];
+  let difference_change_rate = accumulation_rates [0] - accumulation_rates [1];
+  
+  // the absolute difference between the current rate and a hypothetical more stable rate, tolerating some rounding error
+  let rate_change_stability_thing = difference_change_rate.abs()/8 + 2;
+  // we trust the system not to that the ideal rate past more_stable_rate without doing an update, so error can increase no faster than abs(current_rate - more_stable_rate)
+  
+  (rate_change_stability_thing, (rate_change_stability_thing, 0))
+}
+
+fn desired_transfer_change_time (cells: [&CellVarying; 2], accumulation_rates: [i64; 2], transfer: & TransferVarying, start: Time)->Option <Time> {
+  let (rate_change_stability_thing, coefficients) = more_stable_rate_and_cumulative_error_coefficients (cells, accumulation_rates, transfer, start);
+  
+  let original_difference = ink_at (cells [0], accumulation_rates [0], start) - ink_at (cells [1], accumulation_rates [1], start);
+  let difference_change_rate = accumulation_rates [0] - accumulation_rates [1];
+  
+  
+    // We need to notice when the target transfer rate goes outside of the range
+    // [current transfer rate - rate_change_stability_thing, current transfer rate + rate_change_stability_thing].
+    // After a little algebra...
+    let (min_difference, max_difference) = (
+      (transfer.rate - rate_change_stability_thing)*(2*SECOND),
+      (transfer.rate + rate_change_stability_thing)*(2*SECOND)
+    );
+    if original_difference < min_difference || original_difference > max_difference {
+      //printlnerr!("predict wow! {:?}", (start, min_difference,original_difference, max_difference, rate_change_stability_thing));
+      return Some(start);
+    }
+    //printlnerr!("{:?}", (start, min_difference,original_difference, max_difference));
+  
+  let mut previous_duration = i64::max_value();
+  
+  // note: the fact that I've disabled this means that all of the other accumulated-error code is also not doing anything at the moment.
+  if false && !(difference_change_rate == 0) {
+  
+  previous_duration = 1;
+  loop {
+    let duration = previous_duration*2;
+    let later_difference = ink_at (cells [0], accumulation_rates [0], start + duration) - ink_at (cells [1], accumulation_rates [1], start + duration);
+    let minimum_difference = if original_difference.signum() != later_difference.signum() {0} else {min(original_difference.abs(), later_difference.abs())};
+    let permissible_cumulative_error = 160000000 + (minimum_difference >> 4);
+    //printlnerr!("{:?}", (duration, coefficients, permissible_cumulative_error ));
+    let error = transfer.accumulated_error + duration*duration*coefficients.1 + duration*coefficients.0;
+    //printlnerr!("{:?}", (error ));
+    assert!(duration >0 );
+    if error.abs() > permissible_cumulative_error {break}
+    previous_duration = duration;
+  }
+  
+  }
+  
+  
+    if difference_change_rate > 0 {
+      previous_duration = min (previous_duration, (max_difference-original_difference)/difference_change_rate);
+    }
+    else if difference_change_rate < 0 {
+      previous_duration = min (previous_duration, (min_difference-original_difference)/difference_change_rate);
+    }
+  
+  if previous_duration == i64::max_value() {return None;}
+  //printlnerr!("{:?}", (cells, accumulation_rates, start, previous_duration));
+  Some(start + previous_duration)
+}
+
+fn update_cell <A: EventAccessor <Steward = Steward>> (accessor: &A, coordinates: [i32; 2]) {
+  let me = get_cell (accessor, coordinates).unwrap();
+  let mut my_varying = query(accessor, &me.varying);
+  let my_accumulation_rate: i64 = get_accumulation_rate (accessor, coordinates);
+  my_varying.ink_at_last_change = ink_at (& my_varying, my_accumulation_rate, accessor.now().clone());
+  my_varying.last_change = accessor.now().clone();
+  set (accessor, & me.varying, my_varying);
+}
+
+fn update_accumulated_error <A: EventAccessor <Steward = Steward>> (accessor: &A, coordinates: [i32; 2], dimension: usize) {
+  if !in_bounds (accessor.globals(), coordinates) {return;}
+  let mut neighbor_coordinates = coordinates;
+  neighbor_coordinates [dimension] += 1;
+  if neighbor_coordinates [dimension] >= accessor.globals().size [dimension] {return;}
+  
+  let cells = [
+    get_cell (accessor, coordinates).unwrap(),
+    get_cell (accessor, neighbor_coordinates).unwrap(),
+  ];
+  let varying = [
+    query(accessor, &cells[0].varying),
+    query(accessor, &cells[1].varying),
+  ];
+  let accumulation_rates = [
+    get_accumulation_rate (accessor, coordinates),
+    get_accumulation_rate (accessor, neighbor_coordinates),
+  ];
+  
+  let mut transfer = query(accessor, &cells[0].transfers [dimension]);
+  
+  let start = max (transfer.last_change, max (varying[0].last_change, varying[1].last_change));
+  let (_, coefficients) = more_stable_rate_and_cumulative_error_coefficients ([&varying[0], &varying[1]], accumulation_rates, &transfer, start);
+  
+  let duration = accessor.now() - start;
+  
+  transfer.accumulated_error += duration*duration*coefficients.1 + duration*coefficients.0;
+  set (accessor, & cells[0].transfers [dimension], transfer);
+}
+
+fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (accessor: &A, coordinates: [i32; 2], dimension: usize) {
+  if !in_bounds (accessor.globals(), coordinates) {return;}
+  // This update is only in charge of the transfer to the cell
+  // in the positive x and y directions. The other transfers will be handled by
+  // the updates for the cells in the negative x and y directions.
+  let mut neighbor_coordinates = coordinates;
+  neighbor_coordinates [dimension] += 1;
+  if neighbor_coordinates [dimension] >= accessor.globals().size [dimension] {return;}
+  
+  let cells = [
+    get_cell (accessor, coordinates).unwrap(),
+    get_cell (accessor, neighbor_coordinates).unwrap(),
+  ];
+  let varying = [
+    query(accessor, &cells[0].varying),
+    query(accessor, &cells[1].varying),
+  ];
+  let accumulation_rates = [
+    get_accumulation_rate (accessor, coordinates),
+    get_accumulation_rate (accessor, neighbor_coordinates),
+  ];
+  
+  let mut transfer = query(accessor, &cells[0].transfers [dimension]);
+  
+  let time = desired_transfer_change_time ([&varying[0], &varying[1]], accumulation_rates, & transfer, *accessor.now());
+  
+  
+  /*
+  let (neighbor_last_change, neighbor) = query_cell (accessor, neighbor_coordinates).unwrap();
+    
+    let last_change = me.transfer_change_times [dimension];
     let current_difference =
       (me.ink_at_last_change + my_accumulation_rate*(last_change - my_last_change)) -
       (neighbor.ink_at_last_change + neighbor_accumulation_rate*(last_change - neighbor_last_change));
     let current_difference_change_rate = my_accumulation_rate - neighbor_accumulation_rate;
     let current_transfer_rate = me.ink_transfers [dimension];
     
-    // We choose the target transfer rate to be the amount that would
-    // equalize the two cells in one second.
-    // That is, the target transfer rate is (my ink - other ink)/(SECOND*2).
+    //let permissible_cumulative_error = accessor.globals().max_inaccuracy;
+    //let permissible_cumulative_error = 8 + Range::exactly (current_difference.abs()).sqrt().unwrap().max();
+    // if we're already fairly stable, require smaller error to avoid drift
+    // let permissible_cumulative_error = 8 + Range::exactly (current_difference_change_rate.abs()).sqrt().unwrap().max()<<20;
+    let permissible_cumulative_error = 16 + (current_difference.abs() >> 4);
+    //
+    // set = to max_inaccuracy, and
+    // multiply everything by (SECOND*2*2) to reduce rounding:
+    // 0 = t^2(current_difference_change_rate) + t*2(actual transfer rate*SECOND*2 - current_difference) +/- max_inaccuracy*SECOND*2*2
+    
+    let a = current_difference_change_rate;
+    let b = current_transfer_rate*(SECOND*4) - current_difference*2;
+    let c = permissible_cumulative_error*(SECOND*4);
+    // quadratic formula: t = (-b +/- \sqrt(b^2-4ac)) / 2a
+    // if it's currently going up, we want the first result for positive inaccuracy and the second for negative inaccuracy, and vice versa
+    let time;
+    if a == 0 {
+      if b == 0 {
+        time = None;
+      }
+      else {
+        time = Some ((c/b).abs());
+      }
+    }
+    else {
+      let sign_a = if a <0 {-1} else {1};
+      if b == 0 {
+        let discriminant = Range::exactly (4)*a*c*sign_a;
+        time = Some ((discriminant.sqrt().unwrap()*sign_a).min() / (2*a));
+      }
+      else {
+        let sign_b = if b <0 {-1} else {1};
+        let direct_discriminant_sqrt = if sign_a == sign_b {None} else {(Range::exactly (b)*b-Range::exactly (4)*a*c*sign_a).sqrt()};
+        if let Some(square_root) = direct_discriminant_sqrt {
+          time = Some (max(0, (-b - (square_root*sign_a).max()) / (2*a)));
+        }
+        else {
+          let later_discriminant = Range::exactly (b)*b-Range::exactly (-4)*a*c*sign_a;
+          time = Some ((-b + (later_discriminant.sqrt().unwrap()*sign_a).max()) / (2*a));
+        }
+      }
+    }
+    //printlnerr!( "predict {} {} {} {:?}",a,b,c,time);
+    
     // 
     // We need to notice when the target transfer rate goes outside of the range
     // [current transfer rate - maximum inaccuracy, current transfer rate + maximum inaccuracy].
     // After a little algebra...
-    let (min_difference, max_difference) = (
-      (current_transfer_rate - accessor.constants().max_inaccuracy)*(2*SECOND),
-      (current_transfer_rate + accessor.constants().max_inaccuracy)*(2*SECOND)
+    /*let (min_difference, target_difference, max_difference) = (
+      (current_transfer_rate - accessor.globals().max_inaccuracy)*(2*SECOND),
+      (current_transfer_rate                         )*(2*SECOND),
+      (current_transfer_rate + accessor.globals().max_inaccuracy)*(2*SECOND)
     );
     if current_difference < min_difference || current_difference > max_difference {
       printlnerr!( "predict wow! {:?} ! {:?}", me, neighbor);
-      accessor.predict_at_time (*last_change, TransferChange::new (id, dimension));
+      best = Some((last_change, dimension));
     }
     else if current_difference_change_rate > 0 {
       //printlnerr!( "predict {}/{}",max_difference-current_difference, current_difference_change_rate);
-      accessor.predict_at_time (
-        last_change + min (SECOND/4, (max_difference-current_difference)/current_difference_change_rate),
-        TransferChange::new (id, dimension)
+      let time = min (
+        me.transfer_change_times [dimension] + SECOND/4,
+        last_change + (max_difference-current_difference)/current_difference_change_rate
       );
+      if best.map_or (true, | previous | time <previous.0) {best = Some((time, dimension));}
     }
     else if current_difference_change_rate < 0 {
       //printlnerr!( "predict {}/{}",min_difference-current_difference, current_difference_change_rate);
-      
-      accessor.predict_at_time (
-        last_change + min (SECOND/4, (min_difference-current_difference)/current_difference_change_rate),
-        TransferChange::new (id, dimension)
+      let time = min (
+        me.transfer_change_times [dimension] + SECOND/4,
+        last_change + (min_difference-current_difference)/current_difference_change_rate
       );
+      if best.map_or (true, | previous | time <previous.0) {best = Some((time, dimension));}
+    }*/
+    if let Some (time) = time {
+      assert!(time >= 0);
+      let time = last_change + time;
+      if best.map_or (true, | previous | time <previous.0) {best = Some((max (*accessor.now(),time) , dimension));}
     }
   }
+  
+  let now = accessor.extended_now().clone();
+  
+  
+  // Hack: we only need to modify this because overwriting the cell in order to overwrite it prediction
+  // also updates the last change time for the cell as a whole
+  me.ink_at_last_change += my_accumulation_rate*(now.base - my_last_change);
+  */
+  
+  if let Some (discarded) = transfer.next_change.take() {accessor.destroy_prediction (&discarded);}
+  transfer.next_change = time.map (|time| {
+    accessor.create_prediction (
+        time,
+        DeterministicRandomId::new (&(accessor.id(), coordinates, dimension)),
+        TransferChange {coordinates: coordinates, dimension: dimension}
+      )
+  });
+  
+  set (accessor, & cells[0].transfers [dimension], transfer);
 }
 
 /// A utility function used above. Gets the current rate of change of ink in a cell,
 /// by summing up the current transfer rates.
 /// 
 /// Since this function doesn't make predictions, it only needs to require trait Accessor,
-/// which is a supertrait of PredictorAccessor. Thus, it could also be used in Events,
+/// which is a supertrait of EventAccessor. Thus, it could also be used in Events,
 /// and with Snapshots, if needed.
-fn get_accumulation_rate <A: Accessor <Basics = Basics>> (accessor: &A, coordinates: [i32; 2])->i64 {
-  let mut result = 0;
-  let me: &Cell = accessor.get::<Cell>(cell_id(coordinates)).unwrap();  
+fn get_accumulation_rate <A: Accessor <Steward = Steward >> (accessor: &A, coordinates: [i32; 2])->i64 {
+  let me = get_cell (accessor, coordinates).unwrap();
+  let mut result = query(accessor, &me.varying).fiat_accumulation_rate;
   for dimension in 0..2 {
-    result -= me.ink_transfers [dimension];
+    result -= query(accessor, &me.transfers[dimension]).rate;
     
-    let mut neighbor_coordinates = me.coordinates;
+    let mut neighbor_coordinates = coordinates;
     neighbor_coordinates [dimension] -= 1;
     
     // Adjacent cells might NOT exist (they could be out of bounds).
     // We could also have just done a bounds check on the coordinates, like above.
-    if let Some (neighbor) = accessor.get::<Cell>(cell_id(neighbor_coordinates)) {
-      result += neighbor.ink_transfers [dimension];
+    if let Some (neighbor) = get_cell (accessor, neighbor_coordinates) {
+      result += query(accessor, &neighbor.transfers[dimension]).rate;
     }
   }
   result
 }
 
-/// Tragically, RowId::new() is actually slower than caching the ids and looking them up using a faster hash function.
-fn cell_id (coordinates: [i32; 2])->RowId {
-  use fnv::FnvHashMap;
-  use std::cell::RefCell;
-  thread_local! {
-    static CACHE: RefCell<FnvHashMap <[i32; 2], RowId>> = Default::default();
-  }
-  CACHE.with (|map| map.borrow_mut().entry (coordinates).or_insert_with (|| RowId::new(&coordinates)).clone())
+fn cell_index (globals: & Globals, coordinates: [i32; 2])->usize {
+  (coordinates [0]*globals.size[0] + coordinates [1]) as usize
 }
-
+fn in_bounds (globals: & Globals, coordinates: [i32; 2])->bool {
+  coordinates [0] >= 0 && coordinates [0] < globals.size [0] &&
+  coordinates [1] >= 0 && coordinates [1] < globals.size [1]
+}
+fn get_cell <A: Accessor <Steward = Steward >> (accessor: &A, coordinates: [i32; 2])->Option <&Cell> {
+  if in_bounds (accessor.globals(), coordinates) {
+    Some(& accessor.globals().cells[cell_index (accessor.globals(), coordinates)])
+  }
+  else { None }
+}
 
 /// The TransferChange event, as used above.
-///
-/// This is much like the time_steward_predictor! macro,
-/// but it creates a struct that *does* contain data –
-/// essentially, a glorified function object.
-///
-/// The macro automatically creates a new() function that takes
-/// the fields in order. You may also use {} initialization if you prefer.
-time_steward_event!{
-  struct TransferChange {id: RowId, dimension: usize},
-  
-  // The other metadata is much like for predictors, just without the "watching" parameter.
-  Basics,
-  EventId(0x734af0602dc924f4),
-  
-  // Like with predictors, the event function can also be written as a pseudo-closure:
-  // |&self, mutator| { ...code... }
-  fn transfer_change
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+struct TransferChange {coordinates: [i32; 2], dimension: usize}
+impl PersistentlyIdentifiedType for TransferChange {
+  const ID: PersistentTypeId = PersistentTypeId(0xd6621e9cfad1c765);
 }
-
-fn transfer_change <M: Mutator <Basics = Basics>> (mutator: &mut M, data: &TransferChange) {
-  // trait Mutator also inherits from trait Accessor, so we can use most of
-  // the same methods on it.
-  //
-  // This call to unwrap() is just as safe as the one from the Predictor,
-  // because if the cell was deleted, the prediction would become invalid
-  // and so this event would not be called.
-  //
-  // This time, we need to clone, so that we're not still holding an
-  // immutable reference into the mutator when we try to
-  // call the mutable method set().
-  let mut me;
-  let neighbor_id;
-  let mut neighbor;
-  {
-    let (me_ref, my_last_change) = mutator.data_and_last_change::<Cell>(data.id).unwrap();
-    me = me_ref.clone();
-    let mut neighbor_coordinates = me.coordinates;
-    neighbor_coordinates [data.dimension] += 1;
-    neighbor_id = cell_id(neighbor_coordinates);
-    let (neighbor_ref, neighbor_last_change) = mutator.data_and_last_change::<Cell>(neighbor_id).unwrap();
-    neighbor = neighbor_ref.clone();
+impl Event for TransferChange {
+  type Steward = Steward;
+  type ExecutionData = ();
+  fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
+    //let (my_last_change, mut me) = query_cell (accessor, self.coordinates).expect("cell doesn't exist for TransferChange?");
+    let other_dimension = (self.dimension + 1) & 1;
+    let mut neighbor_coordinates = self.coordinates;
+    neighbor_coordinates [self.dimension] += 1;
     
-    let my_current_ink = me.ink_at_last_change + get_accumulation_rate (mutator, me.coordinates)*(mutator.now() - my_last_change);
-    let neighbor_current_ink = neighbor.ink_at_last_change + get_accumulation_rate (mutator, neighbor_coordinates)*(mutator.now() - neighbor_last_change);
+    // if the other algorithms are right, we only need to update exactly the
+    // seven transfers immediately adjacent to the two updated cells.
+    let mut walking_coordinates = self.coordinates.clone();
+    for offset in -1..2 {
+      walking_coordinates[self.dimension] = self.coordinates[self.dimension] + offset;
+      update_accumulated_error (accessor, walking_coordinates, self.dimension);
+    }
+    for offsa in 0..2 {
+      for offsb in -1..1 {
+        walking_coordinates[self.dimension] = self.coordinates[self.dimension] + offsa;
+        walking_coordinates[other_dimension] = self.coordinates[other_dimension] + offsb;
+        update_accumulated_error (accessor, walking_coordinates, other_dimension);
+      }
+    }
+    
+    update_cell (accessor, self.coordinates);
+    update_cell (accessor, neighbor_coordinates);
+    
+    let me = get_cell (accessor, self.coordinates).unwrap();
+    let my_varying = query(accessor, &me.varying);
+    let neighbor = get_cell (accessor, neighbor_coordinates).unwrap();
+    let neighbor_varying = query(accessor, &neighbor.varying);
+    let mut transfer = query(accessor, &me.transfers [self.dimension]);
+    let mut accumulation_rates = [
+      get_accumulation_rate (accessor, self.coordinates),
+      get_accumulation_rate (accessor, neighbor_coordinates),
+    ];
+
+    // Plain old physics wants to equalize the AMOUNT OF INK between the 2 cells.
+    // We want to skew that a little bit, because we also want the simulation to become more stable –
+    // – which means that we want to equalize the ACCUMULATION RATE as well.
+    let physics_transfer_rate = (my_varying.ink_at_last_change - neighbor_varying.ink_at_last_change) / (2*SECOND);
+    accumulation_rates [0] -= physics_transfer_rate - transfer.rate;
+    accumulation_rates [1] += physics_transfer_rate - transfer.rate;
+    let difference_change_rate = accumulation_rates [0] - accumulation_rates [1];
+    let stability_adjustment = difference_change_rate.signum()*(difference_change_rate.abs()/8 + 2);
+    transfer.rate = physics_transfer_rate + stability_adjustment/2;
+        
+    transfer.last_change = accessor.now().clone();
+    transfer.accumulated_error = 0;
+
+    set (accessor, & me.transfers [self.dimension], transfer);
+    
+    /*let (neighbor_last_change, mut neighbor) = query_cell (accessor, neighbor_coordinates).expect("neighbor doesn't exist for TransferChange?");
+    
+    let my_current_ink = me.ink_at_last_change + get_accumulation_rate (accessor, self.coordinates)*(accessor.now() - my_last_change);
+    let neighbor_current_ink = neighbor.ink_at_last_change + get_accumulation_rate (accessor, neighbor_coordinates)*(accessor.now() - neighbor_last_change);
     let current_difference = my_current_ink - neighbor_current_ink;
  
     me.ink_at_last_change = my_current_ink;
     neighbor.ink_at_last_change = neighbor_current_ink;
-    me.ink_transfers [data.dimension] = current_difference/(2*SECOND);
+    me.ink_transfers [self.dimension] = current_difference/(2*SECOND);
+    me.transfer_change_times [self.dimension] = *accessor.now() ;
+    
+    modify_cell (accessor, self.coordinates, me) ;
+    modify_cell (accessor, neighbor_coordinates, neighbor) ;*/
+
+    // if the other algorithms are right, we only need to update exactly the
+    // seven transfers immediately adjacent to the two updated cells.
+    let mut walking_coordinates = self.coordinates.clone();
+    for offset in -1..2 {
+      walking_coordinates[self.dimension] = self.coordinates[self.dimension] + offset;
+      update_transfer_change_prediction (accessor, walking_coordinates, self.dimension);
+    }
+    for offsa in 0..2 {
+      for offsb in -1..1 {
+        walking_coordinates[self.dimension] = self.coordinates[self.dimension] + offsa;
+        walking_coordinates[other_dimension] = self.coordinates[other_dimension] + offsb;
+        update_transfer_change_prediction (accessor, walking_coordinates, other_dimension);
+      }
+    }
+    
+    // TODO: invalidation
   }
-  
-  // To set field data, you specify the Column type
-  // (as a generic parameter), the RowId (as a function argument),
-  // and the new contents of the field (as a Option <FieldType>).
-  // Passing None deletes the field.
-  mutator.set::<Cell> (data.id, Some (me));
-  mutator.set::<Cell> (neighbor_id, Some (neighbor));
+
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+    unimplemented!()
+  }
 }
 
 
@@ -276,58 +506,101 @@ fn transfer_change <M: Mutator <Basics = Basics>> (mutator: &mut M, data: &Trans
 /// and one to be the FiatEvent that adds or removes ink in some way at real-time.
 ///
 /// For these simple events, we lazily use the pseudo-closure syntax.
-time_steward_event!{
-  struct Initialize {},
-  Basics,
-  EventId(0x3504e024b177d96d),
-  
-  |&self, mutator| {
-    for x in 0..mutator.constants().size [0] {
-      for y in 0..mutator.constants().size [1] {
-        mutator.set::<Cell> (cell_id([x,y]), Some (Cell {coordinates: [x, y], ink_at_last_change: 0, ink_transfers: [0, 0]}));
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+struct Initialize {}
+impl PersistentlyIdentifiedType for Initialize {
+  const ID: PersistentTypeId = PersistentTypeId(0xf0d2d9134cfe9b49);
+}
+impl Event for Initialize {
+  type Steward = Steward;
+  type ExecutionData = ();
+  fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
+    let globals = accessor.globals();
+    for x in 0..globals.size [0] {
+      for y in 0..globals.size [1] {
+        let cell = get_cell (accessor, [x,y]).unwrap();
+        set (accessor, & cell.varying, CellVarying {
+          last_change: 0,
+          ink_at_last_change: 0,
+          fiat_accumulation_rate: 0,
+        });
+        for dimension in 0..2 {
+          set (accessor, & cell.transfers [dimension], TransferVarying {
+            rate: 0,
+            last_change: 0,
+            accumulated_error: 0,
+            next_change: None,
+          });
+        }
       }
     }
   }
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+    unimplemented!()
+  }
 }
-time_steward_event!{
-  struct AddInk {coordinates: [i32; 2], amount: i64},
-  Basics,
-  EventId(0xe96a5a842a47295a),
-  
-  |&self, mutator| {
-    let my_id =cell_id(self.coordinates);
-    let mut me;
-    {
-      let (me_ref, my_last_change) = mutator.data_and_last_change::<Cell>(my_id).unwrap();
-      me = me_ref.clone();
-      let my_current_ink = me.ink_at_last_change + get_accumulation_rate (mutator, me.coordinates)*(mutator.now() - my_last_change);
-      me.ink_at_last_change = my_current_ink + self.amount;
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+struct AddInk {coordinates: [i32; 2], amount: i64, accumulation: i64}
+impl PersistentlyIdentifiedType for AddInk {
+  const ID: PersistentTypeId = PersistentTypeId(0x3e6d029c3da8b9a2);
+}
+impl Event for AddInk {
+  type Steward = Steward;
+  type ExecutionData = ();
+  fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
+    for offsx in -1..1 {
+      for offsy in -1..1 {
+        let coordinates = [self.coordinates [0] + offsx, self.coordinates [1] + offsy];
+        update_accumulated_error (accessor, coordinates, 0) ;
+        update_accumulated_error (accessor, coordinates, 1) ;
+      }
     }
-    mutator.set::<Cell> (my_id, Some (me));
+    update_cell (accessor, self.coordinates);
+    let me = get_cell (accessor, self.coordinates).unwrap();
+    let mut my_varying = query(accessor, &me.varying);
+    my_varying.ink_at_last_change += self.amount;
+    my_varying.fiat_accumulation_rate += self.accumulation;
+    set (accessor, & me.varying, my_varying);
+    // TODO: some of the ones at the corners don't need to be updated
+    for offsx in -1..1 {
+      for offsy in -1..1 {
+        let coordinates = [self.coordinates [0] + offsx, self.coordinates [1] + offsy];
+        update_transfer_change_prediction (accessor, coordinates, 0) ;
+        update_transfer_change_prediction (accessor, coordinates, 1) ;
+      }
+    }
+  }
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+    unimplemented!()
   }
 }
 
+fn make_globals()-> Globals {
+  let mut cells = Vec::new();
+  for _ in 0..60*60 {
+    cells.push (Cell{
+      varying: DataTimelineCell::new (SimpleTimeline::new ()),
+      transfers: [
+        DataTimelineCell::new (SimpleTimeline::new ()),
+        DataTimelineCell::new (SimpleTimeline::new ()),
+      ],
+    });
+  }
+  Globals {
+    size: [60, 60],
+    max_inaccuracy: 1 << 30,
+    cells: cells,
+  }
+}
 
 /// Finally, define the Basics type.
-time_steward_basics!(struct Basics {
+#[derive (Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug, Default)]
+struct Basics {}
+impl BasicsTrait for Basics {
   type Time = Time;
-  type Constants = Constants;
-  
-  /// IncludedTypes is a list of types, formed as a tuple.
-  /// This list must include every Column, Event, and Predictor type that you use.
-  /// This can also be a nested tree of tuples – for instance, you can
-  /// export all the types from each of your files as a single tuple, then
-  /// define IncludedTypes as the tuple of all of those tuples.
-  type IncludedTypes = (
-    ColumnType <Cell>,
-    PredictorType <TransferChangePredictor>,
-    EventType <TransferChange>,
-    EventType <Initialize>,
-    EventType <AddInk>,
-  );
-  
-  fn max_iteration()->u32 {8}
-});
+  type Globals = Globals;
+  type Types = (ListedType <TransferChange>, ListedType <Initialize>, ListedType <AddInk>);
+}
 
 
 // User interface details.
@@ -369,13 +642,10 @@ use std::net::{TcpListener, TcpStream};
 use std::io::{BufReader, BufWriter};
 
 fn main() {
-  let constants = Constants {
-    size: [60, 60],
-    max_inaccuracy: 100_00,
-  };
+  let globals = make_globals();
 
   // For some reason, docopt checking the arguments caused build_glium() to fail in emscripten.
-  if !cfg!(target_os = "emscripten") {
+  /*if !cfg!(target_os = "emscripten") {
     let arguments: Args = Docopt::new(USAGE)
                             .and_then(|d| d.deserialize())
                             .unwrap_or_else(|e| e.exit());
@@ -394,16 +664,16 @@ fn main() {
       run (steward, |a,b| (a.settle_before (b)));
       return;
     }
-  }
+  }*/
   {
-    let mut steward: DefaultSteward <Basics> = DefaultSteward ::from_constants(constants);
-    steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
+    let mut steward: Steward = Steward::from_globals(globals);
+    steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize{}).unwrap();
     run (steward, |_,_|());
   }
 }
 
 
-fn run <Steward: IncrementalTimeSteward <Basics = Basics>, F: Fn (&mut Steward, Time)>(mut stew: Steward, settle:F) {
+fn run <F: Fn (&mut Steward, Time)>(mut stew: Steward, settle:F) {
 
 
   let vertex_shader_source = r#"
@@ -447,13 +717,30 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
 
   // take care of the expensive predictions before starting the timer
   stew.snapshot_before(&1);
-  let start = Instant::now();
+  let mut previous_real_time = Instant::now();
+  let mut previous_time = 1;
+  let mut display_state = 0;
+  let mut unrestricted_speed = false;
+  let generic_amount = 333333333333; // threes to encourage rounding error
+  let mut input_magnitude_shift = 0;
+  let mut input_signum = 1;
+  let mut input_derivative = 0;
 
   let frame = || {
     let frame_begin = Instant::now();
-    let time = 1 + ((start.elapsed().as_secs() as i64 * 1000000000i64) +
-                          start.elapsed().subsec_nanos() as i64) *
-                         SECOND / 1000000000i64;
+    let real_duration_in_simulation_units = ((previous_real_time.elapsed().as_secs() as i64 * 1000000000i64) +
+                              previous_real_time.elapsed().subsec_nanos() as i64)
+                             / (1000000000i64 / SECOND);
+    let time = previous_time + min (SECOND/10, real_duration_in_simulation_units);
+    previous_time = time;
+    previous_real_time = frame_begin.clone();
+    
+    let accessor = stew.snapshot_before(& time)
+      .expect("steward failed to provide snapshot");
+    stew.forget_before (& time);
+    settle (&mut stew, time);
+    let globals = accessor.globals();
+    
     for ev in display.poll_events() {
       match ev {
         glium::glutin::Event::Closed => return true,
@@ -462,12 +749,39 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
           mouse_coordinates [1] = (display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32-(y as i32)) * 60 / display.get_window().unwrap().get_inner_size_pixels().unwrap().1 as i32;
         },
         glium::glutin::Event::MouseInput (_,_) => {
-          event_index += 1;
-          stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk::new (
-            [mouse_coordinates [0], mouse_coordinates [1]],
-            (DeterministicRandomId::new (& event_index).data() [0] & ((1u64<<40)-1)) as i64 - (1<<39)
-          )).unwrap();
+          if in_bounds (globals, mouse_coordinates) {
+            event_index += 1;
+            stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
+              coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
+              amount: ((input_derivative+1)%2)*(generic_amount << input_magnitude_shift)*input_signum,
+              accumulation: input_derivative*(generic_amount << input_magnitude_shift)*input_signum/SECOND,
+            }).unwrap();
+          }
         },
+        glium::glutin::Event::KeyboardInput (state,_,Some(code)) => {
+          if state == glium::glutin::ElementState::Pressed {
+            if code == glium::glutin::VirtualKeyCode::Space {
+              display_state = (display_state + 1) % 3;
+            }
+            if code == glium::glutin::VirtualKeyCode::D {
+              input_derivative = (input_derivative + 1) % 2;
+            }
+            if code == glium::glutin::VirtualKeyCode::A {
+              unrestricted_speed = !unrestricted_speed;
+            }
+            if code == glium::glutin::VirtualKeyCode::Grave { input_signum *= -1; }
+            if code == glium::glutin::VirtualKeyCode::Key1 { input_magnitude_shift = 0; }
+            if code == glium::glutin::VirtualKeyCode::Key2 { input_magnitude_shift = 1; }
+            if code == glium::glutin::VirtualKeyCode::Key3 { input_magnitude_shift = 2; }
+            if code == glium::glutin::VirtualKeyCode::Key4 { input_magnitude_shift = 3; }
+            if code == glium::glutin::VirtualKeyCode::Key5 { input_magnitude_shift = 4; }
+            if code == glium::glutin::VirtualKeyCode::Key6 { input_magnitude_shift = 5; }
+            if code == glium::glutin::VirtualKeyCode::Key7 { input_magnitude_shift = 6; }
+            if code == glium::glutin::VirtualKeyCode::Key8 { input_magnitude_shift = 7; }
+            if code == glium::glutin::VirtualKeyCode::Key9 { input_magnitude_shift = 8; }
+            
+          }
+        }
         _ => (),
       }
     }
@@ -475,26 +789,32 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
       // TODO duplicate code
       mouse_coordinates [0] = (x*60.0) as i32;
       mouse_coordinates [1] = ((1.0-y)*60.0) as i32;
-      event_index += 1;
-      stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk::new (
-            [mouse_coordinates [0], mouse_coordinates [1]],
-            (DeterministicRandomId::new (& event_index).data() [0] & ((1u64<<40)-1)) as i64 - (1<<39)
-          )).unwrap();
+      if in_bounds (globals, mouse_coordinates) {
+        event_index += 1;
+        stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
+            coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
+            amount: ((input_derivative+1)%2)*(generic_amount << input_magnitude_shift)*input_signum,
+            accumulation: input_derivative*(generic_amount << input_magnitude_shift)*input_signum/SECOND,
+        }).unwrap();
+      }
+      else {
+        display_state = (display_state + 1) % 3;
+      }
     }
 
     let mut target = display.draw();
     target.clear_color(1.0, 1.0, 1.0, 1.0);
     let mut vertices = Vec::<Vertex>::new();
-
     
-    let snapshot = stew.snapshot_before(& time)
-      .expect("steward failed to provide snapshot");
-    settle (&mut stew, time);
-    
-    for x in 0.. snapshot.constants().size [0] {
-      for y in 0.. snapshot.constants().size [1] {
-        let (me, my_last_change) = snapshot.data_and_last_change::<Cell>(cell_id([x,y])).unwrap().clone();
-        let my_current_ink = (me.ink_at_last_change + get_accumulation_rate (&snapshot, me.coordinates)*(snapshot.now() - my_last_change)) as f32;
+    for x in 0.. globals.size [0] {
+      for y in 0.. globals.size [1] {
+        let me = get_cell (& accessor, [x,y]).unwrap();
+        let my_varying = query(&accessor, &me.varying);
+        let my_current_ink = match display_state {
+          0 => ink_at (&my_varying, get_accumulation_rate (& accessor, [x,y]), *accessor.now()) as f32,
+          1 => (get_accumulation_rate (&accessor, [x,y]) * SECOND * 100) as f32,
+          _ => ((accessor.now() - my_varying.last_change)*50000000000 / SECOND) as f32,
+        };
         
         vertices.extend(&[Vertex {
                             location: [((x) as f32)/30.0 -1.0,((y) as f32)/30.0 -1.0],
@@ -533,10 +853,16 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
         .expect("failed target.draw");
 
     target.finish().expect("failed to finish drawing");
-      
-    while frame_begin.elapsed() < Duration::from_millis (10) && stew.updated_until_before().map_or (false, | limitation | limitation < time + SECOND) {
+     
+    if unrestricted_speed {
+      while frame_begin.elapsed() < Duration::from_millis (10) {
         for _ in 0..8 {stew.step();}
+        previous_time = stew.updated_until_before().expect("oops, the unrestricted speed system can't handle successfully simulating to the end of time in finite steps");
+      }
     }
+    /*while frame_begin.elapsed() < Duration::from_millis (10) && stew.updated_until_before().map_or (false, | limitation | limitation < time + SECOND) {
+        for _ in 0..8 {stew.step();}
+    }*/
     false
   };
   

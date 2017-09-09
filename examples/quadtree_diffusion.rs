@@ -24,8 +24,8 @@ use std::cmp::{min, max};
 use std::collections::HashSet;
 
 use time_steward::{DeterministicRandomId};
-use time_steward::rowless::api::{PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataHandleTrait, DataTimelineCellTrait, Basics as BasicsTrait};
-use time_steward::rowless::stewards::{simple_full as steward_module};
+use time_steward::{PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataHandleTrait, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, IterateUniquelyOwnedPredictions, query, set, destroy, just_destroyed};
 

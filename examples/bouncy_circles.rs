@@ -1,10 +1,10 @@
-#[macro_use]
 extern crate time_steward;
 
 #[macro_use]
 extern crate glium;
 
 extern crate nalgebra;
+extern crate rand;
 extern crate docopt;
 
 extern crate serde;
@@ -36,12 +36,13 @@ struct Args {
 }
 
 
-//use time_steward::stewards::crossverified as s;
-use time_steward::{TimeSteward, TimeStewardFromConstants, IncrementalTimeSteward, DeterministicRandomId, Accessor,
-     MomentaryAccessor};
 use std::time::{Instant, Duration};
 use glium::{DisplayBuild, Surface};
-use time_steward::stewards::{amortized, simply_synchronized};
+
+use time_steward::{DeterministicRandomId};
+use time_steward::stewards::{simple_full as steward_module};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, Accessor, SnapshotAccessor, simple_timeline};
+use simple_timeline::{query};
 
 #[path = "../dev-shared/bouncy_circles.rs"] mod bouncy_circles;
 use bouncy_circles::*;
@@ -63,7 +64,7 @@ use std::io::{BufReader, BufWriter};
 
 fn main() {
   // For some reason, docopt checking the arguments caused build_glium() to fail in emscripten.
-  if !cfg!(target_os = "emscripten") {
+  /*if !cfg!(target_os = "emscripten") {
     let arguments: Args = Docopt::new(USAGE)
                             .and_then(|d| d.deserialize())
                             .unwrap_or_else(|e| e.exit());
@@ -82,19 +83,19 @@ fn main() {
       run (steward, |a,b| (a.settle_before (b)));
       return;
     }
-  }
+  }*/
   {
     //let mut steward: s::Steward<Basics,
                                 //inefficient_flat::Steward<Basics>,
                                 //memoized_flat::Steward<Basics>> = s::Steward::from_constants(());
-    let mut steward: amortized::Steward<Basics> = amortized::Steward::from_constants(());
-    steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
+    let mut steward: Steward = Steward::from_globals(make_globals());
+    steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize{}).unwrap();
     run (steward, |_,_|());
   }
 }
 
 
-fn run <Steward: IncrementalTimeSteward <Basics = Basics>,F: Fn (&mut Steward, Time)>(mut stew: Steward, settle:F) {
+fn run <F: Fn (&mut Steward, Time)>(mut stew: Steward, settle:F) {
 
 
   let vertex_shader_source = r#"
@@ -151,7 +152,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
 
     let frame = || {
       let frame_begin = Instant::now();
-      let time =((start.elapsed().as_secs() as i64 * 1000000000i64) +
+      let time = 1+((start.elapsed().as_secs() as i64 * 1000000000i64) +
                             start.elapsed().subsec_nanos() as i64) *
                            SECOND / 1000000000i64;
       for ev in display.poll_events() {
@@ -164,7 +165,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
           },
           glium::glutin::Event::MouseInput (_,_) => {
             event_index += 1;
-            stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), Disturb::new ([mouse_coordinates [0], mouse_coordinates [1]])).unwrap();
+            stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), Disturb {coordinates: [mouse_coordinates [0], mouse_coordinates [1]]}).unwrap();
           },
           _ => (),
         }
@@ -174,23 +175,23 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
         mouse_coordinates [0] = (((x*600.0) as SpaceCoordinate) - 150) * ARENA_SIZE / 300;
         mouse_coordinates [1] = (450-((y*600.0) as SpaceCoordinate)) * ARENA_SIZE / 300;
         event_index += 1;
-        stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), Disturb::new ([mouse_coordinates [0], mouse_coordinates [1]])).unwrap();
+        stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), Disturb {coordinates: [mouse_coordinates [0], mouse_coordinates [1]]}).unwrap();
       }
 
       let mut target = display.draw();
       target.clear_color(0.0, 0.0, 0.0, 1.0);
       let mut vertices = Vec::<Vertex>::new();
 
-      let snapshot = stew.snapshot_before(& time)
+      let accessor = stew.snapshot_before(& time)
         .expect("steward failed to provide snapshot");
-      
+      stew.forget_before(& time);
       settle (&mut stew, time);
-      for index in 0..HOW_MANY_CIRCLES {
-        if let Some ((circle, time)) = snapshot.data_and_last_change::<Circle>(get_circle_id(index)){
-        let position = circle.position.updated_by(snapshot.now() - time).unwrap().evaluate();
+      for handle in accessor.globals().iter() {
+        let circle = query (& accessor, &handle.varying);
+        let position = circle.position.updated_by(accessor.now() - circle.last_change).unwrap().evaluate();
         let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,
                       position[1] as f32 / ARENA_SIZE as f32 - 0.5];
-        let radius = circle.radius as f32 / ARENA_SIZE as f32;
+        let radius = handle.radius as f32 / ARENA_SIZE as f32;
         // println!("drawing circ at {}, {}", center[0],center[1]);
         vertices.extend(&[Vertex {
                             center: center,
@@ -222,7 +223,6 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
                             radius: radius,
                             direction: [0.0, -1.0],
                           }]);
-}
       }
       target.draw(&glium::VertexBuffer::new(&display, &vertices)
                 .expect("failed to generate glium Vertex buffer"),
@@ -234,9 +234,9 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
 
       target.finish().expect("failed to finish drawing");
       
-      while frame_begin.elapsed() < Duration::from_millis (10) && stew.updated_until_before().map_or (false, | limitation | limitation < time + SECOND) {
+      /*while frame_begin.elapsed() < Duration::from_millis (10) && stew.updated_until_before().map_or (false, | limitation | limitation < time + SECOND) {
         for _ in 0..8 {stew.step();}
-      }
+      }*/
       false
     };
     
