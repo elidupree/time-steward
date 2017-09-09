@@ -296,7 +296,7 @@ pub fn destroy <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Stew
 
 /// You're supposed to destroy a SimpleTimeline when there are no more handles to it in the simulation state. In that situation, there might be some handles left on the stack. As a convenience, we provide this way of querying whether a handle is in that state, so that you don't have to keep track of it yourself.
 ///
-/// Note that this will still panic if you check on a timeline in a later event after it's been destroyed.
+/// Note that this will still panic if you check on a timeline in a later event after it's been destroyed. (Destroying it allows all of its data to be freed by the TimeSteward, including its own destruction time, so querying it after it's destroyed would be nondeterministic.)
 pub fn just_destroyed <VaryingData: QueryResult, Steward: TimeSteward, A: Accessor <Steward = Steward>> (accessor: & A, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>)->bool {
   accessor.query (handle, & JustDestroyed)
 }
