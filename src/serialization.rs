@@ -11,6 +11,209 @@
 macro_rules! time_steward_serialization_impls {
   () => {
   
+  
+  pub trait TimeStewardStructuresVisitor <Steward: TimeSteward> {
+    fn visit_data_handle <T: SimulationStateData + PersistentlyIdentifiedType> (&mut self, handle: & DataHandle <T>) {}
+    fn visit_event_handle (&mut self, handle: & Steward::EventHandle) {}
+    fn visit_data_timeline_cell <T: DataTimeline> (&mut self, cell: & DataTimelineCell <T>) {}
+  }
+  
+  pub trait TimeStewardStructuresVisitable <Steward: TimeSteward> {
+    fn visit_all <T: TimeStewardStructuresVisitor <Steward>>(&self, visitor: T);
+  }
+  
+  impl <Steward: TimeSteward, Data: SimulationStateData> TimeStewardStructuresVisitable<Steward> for Data {
+    fn visit_all <T: TimeStewardStructuresVisitor <Steward>>(&self, visitor: T) {
+      self.serialize (&mut TimeStewardStructuresVisitingSerializeHack::<T,Steward>(visitor, PhantomData)).unwrap();
+    }
+  }
+  
+  use serde::ser;
+  use std::fmt::{self,Display};
+  use std::marker::PhantomData;
+  struct TimeStewardStructuresVisitingSerializeHack<T, Steward>(T, PhantomData<Steward>);
+  
+  trait MaybeVisitSerializeHack <Steward: TimeSteward> {
+    fn visit_event_handle (&mut self, handle: & Steward::EventHandle)->bool;
+    fn visit_data_timeline_cell <T: DataTimeline> (&mut self, cell: & DataTimelineCell <T>)->bool;
+  }
+  impl <Steward: TimeSteward, MaybeVisitor> MaybeVisitSerializeHack <Steward> for MaybeVisitor {
+    default fn visit_event_handle (&mut self, handle: & Steward::EventHandle)->bool {false}
+    default fn visit_data_timeline_cell <T: DataTimeline> (&mut self, cell: & DataTimelineCell <T>)->bool {false}
+  }
+  impl <'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> MaybeVisitSerializeHack <Steward> for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward> {
+    fn visit_event_handle (&mut self, handle: & Steward::EventHandle)->bool {
+      TimeStewardStructuresVisitor::<Steward>::visit_event_handle (&mut self.0, handle);
+      true
+    }
+    fn visit_data_timeline_cell <T: DataTimeline> (&mut self, cell: & DataTimelineCell <T>)->bool {
+      TimeStewardStructuresVisitor::<Steward>::visit_data_timeline_cell (&mut self.0, cell);
+      true
+    }
+  }
+  
+  trait MaybeVisitSerializeHackUntyped {
+    fn visit_data_handle <T: SimulationStateData + PersistentlyIdentifiedType> (&mut self, handle: & DataHandle <T>)->bool;
+  }
+  impl <MaybeVisitor> MaybeVisitSerializeHackUntyped for MaybeVisitor {
+    default fn visit_data_handle <T: SimulationStateData + PersistentlyIdentifiedType> (&mut self, handle: & DataHandle <T>)->bool {false}
+  }
+  impl <'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> MaybeVisitSerializeHackUntyped for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward> {
+    fn visit_data_handle <T: SimulationStateData + PersistentlyIdentifiedType> (&mut self, handle: & DataHandle <T>)->bool {
+      TimeStewardStructuresVisitor::<Steward>::visit_data_handle (&mut self.0, handle);
+      true
+    }
+  }
+
+  
+  
+  #[allow (unreachable_code)]
+  #[derive (Debug)]
+  struct NeverError(!);
+  impl ser::Error for NeverError {
+    fn custom<T: Display>(msg: T) -> Self {
+        panic!()
+    }
+}
+impl ::std::error::Error for NeverError {
+    fn description(&self) -> &str {
+        unreachable!()
+    }
+}
+impl Display for NeverError {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        unreachable!()
+    }
+}
+  impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::Serializer for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward> {
+    type Ok = ();
+    type Error = NeverError;
+
+    type SerializeSeq = Self;
+    type SerializeTuple = Self;
+    type SerializeTupleStruct = Self;
+    type SerializeTupleVariant = Self;
+    type SerializeMap = Self;
+    type SerializeStruct = Self;
+    type SerializeStructVariant = Self;
+
+    fn serialize_bool(self, _: bool) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_i8(self, _: i8) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_i16(self, _: i16) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_i32(self, _: i32) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_i64(self, _: i64) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_u8(self, _: u8) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_u16(self, _: u16) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_u32(self, _: u32) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_u64(self, _: u64) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_f32(self, _: f32) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_f64(self, _: f64) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_char(self, _: char) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_str(self, _: &str) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_bytes(self, _: &[u8]) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_none(self) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_some<T>(self, _: &T) -> Result<(),NeverError> 
+        where T: ?Sized + Serialize { Ok(()) }
+    fn serialize_unit(self) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_unit_variant(
+        self,
+        _name: &'static str,
+        __variant_index: u32,
+        _variant: &'static str
+    ) -> Result<(),NeverError> { Ok(()) }
+    fn serialize_newtype_struct<T>(self, _name: &'static str, _: &T) -> Result<(),NeverError> 
+        where T: ?Sized + Serialize{ Ok(()) }
+    fn serialize_newtype_variant<T>(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _value: &T
+    )  -> Result<(),NeverError> 
+        where T: ?Sized + Serialize { Ok(()) }
+
+    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq,NeverError> { Ok(self) }
+    fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple,NeverError> { Ok(self) }
+    fn serialize_tuple_struct(
+        self,
+        _name: &'static str,
+        _len: usize
+    ) -> Result<Self::SerializeTupleStruct,NeverError> { Ok(self) }
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize
+    ) -> Result<Self::SerializeTupleVariant,NeverError> { Ok(self) }
+    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap,NeverError> { Ok(self) }
+    fn serialize_struct(
+        self,
+        _name: &'static str,
+        _len: usize
+    ) -> Result<Self::SerializeStruct,NeverError> { Ok(self) }
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize
+    ) -> Result<Self::SerializeStructVariant,NeverError> { Ok(self) }
+}
+impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::SerializeSeq for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward>{
+    type Ok = ();
+    type Error = NeverError;
+    fn serialize_element<T>(&mut self, _value: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { Ok(()) }
+    fn end(self) -> Result<(),NeverError> { Ok(()) }
+}
+impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::SerializeTuple for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward>{
+    type Ok = ();
+    type Error = NeverError;
+    fn serialize_element<T>(&mut self, _value: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { Ok(()) }
+    fn end(self) -> Result<(),NeverError> { Ok(()) }
+}
+impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::SerializeTupleStruct for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward>{
+    type Ok = ();
+    type Error = NeverError;
+    fn serialize_field<T>(&mut self, _value: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { Ok(()) }
+    fn end(self) -> Result<(),NeverError> { Ok(()) }
+}
+impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::SerializeTupleVariant for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward>{
+    type Ok = ();
+    type Error = NeverError;
+    fn serialize_field<T>(&mut self, _value: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { Ok(()) }
+    fn end(self) -> Result<(),NeverError> { Ok(()) }
+}
+impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::SerializeMap for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward>{
+    type Ok = ();
+    type Error = NeverError;
+    fn serialize_key<T>(&mut self, _key: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { Ok(()) }
+    fn serialize_value<T>(&mut self, _value: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { Ok(()) }
+    fn end(self) -> Result<(),NeverError> { Ok(()) }
+}
+impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::SerializeStruct for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward>{
+    type Ok = ();
+    type Error = NeverError;
+    fn serialize_field<T>(&mut self, _key: &'static str, _value: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { Ok(()) }
+    fn end(self) -> Result<(),NeverError> { Ok(()) }
+}
+impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::SerializeStructVariant for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward>{
+    type Ok = ();
+    type Error = NeverError;
+    fn serialize_field<T>(&mut self, _key: &'static str, _value: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { Ok(()) }
+    fn end(self) -> Result<(),NeverError> { Ok(()) }
+}
+  
+  
   trait StaticDowncast <T> {
     fn static_downcast (self)->T;
   }
@@ -181,7 +384,8 @@ macro_rules! time_steward_serialization_impls {
   }
   
   impl <T: SimulationStateData + PersistentlyIdentifiedType> $crate::serde::Serialize for DataHandle <T> {
-    fn serialize <S: $crate::serde::Serializer> (&self, serializer: S)->Result <S::Ok, S::Error> {
+    fn serialize <S: $crate::serde::Serializer> (&self, mut serializer: S)->Result <S::Ok, S::Error> {
+      if MaybeVisitSerializeHackUntyped::visit_data_handle(&mut serializer, self) {return serializer.serialize_none()}
       bincode_error_to_generic(with_serialization_context (| context | {
         let object_identifier = context.find_handle::<_, DataHandle <T>> (&*self.data as *const _ as usize, || {
           Box::new (self.clone())
@@ -202,7 +406,8 @@ macro_rules! time_steward_serialization_impls {
   }
   
   impl <B: Basics> $crate::serde::Serialize for EventHandle <B> {
-    fn serialize <S: $crate::serde::Serializer> (&self, serializer: S)->Result <S::Ok, S::Error> {
+    fn serialize <S: $crate::serde::Serializer> (&self, mut serializer: S)->Result <S::Ok, S::Error> {
+      if MaybeVisitSerializeHack::<Steward<B>>::visit_event_handle(&mut serializer, self) {return serializer.serialize_none()}
       bincode_error_to_generic(with_serialization_context (| context | {
         let object_identifier = context.find_handle::<_, EventHandle <B>> (&*self.data as *const _ as usize, || {
           Box::new (self.clone())
@@ -223,7 +428,8 @@ macro_rules! time_steward_serialization_impls {
   }
   
   impl <T: DataTimeline> $crate::serde::Serialize for DataTimelineCell <T> {
-    fn serialize <S: $crate::serde::Serializer> (&self, serializer: S)->Result <S::Ok, S::Error> {
+    fn serialize <S: $crate::serde::Serializer> (&self, mut serializer: S)->Result <S::Ok, S::Error> {
+      if MaybeVisitSerializeHack::<Steward<T::Basics>>::visit_data_timeline_cell(&mut serializer, self) {return serializer.serialize_none()}
       let foo = bincode_error_to_generic(with_serialization_context (| context | {
         Ok(context.snapshot.downcast_ref::<SnapshotHandle <T::Basics>>().unwrap().clone())
       }))?;
