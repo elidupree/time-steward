@@ -354,6 +354,7 @@ impl<B: Basics> Steward<B> {
   
   fn do_event (&mut self, event: & EventNeedingAttention<B>) {
     self.events_needing_attention.remove (event);
+    assert_eq!(event.handle.data.links.get() > 0, event.should_be_executed);
     let event = &event.handle;
     if event.data.links.get() > 0 {
       let currently_executed = match event.data.execution_state.borrow().as_ref() {
