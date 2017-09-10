@@ -67,7 +67,7 @@ macro_rules! time_steward_serialization_impls {
 
   
   
-  #[allow (unreachable_code)]
+  #[allow (unreachable_code, unreachable_patterns)]
   #[derive (Debug)]
   struct NeverError(!);
   impl ser::Error for NeverError {
@@ -112,8 +112,8 @@ impl Display for NeverError {
     fn serialize_str(self, _: &str) -> Result<(),NeverError> { Ok(()) }
     fn serialize_bytes(self, _: &[u8]) -> Result<(),NeverError> { Ok(()) }
     fn serialize_none(self) -> Result<(),NeverError> { Ok(()) }
-    fn serialize_some<T>(self, _: &T) -> Result<(),NeverError> 
-        where T: ?Sized + Serialize { Ok(()) }
+    fn serialize_some<T>(self, value: &T) -> Result<(),NeverError> 
+        where T: ?Sized + Serialize { value.serialize(self) }
     fn serialize_unit(self) -> Result<(),NeverError> { Ok(()) }
     fn serialize_unit_struct(self, _name: &'static str) -> Result<(),NeverError> { Ok(()) }
     fn serialize_unit_variant(
@@ -122,16 +122,16 @@ impl Display for NeverError {
         __variant_index: u32,
         _variant: &'static str
     ) -> Result<(),NeverError> { Ok(()) }
-    fn serialize_newtype_struct<T>(self, _name: &'static str, _: &T) -> Result<(),NeverError> 
-        where T: ?Sized + Serialize{ Ok(()) }
+    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<(),NeverError> 
+        where T: ?Sized + Serialize{ value.serialize(self) }
     fn serialize_newtype_variant<T>(
         self,
         _name: &'static str,
         _variant_index: u32,
-        _variant: &'static str,
-        _value: &T
+        variant: &'static str,
+        value: &T
     )  -> Result<(),NeverError> 
-        where T: ?Sized + Serialize { Ok(()) }
+        where T: ?Sized + Serialize { value.serialize(self) }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq,NeverError> { Ok(self) }
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple,NeverError> { Ok(self) }
@@ -164,52 +164,52 @@ impl Display for NeverError {
 impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::SerializeSeq for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward>{
     type Ok = ();
     type Error = NeverError;
-    fn serialize_element<T>(&mut self, _value: &T) -> Result<(),NeverError>
-        where T: ?Sized + Serialize { Ok(()) }
+    fn serialize_element<T>(&mut self, value: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { value.serialize(&mut**self) }
     fn end(self) -> Result<(),NeverError> { Ok(()) }
 }
 impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::SerializeTuple for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward>{
     type Ok = ();
     type Error = NeverError;
-    fn serialize_element<T>(&mut self, _value: &T) -> Result<(),NeverError>
-        where T: ?Sized + Serialize { Ok(()) }
+    fn serialize_element<T>(&mut self, value: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { value.serialize(&mut**self) }
     fn end(self) -> Result<(),NeverError> { Ok(()) }
 }
 impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::SerializeTupleStruct for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward>{
     type Ok = ();
     type Error = NeverError;
-    fn serialize_field<T>(&mut self, _value: &T) -> Result<(),NeverError>
-        where T: ?Sized + Serialize { Ok(()) }
+    fn serialize_field<T>(&mut self, value: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { value.serialize(&mut**self) }
     fn end(self) -> Result<(),NeverError> { Ok(()) }
 }
 impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::SerializeTupleVariant for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward>{
     type Ok = ();
     type Error = NeverError;
-    fn serialize_field<T>(&mut self, _value: &T) -> Result<(),NeverError>
-        where T: ?Sized + Serialize { Ok(()) }
+    fn serialize_field<T>(&mut self, value: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { value.serialize(&mut**self) }
     fn end(self) -> Result<(),NeverError> { Ok(()) }
 }
 impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::SerializeMap for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward>{
     type Ok = ();
     type Error = NeverError;
-    fn serialize_key<T>(&mut self, _key: &T) -> Result<(),NeverError>
-        where T: ?Sized + Serialize { Ok(()) }
-    fn serialize_value<T>(&mut self, _value: &T) -> Result<(),NeverError>
-        where T: ?Sized + Serialize { Ok(()) }
+    fn serialize_key<T>(&mut self, key: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { key.serialize(&mut**self)  }
+    fn serialize_value<T>(&mut self, value: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { value.serialize(&mut**self) }
     fn end(self) -> Result<(),NeverError> { Ok(()) }
 }
 impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::SerializeStruct for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward>{
     type Ok = ();
     type Error = NeverError;
-    fn serialize_field<T>(&mut self, _key: &'static str, _value: &T) -> Result<(),NeverError>
-        where T: ?Sized + Serialize { Ok(()) }
+    fn serialize_field<T>(&mut self, _key: &'static str, value: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { value.serialize(&mut**self) }
     fn end(self) -> Result<(),NeverError> { Ok(()) }
 }
 impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> ser::SerializeStructVariant for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward>{
     type Ok = ();
     type Error = NeverError;
-    fn serialize_field<T>(&mut self, _key: &'static str, _value: &T) -> Result<(),NeverError>
-        where T: ?Sized + Serialize { Ok(()) }
+    fn serialize_field<T>(&mut self, _key: &'static str, value: &T) -> Result<(),NeverError>
+        where T: ?Sized + Serialize { value.serialize(&mut**self) }
     fn end(self) -> Result<(),NeverError> { Ok(()) }
 }
   

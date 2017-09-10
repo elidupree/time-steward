@@ -186,9 +186,9 @@ pub trait EventAccessor: Accessor {
   // audit: whenever an event is executed or undone, it creates/destroys the exact predictions that become existent/nonexistent between the serializations of the physics immediately before and after the event.
   // audit: never generates two predictions with the same id, except when rerunning the same event
   fn create_prediction <E: Event <Steward = Self::Steward>> (&self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)-><Self::Steward as TimeSteward>::EventHandle;
-  // audit: predicted events must destroy themselves
-  // audit: you can't destroy a fiat event as if it's a prediction
-  fn destroy_prediction (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle);
+  // audit: you can't link/unlink a fiat event as if it's a prediction
+  fn link_prediction (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle);
+  fn unlink_prediction (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle);
   
   type FutureCleanupAccessor: FutureCleanupAccessor<Steward = Self::Steward>;
   fn future_cleanup(&self)->Option<&Self::FutureCleanupAccessor>;
@@ -200,9 +200,6 @@ pub trait FutureCleanupAccessor: EventAccessor {
   // note that, when undoing events, query results don't necessarily correspond to those observed by the original execution in any way
   fn peek <'a, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'a self, timeline: &'b DataTimelineCell<T>)->DataTimelineCellReadGuard<'b, T>;
   fn peek_mut <'a, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'a self, timeline: &'b DataTimelineCell<T>)->DataTimelineCellWriteGuard<'b, T>;
-  fn get_prediction_destroyer (&self, event: &<Self::Steward as TimeSteward>::EventHandle)->Option <<Self::Steward as TimeSteward>::EventHandle>;
-  // audit: can't change things in the past relative to the current event
-  fn change_prediction_destroyer (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, destroyer: Option <&<Self::Steward as TimeSteward>::EventHandle>);
   // audit: can't invalidate things in the past relative to the current event
   fn invalidate_execution (&self, handle: & <Self::Steward as TimeSteward>::EventHandle);
 }

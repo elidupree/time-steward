@@ -53,9 +53,8 @@ struct ExecutionState {
 struct EventInner <B: Basics> {
   time: ExtendedTime <B>,
   data: Box <EventInnerTrait<B>>,
-  should_be_executed: Cell<bool>,
+  links: Cell<usize>,
   is_prediction: bool,
-  prediction_destroyed_by: RefCell<Option <EventHandle <B>>>,
   execution_state: RefCell<Option <ExecutionState>>,
 }
 trait EventInnerTrait <B: Basics>: Any + Debug + SerializeInto + DynamicPersistentlyIdentifiedType {
@@ -158,9 +157,8 @@ fn deserialization_create_event_inner <B: Basics, T: Event<Steward = Steward<B>>
   EventInner {
     time: time,
     data: Box::new (data),
-    should_be_executed: Cell::new (in_future),
+    links: Cell::new (unimplemented!()),
     is_prediction: in_future,
-    prediction_destroyed_by: RefCell::new (None),
     execution_state: RefCell::new (None),
   }
 }
@@ -272,25 +270,32 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
       data: Rc::new (EventInner {
         time: time,
         data: Box::new (event),
-        should_be_executed: Cell::new(true),
+        links: Cell::new(0),
         is_prediction: true,
-        prediction_destroyed_by: RefCell::new (None),
         execution_state: RefCell::new (None),
       })
     };
-    assert!(self.steward.borrow_mut().events_needing_attention.insert (EventNeedingAttention {handle: handle.clone(), should_be_executed: true}), "Created a prediction at the same time as one that already existed and has not yet been destroyed.");
+    //assert!(self.steward.borrow_mut().events_needing_attention.insert (EventNeedingAttention {handle: handle.clone(), should_be_executed: true}), "Created a prediction at the same time as one that already existed and has not yet been destroyed.");
     handle
   }
-  fn destroy_prediction (&self, prediction: &EventHandle<B>) {
-    assert!(prediction.data.is_prediction, "Attempted to destroy a fiat event as if it was a prediction.");
-    let mut guard = prediction.data.prediction_destroyed_by.borrow_mut();
-    if let Some (old_destroyer) = guard.as_ref() {
-      assert!(self.this_event() < old_destroyer, "You can't destroy a prediction that was already destroyed. (A prediction is supposed to be destroyed exactly when it's no longer accessible in the simulation data. Double-destroying it implies that you held onto a handle to it somewhere, which is probably a bug.)");
+  fn link_prediction (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle) {
+    assert!(prediction.data.is_prediction, "Attempted to link a fiat event as if it was a prediction.");
+    assert!(prediction.extended_time() > self.extended_now(), "Attempted to link a prediction in the past.");
+    let previous = prediction.data.links.get();
+    if previous == 0 {
+      self.steward.borrow_mut().event_should_be_executed (prediction);
     }
-    mem::replace (&mut*guard, Some(self.this_event().clone()));
-    if prediction != self.this_event() {
+    prediction.data.links.set(previous + 1);
+  }
+  fn unlink_prediction (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle) {
+    assert!(prediction.data.is_prediction, "Attempted to unlink a fiat event as if it was a prediction.");
+    assert!(prediction.extended_time() > self.extended_now(), "Attempted to unlink a prediction in the past.");
+    let previous = prediction.data.links.get();
+    assert!(previous > 0, "unlinked a prediction more times than it was linked");
+    if previous == 1 {
       self.steward.borrow_mut().event_shouldnt_be_executed (prediction);
     }
+    prediction.data.links.set(previous - 1);
   }
   
   type FutureCleanupAccessor = Self;
@@ -307,30 +312,6 @@ impl <'a, B: Basics> FutureCleanupAccessor for EventAccessorStruct <'a, B> {
   }
   fn peek_mut <'c, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'c self, timeline: &'b DataTimelineCell<T>)->DataTimelineCellWriteGuard<'b, T> {
     timeline.data.borrow_mut()
-  }
-  fn get_prediction_destroyer (&self, event: &<Self::Steward as TimeSteward>::EventHandle)->Option <<Self::Steward as TimeSteward>::EventHandle> {
-    event.data.prediction_destroyed_by.borrow().clone()
-  }
-  fn change_prediction_destroyer (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, destroyer: Option <&<Self::Steward as TimeSteward>::EventHandle>) {
-    //TODO assertions
-    if let Some(destroyer) = destroyer {
-      assert!(destroyer >= self.this_event(), "Tried to set of prediction's destruction time to a time in the past");
-    }
-    mem::replace (&mut*prediction.data.prediction_destroyed_by.borrow_mut(), destroyer.cloned());
-    if prediction != self.this_event() {
-      if let Some(destroyer) = destroyer {
-        if destroyer != prediction {
-          assert!(destroyer < prediction, "Tried to set of prediction's destruction time to after the prediction is supposed to be executed");
-          self.steward.borrow_mut().event_shouldnt_be_executed(prediction);
-        }
-        else {
-          self.steward.borrow_mut().event_should_be_executed(prediction);
-        }
-      }
-      else {
-        self.steward.borrow_mut().event_should_be_executed(prediction);
-      }
-    }
   }
   fn invalidate_execution (&self, handle: & <Self::Steward as TimeSteward>::EventHandle) {
     assert!(handle > self.this_event(), "An event at {:?} tried to invalidate one at {:?}. Only future events can be invalidated.", self.extended_now(), handle.extended_time());
@@ -374,7 +355,7 @@ impl<B: Basics> Steward<B> {
   fn do_event (&mut self, event: & EventNeedingAttention<B>) {
     self.events_needing_attention.remove (event);
     let event = &event.handle;
-    if event.data.should_be_executed.get() {
+    if event.data.links.get() > 0 {
       let currently_executed = match event.data.execution_state.borrow().as_ref() {
         Some (state) => {
           assert! (!state.valid);
@@ -388,9 +369,6 @@ impl<B: Basics> Steward<B> {
       else {
         event.data.data.execute (event, &mut*self);
       }
-      if event.data.is_prediction {
-        assert!(event.data.prediction_destroyed_by.borrow().as_ref() == Some(event), "An event at {:?} should have destroyed itself, but its destruction time was {:?} instead. All predicted events must destroy the prediction that predicted them. (It's ambiguous what should happen if the prediction isn't destroyed. There are two natural meanings: either it continues existing meaninglessly, or it gets executed repeatedly until it destroys itself. Neither of these seems especially desirable, so we take the conservative approach and forbid the whole situation from arising. This is also future-proofing in case we choose a specific behavior later.", event.extended_time(), event.data.prediction_destroyed_by.borrow().as_ref().map (| destroyer | destroyer.extended_time()))
-      }
     }
     else {
       assert! (event.data.execution_state.borrow().as_ref().is_some());
@@ -402,38 +380,32 @@ impl<B: Basics> Steward<B> {
   
   fn invalidate_event_execution (&mut self, handle: & EventHandle<B>) {
     if let Some(state) = handle.data.execution_state.borrow_mut().as_mut() {
-      if handle.data.should_be_executed.get() && state.valid {
+      if handle.data.links.get() > 0 && state.valid {
         assert! (self.events_needing_attention.insert (EventNeedingAttention {handle: handle.clone(), should_be_executed: true}));
       }
       state.valid = false;
     }
   }
   fn event_should_be_executed (&mut self, handle: & EventHandle<B>) {
-    if !handle.data.should_be_executed.get() {
-      if let Some(state) = handle.data.execution_state.borrow().as_ref() {
-        assert! (self.events_needing_attention.remove (&EventNeedingAttention {handle: handle.clone(), should_be_executed: false}));
-        if !state.valid {
-          assert! (self.events_needing_attention.insert (EventNeedingAttention {handle: handle.clone(), should_be_executed: true}));
-        }
-      }
-      else {
+    if let Some(state) = handle.data.execution_state.borrow().as_ref() {
+      assert! (self.events_needing_attention.remove (&EventNeedingAttention {handle: handle.clone(), should_be_executed: false}));
+      if !state.valid {
         assert! (self.events_needing_attention.insert (EventNeedingAttention {handle: handle.clone(), should_be_executed: true}));
       }
-      handle.data.should_be_executed.set(true);
+    }
+    else {
+      assert! (self.events_needing_attention.insert (EventNeedingAttention {handle: handle.clone(), should_be_executed: true}));
     }
   }
   fn event_shouldnt_be_executed (&mut self, handle: & EventHandle<B>) {
-    if handle.data.should_be_executed.get() {
-      if let Some(state) = handle.data.execution_state.borrow().as_ref() {
-        assert! (self.events_needing_attention.insert (EventNeedingAttention {handle: handle.clone(), should_be_executed: false}));
-        if !state.valid {
-          assert! (self.events_needing_attention.remove (&EventNeedingAttention {handle: handle.clone(), should_be_executed: true}));
-        }
-      }
-      else {
+    if let Some(state) = handle.data.execution_state.borrow().as_ref() {
+      assert! (self.events_needing_attention.insert (EventNeedingAttention {handle: handle.clone(), should_be_executed: false}));
+      if !state.valid {
         assert! (self.events_needing_attention.remove (&EventNeedingAttention {handle: handle.clone(), should_be_executed: true}));
       }
-      handle.data.should_be_executed.set(false);
+    }
+    else {
+      assert! (self.events_needing_attention.remove (&EventNeedingAttention {handle: handle.clone(), should_be_executed: true}));
     }
   }
 }
@@ -459,9 +431,9 @@ impl<B: Basics> TimeSteward for Steward<B> {
     let handle = EventHandle {data: Rc::new (EventInner {
         time: extended_time_of_fiat_event(time, id),
         data: Box::new (event),
-        should_be_executed: Cell::new(true),
+        links: Cell::new(1),
         is_prediction: false,
-        prediction_destroyed_by: RefCell::new (None),
+
         execution_state: RefCell::new (None),
       })};
     match self.fiat_events.insert(handle.clone()) {
@@ -483,6 +455,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
     match self.fiat_events.take(&extended_time_of_fiat_event(time.clone(), id)) {
       None => Err(FiatEventOperationError::InvalidInput),
       Some(handle) => {
+        handle.data.links.set(0);
         self.event_shouldnt_be_executed (&handle);
         Ok(())
       },

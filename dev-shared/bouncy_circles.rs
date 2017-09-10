@@ -8,7 +8,7 @@ use time_steward::{DeterministicRandomId};
 use time_steward::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
 use time_steward::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, GetVarying, IterateUniquelyOwnedPredictions, tracking_query, tracking_query_ref, set, unset};
+use simple_timeline::{SimpleTimeline, GetVarying, tracking_query, tracking_query_ref, set, unset};
 
 use rand::Rng;
 
@@ -53,13 +53,6 @@ pub struct CircleVarying {
 impl PersistentlyIdentifiedType for Circle {
   const ID: PersistentTypeId = PersistentTypeId(0xd711cc7240c71607);
 }
-impl IterateUniquelyOwnedPredictions <Steward> for CircleVarying {
-  fn iterate_predictions <F: FnMut (& <Steward as TimeSteward>::EventHandle)> (&self, callback: &mut F) {
-    if let Some (prediction) = self.next_boundary_change.as_ref() {
-      callback (prediction);
-    }
-  }
-}
 type CircleHandle = DataHandle <Circle>;
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -74,13 +67,6 @@ pub struct RelationshipVarying {
 }
 impl PersistentlyIdentifiedType for Relationship {
   const ID: PersistentTypeId = PersistentTypeId(0xa1010b5e80c3465a);
-}
-impl IterateUniquelyOwnedPredictions <Steward> for RelationshipVarying {
-  fn iterate_predictions <F: FnMut (& <Steward as TimeSteward>::EventHandle)> (&self, callback: &mut F) {
-    if let Some (prediction) = self.next_change.as_ref() {
-      callback (prediction);
-    }
-  }
 }
 type RelationshipHandle = DataHandle <Relationship>;
 
@@ -108,7 +94,6 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
     panic!(" fail {:?} {:?} {:?}", relationship_handle, relationship_varying, us)
   }
   
-  if let Some (discarded) = relationship_varying.next_change.take() {accessor.destroy_prediction (&discarded);}
   if let Some(yes) = time {
     if yes >= *accessor.now() {
       // println!(" planned for {}", &yes);
@@ -189,7 +174,6 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
                                                                     & varying.position),
                                                                     (0, & arena_center));
  
-  if let Some (discarded) = varying.next_boundary_change.take() {accessor.destroy_prediction (&discarded);}
   if let Some(yes) = time {
     if yes >= *accessor.now() {
       // println!(" planned for {}", &yes);

@@ -39,6 +39,7 @@ pub type DataTimelineCellReadGuard<'a, T> = Ref<'a, T>;
 pub type DataTimelineCellWriteGuard<'a, T> = RefMut<'a, T>;
 #[derive (Debug)]
 struct EventInner <B: Basics> {
+  links: Cell<usize>,
   time: ExtendedTime <B>,
   data: Box <EventInnerTrait<B>>,
 }
@@ -111,6 +112,7 @@ time_steward_common_impls_for_uniquely_identified_handle! ([T: DataTimeline] [Da
 time_steward_serialization_impls!();
 fn deserialization_create_event_inner <B: Basics, T: Event<Steward = Steward<B>>> (time: ExtendedTime <B>, data: T, _in_future: bool)->EventInner<B> {
   EventInner {
+    links: Cell::new(unimplemented!()),
     time: time,
     data: Box::new (data),
   }
@@ -221,17 +223,28 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     let time = extended_time_of_predicted_event::<<Self::Steward as TimeSteward>::Basics> (time, id, self.extended_now()).unwrap();
     let handle = EventHandle {
       data: Rc::new (EventInner {
+        links: Cell::new (0),
         time: time,
         data: Box::new (event),
       })
     };
     //printlnerr!("at {:?}, creating prediction at {:?}", self.extended_now(), handle.extended_time());
-    assert!(self.steward.borrow_mut().existent_predictions.insert (handle.clone()), "created a prediction that already existed?!");
     handle
   }
-  fn destroy_prediction (&self, prediction: &EventHandle<B>) {
-    //printlnerr!("at {:?}, destroying prediction at {:?}", self.extended_now(), prediction.extended_time());
-    assert!(self.steward.borrow_mut().existent_predictions.remove (& prediction.clone()), "destroyed a prediction that doesn't exist? Probably one that was already destroyed");
+  fn link_prediction (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle) {
+    let previous = prediction.data.links.get();
+    if previous == 0 {
+      assert!(self.steward.borrow_mut().existent_predictions.insert (prediction.clone()), "created a prediction that already existed?!");
+    }
+    prediction.data.links.set(previous + 1);
+  }
+  fn unlink_prediction (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle) {
+    let previous = prediction.data.links.get();
+    assert!(previous > 0, "unlinked a prediction more times than it was linked");
+    if previous == 1 {
+      assert!(self.steward.borrow_mut().existent_predictions.remove (prediction));
+    }
+    prediction.data.links.set(previous - 1);
   }
   
   type FutureCleanupAccessor = Self;
@@ -244,8 +257,6 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
 impl <'a, B: Basics> FutureCleanupAccessor for EventAccessorStruct <'a, B> {
   fn peek <'c, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'c self, _: &'b DataTimelineCell<T>)->DataTimelineCellReadGuard<'b, T> {unreachable!()}
   fn peek_mut <'c, 'b, T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>> (&'c self, _: &'b DataTimelineCell<T>)->DataTimelineCellWriteGuard<'b, T> {unreachable!()}
-  fn get_prediction_destroyer (&self, _: &<Self::Steward as TimeSteward>::EventHandle)->Option <<Self::Steward as TimeSteward>::EventHandle> {unreachable!()}
-  fn change_prediction_destroyer (&self, _: &<Self::Steward as TimeSteward>::EventHandle, _: Option <&<Self::Steward as TimeSteward>::EventHandle>) {unreachable!()}
   fn invalidate_execution (&self, _: & <Self::Steward as TimeSteward>::EventHandle) {unreachable!()}
 }
 
@@ -305,7 +316,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
     if self.valid_since() > time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    match self.upcoming_fiat_events.insert(EventHandle {data: Rc::new (EventInner {time: extended_time_of_fiat_event(time, id), data: Box::new (event)})}) {
+    match self.upcoming_fiat_events.insert(EventHandle {data: Rc::new (EventInner {links: Cell::new(1), time: extended_time_of_fiat_event(time, id), data: Box::new (event)})}) {
       true => Ok(()),
       false => Err(FiatEventOperationError::InvalidInput),
     }
