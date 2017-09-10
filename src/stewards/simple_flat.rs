@@ -288,8 +288,9 @@ impl<B: Basics> Steward<B> {
 
   fn execute_event(&mut self, event: &EventHandle <B>) {
     event.data.data.execute (event, &mut*self);
-    // if it was a fiat event, clean it up:
+    // clean it up:
     self.upcoming_fiat_events.remove(event);
+    self.existent_predictions.remove(event);
     self.last_event = Some(event.extended_time().clone());
   }
 }
