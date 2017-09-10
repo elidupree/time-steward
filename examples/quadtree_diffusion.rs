@@ -27,7 +27,7 @@ use time_steward::{DeterministicRandomId};
 use time_steward::{PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataHandleTrait, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, IterateUniquelyOwnedPredictions, query, set, destroy, just_destroyed};
+use simple_timeline::{SimpleTimeline, query, set, destroy, just_destroyed};
 
 
 type Time = i64;
@@ -55,12 +55,6 @@ macro_rules! serialization_cheat {
     [$($concrete:tt)*]
   ) => {
 
-/*thread_local! {
-  static SERIALIZATION_CONTEXT: RefCell<Option <SerializationContext>> = RefCell::new (None);
-  static DESERIALIZATION_CONTEXT: RefCell<Option <DeserializationContext>> = RefCell::new (None);
-}*/
-
-
 impl <$($bounds)*> $crate::serde::Serialize for $($concrete)* {
   fn serialize <S: $crate::serde::Serializer> (&self, _: S)->Result <S::Ok, S::Error> {
     unimplemented!()
@@ -83,7 +77,7 @@ struct NodeData {
   parent: Option <NodeHandle>,
   varying: DataTimelineCell <SimpleTimeline <NodeVarying, Steward>>,
 }
-#[derive (Clone, PartialEq, Eq, Debug)]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct NodeVarying {
   last_change: Time,
   ink_at_last_change: Amount,
@@ -97,8 +91,7 @@ type NodeHandle = DataHandle <NodeData>;
 impl PersistentlyIdentifiedType for NodeData {
   const ID: PersistentTypeId = PersistentTypeId(0x734528f6aefdc1b9);
 }
-impl IterateUniquelyOwnedPredictions <Steward> for NodeVarying {}
-serialization_cheat!([][NodeVarying]);
+//serialization_cheat!([][NodeVarying]);
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct BoundaryData {
@@ -107,7 +100,7 @@ struct BoundaryData {
   nodes: [NodeHandle; 2],
   varying: DataTimelineCell <SimpleTimeline <BoundaryVarying, Steward>>,
 }
-#[derive (Clone, PartialEq, Eq, Debug)]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct BoundaryVarying {
   transfer_velocity: Amount,
   next_change: Option <EventHandle <Basics>>,
@@ -116,14 +109,7 @@ type BoundaryHandle = DataHandle <BoundaryData>;
 impl PersistentlyIdentifiedType for BoundaryData {
   const ID: PersistentTypeId = PersistentTypeId(0x9d643214b58b24dc);
 }
-impl IterateUniquelyOwnedPredictions <Steward> for BoundaryVarying {
-  fn iterate_predictions <F: FnMut (& <Steward as TimeSteward>::EventHandle)> (&self, callback: &mut F) {
-    if let Some (prediction) = self.next_change.as_ref() {
-      callback (prediction);
-    }
-  }
-}
-serialization_cheat!([][BoundaryVarying]);
+//serialization_cheat!([][BoundaryVarying]);
 
 macro_rules! get {
   ($accessor: expr, $cell: expr) => {
@@ -318,7 +304,6 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   //printlnerr!("{:?}", (density_accumulation_difference.signum(), max_reasonable_velocity_skew.signum()));
   //printlnerr!("{:?}", (*accessor.now()*1000/SECOND, time.map(|time|time*1000/SECOND), difference_now, density_accumulation_difference_scaled*SECOND as Amount/scale_factor, max_reasonable_velocity_skew*boundary.length as Amount / areas[0], - max_reasonable_velocity_skew*boundary.length as Amount / areas[1], (min_difference, difference_now, max_difference), boundary_varying.transfer_velocity, density_difference_to_ideal_transfer_velocity ([&nodes[0], &nodes[1]], difference_now), max_reasonable_velocity_skew, permissible_error));
   
-  if let Some (discarded) = boundary_varying.next_change.take() {accessor.destroy_prediction (&discarded);}
   boundary_varying.next_change = time.map (|time| {
     accessor.create_prediction (
       time,
@@ -573,7 +558,6 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
         if let Some(boundary) = old_boundaries [dimension] [direction] [which].as_ref() {
           if !just_destroyed (accessor, & boundary.varying) {
             let boundary_varying = query (accessor, &boundary.varying);
-            if let Some (discarded) = boundary_varying.next_change {accessor.destroy_prediction (&discarded);}
             destroy (accessor, &boundary.varying);
           }
         }
@@ -677,7 +661,6 @@ fn merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
   let mut new_boundaries = Vec::new();
   for (dimension, direction, boundary) in prior_boundaries {
     let boundary_varying = get!(accessor, &boundary.varying);
-    if let Some (discarded) = boundary_varying.next_change {accessor.destroy_prediction (&discarded);}
     let neighbor = if !prior_children.contains (&boundary.nodes [1]) {
       Some (boundary.nodes [1].clone())
     } else if !prior_children.contains (&boundary.nodes [0]) {

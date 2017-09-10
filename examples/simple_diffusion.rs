@@ -31,7 +31,7 @@ use time_steward::{DeterministicRandomId};
 use time_steward::{PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::stewards::{simple_flat as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, IterateUniquelyOwnedPredictions, query, set, unset};
+use simple_timeline::{SimpleTimeline, query, set, unset};
 
 
 /// i64 makes a good time type:
@@ -85,14 +85,6 @@ struct TransferVarying {
   last_change: Time,
   accumulated_error: i64,
   next_change: Option <EventHandle <Basics>>,
-}
-impl IterateUniquelyOwnedPredictions <Steward> for CellVarying {}
-impl IterateUniquelyOwnedPredictions <Steward> for TransferVarying {
-  fn iterate_predictions <F: FnMut (& <Steward as TimeSteward>::EventHandle)> (&self, callback: &mut F) {
-    if let Some (prediction) = self.next_change.as_ref() {
-      callback (prediction);
-    }
-  }
 }
 
 fn ink_at (cell: &CellVarying, accumulation_rate: i64, time: Time)->i64 {
@@ -355,7 +347,6 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
   me.ink_at_last_change += my_accumulation_rate*(now.base - my_last_change);
   */
   
-  if let Some (discarded) = transfer.next_change.take() {accessor.destroy_prediction (&discarded);}
   transfer.next_change = time.map (|time| {
     accessor.create_prediction (
         time,

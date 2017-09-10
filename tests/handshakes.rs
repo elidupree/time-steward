@@ -10,7 +10,7 @@ use time_steward::{DeterministicRandomId};
 use time_steward::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataTimelineCellTrait, Basics as BasicsTrait};
 use time_steward::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, IterateUniquelyOwnedPredictions, query, tracking_query, set, unset};
+use simple_timeline::{SimpleTimeline, query, tracking_query, set, unset};
 
 
 type Time = i64;
@@ -36,20 +36,6 @@ struct Philosopher {
   time_when_next_initiates_handshake: Time,
   next_handshake_prediction: Option <<Steward as TimeSteward>::EventHandle>,
 }
-impl IterateUniquelyOwnedPredictions <Steward> for Philosopher  {
-  fn iterate_predictions <F: FnMut (& <Steward as TimeSteward>::EventHandle)> (&self, callback: &mut F) {
-    if let Some (prediction) = self.next_handshake_prediction.as_ref() {
-      //println!(" prediction got iterated {:?} {:?}", prediction.extended_time(), prediction.downcast_ref::<Shake>());
-      callback (prediction);
-    }
-  }
-}
-/*impl Column for Philosopher {
-  type FieldType = Self;
-  fn column_id() -> ColumnId {
-    ColumnId(0x4084d1501468b6dd)
-  }
-}*/
 
 impl Philosopher {
   fn new()->Self {Philosopher {
@@ -61,7 +47,6 @@ impl Philosopher {
 fn change_next_handshake_time <Accessor: EventAccessor <Steward = Steward>> (accessor: &Accessor, index: usize, handle: & PhilosopherCell, time: Time) {
   let mut philosopher = tracking_query(accessor, handle);
   philosopher.time_when_next_initiates_handshake = time;
-  if let Some (discarded) = philosopher.next_handshake_prediction.take() {accessor.destroy_prediction (&discarded);}
   if time >= *accessor.now() {
     let time_id = accessor.extended_now().id;
     philosopher.next_handshake_prediction = Some(accessor.create_prediction (time, DeterministicRandomId::new (& (time_id, index)), Shake {whodunnit: index}));
@@ -98,15 +83,6 @@ fn dump_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: & Acce
   result
 }
 
-
-
-/*time_steward_predictor! (
-  struct Shaker, Basics, PredictorId(0x0e7f27c7643f8167), watching Philosopher,
-  | pa, whodunnit | {
-// println!("Planning {}", whodunnit);
-  let me = pa.get::<Philosopher>(whodunnit).unwrap().clone();
-  pa.predict_at_time(me.time_when_next_initiates_handshake, Shake::new (whodunnit));
-});*/
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Shake {whodunnit: usize}

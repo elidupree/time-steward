@@ -157,6 +157,7 @@ impl <VaryingData: QueryResult, Steward: TimeSteward> SimpleTimeline <VaryingDat
   }
   
   fn modify <Accessor: EventAccessor<Steward = Steward>> (&mut self, modification: VaryingData, accessor: &Accessor){
+    // TODO reduce duplicate code id 23892850
     if self.destroyer.as_ref().map_or(false, |event| event.extended_time() <= accessor.extended_now()) {
       panic!("Tried to modify a SimpleTimeline after it was destroyed")
     }
@@ -173,6 +174,25 @@ impl <VaryingData: QueryResult, Steward: TimeSteward> SimpleTimeline <VaryingDat
     
     link_predictions (accessor, & modification, accessor.this_event());
     self.changes.push_back ((accessor.this_event().clone(), modification));
+  }
+  
+  fn destroy <Accessor: EventAccessor<Steward = Steward>> (&mut self, accessor: &Accessor){
+    // TODO reduce duplicate code id 23892850
+    if self.destroyer.as_ref().map_or(false, |event| event.extended_time() <= accessor.extended_now()) {
+      panic!("Tried to destroy a SimpleTimeline after it was already destroyed")
+    }
+    
+    let mut pop = false;
+    if let Some(last) = self.changes.back() {
+      assert!(& last.0 <= accessor.this_event(), "All future changes should have been cleared before calling destroy() ");
+      unlink_predictions (accessor, &last.1, accessor.this_event(), None);
+      if &last.0 == accessor.this_event() {
+        pop = true;
+      }
+    }
+    if pop {self.changes.pop_back();}
+    
+    self.destroyer = Some(accessor.this_event().clone());
   }
 }
 
@@ -314,7 +334,7 @@ pub fn destroy <VaryingData: QueryResult, Steward: TimeSteward, Accessor: EventA
     accessor.peek_mut(handle).remove_future (accessor, false);
   }
   accessor.modify (handle, move |timeline| {
-    timeline.destroyer = Some(accessor.this_event().clone());
+    timeline.destroy(accessor);
   });
 }
 
