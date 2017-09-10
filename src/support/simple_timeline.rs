@@ -26,6 +26,7 @@ struct LinkPredictionsVisitor<'a, Accessor: 'a + EventAccessor> (& 'a Accessor, 
 impl <'a, Accessor: EventAccessor> TimeStewardStructuresVisitor <Accessor::Steward> for LinkPredictionsVisitor <'a, Accessor> {
   fn visit_event_handle (&mut self, handle: & <Accessor::Steward as TimeSteward>::EventHandle) {
     if handle.extended_time() > self.1.extended_time() {
+      //printlnerr!("link {:?}", handle.time());
       self.0.link_prediction (handle);
     }
   }
@@ -37,6 +38,7 @@ struct UnlinkPredictionsVisitor<'a, Accessor: 'a + EventAccessor> (& 'a Accessor
 impl <'a, Accessor: EventAccessor> TimeStewardStructuresVisitor <Accessor::Steward> for UnlinkPredictionsVisitor <'a, Accessor> {
   fn visit_event_handle (&mut self, handle: & <Accessor::Steward as TimeSteward>::EventHandle) {
     if handle.extended_time() > self.1.extended_time() && self.2.map_or (true, | until | handle.extended_time() <= until.extended_time()) {
+      //printlnerr!("unlink {:?}", handle.time());
       self.0.unlink_prediction (handle);
     }
   }
@@ -162,7 +164,7 @@ impl <VaryingData: QueryResult, Steward: TimeSteward> SimpleTimeline <VaryingDat
     let mut pop = false;
     if let Some(last) = self.changes.back() {
       assert!(& last.0 <= accessor.this_event(), "All future changes should have been cleared before calling modify() ");
-      unlink_predictions (accessor, last, accessor.this_event(), None);
+      unlink_predictions (accessor, &last.1, accessor.this_event(), None);
       if &last.0 == accessor.this_event() {
         pop = true;
       }

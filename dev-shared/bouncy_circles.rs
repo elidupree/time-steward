@@ -125,6 +125,8 @@ impl Event for RelationshipChange {
     new.1.position.update_by(accessor.now() - new.1.last_change);
     new.0.last_change = accessor.now().clone();
     new.1.last_change = accessor.now().clone();
+    //let new_difference = new.0.position.evaluate ()-new.1.position.evaluate ();
+    //println!("event with error {:?}", (new_difference.dot(&new_difference) as f64).sqrt() - (circles.0.radius+circles.1.radius)  as f64);
     if let Some(induced_acceleration) = relationship_varying.induced_acceleration {
       new.0
         .position
