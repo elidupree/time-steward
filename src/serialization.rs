@@ -57,7 +57,7 @@ macro_rules! time_steward_serialization_impls {
     with_deserialization_context (| context | {
       context.uninitialized_handles.remove(&object_id);
       let handle = context.find_handle::<_, DataHandle <T>> (object_id, || {
-        Box::new (DataHandle::<T>::new(unsafe {::std::mem::uninitialized()}))
+        Box::new (DataHandle{data:Rc::<T>::new(unsafe {::std::mem::uninitialized()})})
       })?;
       unsafe {::std::ptr::write (
         &*handle.data as *const T as *mut T,
@@ -195,7 +195,7 @@ macro_rules! time_steward_serialization_impls {
       bincode_error_to_generic(with_deserialization_context (| context | {
         let object_identifier = generic_error_to_bincode(u64::deserialize (deserializer))?;
         Ok(context.find_handle::<_, DataHandle <T>> (object_identifier, || {
-          Box::<DataHandle <T>>::new (DataHandle::new(unsafe {::std::mem::uninitialized()})) as Box<Any>
+          Box::<DataHandle <T>>::new (DataHandle{data:Rc::new(unsafe {::std::mem::uninitialized()})}) as Box<Any>
         })?.clone())
       }))
     }

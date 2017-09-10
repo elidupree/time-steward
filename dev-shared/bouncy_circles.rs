@@ -283,7 +283,7 @@ impl Event for Initialize {
             induced_acceleration: None,
             next_change: None,
           });
-        let relationship_handle = DataHandle::new (relationship);
+        let relationship_handle = accessor.new_handle (relationship);
         
         varying [first].relationships.push (relationship_handle.clone()) ;
         varying [second].relationships.push (relationship_handle) ;
@@ -357,7 +357,7 @@ pub fn make_globals()-> <Basics as BasicsTrait>::Globals {
   for index in 0..HOW_MANY_CIRCLES {
     let radius = generator.gen_range(ARENA_SIZE / 30, ARENA_SIZE / 15);
 
-    circles.push (DataHandle::new (Circle {
+    circles.push (DataHandle::new_for_globals (Circle {
       index: index,
       radius: radius,
       varying: DataTimelineCell::new(SimpleTimeline::new ())

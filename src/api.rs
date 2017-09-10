@@ -117,7 +117,7 @@ pub trait EventHandleTrait <B: Basics>: SimulationStateData + Clone + Ord + Hash
   fn downcast_ref <T: Any> (&self)->Option<&T>;
 }
 pub trait DataHandleTrait <T: SimulationStateData + PersistentlyIdentifiedType>: SimulationStateData + Clone + Hash + Deref<Target = T> {
-  fn new(data: T)->Self;
+  fn new_for_globals(data: T)->Self;
 }
 pub trait DataTimelineCellTrait <T: DataTimeline>: SimulationStateData + Hash {
   fn new(data: T)->Self;
@@ -175,7 +175,9 @@ pub trait Accessor {
 }
 
 pub trait EventAccessor: Accessor {
-  fn handle (&self)->& <Self::Steward as TimeSteward>::EventHandle;
+  fn this_event(&self)->& <Self::Steward as TimeSteward>::EventHandle;
+  
+  fn new_handle<T: SimulationStateData + PersistentlyIdentifiedType> (&self, data: T)->DataHandle <T>;
   
   // modification is done within a closure, to help prevent the event from extracting any information from DataTimelines except by querying. I'd like to make this a Fn instead of FnOnce, to prevent the user from putting &mut in it that could communicate back to the outer function, but it may be useful for optimization to be able move owned objects into the closure.
   // audit: the event does the same thing if the closure isn't called, as long as we feed it the same query results after that

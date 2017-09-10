@@ -121,7 +121,7 @@ impl <B: Basics> EventHandleTrait<B> for EventHandle <B> {
 }
 
 impl <T: SimulationStateData + PersistentlyIdentifiedType> DataHandleTrait <T> for DataHandle <T> {
-  fn new(data: T)->Self {
+  fn new_for_globals(data: T)->Self {
     DataHandle { data: Rc::new(data) }
   }
 }
@@ -214,7 +214,7 @@ impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
   type Steward = Steward <B>;
   fn globals (&self)->&B::Globals {&*self.globals}
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
-    self.handle().extended_time()
+    self.this_event().extended_time()
   }
   fn query <Q: Query, T: DataTimelineQueriableWith<Q, Basics = B>> (&self, timeline: & DataTimelineCell <T>, query: &Q)-> T::QueryResult {
     DataTimelineQueriableWith::<Q>::query (&*timeline.data.borrow(), query, self.extended_now())
@@ -237,8 +237,12 @@ impl <B: Basics> Accessor for SnapshotHandle <B> {
   }
 }
 impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
-  fn handle (&self)->& EventHandle <B> {
+  fn this_event (&self)->& EventHandle <B> {
     &self.handle
+  }
+    
+  fn new_handle<T: SimulationStateData + PersistentlyIdentifiedType> (&self, data: T)->DataHandle <T> {
+    DataHandle {data: Rc::new(data)}
   }
   
   fn modify <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, F: FnOnce(&mut T)> (&self, timeline: &DataTimelineCell <T>, modification: F) {
@@ -281,10 +285,10 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     assert!(prediction.data.is_prediction, "Attempted to destroy a fiat event as if it was a prediction.");
     let mut guard = prediction.data.prediction_destroyed_by.borrow_mut();
     if let Some (old_destroyer) = guard.as_ref() {
-      assert!(self.handle() < old_destroyer, "You can't destroy a prediction that was already destroyed. (A prediction is supposed to be destroyed exactly when it's no longer accessible in the simulation data. Double-destroying it implies that you held onto a handle to it somewhere, which is probably a bug.)");
+      assert!(self.this_event() < old_destroyer, "You can't destroy a prediction that was already destroyed. (A prediction is supposed to be destroyed exactly when it's no longer accessible in the simulation data. Double-destroying it implies that you held onto a handle to it somewhere, which is probably a bug.)");
     }
-    mem::replace (&mut*guard, Some(self.handle().clone()));
-    if prediction != self.handle() {
+    mem::replace (&mut*guard, Some(self.this_event().clone()));
+    if prediction != self.this_event() {
       self.steward.borrow_mut().event_shouldnt_be_executed (prediction);
     }
   }
@@ -310,10 +314,10 @@ impl <'a, B: Basics> FutureCleanupAccessor for EventAccessorStruct <'a, B> {
   fn change_prediction_destroyer (&self, prediction: &<Self::Steward as TimeSteward>::EventHandle, destroyer: Option <&<Self::Steward as TimeSteward>::EventHandle>) {
     //TODO assertions
     if let Some(destroyer) = destroyer {
-      assert!(destroyer >= self.handle(), "Tried to set of prediction's destruction time to a time in the past");
+      assert!(destroyer >= self.this_event(), "Tried to set of prediction's destruction time to a time in the past");
     }
     mem::replace (&mut*prediction.data.prediction_destroyed_by.borrow_mut(), destroyer.cloned());
-    if prediction != self.handle() {
+    if prediction != self.this_event() {
       if let Some(destroyer) = destroyer {
         if destroyer != prediction {
           assert!(destroyer < prediction, "Tried to set of prediction's destruction time to after the prediction is supposed to be executed");
@@ -329,7 +333,7 @@ impl <'a, B: Basics> FutureCleanupAccessor for EventAccessorStruct <'a, B> {
     }
   }
   fn invalidate_execution (&self, handle: & <Self::Steward as TimeSteward>::EventHandle) {
-    assert!(handle > self.handle(), "An event at {:?} tried to invalidate one at {:?}. Only future events can be invalidated.", self.extended_now(), handle.extended_time());
+    assert!(handle > self.this_event(), "An event at {:?} tried to invalidate one at {:?}. Only future events can be invalidated.", self.extended_now(), handle.extended_time());
     self.steward.borrow_mut().invalidate_event_execution (handle);
   }
 }

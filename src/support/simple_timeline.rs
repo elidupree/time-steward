@@ -118,7 +118,7 @@ impl <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Steward>, Stew
       let ordering = change.0.extended_time().cmp(accessor.extended_now());
       if ordering == Ordering::Less || (!also_present && ordering == Ordering::Equal) {
         IterateUniquelyOwnedPredictions::<Steward>::iterate_predictions (&change.1, &mut | prediction | {
-          if also_present || accessor.get_prediction_destroyer (prediction).map_or (true, | destroyer | &destroyer > accessor.handle()) {
+          if also_present || accessor.get_prediction_destroyer (prediction).map_or (true, | destroyer | &destroyer > accessor.this_event()) {
             accessor.change_prediction_destroyer (prediction, None);
           }
         });
@@ -141,14 +141,14 @@ impl <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Steward>, Stew
     }
     let mut pop = false;
     if let Some(last) = self.changes.back() {
-      assert!(& last.0 <= accessor.handle(), "All future changes should have been cleared before calling modify() ");
-      if &last.0 == accessor.handle() {
+      assert!(& last.0 <= accessor.this_event(), "All future changes should have been cleared before calling modify() ");
+      if &last.0 == accessor.this_event() {
         pop = true;
       }
     }
     if pop {self.changes.pop_back();}
     // we don't need to create incoming predictions, because they can't be incoming unless they were already created
-    self.changes.push_back ((accessor.handle().clone(), modification));
+    self.changes.push_back ((accessor.this_event().clone(), modification));
   }
 }
 
@@ -220,7 +220,7 @@ pub fn query <VaryingData: QueryResult, Steward: TimeSteward, A: Accessor <Stewa
 }
 pub fn tracking_query <VaryingData: QueryResult, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: & Accessor, handle: & DataTimelineCell <SimpleTimeline <VaryingData, Steward>>)->VaryingData {
   accessor.modify (handle, |timeline| {
-    timeline.other_dependent_events.insert (accessor.handle().clone());
+    timeline.other_dependent_events.insert (accessor.this_event().clone());
   });
   query (accessor, handle)
 }
@@ -229,7 +229,7 @@ pub fn query_ref <'timeline, VaryingData: QueryResult, Steward: TimeSteward, A: 
 }
 pub fn tracking_query_ref <'timeline, VaryingData: QueryResult, Steward: TimeSteward, Accessor: EventAccessor <Steward = Steward>> (accessor: &'timeline Accessor, handle: &'timeline DataTimelineCell <SimpleTimeline <VaryingData, Steward>>)->DataTimelineCellReadGuard<'timeline, VaryingData> {
   accessor.modify (handle, |timeline| {
-    timeline.other_dependent_events.insert (accessor.handle().clone());
+    timeline.other_dependent_events.insert (accessor.this_event().clone());
   });
   query_ref (accessor, handle)
 }
@@ -290,7 +290,7 @@ pub fn destroy <VaryingData: QueryResult + IterateUniquelyOwnedPredictions <Stew
     accessor.peek_mut(handle).remove_future (accessor, false);
   }
   accessor.modify (handle, move |timeline| {
-    timeline.destroyer = Some(accessor.handle().clone());
+    timeline.destroyer = Some(accessor.this_event().clone());
   });
 }
 

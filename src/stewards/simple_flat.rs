@@ -78,7 +78,7 @@ impl <B: Basics> EventHandleTrait<B> for EventHandle <B> {
 }
 
 impl <T: SimulationStateData + PersistentlyIdentifiedType> DataHandleTrait <T> for DataHandle <T> {
-  fn new(data: T)->Self {
+  fn new_for_globals(data: T)->Self {
     DataHandle { data: Rc::new(data) }
   }
 }
@@ -165,7 +165,7 @@ impl <'a, B: Basics> Accessor for EventAccessorStruct <'a, B> {
   type Steward = Steward <B>;
   fn globals (&self)->&B::Globals {&*self.globals}
   fn extended_now(&self) -> & ExtendedTime <<Self::Steward as TimeSteward>::Basics> {
-    self.handle().extended_time()
+    self.this_event().extended_time()
   }
   fn query <Q: Query, T: DataTimelineQueriableWith<Q, Basics = B>> (&self, timeline: & DataTimelineCell <T>, query: &Q)-> T::QueryResult {
     DataTimelineQueriableWith::<Q>::query (&*timeline.data.borrow(), query, self.extended_now())
@@ -188,8 +188,12 @@ impl <B: Basics> Accessor for SnapshotHandle <B> {
   }
 }
 impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
-  fn handle (&self)->& EventHandle <B> {
+  fn this_event (&self)->& EventHandle <B> {
     &self.handle
+  }
+  
+  fn new_handle<T: SimulationStateData + PersistentlyIdentifiedType> (&self, data: T)->DataHandle <T> {
+    DataHandle {data: Rc::new(data)}
   }
   
   fn modify <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, F: FnOnce(&mut T)> (&self, timeline: &DataTimelineCell <T>, modification: F) {

@@ -469,7 +469,7 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
         node.center[0] + (node.width >> 2)*x_signum,
         node.center[1] + (node.width >> 2)*y_signum,
       ];
-      let new_child = DataHandle::new (NodeData {
+      let new_child = accessor.new_handle (NodeData {
         width: node.width >> 1,
         center: center,
         parent: Some (node.clone()),
@@ -519,7 +519,7 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
           let mut center = node.center;
           center [dimension] += (node.width >> 2)*direction_signum;
           center [other_dimension] += (node.width >> 4)*which_signum;
-          let new_boundary = DataHandle::new (BoundaryData {
+          let new_boundary = accessor.new_handle (BoundaryData {
             length: node.width >> 1,
             center: center,
             nodes: if direction == 0 { [neighbor.clone(), child.clone()] } else { [child.clone(), neighbor.clone()] },
@@ -548,7 +548,7 @@ fn split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
       let child1 = new_children [dimension] [1] [which].as_ref().unwrap();
       let mut center = node.center;
       center [other_dimension] += (node.width >> 4)*which_signum;
-      let new_boundary = DataHandle::new (BoundaryData {
+      let new_boundary = accessor.new_handle (BoundaryData {
         length: node.width >> 1,
         center: center,
         nodes: [child0.clone(), child1.clone()],
@@ -701,7 +701,7 @@ fn merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
           ];
         }
         let nodes = if direction == 1 {[node.clone(), neighbor.clone()]}else{[neighbor.clone(), node.clone()]};
-        let new_boundary = DataHandle::new (BoundaryData {
+        let new_boundary = accessor.new_handle (BoundaryData {
           length: neighbor.width,
           center: center,
           nodes: nodes.clone(),
@@ -900,7 +900,7 @@ impl Event for Initialize {
 fn make_globals()-> Globals {
   Globals {
     size: [64*METER, 64*METER],
-    root: DataHandle::new (NodeData {
+    root: DataHandle::new_for_globals (NodeData {
       width: 64*METER,
       center: [0; 2],
       parent: None,
