@@ -94,6 +94,7 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
     panic!(" fail {:?} {:?} {:?}", relationship_handle, relationship_varying, us)
   }
   
+  relationship_varying.next_change = None;
   if let Some(yes) = time {
     if yes >= *accessor.now() {
       // println!(" planned for {}", &yes);
@@ -175,7 +176,8 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
                                                                    (varying.last_change,
                                                                     & varying.position),
                                                                     (0, & arena_center));
- 
+  
+  varying.next_boundary_change = None;
   if let Some(yes) = time {
     if yes >= *accessor.now() {
       // println!(" planned for {}", &yes);
