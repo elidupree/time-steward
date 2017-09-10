@@ -40,7 +40,7 @@ use std::time::{Instant, Duration};
 use glium::{DisplayBuild, Surface};
 
 use time_steward::{DeterministicRandomId};
-use time_steward::stewards::{simple_full as steward_module};
+//use time_steward::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Accessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{query};
 

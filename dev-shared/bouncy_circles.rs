@@ -6,7 +6,7 @@ use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
 
 use time_steward::{DeterministicRandomId};
 use time_steward::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
-use time_steward::stewards::{simple_full as steward_module};
+pub use time_steward::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying, tracking_query, tracking_query_ref, set, unset};
 
