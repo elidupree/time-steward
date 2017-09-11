@@ -153,11 +153,11 @@ time_steward_common_impls_for_uniquely_identified_handle! ([T: SimulationStateDa
 time_steward_common_impls_for_uniquely_identified_handle! ([T: DataTimeline] [DataTimelineCell <T>] self => (self.serial_number): usize);
 
 time_steward_serialization_impls!();
-fn deserialization_create_event_inner <B: Basics, T: Event<Steward = Steward<B>>> (time: ExtendedTime <B>, data: T, in_future: bool)->EventInner<B> {
+fn deserialization_create_event_inner <B: Basics, T: Event<Steward = Steward<B>>> (time: ExtendedTime <B>, data: T, in_future: bool, links: Cell<usize>)->EventInner<B> {
   EventInner {
     time: time,
     data: Box::new (data),
-    links: Cell::new (unimplemented!()),
+    links: links,
     is_prediction: in_future,
     execution_state: RefCell::new (None),
   }

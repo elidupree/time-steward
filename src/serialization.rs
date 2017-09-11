@@ -287,7 +287,9 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
       context.uninitialized_handles.remove(&object_id);
       let now = context.time.downcast_ref::<ExtendedTime <B>>().unwrap().clone();
       let handle = context.find_handle::<_, <T::Steward as TimeSteward>::EventHandle> (object_id, || {
-        Box::<<T::Steward as TimeSteward>::EventHandle>::new (EventHandle { data: Rc::new(unsafe {::std::mem::uninitialized()})}) as Box<Any>
+        let handle_box = Box::<<T::Steward as TimeSteward>::EventHandle>::new (EventHandle { data: Rc::new(unsafe {::std::mem::uninitialized()})});
+        handle_box.data.links.set(0);
+        handle_box as Box<Any>
       })?.clone();
       let time: ExtendedTime <B> = ::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
       let in_future = time > now;
@@ -295,7 +297,7 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
       let data: T = ::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
       unsafe {::std::ptr::write (
         &*handle.data as *const EventInner<B> as *mut EventInner<B>,
-        deserialization_create_event_inner(time.clone(), data, in_future)
+        deserialization_create_event_inner(time.clone(), data, in_future, handle.data.links.clone())
       );}
       Ok(())
     })
@@ -420,9 +422,13 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
     fn deserialize <D: $crate::serde::Deserializer<'a>> (deserializer: D)->Result <Self, D::Error> {
       bincode_error_to_generic(with_deserialization_context (| context | {
         let object_identifier = generic_error_to_bincode(u64::deserialize (deserializer))?;
-        Ok(context.find_handle::<_, EventHandle <B>> (object_identifier, || {
-          Box::<EventHandle <B>>::new (EventHandle {data: Rc::new(unsafe {::std::mem::uninitialized()})}) as Box<Any>
-        })?.clone())
+        let handle = context.find_handle::<_, EventHandle <B>> (object_identifier, || {
+          let handle_box = Box::<EventHandle <B>>::new (EventHandle { data: Rc::new(unsafe {::std::mem::uninitialized()})});
+          handle_box.data.links.set(0);
+          handle_box as Box<Any>
+        })?.clone();
+        handle.data.links.set (handle.data.links.get () + 1);
+        Ok(handle)
       }))
     }
   }
