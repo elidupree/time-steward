@@ -18,8 +18,8 @@ pub trait BoundingBoxCollisionDetectable: PersistentlyIdentifiedType {
   // An Object generally has to store some opaque data for the collision detector.
   // It would normally include a DataHandle to a tree node.
   // These are getter and setter methods for that data.
-  fn get_collision_detector_data<A: EventAccessor <Steward = Self::Steward>>(accessor: &A, object: &DataHandle<Self::Object>, space: &Self::Space)->Option<DataTimelineCellReadGuard<ObjectVarying<Self>>>;
-  fn set_collision_detector_data<A: EventAccessor <Steward = Self::Steward>>(accessor: &A, object: &DataHandle<Self::Object>, space: &Self::Space, data: Option<ObjectVarying<Self>>);
+  fn get_collision_detector_data<A: EventAccessor <Steward = Self::Steward>>(accessor: &A, object: &DataHandle<Self::Object>, space: &Self::Space)->Option<&ObjectData<Self>>>;
+  fn set_collision_detector_data<A: EventAccessor <Steward = Self::Steward>>(accessor: &A, object: &DataHandle<Self::Object>, space: &Self::Space, data: Option<ObjectData<Self>>);
 
   fn calculate_current_bounding_box<A: EventAccessor <Steward = Self::Steward>>(accessor: &A, object: &DataHandle<Self::Object>, space: &Self::Space)->BoundingBox;
   fn when_escapes<A: EventAccessor <Steward = Self::Steward>>(accessor: &A, object: &DataHandle<Self::Object>, space: &Self::Space, BoundingBox)-><Self::Steward as TimeSteward>::Basics::Time;
@@ -31,11 +31,17 @@ pub trait BoundingBoxCollisionDetectable: PersistentlyIdentifiedType {
 pub struct BoundingBox<B: BoundingBoxCollisionDetectable> {
   pub bounds: [[Coordinate; 2]; B::DIMENSIONS],
 }
+struct NodeBounds<B: BoundingBoxCollisionDetectable> {
+  half_size_shift: u32,
+  center: [Coordinate; B::DIMENSIONS],
+}
+fn smallest_containing_node_bounds <B: BoundingBoxCollisionDetectable> (bounds: & BoundingBox<B>)->NodeBounds <B> {
+  unimplemented!()
+}
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Node<B: BoundingBoxCollisionDetectable> {
-  size_shift: u32,
-  center: [Coordinate; 2],
+  bounds: NodeBounds<B>,
   parent: Option<DataHandle <Node <B>>>,
   larger_cousins: [[Option<DataHandle <Node <B>>>; 2]; B::DIMENSIONS],
   varying: NodeVarying <B>,
@@ -50,7 +56,10 @@ struct NodeVarying<B: BoundingBoxCollisionDetectable> {
   objects: Vec<DataHandle <B::Object>>,
 }
 
-pub struct ObjectVarying<B: BoundingBoxCollisionDetectable> {
+pub struct ObjectData<B: BoundingBoxCollisionDetectable> {
+  varying: ObjectVarying<B>,
+}
+struct ObjectVarying<B: BoundingBoxCollisionDetectable> {
   node: DataHandle <Node <B>>,
 }
 pub struct BoundingBoxCollisionDetector<B: BoundingBoxCollisionDetectable> {
@@ -58,13 +67,13 @@ pub struct BoundingBoxCollisionDetector<B: BoundingBoxCollisionDetectable> {
 }
 
 impl<B: BoundingBoxCollisionDetectable> BoundingBoxCollisionDetector<B> {
-  fn insert<A: EventAccessor <Steward = B::Steward>>(accessor: &A, object: &DataHandle<B::Object>, space: &B::Space, location_hint: Option <& DataHandle<B::Object>>) {
+  pub fn insert<A: EventAccessor <Steward = B::Steward>>(accessor: &A, object: &DataHandle<B::Object>, space: &B::Space, location_hint: Option <& DataHandle<B::Object>>) {
   
   }
-  fn remove<A: EventAccessor <Steward = B::Steward>>(accessor: &A, object: &DataHandle<B::Object>, space: &B::Space) {
+  pub fn remove<A: EventAccessor <Steward = B::Steward>>(accessor: &A, object: &DataHandle<B::Object>, space: &B::Space) {
   
   }
-  fn neighbors<A: EventAccessor <Steward = B::Steward>>(accessor: &A, object: &DataHandle<B::Object>, space: &B::Space) -> Iter {
+  pub fn neighbors<A: EventAccessor <Steward = B::Steward>>(accessor: &A, object: &DataHandle<B::Object>, space: &B::Space) -> Iter {
   
   }
 }
@@ -87,3 +96,31 @@ impl<B: BoundingBoxCollisionDetectable> Event for EscapesBounds<B> {
   }
 }
 
+
+impl<B: BoundingBoxCollisionDetectable> BoundingBoxCollisionDetector<B> {
+  fn reposition <A: EventAccessor <Steward = B::Steward>> (accessor: &A, object: &DataHandle<B::Object>) {
+    let varying = tracking_query (accessor, object.varying);
+    let mut current_node = varying.node;
+    let new_bounds = B::calculate_current_bounding_box (object);
+    let destination_node_bounds = smallest_containing_node_bounds (new_bounds) ;
+    let bigger_shift = max (current_node.bounds.half_size_shift, destination_node_bounds.half_size_shift);
+    
+    while current_node.bounds.half_size_shift < bigger_shift {
+      current_node = current_node.parent.expect("All nodes except the root node have to have a parent, and we should never be trying to navigate to a node bigger than the root");
+    }
+    
+    let mut destination_ancestor_bounds = destination_node_bounds;
+    while destination_ancestor_bounds.half_size_shift < bigger_shift {
+      destination_ancestor_bounds = parent_bounds(destination_ancestor_bounds);
+    }
+    
+    while largest_single_dimension_distance (current_node.bounds, destination_ancestor_bounds) > (1 << destination_ancestor_bounds.half_size_shift) {
+      destination_ancestor_bounds = parent_bounds(destination_ancestor_bounds);
+      current_node = current_node.parent.expect("All nodes except the root node have to have a parent, and we should never be trying to navigate to a node bigger than the root");
+    }
+    
+    if current_node.bounds != destination_ancestor_bounds {
+      // they should now be the same size and half- or all-overlapping in each dimension.
+    }
+  }
+}
