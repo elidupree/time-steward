@@ -34,7 +34,7 @@ fn bouncy_circles_straightforward(bencher: &mut Bencher) {
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize {}).unwrap();
     // make sure to check for inefficiencies in the forgetting code
     steward.forget_before(& 0);
-    steward.snapshot_before(& SECOND).expect("steward failed to provide snapshot");
+    steward.snapshot_before(& (10*SECOND)).expect("steward failed to provide snapshot");
   })
 }
 
@@ -45,10 +45,10 @@ fn bouncy_circles_disturbed (bencher: &mut Bencher) {
     let mut steward: Steward = Steward::from_globals (make_globals());
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize {}).unwrap();
     for index in 1..10 {
-      steward.insert_fiat_event (index*SECOND/10, DeterministicRandomId::new (& index), Disturb{ coordinates: [ARENA_SIZE/3,ARENA_SIZE/3]}).unwrap();
+      steward.insert_fiat_event (index*SECOND, DeterministicRandomId::new (& index), Disturb{ coordinates: [ARENA_SIZE/3,ARENA_SIZE/3]}).unwrap();
     }
     steward.forget_before(& 0);
-    steward.snapshot_before(& SECOND).expect("steward failed to provide snapshot");
+    steward.snapshot_before(& (10*SECOND)).expect("steward failed to provide snapshot");
   })
 }
 /*
@@ -57,10 +57,10 @@ fn bouncy_circles_disturbed_retroactive (bencher: &mut Bencher) {
   bencher.iter(|| {
     let mut steward: amortized::Steward<Basics> = amortized::Steward::from_constants(());
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
-    steward.snapshot_before(& SECOND).expect("steward failed to provide snapshot");
+    steward.snapshot_before(& (10*SECOND)).expect("steward failed to provide snapshot");
     for index in 1..10 {
-      steward.insert_fiat_event (index*SECOND/10, DeterministicRandomId::new (& index), Disturb::new ([ARENA_SIZE/3,ARENA_SIZE/3])).unwrap();
-      steward.snapshot_before(& SECOND).expect("steward failed to provide snapshot");
+      steward.insert_fiat_event (index*SECOND, DeterministicRandomId::new (& index), Disturb::new ([ARENA_SIZE/3,ARENA_SIZE/3])).unwrap();
+      steward.snapshot_before(& (10*SECOND)).expect("steward failed to provide snapshot");
     }
   })
 }
