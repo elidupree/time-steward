@@ -27,7 +27,7 @@ use time_steward::{DeterministicRandomId};
 use time_steward::{PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataHandleTrait, DataTimelineCellTrait, QueryResult};
 use time_steward::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, tracking_query, set, destroy, just_destroyed};
+use simple_timeline::{SimpleTimeline, tracking_query, tracking_query_ref, set, destroy, just_destroyed};
 
 type Distance = i64;
 
@@ -123,20 +123,24 @@ fn iterate_children <Child, F: FnMut ([usize; DIMENSIONS], &Child)> (children: &
   }
 }
 
-fn face_by_dimension_and_direction<Face> (faces: &NodeFaces<Face>, dimension: usize, direction: usize)->&Face {
+pub fn face_by_dimension_and_direction<Face> (faces: &NodeFaces<Face>, dimension: usize, direction: usize)->&Face {
   & faces [dimension] [direction]
 }
-fn faces_from_fn<Face, F: FnMut(usize, usize)->Face> (initializer: F)->NodeFaces<Face> {
+fn faces_from_fn<Face, F: FnMut(usize, usize)->Face> (mut initializer: F)->NodeFaces<Face> {
   Array::from_fn (| dimension | {
     Array::from_fn (| direction | {
       initializer (dimension, direction)
     })
   })
 }
-
-fn boundary_by_coordinates_and_dimension<Physics: TreeContinuumPhysics> (boundaries: &NodeBoundaries<Physics>, coordinates: [usize; DIMENSIONS], dimension: usize)->Option<&BoundaryHandle <Physics>> {
-  face_boundary_component_by_coordinates_and_dimension(face_by_dimension_and_direction(boundaries, dimension, coordinates [dimension]), coordinates, dimension)
+fn iterate_faces<Face, F: FnMut(usize, usize, &Face)> (faces: &NodeFaces<Face>, mut callback: F) {
+  for (dimension, subset) in faces.iter().enumerate() {
+    for (direction, face) in subset.iter().enumerate() {
+      callback (dimension, direction, face)
+    }
+  }
 }
+
 
 fn face_boundary_component_by_coordinates_and_dimension<Physics: TreeContinuumPhysics> (boundaries: &FaceBoundaries<Physics>, coordinates: [usize; DIMENSIONS], dimension: usize)->Option<&BoundaryHandle <Physics>> {
   match boundaries {
@@ -147,6 +151,30 @@ fn face_boundary_component_by_coordinates_and_dimension<Physics: TreeContinuumPh
     }
   }
 }
+
+fn iterate_face_boundaries <Physics: TreeContinuumPhysics, F: FnMut(& BoundaryHandle <Physics>)> (boundaries: &FaceBoundaries<Physics>, mut callback: F) {
+  match boundaries {
+    &FaceBoundaries::WorldEdge => (),
+    &FaceBoundaries::SingleBoundary (ref handle) => callback (handle),
+    &FaceBoundaries::SplitBoundary (ref array) => {
+      for handle in array.iter() {
+        callback (handle) ;
+      }
+    }
+  }
+}
+
+
+fn boundary_by_coordinates_and_dimension<Physics: TreeContinuumPhysics> (boundaries: &NodeBoundaries<Physics>, coordinates: [usize; DIMENSIONS], dimension: usize)->Option<&BoundaryHandle <Physics>> {
+  face_boundary_component_by_coordinates_and_dimension(face_by_dimension_and_direction(boundaries, dimension, coordinates [dimension]), coordinates, dimension)
+}
+
+fn iterate_boundaries <Physics: TreeContinuumPhysics, F: FnMut(& BoundaryHandle <Physics>)> (boundaries: &NodeBoundaries<Physics>, mut callback: F) {
+  iterate_faces (boundaries, | dimension, direction, face | {
+    iterate_face_boundaries (face, | boundary | callback (boundary));
+  });
+}
+
 
 // Ignores the coordinate in the normal dimension
 fn split_boundary_component_from_coordinates<Physics: TreeContinuumPhysics> (boundary: &SplitBoundary<Physics>, dimension: usize, coordinates: [usize; DIMENSIONS])->&BoundaryHandle<Physics> {
@@ -172,6 +200,21 @@ fn split_boundary_from_fn<Physics: TreeContinuumPhysics, F: FnMut([usize; DIMENS
     initializer (coordinates)
   })
 }
+// leaves the coordinate in the normal dimension at 0
+fn iterate_split_boundary<Physics: TreeContinuumPhysics, F: FnMut([usize; DIMENSIONS])>(dimension: usize, mut callback: F) {
+  for index in 0..(1 << (DIMENSIONS-1)) {
+    let mut coordinates = [0; DIMENSIONS];
+    for (dimension2_bit, dimension2) in (0..DIMENSIONS).filter (| dimension2 | *dimension2 != dimension).enumerate() {
+      if (index & (1<<dimension2_bit)) != 0 {
+        coordinates [dimension2] = 1;
+      } else {
+        coordinates [dimension2] = 0;
+      }
+    }
+    callback (coordinates);
+  }
+}
+
 
 
 
@@ -214,12 +257,13 @@ fn audit_boundary <A: EventAccessor <Steward = Steward >> (accessor: &A, boundar
   }
 }*/
 
-pub struct SubNodeInfo<Physics: TreeContinuumPhysics> {
+pub struct NewChildInfo<Physics: TreeContinuumPhysics> {
   pub node: NodeHandle<Physics>,
   pub local_coordinates: [usize; DIMENSIONS],
-  pub old_boundaries: [usize; DIMENSIONS*2],
+  pub new_boundaries: NodeFaces<Option<BoundaryHandle<Physics>>>,
+  pub old_boundaries: NodeFaces<Option<BoundaryHandle<Physics>>>,
 }
-pub struct SubBoundaryInfo<Physics: TreeContinuumPhysics> {
+pub struct NewBoundaryInfo<Physics: TreeContinuumPhysics> {
   pub boundary: BoundaryHandle<Physics>,
   pub old_boundary: Option<BoundaryHandle<Physics>>,
   pub normal_dimension: usize,
@@ -230,15 +274,35 @@ pub struct SubBoundaryInfo<Physics: TreeContinuumPhysics> {
 
 
 
-pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>, N, B> (accessor: &A, splitting_node: &NodeHandle<Physics>, node_initializer: N, boundary_initializer: B) where N: Fn(SubNodeInfo<Physics>)->Physics::NodeVarying, B: Fn(SubBoundaryInfo<Physics>)->Physics::BoundaryVarying {
-  let splitting_varying = tracking_query (accessor, &splitting_node.varying);
-  //printlnerr!("{:?}", (splitting_node.width, splitting_node.center, splitting_varying.children.len()));
+pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>, N, B> (accessor: &A, splitting_node: &NodeHandle<Physics>, child_initializer: N, boundary_initializer: B) where N: Fn(NewChildInfo<Physics>)->Physics::NodeVarying, B: Fn(NewBoundaryInfo<Physics>)->Physics::BoundaryVarying {
+  let splitting_leaf;
+  {
+    let mut splitting_varying_guard = tracking_query_ref (accessor, &splitting_node.varying);
+    //printlnerr!("{:?}", (splitting_node.width, splitting_node.center, splitting_varying.children.len()));
 
-  let splitting_leaf = match splitting_varying {
-    NodeVarying::Branch (_) => panic!(),
-    NodeVarying::Leaf (l) => l,
-  };
-  
+    let mut old_leaf = match *splitting_varying_guard {
+      NodeVarying::Branch (_) => panic!(),
+      NodeVarying::Leaf (l) => l,
+    };
+    
+    for dimension in 0..DIMENSIONS {
+      for direction in 0..2 {
+        if let &FaceBoundaries::SingleBoundary (ref handle) = face_by_dimension_and_direction (&old_leaf.boundaries, dimension, direction) {
+          let neighbor = handle.nodes [direction];
+          if neighbor.width > splitting_node.width {
+            split (accessor, neighbor);
+            splitting_varying_guard = tracking_query_ref (accessor, &splitting_node.varying);
+            old_leaf = match *splitting_varying_guard {
+              NodeVarying::Branch (_) => panic!(),
+              NodeVarying::Leaf (l) => l,
+            };
+          }
+        }
+      }
+    };
+    
+    splitting_leaf = old_leaf.clone();
+  }
   let new_branch = BranchVarying {
     children: children_from_fn(| coordinates | {
       let center = child_center_by_coordinates(splitting_node, coordinates);
@@ -281,7 +345,7 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
             let mut local_coordinates = coordinates;
             local_coordinates [dimension] <<= 1;
             set (accessor, &new_boundary.varying, BoundaryVarying {
-              data: boundary_initializer (SubBoundaryInfo {
+              data: boundary_initializer (NewBoundaryInfo {
                 boundary: new_boundary.clone(),
                 old_boundary: Some(old_boundary.clone()),
                 normal_dimension: dimension,
@@ -314,7 +378,7 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
       let mut local_coordinates = coordinates;
       local_coordinates [dimension] = 1;
       set (accessor, &new_boundary.varying, BoundaryVarying {
-        data: boundary_initializer (SubBoundaryInfo {
+        data: boundary_initializer (NewBoundaryInfo {
           boundary: new_boundary.clone(),
           old_boundary: None,
           normal_dimension: dimension,
@@ -326,14 +390,34 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
   });
   
   iterate_children (& new_branch.children, | coordinates, child | {
+    let old_boundaries = faces_from_fn (| dimension, direction | {
+        if coordinates [dimension] == direction {
+          boundary_by_coordinates_and_dimension (& splitting_leaf.boundaries, coordinates, dimension).cloned()
+        }
+        else {
+          None
+        }
+      });
+    let new_boundaries = faces_from_fn (| dimension, direction | {
+        if coordinates [dimension] == direction {
+          match face_by_dimension_and_direction (& new_exterior_boundaries, dimension, direction) {
+            &None => None,
+            &Some(ref split) => Some(split_boundary_component_from_coordinates (split, dimension, coordinates).clone()),
+          }
+        }
+        else {
+          Some(split_boundary_component_from_coordinates (&new_interior_boundaries [dimension], dimension, coordinates).clone())
+        }
+      });
     set (accessor, &child.varying, NodeVarying::Leaf(LeafVarying {
-      boundaries: faces_from_fn (| dimension, direction | {
-        
-      }),
-      data: boundary_initializer (SubBoundaryInfo {
-        boundary: new_boundary.clone(),
-        old_boundary: None,
-        normal_dimension: dimension,
+      boundaries: faces_from_fn (| dimension, direction | { match face_by_dimension_and_direction (& new_boundaries, dimension, direction).clone() {
+        None => FaceBoundaries::WorldEdge,
+        Some(boundary) => FaceBoundaries::SingleBoundary(boundary),
+      }}),
+      data: child_initializer (NewChildInfo {
+        node: child.clone(),
+        old_boundaries: old_boundaries,
+        new_boundaries: new_boundaries,
         local_coordinates: coordinates,
       }),
     }));
