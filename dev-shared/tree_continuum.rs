@@ -54,9 +54,19 @@ pub struct NodeData<Physics: TreeContinuumPhysics> {
   varying: DataTimelineCell <SimpleTimeline <NodeVarying<Physics>, Physics::Steward>>,
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-pub struct NodeVarying<Physics: TreeContinuumPhysics> {
+pub enum NodeVarying<Physics: TreeContinuumPhysics> {
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
-  children: Option<[NodeHandle<Physics>; 1<<DIMENSIONS]>,
+  Branch (BranchVarying <Physics>),
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
+  Leaf (LeafVarying <Physics>),
+}
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub struct BranchVarying<Physics: TreeContinuumPhysics> {
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
+  children: [NodeHandle<Physics>; 1<<DIMENSIONS],
+}
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub struct LeafVarying<Physics: TreeContinuumPhysics> {
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   boundaries: NodeBoundaries<Physics>,
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
@@ -88,20 +98,94 @@ impl<Physics: TreeContinuumPhysics> PersistentlyIdentifiedType for BoundaryData<
   const ID: PersistentTypeId = PersistentTypeId(Physics::ID.0 ^ 0x4913f629aef09374);
 }
 
+
+fn child_by_coordinates <Child> (children: & [Child; 1 << DIMENSIONS], coordinates: [usize; DIMENSIONS])-> & Child {
+  let mut index = 0;
+  for dimension in 0..DIMENSIONS {
+    if coordinates [index] == 1 {index += 1 << dimension;}
+  }
+  & children [index]
+}
+fn children_from_fn <Child, F: FnMut ([usize; DIMENSIONS])->Child> (mut initializer: F)->[Child; 1 << DIMENSIONS] {
+  Array::from_fn (| index | {
+    let coordinates = Array::from_fn (| dimension | {
+      if (index & (1 << dimension)) != 0 {1} else {0}
+    });
+    initializer (coordinates)
+  })
+}
+fn iterate_children <Child, F: FnMut ([usize; DIMENSIONS], &Child)> (children: & [Child; 1 << DIMENSIONS], mut callback: F) {
+  for (index, child) in children.iter().enumerate() {
+    let coordinates = Array::from_fn (| dimension | {
+      if (index & (1 << dimension)) != 0 {1} else {0}
+    });
+    callback (coordinates, child);
+  }
+}
+
+fn face_by_dimension_and_direction<Face> (faces: &NodeFaces<Face>, dimension: usize, direction: usize)->&Face {
+  & faces [dimension] [direction]
+}
+fn faces_from_fn<Face, F: FnMut(usize, usize)->Face> (initializer: F)->NodeFaces<Face> {
+  Array::from_fn (| dimension | {
+    Array::from_fn (| direction | {
+      initializer (dimension, direction)
+    })
+  })
+}
+
 fn boundary_by_coordinates_and_dimension<Physics: TreeContinuumPhysics> (boundaries: &NodeBoundaries<Physics>, coordinates: [usize; DIMENSIONS], dimension: usize)->Option<&BoundaryHandle <Physics>> {
-  match boundaries [dimension] [coordinates [dimension]] {
-    FaceBoundaries::WorldEdge => None,
-    FaceBoundaries::SingleBoundary (ref handle) => Some(handle),
-    FaceBoundaries::SplitBoundary (ref array) => {
-      let mut index = 0;
-      for (dimension2_bit, dimension2) in (0..DIMENSIONS).filter (| dimension2 | *dimension2 != dimension).enumerate() {
-        if coordinates [dimension2] == 1 {
-          index += 1<<dimension2_bit;
-        }
-      }
-      Some(& array [index])
+  face_boundary_component_by_coordinates_and_dimension(face_by_dimension_and_direction(boundaries, dimension, coordinates [dimension]), coordinates, dimension)
+}
+
+fn face_boundary_component_by_coordinates_and_dimension<Physics: TreeContinuumPhysics> (boundaries: &FaceBoundaries<Physics>, coordinates: [usize; DIMENSIONS], dimension: usize)->Option<&BoundaryHandle <Physics>> {
+  match boundaries {
+    &FaceBoundaries::WorldEdge => None,
+    &FaceBoundaries::SingleBoundary (ref handle) => Some(handle),
+    &FaceBoundaries::SplitBoundary (ref array) => {
+      Some(split_boundary_component_from_coordinates(array, dimension, coordinates))
     }
   }
+}
+
+// Ignores the coordinate in the normal dimension
+fn split_boundary_component_from_coordinates<Physics: TreeContinuumPhysics> (boundary: &SplitBoundary<Physics>, dimension: usize, coordinates: [usize; DIMENSIONS])->&BoundaryHandle<Physics> {
+  let mut index = 0;
+  for (dimension2_bit, dimension2) in (0..DIMENSIONS).filter (| dimension2 | *dimension2 != dimension).enumerate() {
+    if coordinates [dimension2] == 1 {
+      index += 1<<dimension2_bit;
+    }
+  }
+  & boundary[index]
+}
+// leaves the coordinate in the normal dimension at 0
+fn split_boundary_from_fn<Physics: TreeContinuumPhysics, F: FnMut([usize; DIMENSIONS])->BoundaryHandle<Physics>>(dimension: usize, mut initializer: F)->SplitBoundary<Physics> {
+  Array::from_fn(| index | {
+    let mut coordinates = [0; DIMENSIONS];
+    for (dimension2_bit, dimension2) in (0..DIMENSIONS).filter (| dimension2 | *dimension2 != dimension).enumerate() {
+      if (index & (1<<dimension2_bit)) != 0 {
+        coordinates [dimension2] = 1;
+      } else {
+        coordinates [dimension2] = 0;
+      }
+    }
+    initializer (coordinates)
+  })
+}
+
+
+
+fn child_center_by_coordinates<Physics: TreeContinuumPhysics> (parent: &NodeHandle<Physics>, coordinates: [usize; DIMENSIONS])->[Distance ; DIMENSIONS] {
+  let mut center = parent.center;
+  for dimension in 0..DIMENSIONS {
+    if coordinates [dimension] == 1 {
+      center [dimension] += parent.width >> 2;
+    }
+    else {
+      center [dimension] -= parent.width >> 2;
+    }
+  }
+  center
 }
 
 
@@ -130,106 +214,132 @@ fn audit_boundary <A: EventAccessor <Steward = Steward >> (accessor: &A, boundar
   }
 }*/
 
-struct SubNodeInfo<Physics: TreeContinuumPhysics> {
-  node: NodeHandle<Physics>,
-  local_coordinates: [usize; DIMENSIONS],
-  old_boundaries: [usize; DIMENSIONS*2],
+pub struct SubNodeInfo<Physics: TreeContinuumPhysics> {
+  pub node: NodeHandle<Physics>,
+  pub local_coordinates: [usize; DIMENSIONS],
+  pub old_boundaries: [usize; DIMENSIONS*2],
 }
-struct SubBoundaryInfo<Physics: TreeContinuumPhysics> {
-  boundary: BoundaryHandle<Physics>,
-  old_boundary: Option<BoundaryHandle<Physics>>,
-  normal_dimension: usize,
+pub struct SubBoundaryInfo<Physics: TreeContinuumPhysics> {
+  pub boundary: BoundaryHandle<Physics>,
+  pub old_boundary: Option<BoundaryHandle<Physics>>,
+  pub normal_dimension: usize,
   // 0-1 in all dimensions other than our the normal;
   // 0-2 in the normal
-  local_coordinates: [usize; DIMENSIONS],
-  
+  pub local_coordinates: [usize; DIMENSIONS],
 }
 
 
 
-pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>, N, B> (accessor: &A, node: &NodeHandle<Physics>, node_initializer: N, boundary_initializer: B) where N: Fn(SubNodeInfo<Physics>)->Physics::NodeVarying, B: Fn(SubBoundaryInfo<Physics>)->Physics::BoundaryVarying {
-  let mut varying = tracking_query (accessor, &node.varying);
-  //printlnerr!("{:?}", (node.width, node.center, varying.children.len()));
-  //if !varying.children.is_empty() {
-    //printlnerr!("{:?}", (node.width, node.center, varying.children.len()));
-  //}
-  assert!(varying.children.is_none());
+pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>, N, B> (accessor: &A, splitting_node: &NodeHandle<Physics>, node_initializer: N, boundary_initializer: B) where N: Fn(SubNodeInfo<Physics>)->Physics::NodeVarying, B: Fn(SubBoundaryInfo<Physics>)->Physics::BoundaryVarying {
+  let splitting_varying = tracking_query (accessor, &splitting_node.varying);
+  //printlnerr!("{:?}", (splitting_node.width, splitting_node.center, splitting_varying.children.len()));
 
-  varying.children = Some (Array::from_fn(| index | {
-    let mut center = node.center;
-    let mut coordinates = [0; DIMENSIONS];
-    for dimension in 0..DIMENSIONS {
-      if (index & (1 << dimension)) != 0 {
-        coordinates [dimension] = 1;
-        center [dimension] += node.width >> 2;
-      }
-      else {
-        center [dimension] -= node.width >> 2;
-      }
-    }
-    let new_child = accessor.new_handle (NodeData {
-      width: node.width >> 1,
-      center: center,
-      parent: Some (node.clone()),
-      varying: DataTimelineCell::new (SimpleTimeline::new ()),
-    });
-    for dimension in 0..DIMENSIONS {
-      if let Some(old_boundary) = boundary_by_coordinates_and_dimension (&varying.boundaries, coordinates, dimension) {
-        let mut boundary_center = center;
-        let boundary_nodes;
-        if coordinates [dimension] == 1 {
-          boundary_center [dimension] += node.width >> 2;
-          boundary_nodes = [new_child.clone(), old_boundary.nodes[1].clone()];
-        }
-        else {
-          boundary_center [dimension] -= node.width >> 2;
-          boundary_nodes = [old_boundary.nodes[0].clone(), new_child.clone()];
-        }
-        let new_boundary = accessor.new_handle (BoundaryData {
-          length: node.width >> 1,
-          center: boundary_center,
-          nodes: boundary_nodes,
-          varying: DataTimelineCell::new (SimpleTimeline::new ()),
-        });
-        let mut local_coordinates = coordinates;
-        local_coordinates [dimension] <<= 1;
-        set (accessor, &new_boundary.varying, BoundaryVarying {
-          data: boundary_initializer (SubBoundaryInfo {
-            boundary: new_boundary.clone(),
-            old_boundary: Some(old_boundary.clone()),
-            normal_dimension: dimension,
-            local_coordinates: coordinates,
-          }),
-        });
-      }
-      if coordinates [dimension] == 1 {
-        let mut boundary_center = center;
-        boundary_center [dimension] = node.center [dimension];
-        let boundary_nodes = [new_child.clone(), unimplemented!()];
-        let new_boundary = accessor.new_handle (BoundaryData {
-          length: node.width >> 1,
-          center: boundary_center,
-          nodes: boundary_nodes,
-          varying: DataTimelineCell::new (SimpleTimeline::new ()),
-        });
-        let mut local_coordinates = coordinates;
-        local_coordinates [dimension] = 1;
-        set (accessor, &new_boundary.varying, BoundaryVarying {
-          data: boundary_initializer (SubBoundaryInfo {
-            boundary: new_boundary.clone(),
-            old_boundary: None,
-            normal_dimension: dimension,
-            local_coordinates: coordinates,
-          }),
-        });
-      }
-    }
-    new_child
-  }));
+  let splitting_leaf = match splitting_varying {
+    NodeVarying::Branch (_) => panic!(),
+    NodeVarying::Leaf (l) => l,
+  };
   
-  //varying.boundaries = ;
+  let new_branch = BranchVarying {
+    children: children_from_fn(| coordinates | {
+      let center = child_center_by_coordinates(splitting_node, coordinates);
+      let new_child = accessor.new_handle (NodeData {
+        width: splitting_node.width >> 1,
+        center: center,
+        parent: Some (splitting_node.clone()),
+        varying: DataTimelineCell::new (SimpleTimeline::new ()),
+      });
+      new_child
+    }),
+  };
   
-  set (accessor, &node.varying, varying);
+  let new_exterior_boundaries: NodeFaces<Option<SplitBoundary<Physics>>> = Array::from_fn (| dimension | {
+    Array::from_fn (| direction | {
+      let old_face = face_by_dimension_and_direction (&splitting_leaf.boundaries, dimension, direction);
+      match old_face {
+        &FaceBoundaries::WorldEdge => None,
+        _ => {
+          Some(split_boundary_from_fn (dimension, | mut coordinates | {
+            coordinates [dimension] = direction;
+            let child = child_by_coordinates (& new_branch.children, coordinates);
+            let old_boundary = face_boundary_component_by_coordinates_and_dimension(old_face, coordinates, dimension).unwrap();
+            let mut boundary_center = child.center;
+            let boundary_nodes;
+            if coordinates [dimension] == 1 {
+              boundary_center [dimension] += splitting_node.width >> 2;
+              boundary_nodes = [child.clone(), old_boundary.nodes[1].clone()];
+            }
+            else {
+              boundary_center [dimension] -= splitting_node.width >> 2;
+              boundary_nodes = [old_boundary.nodes[0].clone(), child.clone()];
+            }
+            let new_boundary = accessor.new_handle (BoundaryData {
+              length: splitting_node.width >> 1,
+              center: boundary_center,
+              nodes: boundary_nodes,
+              varying: DataTimelineCell::new (SimpleTimeline::new ()),
+            });
+            let mut local_coordinates = coordinates;
+            local_coordinates [dimension] <<= 1;
+            set (accessor, &new_boundary.varying, BoundaryVarying {
+              data: boundary_initializer (SubBoundaryInfo {
+                boundary: new_boundary.clone(),
+                old_boundary: Some(old_boundary.clone()),
+                normal_dimension: dimension,
+                local_coordinates: coordinates,
+              }),
+            });
+            new_boundary
+          }))
+        }
+      }
+    })
+  });
+  
+  let new_interior_boundaries: [SplitBoundary<Physics>; DIMENSIONS] = Array::from_fn (| dimension | {
+    split_boundary_from_fn (dimension, | coordinates | {
+      let mut second_coordinates = coordinates; second_coordinates [dimension] = 1;
+      let children = [
+        child_by_coordinates (& new_branch.children, coordinates),
+        child_by_coordinates (& new_branch.children, second_coordinates),
+      ];
+      let mut boundary_center = children [0].center;
+      boundary_center [dimension] = splitting_node.center [dimension];
+      let boundary_nodes = [children [0].clone(), children [1].clone()];
+      let new_boundary = accessor.new_handle (BoundaryData {
+        length: splitting_node.width >> 1,
+        center: boundary_center,
+        nodes: boundary_nodes,
+        varying: DataTimelineCell::new (SimpleTimeline::new ()),
+      });
+      let mut local_coordinates = coordinates;
+      local_coordinates [dimension] = 1;
+      set (accessor, &new_boundary.varying, BoundaryVarying {
+        data: boundary_initializer (SubBoundaryInfo {
+          boundary: new_boundary.clone(),
+          old_boundary: None,
+          normal_dimension: dimension,
+          local_coordinates: coordinates,
+        }),
+      });
+      new_boundary
+    })
+  });
+  
+  iterate_children (& new_branch.children, | coordinates, child | {
+    set (accessor, &child.varying, NodeVarying::Leaf(LeafVarying {
+      boundaries: faces_from_fn (| dimension, direction | {
+        
+      }),
+      data: boundary_initializer (SubBoundaryInfo {
+        boundary: new_boundary.clone(),
+        old_boundary: None,
+        normal_dimension: dimension,
+        local_coordinates: coordinates,
+      }),
+    }));
+  });
+  
+  set (accessor, &splitting_node.varying, NodeVarying::Branch(new_branch));
   
 }
 
