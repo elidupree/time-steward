@@ -5,9 +5,12 @@ macro_rules! printlnerr(
     } }
 );
 
+use std::fmt::Debug;
+use serde::{Serialize};
+use serde::de::DeserializeOwned;
 
 
-trait TreeContinuumPhysics: 'static {
+trait TreeContinuumPhysics: Clone + Eq + Serialize + DeserializeOwned + Debug + PersistentlyIdentifiedType + 'static {
   const DIMENSIONS: usize;
   type Steward: TimeSteward;
   type NodeVarying: QueryResult;
@@ -28,55 +31,56 @@ type Distance = i64;
 
 const DIMENSIONS: usize = 2; // $DIMENSIONS;
 
-#[serde(bound = "")]
-#[derive (Serialize, Deserialize, Derivative)]
-#[derivative (Clone (bound=""), Debug (bound=""), PartialEq (bound=""), Eq (bound=""))]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 enum Face<Physics: TreeContinuumPhysics> {
   WorldEdge,
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   SingleBoundary (BoundaryHandle<Physics>),
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   SplitBoundary ([BoundaryHandle<Physics>; 1<<(DIMENSIONS-1)]),
 }
 
-#[serde(bound = "")]
-#[derive (Serialize, Deserialize, Derivative)]
-#[derivative (Clone (bound=""), Debug (bound=""), PartialEq (bound=""), Eq (bound=""))]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct NodeData<Physics: TreeContinuumPhysics> {
   width: Distance,
   center: [Distance ; DIMENSIONS],
+  // Hacky workaround for https://github.com/rust-lang/rust/issues/41617 (see https://github.com/serde-rs/serde/issues/943)
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   parent: Option <NodeHandle<Physics>>,
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   varying: DataTimelineCell <SimpleTimeline <NodeVarying<Physics>, Physics::Steward>>,
 }
-#[serde(bound = "")]
-#[derive (Serialize, Deserialize, Derivative)]
-#[derivative (Clone (bound=""), Debug (bound=""), PartialEq (bound=""), Eq (bound=""))]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct NodeVarying<Physics: TreeContinuumPhysics> {
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   children: Vec<NodeHandle<Physics>>,
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   boundaries: [[Face<Physics>; 2]; DIMENSIONS],
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   data: Physics::NodeVarying,
 }
 type NodeHandle<Physics> = DataHandle <NodeData<Physics>>;
 impl<Physics: TreeContinuumPhysics> PersistentlyIdentifiedType for NodeData<Physics> {
-  const ID: PersistentTypeId = PersistentTypeId(Physics::ID ^ 0x0d838bdd804f48d7);
+  const ID: PersistentTypeId = PersistentTypeId(Physics::ID.0 ^ 0x0d838bdd804f48d7);
 }
 
-#[serde(bound = "")]
-#[derive (Serialize, Deserialize, Derivative)]
-#[derivative (Clone (bound=""), Debug (bound=""), PartialEq (bound=""), Eq (bound=""))]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct BoundaryData<Physics: TreeContinuumPhysics> {
   length: Distance,
   center: [Distance ; 2],
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   nodes: [NodeHandle<Physics>; 2],
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   varying: DataTimelineCell <SimpleTimeline <BoundaryVarying<Physics>, Physics::Steward>>,
 }
-#[serde(bound = "")]
-#[derive (Serialize, Deserialize, Derivative)]
-#[derivative (Clone (bound=""), Debug (bound=""), PartialEq (bound=""), Eq (bound=""))]
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct BoundaryVarying<Physics: TreeContinuumPhysics> {
+  #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   data: Physics::BoundaryVarying,
 }
 type BoundaryHandle<Physics> = DataHandle <BoundaryData<Physics>>;
 impl<Physics: TreeContinuumPhysics> PersistentlyIdentifiedType for BoundaryData<Physics> {
-  const ID: PersistentTypeId = PersistentTypeId(Physics::ID ^ 0x4913f629aef09374);
+  const ID: PersistentTypeId = PersistentTypeId(Physics::ID.0 ^ 0x4913f629aef09374);
 }
 
 macro_rules! get {
