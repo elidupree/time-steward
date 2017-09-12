@@ -1,4 +1,3 @@
-
 macro_rules! printlnerr(
     ($($arg:tt)*) => { {use std::io::Write;
         let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
@@ -19,17 +18,17 @@ use std::cmp::{min, max};
 use std::collections::HashSet;
 
 use time_steward::{DeterministicRandomId};
-use time_steward::{PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataHandleTrait, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::{PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataHandleTrait, DataTimelineCellTrait, QueryResult};
 use time_steward::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, query, set, destroy, just_destroyed};
 
-const DIMENSIONS: usize = 2;
+type Distance = i64;
 
 enum Face<Physics: TreeContinuumPhysics> {
   WorldEdge,
   SingleBoundary (BoundaryHandle<Physics>),
-  SplitBoundary ([BoundaryHandle<Physics>; 1<<(DIMENSIONS-1)]
+  SplitBoundary ([BoundaryHandle<Physics>; 1<<(<Physics as TreeContinuumPhysics>::DIMENSIONS-1)]),
 }
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -42,11 +41,11 @@ struct NodeData<Physics: TreeContinuumPhysics> {
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct NodeVarying<Physics: TreeContinuumPhysics> {
   children: Vec<NodeHandle<Physics>>,
-  boundaries: [[Face<Physics>; 2]; DIMENSIONS],
+  boundaries: [[Face<Physics>; 2]; Physics::DIMENSIONS],
   data: Physics::NodeVarying,
 }
 type NodeHandle<Physics> = DataHandle <NodeData<Physics>>;
-impl PersistentlyIdentifiedType for NodeData<Physics> {
+impl<Physics: TreeContinuumPhysics> PersistentlyIdentifiedType for NodeData<Physics> {
   const ID: PersistentTypeId = PersistentTypeId(Physics::ID ^ 0x0d838bdd804f48d7);
 }
 
@@ -62,7 +61,7 @@ struct BoundaryVarying<Physics: TreeContinuumPhysics> {
   data: Physics::BoundaryVarying,
 }
 type BoundaryHandle<Physics> = DataHandle <BoundaryData<Physics>>;
-impl PersistentlyIdentifiedType for BoundaryData<Physics> {
+impl<Physics: TreeContinuumPhysics> PersistentlyIdentifiedType for BoundaryData<Physics> {
   const ID: PersistentTypeId = PersistentTypeId(Physics::ID ^ 0x4913f629aef09374);
 }
 
@@ -95,7 +94,7 @@ macro_rules! exists {
   }
 }
 
-
+/*
 fn audit <A: EventAccessor <Steward = Steward >> (accessor: &A) {
   audit_node (accessor, &accessor.globals().root);
 }
@@ -118,25 +117,42 @@ fn audit_boundary <A: EventAccessor <Steward = Steward >> (accessor: &A, boundar
   for direction in 0..2 {
     assert!(get!(accessor, &boundary.nodes [direction].varying).boundaries.iter().any(|whatever| whatever[(direction+1)&1].iter().any(| other_boundary| other_boundary == boundary)));
   }
+}*/
+
+struct SubNodeInfo<Physics: TreeContinuumPhysics> {
+  node: NodeHandle<Physics>,
+  local_coordinates: [usize; Physics::DIMENSIONS],
+  old_boundaries: [usize; Physics::DIMENSIONS*2],
+}
+struct SubBoundaryInfo<Physics: TreeContinuumPhysics> {
+  boundary: BoundaryHandle<Physics>,
+  old_boundary: BoundaryHandle<Physics>,
+  normal_dimension: usize,
+  // 0-1 in all dimensions other than our the normal;
+  // 0-2 in the normal
+  local_coordinates: [usize; Physics::DIMENSIONS],
+  
 }
 
-fn split <A: EventAccessor <Steward = Steward>> (accessor: &A, node: &NodeHandle) {
-  let mut varying = get!(accessor, &node.varying);
+/*
+
+fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>, N, B> (accessor: &A, node: &NodeHandle, node_initializer: N, boundary_initializer: B) where N: Fn(SubNodeInfo<Physics>)->Physics::NodeVarying, B: Fn(SubBoundaryInfo<Physics>, [Option<SubNodeInfo<Physics>>; 2])->Physics::BoundaryVarying {
+  let mut varying = tracking_query (accessor, &node.varying);
   //printlnerr!("{:?}", (node.width, node.center, varying.children.len()));
   //if !varying.children.is_empty() {
     //printlnerr!("{:?}", (node.width, node.center, varying.children.len()));
   //}
   assert!(varying.children.is_empty());
-  let mut velocities = [[[0;2];2];2];
   let mut old_boundaries = [[[None,None],[None,None]],[[None,None],[None,None]]];
   let mut middle_velocities = [[0;2];2];
-  for dimension in 0..2 {
+  for dimension in 0.. Physics::DIMENSIONS {
     for direction in 0..2 {
+      Face::WorldEdge => (),
       //let direction_signum = (direction*2)-1;
       let other_direction = (direction + 1) & 1;
       
-      match varying.boundaries [dimension] [direction].len() {
-        1 => {
+      match varying.boundaries [dimension] [direction] {
+         => {
           loop {
             {
               let boundary = &varying.boundaries [dimension] [direction] [0];
@@ -172,7 +188,7 @@ fn split <A: EventAccessor <Steward = Steward>> (accessor: &A, node: &NodeHandle
             Some(boundaries [1].clone()),
           ];
         },
-        0 => (),
+        
         _ => unreachable!(),
       };
     }
@@ -182,9 +198,25 @@ fn split <A: EventAccessor <Steward = Steward>> (accessor: &A, node: &NodeHandle
     ];
   }
   
-  // TODO: more accurate computation of ideal middle velocities and ink amounts,
-  // and conserve ink correctly
-  let mut new_children = [[[None,None],[None,None]],[[None,None],[None,None]]];
+  for index in 0..(1 << Physics::DIMENSIONS) {
+    let mut center = node.center;
+    let mut coordinates = [0; Physics::DIMENSIONS];
+    for dimension in 0..Physics::DIMENSIONS {
+      if index & (1 << dimension) {
+        coordinates [dimension] = 1;
+        center [dimension] += node.width >> 2;
+      }
+      else {
+        center [dimension] -= node.width >> 2;
+      }
+    }
+    let new_child = accessor.new_handle (NodeData {
+        width: node.width >> 1,
+        center: center,
+        parent: Some (node.clone()),
+        varying: DataTimelineCell::new (SimpleTimeline::new ()),
+      });
+  }
   for x in 0..2 {
     let x_signum = (x as Distance*2)-1;
     for y in 0..2 {
@@ -405,4 +437,4 @@ fn merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
   for neighbor in neighbors {
     maybe_merge (accessor, &neighbor);
   }
-}
+}*/
