@@ -6,7 +6,8 @@ macro_rules! printlnerr(
 );
 
 
-trait TreeContinuumPhysics {
+
+trait TreeContinuumPhysics: 'static {
   const DIMENSIONS: usize;
   type Steward: TimeSteward;
   type NodeVarying: QueryResult;
@@ -25,23 +26,32 @@ use simple_timeline::{SimpleTimeline, query, set, destroy, just_destroyed};
 
 type Distance = i64;
 
+const DIMENSIONS: usize = 2; // $DIMENSIONS;
+
+#[serde(bound = "")]
+#[derive (Serialize, Deserialize, Derivative)]
+#[derivative (Clone (bound=""), Debug (bound=""), PartialEq (bound=""), Eq (bound=""))]
 enum Face<Physics: TreeContinuumPhysics> {
   WorldEdge,
   SingleBoundary (BoundaryHandle<Physics>),
-  SplitBoundary ([BoundaryHandle<Physics>; 1<<(<Physics as TreeContinuumPhysics>::DIMENSIONS-1)]),
+  SplitBoundary ([BoundaryHandle<Physics>; 1<<(DIMENSIONS-1)]),
 }
 
-#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[serde(bound = "")]
+#[derive (Serialize, Deserialize, Derivative)]
+#[derivative (Clone (bound=""), Debug (bound=""), PartialEq (bound=""), Eq (bound=""))]
 struct NodeData<Physics: TreeContinuumPhysics> {
   width: Distance,
-  center: [Distance ; Physics::DIMENSIONS],
+  center: [Distance ; DIMENSIONS],
   parent: Option <NodeHandle<Physics>>,
   varying: DataTimelineCell <SimpleTimeline <NodeVarying<Physics>, Physics::Steward>>,
 }
-#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[serde(bound = "")]
+#[derive (Serialize, Deserialize, Derivative)]
+#[derivative (Clone (bound=""), Debug (bound=""), PartialEq (bound=""), Eq (bound=""))]
 struct NodeVarying<Physics: TreeContinuumPhysics> {
   children: Vec<NodeHandle<Physics>>,
-  boundaries: [[Face<Physics>; 2]; Physics::DIMENSIONS],
+  boundaries: [[Face<Physics>; 2]; DIMENSIONS],
   data: Physics::NodeVarying,
 }
 type NodeHandle<Physics> = DataHandle <NodeData<Physics>>;
@@ -49,14 +59,18 @@ impl<Physics: TreeContinuumPhysics> PersistentlyIdentifiedType for NodeData<Phys
   const ID: PersistentTypeId = PersistentTypeId(Physics::ID ^ 0x0d838bdd804f48d7);
 }
 
-#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[serde(bound = "")]
+#[derive (Serialize, Deserialize, Derivative)]
+#[derivative (Clone (bound=""), Debug (bound=""), PartialEq (bound=""), Eq (bound=""))]
 struct BoundaryData<Physics: TreeContinuumPhysics> {
   length: Distance,
   center: [Distance ; 2],
   nodes: [NodeHandle<Physics>; 2],
   varying: DataTimelineCell <SimpleTimeline <BoundaryVarying<Physics>, Physics::Steward>>,
 }
-#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[serde(bound = "")]
+#[derive (Serialize, Deserialize, Derivative)]
+#[derivative (Clone (bound=""), Debug (bound=""), PartialEq (bound=""), Eq (bound=""))]
 struct BoundaryVarying<Physics: TreeContinuumPhysics> {
   data: Physics::BoundaryVarying,
 }
@@ -121,8 +135,8 @@ fn audit_boundary <A: EventAccessor <Steward = Steward >> (accessor: &A, boundar
 
 struct SubNodeInfo<Physics: TreeContinuumPhysics> {
   node: NodeHandle<Physics>,
-  local_coordinates: [usize; Physics::DIMENSIONS],
-  old_boundaries: [usize; Physics::DIMENSIONS*2],
+  local_coordinates: [usize; DIMENSIONS],
+  old_boundaries: [usize; DIMENSIONS*2],
 }
 struct SubBoundaryInfo<Physics: TreeContinuumPhysics> {
   boundary: BoundaryHandle<Physics>,
@@ -130,7 +144,7 @@ struct SubBoundaryInfo<Physics: TreeContinuumPhysics> {
   normal_dimension: usize,
   // 0-1 in all dimensions other than our the normal;
   // 0-2 in the normal
-  local_coordinates: [usize; Physics::DIMENSIONS],
+  local_coordinates: [usize; DIMENSIONS],
   
 }
 
@@ -145,7 +159,7 @@ fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::St
   assert!(varying.children.is_empty());
   let mut old_boundaries = [[[None,None],[None,None]],[[None,None],[None,None]]];
   let mut middle_velocities = [[0;2];2];
-  for dimension in 0.. Physics::DIMENSIONS {
+  for dimension in 0.. DIMENSIONS {
     for direction in 0..2 {
       Face::WorldEdge => (),
       //let direction_signum = (direction*2)-1;
@@ -198,10 +212,10 @@ fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::St
     ];
   }
   
-  for index in 0..(1 << Physics::DIMENSIONS) {
+  for index in 0..(1 << DIMENSIONS) {
     let mut center = node.center;
-    let mut coordinates = [0; Physics::DIMENSIONS];
-    for dimension in 0..Physics::DIMENSIONS {
+    let mut coordinates = [0; DIMENSIONS];
+    for dimension in 0..DIMENSIONS {
       if index & (1 << dimension) {
         coordinates [dimension] = 1;
         center [dimension] += node.width >> 2;
