@@ -10,7 +10,7 @@ use serde::{Serialize};
 use serde::de::DeserializeOwned;
 
 
-trait TreeContinuumPhysics: Clone + Eq + Serialize + DeserializeOwned + Debug + PersistentlyIdentifiedType + 'static {
+pub trait TreeContinuumPhysics: Clone + Eq + Serialize + DeserializeOwned + Debug + PersistentlyIdentifiedType + 'static {
   const DIMENSIONS: usize;
   type Steward: TimeSteward;
   type NodeVarying: QueryResult;
@@ -21,27 +21,30 @@ trait TreeContinuumPhysics: Clone + Eq + Serialize + DeserializeOwned + Debug + 
 use std::cmp::{min, max};
 use std::collections::HashSet;
 
+use array_ext::*;
+
 use time_steward::{DeterministicRandomId};
 use time_steward::{PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataHandleTrait, DataTimelineCellTrait, QueryResult};
 use time_steward::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, query, set, destroy, just_destroyed};
+use simple_timeline::{SimpleTimeline, tracking_query, set, destroy, just_destroyed};
 
 type Distance = i64;
 
 const DIMENSIONS: usize = 2; // $DIMENSIONS;
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-enum Face<Physics: TreeContinuumPhysics> {
+enum FaceBoundaries<Physics: TreeContinuumPhysics> {
   WorldEdge,
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   SingleBoundary (BoundaryHandle<Physics>),
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
-  SplitBoundary ([BoundaryHandle<Physics>; 1<<(DIMENSIONS-1)]),
+  SplitBoundary (SplitBoundary<Physics>),
 }
+type SplitBoundary<Physics> = [BoundaryHandle<Physics>; 1<<(DIMENSIONS-1)];
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-struct NodeData<Physics: TreeContinuumPhysics> {
+pub struct NodeData<Physics: TreeContinuumPhysics> {
   width: Distance,
   center: [Distance ; DIMENSIONS],
   // Hacky workaround for https://github.com/rust-lang/rust/issues/41617 (see https://github.com/serde-rs/serde/issues/943)
@@ -51,21 +54,23 @@ struct NodeData<Physics: TreeContinuumPhysics> {
   varying: DataTimelineCell <SimpleTimeline <NodeVarying<Physics>, Physics::Steward>>,
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-struct NodeVarying<Physics: TreeContinuumPhysics> {
+pub struct NodeVarying<Physics: TreeContinuumPhysics> {
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
-  children: Vec<NodeHandle<Physics>>,
+  children: Option<[NodeHandle<Physics>; 1<<DIMENSIONS]>,
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
-  boundaries: [[Face<Physics>; 2]; DIMENSIONS],
+  boundaries: NodeBoundaries<Physics>,
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   data: Physics::NodeVarying,
 }
-type NodeHandle<Physics> = DataHandle <NodeData<Physics>>;
+pub type NodeHandle<Physics> = DataHandle <NodeData<Physics>>;
 impl<Physics: TreeContinuumPhysics> PersistentlyIdentifiedType for NodeData<Physics> {
   const ID: PersistentTypeId = PersistentTypeId(Physics::ID.0 ^ 0x0d838bdd804f48d7);
 }
+pub type NodeFaces<Face> = [[Face; 2]; DIMENSIONS];
+type NodeBoundaries<Physics> = NodeFaces<FaceBoundaries<Physics>>;
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-struct BoundaryData<Physics: TreeContinuumPhysics> {
+pub struct BoundaryData<Physics: TreeContinuumPhysics> {
   length: Distance,
   center: [Distance ; 2],
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
@@ -74,43 +79,31 @@ struct BoundaryData<Physics: TreeContinuumPhysics> {
   varying: DataTimelineCell <SimpleTimeline <BoundaryVarying<Physics>, Physics::Steward>>,
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-struct BoundaryVarying<Physics: TreeContinuumPhysics> {
+pub struct BoundaryVarying<Physics: TreeContinuumPhysics> {
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   data: Physics::BoundaryVarying,
 }
-type BoundaryHandle<Physics> = DataHandle <BoundaryData<Physics>>;
+pub type BoundaryHandle<Physics> = DataHandle <BoundaryData<Physics>>;
 impl<Physics: TreeContinuumPhysics> PersistentlyIdentifiedType for BoundaryData<Physics> {
   const ID: PersistentTypeId = PersistentTypeId(Physics::ID.0 ^ 0x4913f629aef09374);
 }
 
-macro_rules! get {
-  ($accessor: expr, $cell: expr) => {
-    query ($accessor, $cell)
-  }
-}
-macro_rules! set {
-  ($accessor: expr, $cell: expr, $field: ident, $value: expr) => {
-    {
-      let mut value = query ($accessor, $cell);
-      value.$field = $value;
-      set ($accessor, $cell, value);
+fn boundary_by_coordinates_and_dimension<Physics: TreeContinuumPhysics> (boundaries: &NodeBoundaries<Physics>, coordinates: [usize; DIMENSIONS], dimension: usize)->Option<&BoundaryHandle <Physics>> {
+  match boundaries [dimension] [coordinates [dimension]] {
+    FaceBoundaries::WorldEdge => None,
+    FaceBoundaries::SingleBoundary (ref handle) => Some(handle),
+    FaceBoundaries::SplitBoundary (ref array) => {
+      let mut index = 0;
+      for (dimension2_bit, dimension2) in (0..DIMENSIONS).filter (| dimension2 | *dimension2 != dimension).enumerate() {
+        if coordinates [dimension2] == 1 {
+          index += 1<<dimension2_bit;
+        }
+      }
+      Some(& array [index])
     }
   }
 }
-macro_rules! set_with {
-  ($accessor: expr, $cell: expr, | $varying: ident | $actions: expr) => {
-    {
-      let mut $varying = query ($accessor, $cell);
-      $actions;
-      set ($accessor, $cell, $varying);
-    }
-  }
-}
-macro_rules! exists {
-  ($accessor: expr, $cell: expr) => {
-    $accessor.query ($cell, &GetVarying).is_some()
-  }
-}
+
 
 /*
 fn audit <A: EventAccessor <Steward = Steward >> (accessor: &A) {
@@ -154,19 +147,19 @@ struct SubBoundaryInfo<Physics: TreeContinuumPhysics> {
 
 
 
-fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>, N, B> (accessor: &A, node: &NodeHandle, node_initializer: N, boundary_initializer: B) where N: Fn(SubNodeInfo<Physics>)->Physics::NodeVarying, B: Fn(SubBoundaryInfo<Physics>)->Physics::BoundaryVarying {
+pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>, N, B> (accessor: &A, node: &NodeHandle<Physics>, node_initializer: N, boundary_initializer: B) where N: Fn(SubNodeInfo<Physics>)->Physics::NodeVarying, B: Fn(SubBoundaryInfo<Physics>)->Physics::BoundaryVarying {
   let mut varying = tracking_query (accessor, &node.varying);
   //printlnerr!("{:?}", (node.width, node.center, varying.children.len()));
   //if !varying.children.is_empty() {
     //printlnerr!("{:?}", (node.width, node.center, varying.children.len()));
   //}
-  assert!(varying.children.is_empty());
+  assert!(varying.children.is_none());
 
-  for index in 0..(1 << DIMENSIONS) {
+  varying.children = Some (Array::from_fn(| index | {
     let mut center = node.center;
     let mut coordinates = [0; DIMENSIONS];
     for dimension in 0..DIMENSIONS {
-      if index & (1 << dimension) {
+      if (index & (1 << dimension)) != 0 {
         coordinates [dimension] = 1;
         center [dimension] += node.width >> 2;
       }
@@ -181,62 +174,67 @@ fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::St
       varying: DataTimelineCell::new (SimpleTimeline::new ()),
     });
     for dimension in 0..DIMENSIONS {
-      if let Some(old_boundary) = boundary_by_coordinates_and_dimension (varying.boundaries, coordinates, dimension) {
+      if let Some(old_boundary) = boundary_by_coordinates_and_dimension (&varying.boundaries, coordinates, dimension) {
         let mut boundary_center = center;
+        let boundary_nodes;
         if coordinates [dimension] == 1 {
           boundary_center [dimension] += node.width >> 2;
+          boundary_nodes = [new_child.clone(), old_boundary.nodes[1].clone()];
         }
         else {
           boundary_center [dimension] -= node.width >> 2;
+          boundary_nodes = [old_boundary.nodes[0].clone(), new_child.clone()];
         }
         let new_boundary = accessor.new_handle (BoundaryData {
           length: node.width >> 1,
           center: boundary_center,
-          nodes: if direction == 0 { [neighbor.clone(), child.clone()] } else { [child.clone(), neighbor.clone()] },
+          nodes: boundary_nodes,
           varying: DataTimelineCell::new (SimpleTimeline::new ()),
         });
         let mut local_coordinates = coordinates;
         local_coordinates [dimension] <<= 1;
-        set (accessor, new_boundary.varying, boundary_initializer (SubBoundaryInfo {
-          boundary: new_boundary,
-          old_boundary: Some(old_boundary),
-          normal_dimension: dimension,
-          local_coordinates: coordinates,
-        }));
+        set (accessor, &new_boundary.varying, BoundaryVarying {
+          data: boundary_initializer (SubBoundaryInfo {
+            boundary: new_boundary.clone(),
+            old_boundary: Some(old_boundary.clone()),
+            normal_dimension: dimension,
+            local_coordinates: coordinates,
+          }),
+        });
       }
       if coordinates [dimension] == 1 {
         let mut boundary_center = center;
         boundary_center [dimension] = node.center [dimension];
+        let boundary_nodes = [new_child.clone(), unimplemented!()];
         let new_boundary = accessor.new_handle (BoundaryData {
           length: node.width >> 1,
           center: boundary_center,
-          nodes: if direction == 0 { [neighbor.clone(), child.clone()] } else { [child.clone(), neighbor.clone()] },
+          nodes: boundary_nodes,
           varying: DataTimelineCell::new (SimpleTimeline::new ()),
         });
         let mut local_coordinates = coordinates;
         local_coordinates [dimension] = 1;
-        set (accessor, new_boundary.varying, boundary_initializer (SubBoundaryInfo {
-          boundary: new_boundary,
-          old_boundary: Some(old_boundary),
-          normal_dimension: dimension,
-          local_coordinates: coordinates,
-        }));
+        set (accessor, &new_boundary.varying, BoundaryVarying {
+          data: boundary_initializer (SubBoundaryInfo {
+            boundary: new_boundary.clone(),
+            old_boundary: None,
+            normal_dimension: dimension,
+            local_coordinates: coordinates,
+          }),
+        });
       }
     }
-  }
+    new_child
+  }));
   
-  varying.boundaries = ;
+  //varying.boundaries = ;
   
   set (accessor, &node.varying, varying);
   
-  for boundary in new_boundaries {
-    update_transfer_change_prediction (accessor, &boundary);
-  }
-  
 }
 
-
-fn merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
+/*
+pub fn merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
   let mut varying = get!(accessor, &node.varying);
   assert!(!varying.children.is_empty());
   
@@ -327,3 +325,4 @@ fn merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
     maybe_merge (accessor, &neighbor);
   }
 }
+*/

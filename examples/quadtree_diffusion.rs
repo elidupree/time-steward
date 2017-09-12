@@ -1,8 +1,11 @@
-#![feature (i128_type)]
+#![feature (i128_type, custom_attribute)]
 
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
+extern crate derivative;
+extern crate array_ext;
 
 extern crate time_steward;
 

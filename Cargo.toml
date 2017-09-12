@@ -24,6 +24,7 @@ features = ["serde-serialize"]
 glium = "0.15"
 docopt = "0.8"
 fnv = "1.0"
+array_ext = "0.2"
 
 [profile.bench]
 debug = true
