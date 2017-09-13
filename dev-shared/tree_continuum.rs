@@ -528,26 +528,31 @@ pub fn merge <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
   audit_all(accessor, merging_node);
   let merging_branch = unwrap_branch (tracking_query (accessor, & merging_node.varying));
   
-  let mut discovered_neighbors = HashSet::new();
-  let mut new_boundaries = faces_from_fn(| dimension, direction | FaceBoundaries::WorldEdge);
-  iterate_children (& merging_branch.children, | coordinates, child | {
-    let removed_leaf = unwrap_leaf (tracking_query (accessor, & child.varying));
-    iterate_faces (& removed_leaf.boundaries, | dimension, direction, face | {
-      match face {
-        &FaceBoundaries::WorldEdge => (),
-        &FaceBoundaries::SplitBoundary (_) => {
-          panic!("Attemped to merge a node with small neighbors")
-        },
-        &FaceBoundaries::SingleBoundary (ref old_boundary) => {
-          if coordinates [dimension] == direction {
-            let neighbor = & old_boundary.nodes [direction];
-            if discovered_neighbors.insert (old_boundary.clone()) {
-              let other_direction = (direction + 1) & 1;
-              let mut neighbor_varying = unwrap_leaf (tracking_query (accessor, & neighbor.varying));
+  //let mut discovered_neighbors = HashSet::new();
+  //let mut new_boundaries = faces_from_fn(| dimension, direction | FaceBoundaries::WorldEdge);
+  let new_boundaries = faces_from_fn (| dimension, direction | {
+    let mut test_coordinates = [0; DIMENSIONS];
+    test_coordinates [dimension] = direction;
+    let test_child = child_by_coordinates (& merging_branch.children, test_coordinates);
+    let test_old_boundary = match face_by_dimension_and_direction (& unwrap_leaf_ref (&tracking_query_ref (accessor, & test_child.varying)).boundaries, dimension, direction) {
+      &FaceBoundaries::WorldEdge => return FaceBoundaries::WorldEdge,
+      &FaceBoundaries::SplitBoundary (_) => {
+        panic!("Attemped to merge a node with small neighbors")
+      },
+      &FaceBoundaries::SingleBoundary (ref old_boundary) => {
+        old_boundary.clone()
+      }
+    };
+    let neighbor = &test_old_boundary.nodes[direction];
+    
+    fn new_boundary <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>> (accessor: &A, dimension: usize, direction: usize, merging_node: &NodeHandle <Physics>, neighbor: &NodeHandle <Physics>)->BoundaryHandle<Physics> {
+      let other_direction = (direction + 1) & 1;
+      
+      let mut neighbor_varying = unwrap_leaf (tracking_query (accessor, & neighbor.varying));
               
               let mut boundary_center = neighbor.center;
               let boundary_nodes;
-              if coordinates [dimension] == 1 {
+              if direction == 1 {
                 boundary_center [dimension] -= neighbor.width >> 1;
                 boundary_nodes = [merging_node.clone(), neighbor.clone()];
               }
@@ -572,17 +577,49 @@ pub fn merge <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
                   direction: direction,
                 }),
               });
-
+              
               mem::replace (face_by_dimension_and_direction_mut (&mut neighbor_varying.boundaries, dimension, other_direction), FaceBoundaries::SingleBoundary(
                 new_boundary.clone()
               ));
-              mem::replace (face_by_dimension_and_direction_mut (&mut new_boundaries, dimension, direction), FaceBoundaries::SingleBoundary(
-                new_boundary.clone()
-              ));
+
               set (accessor, &neighbor.varying, NodeVarying::Leaf(neighbor_varying));
-            }
+      new_boundary
+    }
+    
+    if neighbor.width == merging_node.width {
+      FaceBoundaries::SingleBoundary (new_boundary(accessor, dimension, direction, merging_node, neighbor))
+    }
+    else {
+      FaceBoundaries::SplitBoundary(split_boundary_from_fn (dimension, | mut coordinates | {
+        coordinates [dimension] = direction;
+        let child = child_by_coordinates (& merging_branch.children, coordinates);
+        let old_boundary = match face_by_dimension_and_direction (& unwrap_leaf_ref (&tracking_query_ref (accessor, & child.varying)).boundaries, dimension, direction) {
+          &FaceBoundaries::WorldEdge => unreachable!(),
+          &FaceBoundaries::SplitBoundary (_) => {
+            panic!("Attemped to merge a node with small neighbors")
+          },
+          &FaceBoundaries::SingleBoundary (ref old_boundary) => {
+            old_boundary.clone()
           }
-          destroy (accessor, & old_boundary.varying);
+        };
+        let neighbor = &old_boundary.nodes[direction];
+        new_boundary(accessor, dimension, direction, merging_node, neighbor)
+      }))
+    }
+  });
+  iterate_children (& merging_branch.children, | coordinates, child | {
+    let removed_leaf = unwrap_leaf (tracking_query (accessor, & child.varying));
+    iterate_faces (& removed_leaf.boundaries, | dimension, direction, face | {
+      match face {
+        &FaceBoundaries::WorldEdge => (),
+        &FaceBoundaries::SplitBoundary (_) => {
+          panic!("Attemped to merge a node with small neighbors")
+        },
+        &FaceBoundaries::SingleBoundary (ref old_boundary) => {
+          // only destroy shared boundaries once
+          if coordinates [dimension] == 0 || direction == 1 {
+            destroy (accessor, & old_boundary.varying);
+          }
         },
       }
     });

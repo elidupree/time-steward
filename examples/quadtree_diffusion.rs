@@ -92,7 +92,7 @@ impl TreeContinuumPhysics for Physics {
     });
     
     for boundary in new_boundaries {
-      printlnerr!("{:?}", (boundary.center, split_node.center, split_node.width, boundary.nodes[0].center, boundary.nodes[0].width, boundary.nodes[1].center, boundary.nodes[1].width));
+      //printlnerr!("{:?}", (boundary.center, split_node.center, split_node.width, boundary.nodes[0].center, boundary.nodes[0].width, boundary.nodes[1].center, boundary.nodes[1].width));
       update_transfer_change_prediction (accessor, &boundary);
     }
   }
@@ -624,7 +624,7 @@ impl Event for AddInk {
     loop {
       match query (accessor, &node.varying) {
         tree_continuum::NodeVarying::Branch (ref b) => node = child_by_coordinates (& b.children,
-           [if self.coordinates [0] > node.center [0] {2} else {0},
+           [if self.coordinates [0] > node.center [0] {1} else {0},
             if self.coordinates [1] > node.center [1] {1} else {0}]).clone(),
         tree_continuum::NodeVarying::Leaf (_) => {
           update_node (accessor, &node);
