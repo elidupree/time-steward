@@ -7,6 +7,7 @@ macro_rules! printlnerr(
 
 use std::fmt::Debug;
 use std::ops::Deref;
+use std::mem;
 use serde::{Serialize};
 use serde::de::DeserializeOwned;
 
@@ -186,7 +187,7 @@ pub fn boundary_by_coordinates_and_dimension<Physics: TreeContinuumPhysics> (bou
 
 pub fn iterate_boundaries <Physics: TreeContinuumPhysics, F: FnMut(usize, usize, & BoundaryHandle <Physics>)> (boundaries: &NodeBoundaries<Physics>, mut callback: F) {
   iterate_faces (boundaries, | dimension, direction, face | {
-    iterate_face_boundaries (face, | boundary | callback (dimension, direction, boundary));
+    iterate_face_boundaries (face, dimension, | boundary | callback (dimension, direction, boundary));
   });
 }
 
@@ -226,7 +227,7 @@ pub fn iterate_split_boundary<Physics: TreeContinuumPhysics, F: FnMut([usize; DI
         coordinates [dimension2] = 0;
       }
     }
-    callback (coordinates);
+    callback (coordinates, & boundary [index]);
   }
 }
 
@@ -303,13 +304,13 @@ pub fn unwrap_branch_ref<Physics: TreeContinuumPhysics, T: Deref<Target = NodeVa
     NodeVarying::Leaf (_) => panic!(),
   }
 }
-pub fn unwrap_leaf<Physics: TreeContinuumPhysics>(t: NodeVarying<Physics>)->&LeafVarying<Physics> {
+pub fn unwrap_leaf<Physics: TreeContinuumPhysics>(t: NodeVarying<Physics>)->LeafVarying<Physics> {
   match t {
     NodeVarying::Branch (_) => panic!(),
     NodeVarying::Leaf (l) => l,
   }
 }
-pub fn unwrap_branch_ref<Physics: TreeContinuumPhysics>(t: NodeVarying<Physics>)->&BranchVarying<Physics> {
+pub fn unwrap_branch<Physics: TreeContinuumPhysics>(t: NodeVarying<Physics>)->BranchVarying<Physics> {
   match t {
     NodeVarying::Branch (b) => b,
     NodeVarying::Leaf (_) => panic!(),
@@ -380,7 +381,7 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
             let mut local_coordinates = coordinates;
             local_coordinates [dimension] <<= 1;
             set (accessor, &new_boundary.varying, BoundaryVarying {
-              data: Physics::initialize_split_boundary (NewBoundaryInfo {
+              data: Physics::initialize_split_boundary (accessor, NewBoundaryInfo {
                 splitting_node: splitting_node,
                 splitting_varying: &splitting_leaf,
                 boundary: new_boundary.clone(),
@@ -416,7 +417,7 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
       let mut local_coordinates = coordinates;
       local_coordinates [dimension] = 1;
       set (accessor, &new_boundary.varying, BoundaryVarying {
-        data: Physics::initialize_split_boundary (NewBoundaryInfo {
+        data: Physics::initialize_split_boundary (accessor, NewBoundaryInfo {
           splitting_node: splitting_node,
           splitting_varying: &splitting_leaf,
           boundary: new_boundary.clone(),
@@ -455,7 +456,7 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
         None => FaceBoundaries::WorldEdge,
         Some(boundary) => FaceBoundaries::SingleBoundary(boundary),
       }}),
-      data: Physics::initialize_split_child (NewChildInfo {
+      data: Physics::initialize_split_child (accessor, NewChildInfo {
         splitting_node: splitting_node,
         splitting_varying: &splitting_leaf,
         node: child.clone(),
@@ -468,7 +469,7 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
   
   iterate_boundaries (&splitting_leaf.boundaries, | dimension, direction, boundary | {
     let neighbor = &boundary.nodes [direction];
-    let neighbor_varying = unwrap_leaf (tracking_query (accessor, & neighbor.varying));
+    let mut neighbor_varying = unwrap_leaf (tracking_query (accessor, & neighbor.varying));
     let other_direction = (direction + 1) & 1;
     if neighbor.width == splitting_node.width {
       mem::replace (face_by_dimension_and_direction_mut (&mut neighbor_varying.boundaries, dimension, other_direction), FaceBoundaries::SplitBoundary(face_by_dimension_and_direction (& new_exterior_boundaries, dimension, direction).clone().unwrap()));
@@ -478,10 +479,12 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
       mem::replace (face_by_dimension_and_direction_mut (&mut neighbor_varying.boundaries, dimension, other_direction), FaceBoundaries::SingleBoundary(
         split_boundary_component_from_coordinates (
           face_by_dimension_and_direction (& new_exterior_boundaries, dimension, direction).as_ref().unwrap(),
+          dimension,
           coordinates
         ).clone()
       ));
     }
+    set (accessor, &neighbor.varying, NodeVarying::Leaf(neighbor_varying));
     destroy (accessor, &boundary.varying);
   });
   
@@ -491,10 +494,12 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
 }
 
 
-pub fn merge <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>> (accessor: &A, merging_node: &NodeHandle<Physics>) {
+pub fn merge <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>> (accessor: &A, merging_node: &NodeHandle<Physics>, new_data: Physics::NodeVarying) {
   let merging_branch = unwrap_branch (tracking_query (accessor, & merging_node.varying));
   
-  for child in merging_events.children.iter() {
+  let mut discovered_neighbors = HashSet::new();
+  let mut new_boundaries = faces_from_fn(| dimension, direction | FaceBoundaries::WorldEdge);
+  iterate_children (& merging_branch.children, | coordinates, child | {
     let removed_leaf = unwrap_leaf (tracking_query (accessor, & child.varying));
     iterate_faces (& removed_leaf.boundaries, | dimension, direction, face | {
       match face {
@@ -502,98 +507,52 @@ pub fn merge <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
         &FaceBoundaries::SplitBoundary (_) => {
           panic!("Attemped to merge a node with small neighbors")
         },
-        &FaceBoundaries::SingleBoundary (ref neighbor) => {
-        
+        &FaceBoundaries::SingleBoundary (ref old_boundary) => {
+          if coordinates [dimension] == direction {
+            let neighbor = & old_boundary.nodes [direction];
+            if discovered_neighbors.insert (old_boundary.clone()) {
+              let other_direction = (direction + 1) & 1;
+              let mut neighbor_varying = unwrap_leaf (tracking_query (accessor, & neighbor.varying));
+              
+              let mut boundary_center = neighbor.center;
+              let boundary_nodes;
+              if coordinates [dimension] == 1 {
+                boundary_center [dimension] -= neighbor.width >> 1;
+                boundary_nodes = [merging_node.clone(), neighbor.clone()];
+              }
+              else {
+                boundary_center [dimension] += neighbor.width >> 1;
+                boundary_nodes = [neighbor.clone(), merging_node.clone()];
+              }
+
+              let new_boundary = accessor.new_handle (BoundaryData {
+                length: neighbor.width,
+                center: boundary_center,
+                nodes: boundary_nodes,
+                varying: DataTimelineCell::new (SimpleTimeline::new ()),
+              });
+              set (accessor, &new_boundary.varying, BoundaryVarying {
+                data: Physics::initialize_merge_boundary (accessor),
+              });
+
+              mem::replace (face_by_dimension_and_direction_mut (&mut neighbor_varying.boundaries, dimension, other_direction), FaceBoundaries::SingleBoundary(
+                new_boundary.clone()
+              ));
+              mem::replace (face_by_dimension_and_direction_mut (&mut new_boundaries, dimension, direction), FaceBoundaries::SingleBoundary(
+                new_boundary.clone()
+              ));
+              set (accessor, &neighbor.varying, NodeVarying::Leaf(neighbor_varying));
+            }
+          }
+          destroy (accessor, & old_boundary.varying);
         },
       }
     });
     destroy (accessor, &child.varying);
-  }
+  });
   
-  
-  
-  let mut prior_boundaries = Vec::new();
-  let mut discovered_prior_boundaries = HashSet::new();
-  let mut prior_children = HashSet::new();
-  let mut neighbors = Vec::new();
-  let mut discovered_neighbors = HashSet::new();
-  for child in varying.children.iter() {
-    update_node(accessor, child);
-    let child_varying = get!(accessor, &child.varying);
-    assert!(child_varying.children.is_empty());
-    assert!(child_varying.last_change == *accessor.now());
-    varying.ink_at_last_change += child_varying.ink_at_last_change;
-    for (dimension, whatever) in child_varying.boundaries.iter().enumerate() {for (direction, something) in whatever.iter().enumerate() {for other_boundary in something.iter() {
-      if discovered_prior_boundaries.insert (other_boundary.clone()) {
-        prior_boundaries.push ((dimension, direction, other_boundary.clone()));
-      }
-    }}}
-    prior_children.insert (child.clone()) ;
-
-    destroy (accessor, &child.varying);
-  }
-  
-  let mut new_boundaries = Vec::new();
-  for (dimension, direction, boundary) in prior_boundaries {
-    let boundary_varying = get!(accessor, &boundary.varying);
-    let neighbor = if !prior_children.contains (&boundary.nodes [1]) {
-      Some (boundary.nodes [1].clone())
-    } else if !prior_children.contains (&boundary.nodes [0]) {
-      Some (boundary.nodes [0].clone())
-    } else {None};
-    if let Some(neighbor) = neighbor {
-      if discovered_neighbors.insert (neighbor.clone()) {
-        neighbors.push (neighbor.clone());
-        let other_direction = (direction+1)&1;
-        set_with!(accessor, &neighbor.varying, | neighbor_varying | {
-          for b in neighbor_varying.boundaries [dimension] [other_direction].iter() {
-            assert!(prior_children.contains(&b.nodes[other_direction]));
-          }
-          neighbor_varying.boundaries [dimension] [other_direction].clear();
-        });
-        let mut center = boundary.center;
-        if neighbor.width == node.width {
-          center = [
-            (node.center[0] + neighbor.center [0]) >> 1,
-            (node.center[1] + neighbor.center [1]) >> 1,
-          ];
-        }
-        let nodes = if direction == 1 {[node.clone(), neighbor.clone()]}else{[neighbor.clone(), node.clone()]};
-        let new_boundary = accessor.new_handle (BoundaryData {
-          length: neighbor.width,
-          center: center,
-          nodes: nodes.clone(),
-          varying: DataTimelineCell::new (SimpleTimeline::new ()),
-        });
-        set (accessor, &new_boundary.varying, BoundaryVarying {
-          transfer_velocity: boundary_varying.transfer_velocity,
-          next_change: None,
-        });
-        set_with!(accessor, &neighbor.varying, | neighbor_varying | {
-          neighbor_varying.boundaries [dimension] [other_direction].push(new_boundary.clone());
-        });
-        varying.boundaries [dimension] [direction].push(new_boundary.clone());
-        new_boundaries.push (new_boundary);
-      }
-    }
-    destroy (accessor, &boundary.varying);
-  }
-  
-  varying.children.clear();
-  set (accessor, &node.varying, varying);
-  update_inferred_node_properties (accessor, node);
-  
-  for boundary in new_boundaries {
-    update_transfer_change_prediction (accessor, &boundary);
-  }
-
-  if let Some(parent) = node.parent.as_ref() {
-    //audit(accessor);
-    maybe_merge (accessor, parent);
-    //audit(accessor);
-  }
-  
-  for neighbor in neighbors {
-    maybe_merge (accessor, &neighbor);
-  }
+  set (accessor, &merging_node.varying, NodeVarying::Leaf(LeafVarying {
+    boundaries: new_boundaries,
+    data: new_data,
+  }));
 }
