@@ -20,12 +20,12 @@ pub trait TreeContinuumPhysics: Clone + Eq + Serialize + DeserializeOwned + Debu
   
   //fn before_split <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, splitting_node: & NodeHandle <Self>) {}
   fn initialize_split_child <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, child: NewChildInfo<Self>)->Self::NodeVarying;
-  fn initialize_split_boundary <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, child: NewBoundaryInfo<Self>)->Self::BoundaryVarying;
+  fn initialize_split_boundary <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, boundary: NewBoundaryInfo<Self>)->Self::BoundaryVarying;
   fn after_split <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, split_node: & NodeHandle <Self>, new_boundaries: Vec<BoundaryHandle <Self>>) {}
   
   //fn before_merge <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, merging_node: & NodeHandle <Self>) {}
   //fn initialize_merge_parent <A: EventAccessor <Steward = Self::Steward>> (accessor: &A)->Self::NodeVarying;
-  fn initialize_merge_boundary <A: EventAccessor <Steward = Self::Steward>> (accessor: &A)->Self::BoundaryVarying;
+  fn initialize_merge_boundary <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, boundary: MergeBoundaryInfo<Self>)->Self::BoundaryVarying;
   //fn after_merge <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, merged_node: & NodeHandle <Self>, new_boundaries: Vec<BoundaryHandle <Self>>) {}
 }
 
@@ -39,7 +39,7 @@ use time_steward::{DeterministicRandomId};
 use time_steward::{PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataHandleTrait, DataTimelineCellTrait, QueryResult};
 use time_steward::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, tracking_query, tracking_query_ref, set, destroy, just_destroyed};
+use simple_timeline::{SimpleTimeline, query, tracking_query, tracking_query_ref, set, destroy, just_destroyed};
 
 type Distance = i64;
 
@@ -94,6 +94,7 @@ type NodeBoundaries<Physics> = NodeFaces<FaceBoundaries<Physics>>;
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct BoundaryData<Physics: TreeContinuumPhysics> {
   pub length: Distance,
+  pub normal_dimension: usize,
   pub center: [Distance ; 2],
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   pub nodes: [NodeHandle<Physics>; 2],
@@ -114,7 +115,7 @@ impl<Physics: TreeContinuumPhysics> PersistentlyIdentifiedType for BoundaryData<
 pub fn child_by_coordinates <Child> (children: & [Child; 1 << DIMENSIONS], coordinates: [usize; DIMENSIONS])-> & Child {
   let mut index = 0;
   for dimension in 0..DIMENSIONS {
-    if coordinates [index] == 1 {index += 1 << dimension;}
+    if coordinates [dimension] == 1 {index += 1 << dimension;}
   }
   & children [index]
 }
@@ -131,6 +132,8 @@ pub fn iterate_children <Child, F: FnMut ([usize; DIMENSIONS], &Child)> (childre
     let coordinates = Array::from_fn (| dimension | {
       if (index & (1 << dimension)) != 0 {1} else {0}
     });
+    //printlnerr!("{:?}", (index, coordinates));
+    assert!(child_by_coordinates (children, coordinates) as *const Child == child as *const Child);
     callback (coordinates, child);
   }
 }
@@ -151,6 +154,7 @@ pub fn faces_from_fn<Face, F: FnMut(usize, usize)->Face> (mut initializer: F)->N
 pub fn iterate_faces<Face, F: FnMut(usize, usize, &Face)> (faces: &NodeFaces<Face>, mut callback: F) {
   for (dimension, subset) in faces.iter().enumerate() {
     for (direction, face) in subset.iter().enumerate() {
+      assert!(face_by_dimension_and_direction (faces, dimension, direction) as *const Face == face as *const Face);
       callback (dimension, direction, face)
     }
   }
@@ -248,30 +252,45 @@ pub fn child_center_by_coordinates<Physics: TreeContinuumPhysics> (parent: &Node
 }
 
 
-/*
-fn audit <A: EventAccessor <Steward = Steward >> (accessor: &A) {
-  audit_node (accessor, &accessor.globals().root);
+
+fn audit_all <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>> (accessor: &A, node: &NodeHandle<Physics>) {
+  let mut node = node.clone();
+  while let Some(next) = node.parent.as_ref().cloned() {
+    node = next;
+  }
+  audit_node (accessor, &node);
 }
-fn audit_node <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
-  let varying = get!(accessor, &node.varying);
-  for dimension in 0..2 {
-    for direction in 0..2 {
-      for boundary in varying.boundaries [dimension] [direction].iter() {
+fn audit_node <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>> (accessor: &A, node: &NodeHandle<Physics>) {
+  match query(accessor, &node.varying) {
+    NodeVarying::Branch (branch) => {
+      iterate_children (& branch.children, | coordinates, child | {
+        audit_node (accessor, child);
+      });
+    },
+    NodeVarying::Leaf (leaf) => {
+      iterate_boundaries (& leaf.boundaries, | dimension, direction, boundary | {
         assert!(&boundary.nodes[(direction+1)&1] == node);
         audit_boundary (accessor, boundary);
-      }
-    }
-  }
-  for child in varying.children.iter() {
-    audit_node (accessor, child);
+      });
+    },
   }
 }
-fn audit_boundary <A: EventAccessor <Steward = Steward >> (accessor: &A, boundary: &BoundaryHandle) {
-  get!(accessor, &boundary.varying);
+fn audit_boundary <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>> (accessor: &A, boundary: &BoundaryHandle<Physics>) {
+  query(accessor, &boundary.varying);
   for direction in 0..2 {
-    assert!(get!(accessor, &boundary.nodes [direction].varying).boundaries.iter().any(|whatever| whatever[(direction+1)&1].iter().any(| other_boundary| other_boundary == boundary)));
+    let neighbor = &boundary.nodes [direction];
+    let coordinates_within_neighbor = Array::from_fn (| dimension | {
+      if boundary.center [dimension] > neighbor.center [dimension] {1} else {0}
+    });
+    assert!(
+      boundary_by_coordinates_and_dimension (
+        &unwrap_leaf (query(accessor, &neighbor.varying)).boundaries,
+        coordinates_within_neighbor,
+        boundary.normal_dimension,
+      ).unwrap() == boundary
+    );
   }
-}*/
+}
 
 pub struct NewChildInfo<'a, Physics: TreeContinuumPhysics> {
   pub splitting_node: &'a NodeHandle<Physics>,
@@ -290,6 +309,13 @@ pub struct NewBoundaryInfo<'a, Physics: TreeContinuumPhysics> {
   // 0-1 in all dimensions other than our the normal;
   // 0-2 in the normal
   pub local_coordinates: [usize; DIMENSIONS],
+}
+pub struct MergeBoundaryInfo<'a, Physics: TreeContinuumPhysics> {
+  pub merging_node: &'a NodeHandle<Physics>,
+  pub boundary: BoundaryHandle<Physics>,
+  //pub old_boundary: Option<BoundaryHandle<Physics>>,
+  pub normal_dimension: usize,
+  pub direction: usize,
 }
 
 pub fn unwrap_leaf_ref<Physics: TreeContinuumPhysics, T: Deref<Target = NodeVarying<Physics>>>(t: &T)->&LeafVarying<Physics> {
@@ -318,24 +344,25 @@ pub fn unwrap_branch<Physics: TreeContinuumPhysics>(t: NodeVarying<Physics>)->Br
 }
 
 pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>> (accessor: &A, splitting_node: &NodeHandle<Physics>) {
+  audit_all(accessor, splitting_node);
   let splitting_leaf;
   {
-    let mut splitting_varying_guard = tracking_query_ref (accessor, &splitting_node.varying);
-    //printlnerr!("{:?}", (splitting_node.width, splitting_node.center, splitting_varying.children.len()));
+    let mut splitting_varying = unwrap_leaf(tracking_query (accessor, &splitting_node.varying));
+    //printlnerr!("{:?}", (splitting_node.width, splitting_node.center, splitting_varying.children.len())));
     
     for dimension in 0..DIMENSIONS {
       for direction in 0..2 {
-        if let Some (handle) = match face_by_dimension_and_direction (&unwrap_leaf_ref(&splitting_varying_guard).boundaries, dimension, direction) {&FaceBoundaries::SingleBoundary (ref handle) => Some(handle.clone()),_=> None} {
+        if let Some (handle) = match face_by_dimension_and_direction (&splitting_varying.boundaries, dimension, direction) {&FaceBoundaries::SingleBoundary (ref handle) => Some(handle.clone()),_=> None} {
           let neighbor = &handle.nodes [direction];
           if neighbor.width > splitting_node.width {
             split (accessor, neighbor);
-            splitting_varying_guard = tracking_query_ref (accessor, &splitting_node.varying);
+            splitting_varying = unwrap_leaf(tracking_query (accessor, &splitting_node.varying));
           }
         }
       }
     };
     
-    splitting_leaf = unwrap_leaf_ref(&splitting_varying_guard).clone();
+    splitting_leaf = splitting_varying;
   }
   let new_branch = BranchVarying {
     children: children_from_fn(| coordinates | {
@@ -374,6 +401,7 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
             }
             let new_boundary = accessor.new_handle (BoundaryData {
               length: splitting_node.width >> 1,
+              normal_dimension: dimension,
               center: boundary_center,
               nodes: boundary_nodes,
               varying: DataTimelineCell::new (SimpleTimeline::new ()),
@@ -410,6 +438,7 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
       let boundary_nodes = [children [0].clone(), children [1].clone()];
       let new_boundary = accessor.new_handle (BoundaryData {
         length: splitting_node.width >> 1,
+        normal_dimension: dimension,
         center: boundary_center,
         nodes: boundary_nodes,
         varying: DataTimelineCell::new (SimpleTimeline::new ()),
@@ -491,10 +520,12 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
   set (accessor, &splitting_node.varying, NodeVarying::Branch(new_branch));
   
   Physics::after_split (accessor, splitting_node, all_new_boundaries);
+  audit_all(accessor, splitting_node);
 }
 
 
 pub fn merge <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>> (accessor: &A, merging_node: &NodeHandle<Physics>, new_data: Physics::NodeVarying) {
+  audit_all(accessor, merging_node);
   let merging_branch = unwrap_branch (tracking_query (accessor, & merging_node.varying));
   
   let mut discovered_neighbors = HashSet::new();
@@ -527,12 +558,19 @@ pub fn merge <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
 
               let new_boundary = accessor.new_handle (BoundaryData {
                 length: neighbor.width,
+                normal_dimension: dimension,
                 center: boundary_center,
                 nodes: boundary_nodes,
                 varying: DataTimelineCell::new (SimpleTimeline::new ()),
               });
               set (accessor, &new_boundary.varying, BoundaryVarying {
-                data: Physics::initialize_merge_boundary (accessor),
+                data: Physics::initialize_merge_boundary (accessor, MergeBoundaryInfo {
+                  merging_node: merging_node,
+                  boundary: new_boundary.clone(),
+                  //old_boundary: old_boundary.clone(),
+                  normal_dimension: dimension,
+                  direction: direction,
+                }),
               });
 
               mem::replace (face_by_dimension_and_direction_mut (&mut neighbor_varying.boundaries, dimension, other_direction), FaceBoundaries::SingleBoundary(
@@ -555,4 +593,5 @@ pub fn merge <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
     boundaries: new_boundaries,
     data: new_data,
   }));
+  audit_all(accessor, merging_node);
 }

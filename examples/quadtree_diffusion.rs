@@ -84,7 +84,7 @@ impl TreeContinuumPhysics for Physics {
   }
   fn after_split <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, split_node: & NodeHandle, new_boundaries: Vec<BoundaryHandle>) {
     let guard = query_ref (accessor, & split_node.varying);
-    let branch_varying = unwrap_branch(guard);
+    let branch_varying = unwrap_branch_ref(&guard);
   
     iterate_children (& branch_varying.children, | coordinates, child | {
       update_node(accessor, child);
@@ -92,14 +92,18 @@ impl TreeContinuumPhysics for Physics {
     });
     
     for boundary in new_boundaries {
+      printlnerr!("{:?}", (boundary.center, split_node.center, split_node.width, boundary.nodes[0].center, boundary.nodes[0].width, boundary.nodes[1].center, boundary.nodes[1].width));
       update_transfer_change_prediction (accessor, &boundary);
     }
   }
   
   //fn before_merge <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, merging_node: & NodeHandle <Self>) {}
   //fn initialize_merge_parent <A: EventAccessor <Steward = Self::Steward>> (accessor: &A)->Self::NodeVarying;
-  fn initialize_merge_boundary <A: EventAccessor <Steward = Self::Steward>> (accessor: &A)->Self::BoundaryVarying {
-  
+  fn initialize_merge_boundary <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, boundary: MergeBoundaryInfo<Self>)->Self::BoundaryVarying {
+    BoundaryVarying {
+      transfer_velocity: 0,
+      next_change: None,
+    }
   }
   //fn after_merge <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, merged_node: & NodeHandle <Self>, new_boundaries: Vec<BoundaryHandle <Self>>) {}
 }
@@ -173,8 +177,8 @@ macro_rules! exists {
   }
 }
 
-fn set_leaf<A: EventAccessor <Steward = Steward >> (accessor: &A, node: & DataTimelineCell <SimpleTimeline <tree_continuum::NodeVarying<Physics>, Steward>>, data:tree_continuum::LeafVarying<Physics>) {
-  set (accessor, &node.varying, tree_continuum::NodeVarying::Leaf (data));
+fn set_leaf<A: EventAccessor <Steward = Steward >> (accessor: &A, varying: & DataTimelineCell <SimpleTimeline <tree_continuum::NodeVarying<Physics>, Steward>>, data:tree_continuum::LeafVarying<Physics>) {
+  set (accessor, &varying, tree_continuum::NodeVarying::Leaf (data));
 }
 
 
@@ -215,15 +219,18 @@ fn update_inferred_node_properties <A: EventAccessor <Steward = Steward >> (acce
   varying.data.slope = [0, 0];
   varying.data.accumulation_rate = 0;
   
-  iterate_boundaries (& varying.boundaries, | dimension, direction, boundary | {
-    let direction_signum = (direction as Amount*2)-1;
-    let transfer_rate = query_ref (accessor, & boundary.varying).data.transfer_velocity*boundary.length as Amount;
-    varying.accumulation_rate -= transfer_rate*direction_signum;
-    varying.slope [dimension] -= transfer_rate; // divided by
-    // (2*node.width*VELOCITY_PER_SLOPE), but we do that later as an optimization
-  });
-  for dimension in 0..2 {
-    varying.data.slope [dimension] /= (2*node.width as Amount)*VELOCITY_PER_SLOPE;
+  {
+    let data = &mut varying.data;
+    iterate_boundaries (& varying.boundaries, | dimension, direction, boundary | {
+      let direction_signum = (direction as Amount*2)-1;
+      let transfer_rate = query_ref (accessor, & boundary.varying).data.transfer_velocity*boundary.length as Amount;
+      data.accumulation_rate -= transfer_rate*direction_signum;
+      data.slope [dimension] -= transfer_rate; // divided by
+      // (2*node.width*VELOCITY_PER_SLOPE), but we do that later as an optimization
+    });
+    for dimension in 0..2 {
+      data.slope [dimension] /= (2*node.width as Amount)*VELOCITY_PER_SLOPE;
+    }
   }
   set_leaf (accessor, &node.varying, varying);
 }
@@ -231,15 +238,15 @@ fn update_inferred_node_properties <A: EventAccessor <Steward = Steward >> (acce
 fn update_node <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
   let mut varying = unwrap_leaf (query (accessor, &node.varying));
   
-  varying.ink_at_last_change = ink_at (accessor, node, *accessor.now());
-  varying.last_change = *accessor.now();
+  varying.data.ink_at_last_change = ink_at (accessor, node, *accessor.now());
+  varying.data.last_change = *accessor.now();
   
   set_leaf (accessor, &node.varying, varying);
 }
 
 fn ink_at <A: Accessor <Steward = Steward >> (accessor: &A, node: &NodeHandle, time: Time)->Amount {
   let guard = query_ref (accessor, &node.varying);
-  let varying = unwrap_leaf_ref (guard);
+  let varying = unwrap_leaf_ref (&guard);
   varying.data.ink_at_last_change + varying.data.accumulation_rate*((time - varying.data.last_change) as Amount)
 }
 fn density_at <A: Accessor <Steward = Steward >> (accessor: &A, node: &NodeHandle, time: Time)->Amount {
@@ -302,8 +309,8 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
     density_at (accessor, &nodes[1], *accessor.now()),
   ];
   let accumulation_rates = [
-    unwrap_leaf_ref (query_ref(accessor, &nodes[0].varying)).data.accumulation_rate,
-    unwrap_leaf_ref (query_ref(accessor, &nodes[1].varying)).data.accumulation_rate,
+    unwrap_leaf_ref (&query_ref(accessor, &nodes[0].varying)).data.accumulation_rate,
+    unwrap_leaf_ref (&query_ref(accessor, &nodes[1].varying)).data.accumulation_rate,
   ];
   let scale_factor = areas [0]*areas [1];
   let density_accumulations_scaled = [
@@ -325,8 +332,8 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   // that "when the current gets too far from the ideal" is the same as
   // "when the ideal gets too far from the current"
   let (min_difference, max_difference) = (
-    transfer_velocity_to_ideal_density_difference([&nodes[0], &nodes[1]], boundary_varying.transfer_velocity - permissible_error),
-    transfer_velocity_to_ideal_density_difference([&nodes[0], &nodes[1]], boundary_varying.transfer_velocity + permissible_error),
+    transfer_velocity_to_ideal_density_difference([&nodes[0], &nodes[1]], boundary_varying.data.transfer_velocity - permissible_error),
+    transfer_velocity_to_ideal_density_difference([&nodes[0], &nodes[1]], boundary_varying.data.transfer_velocity + permissible_error),
   );
   let time = if difference_now < min_difference || difference_now > max_difference {
     Some(*accessor.now())
@@ -356,8 +363,11 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
 
 fn maybe_split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle)->bool {
   if node.width <METER {return false;}
+  
+  let mut close_enough = true;
+  {
   let guard = query_ref (accessor, &node.varying);
-  let varying = unwrap_leaf_ref (guard);
+  let varying = unwrap_leaf_ref (&guard);
   let mut averaged_ideal_velocities = [0; 2];
   
   iterate_boundaries (& varying.boundaries, | dimension, direction, boundary | {
@@ -371,7 +381,7 @@ fn maybe_split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &Nod
   for dimension in 0..2 {
     averaged_ideal_velocities [dimension] /= 2*node.width as Amount;
   }
-  let mut close_enough = true;
+  
   iterate_boundaries (& varying.boundaries, | dimension, direction, boundary | {
     let density_difference =
       density_at (accessor, &boundary.nodes[0], *accessor.now()) - 
@@ -384,6 +394,7 @@ fn maybe_split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &Nod
       close_enough = false;
     }
   });
+  }
   
   if !close_enough {
     tree_continuum::split (accessor, node);
@@ -394,25 +405,27 @@ fn maybe_split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &Nod
 
 fn maybe_merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle)->bool {
   if just_destroyed (accessor, &node.varying) { return false; }
+  let mut close_enough = true;
+  {
   let guard = query_ref (accessor, &node.varying);
-  let varying = match **guard  {
+  let varying = match *guard  {
     tree_continuum::NodeVarying::Branch (ref b) => b,
     tree_continuum::NodeVarying::Leaf (_) => return false,
   };
   
   let mut averaged_ideal_velocities = [0; 2];
-  
+  let mut abort = false;
   iterate_children (& varying.children, | coordinates, child | {
     let child_guard = query_ref (accessor, &child.varying);
-    let child_varying = match **child_guard  {
-      tree_continuum::NodeVarying::Branch (ref b) => b,
-      tree_continuum::NodeVarying::Leaf (_) => return false,
+    let child_varying = match *child_guard  {
+      tree_continuum::NodeVarying::Branch (_) => {abort = true; return},
+      tree_continuum::NodeVarying::Leaf (ref l) => l,
     };
     for dimension in 0..2 {
       for direction in 0..2 {
         match face_by_dimension_and_direction (&child_varying.boundaries, dimension, direction) {
           &FaceBoundaries::WorldEdge => (),
-          &FaceBoundaries::SplitBoundary (_) => return false,
+          &FaceBoundaries::SplitBoundary (_) => {abort = true; return},
           &FaceBoundaries::SingleBoundary (ref boundary) => {
             let density_difference =
               density_at (accessor, &boundary.nodes[0], *accessor.now()) - 
@@ -425,13 +438,14 @@ fn maybe_merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &Nod
       }
     }
   });
+  if abort {return false}
   for dimension in 0..2 {
     averaged_ideal_velocities [dimension] /= 4*node.width as Amount;
   }
-  let mut close_enough = true;
+  
   iterate_children (& varying.children, | coordinates, child | {
     let child_guard = query_ref (accessor, &child.varying);
-    let child_varying = unwrap_leaf (child_guard);
+    let child_varying = unwrap_leaf_ref (&child_guard);
     iterate_boundaries (& child_varying.boundaries, | dimension, direction, boundary | {
       let density_difference =
         density_at (accessor, &boundary.nodes[0], *accessor.now()) - 
@@ -445,6 +459,7 @@ fn maybe_merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &Nod
       }
     });
   });
+  }
   
   if close_enough {
     merge (accessor, node);
@@ -477,13 +492,15 @@ fn merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
   
   update_inferred_node_properties (accessor, node);
   
-  let guard = query_ref (accessor, &node.varying);
-  let leaf_varying = unwrap_leaf_ref(&guard);
+  {
+    let guard = query_ref (accessor, &node.varying);
+    let leaf_varying = unwrap_leaf_ref(&guard);
+    
+    iterate_boundaries (& leaf_varying.boundaries, | dimension, direction, boundary | {
+      update_transfer_change_prediction (accessor, boundary);
+    });
+  }
   
-  iterate_boundaries (& leaf_varying.boundaries, | dimension, direction, boundary | {
-    update_transfer_change_prediction (accessor, boundary);
-  });
-
   if let Some(parent) = node.parent.as_ref() {
     //audit(accessor);
     maybe_merge (accessor, parent);
@@ -568,7 +585,7 @@ impl Event for TransferChange {
     
     let mut split = false;
     for node in nodes.iter() {
-      if let tree_continuum::NodeVarying::Leaf(_) = *query_ref(accessor, &node.varying) {
+      if match *query_ref(accessor, &node.varying){tree_continuum::NodeVarying::Leaf(_)=>true, _=>false,} {
         //audit(accessor);
         if maybe_split (accessor, node) {split=true;}
         //audit(accessor);
@@ -605,8 +622,7 @@ impl Event for AddInk {
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     let mut node = accessor.globals().root.clone();
     loop {
-      let guard = query_ref (accessor, &node.varying);
-      match *guard {
+      match query (accessor, &node.varying) {
         tree_continuum::NodeVarying::Branch (ref b) => node = child_by_coordinates (& b.children,
            [if self.coordinates [0] > node.center [0] {2} else {0},
             if self.coordinates [1] > node.center [1] {1} else {0}]).clone(),
@@ -622,9 +638,10 @@ impl Event for AddInk {
     let mut varying = unwrap_leaf (query (accessor, &node.varying));
     varying.data.ink_at_last_change += self.amount;
     //node.fiat_accumulation_rate += self.accumulation;
+    let changed_boundaries = varying.boundaries.clone();
     set_leaf (accessor, &node.varying, varying) ;
     
-    iterate_boundaries (& varying.boundaries, | dimension, direction, boundary | {
+    iterate_boundaries (& changed_boundaries, | dimension, direction, boundary | {
       update_transfer_change_prediction (accessor, boundary);
     });
   }
