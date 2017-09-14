@@ -15,6 +15,7 @@ bincode = "0.8"
 #crossbeam = "0.2"
 siphasher = "0.2.2"
 derivative = "1.0"
+dimensioned = "0.6"
 
 [dependencies.nalgebra]
 version = "0.12"
