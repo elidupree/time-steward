@@ -79,17 +79,27 @@ mod units {
 
     }
   }
+  macro_rules! constant {
+    ($CONSTANT: ident: $Type: ident = $value:expr) => {
+      pub const $CONSTANT: $Type = $Type {
+        value_unsafe: $value,
+        _marker: ::std::marker::PhantomData,
+      };
+
+    }
+  }
+
   
-        impl<V, U> ::serde::Serialize for DimensionedStruct<V, U> {
+        impl<V: ::serde::Serialize, U> ::serde::Serialize for DimensionedStruct<V, U> {
   fn serialize <S: ::serde::Serializer> (&self, serializer: S)->Result <S::Ok, S::Error> {
     self.value_unsafe.serialize(serializer)
   }
 }
 
-impl<'a, V, U> ::serde::Deserialize <'a> for DimensionedStruct<V, U> {
+impl<'a, V: ::serde::Deserialize<'a>, U> ::serde::Deserialize <'a> for DimensionedStruct<V, U> {
   fn deserialize <D: ::serde::Deserializer<'a>> (deserializer: D)->Result <Self, D::Error> {
     Ok(DimensionedStruct {
-        value_unsafe: i64::deserialize(deserializer)?,
+        value_unsafe: V::deserialize(deserializer)?,
         _marker: ::std::marker::PhantomData,
       })
 
@@ -103,11 +113,11 @@ impl<'a, V, U> ::serde::Deserialize <'a> for DimensionedStruct<V, U> {
   unit!(DENSITY_UNIT: Density; DensityUnit);
   unit!(MOMENTUM_UNIT: Momentum; MomentumUnit );
   unit!(FORCE_UNIT: Force; ForceUnit );
-  pub const SECOND: Time = (1<<10)*TIME_UNIT;
-  pub const METER: Distance = (1<<10)*LENGTH_UNIT;
-  pub const DEPTH: Distance = LENGTH_UNIT;
-  pub const GENERIC_DENSITY: Density = (1<<10)*DENSITY_UNIT;
-  pub const GENERIC_MASS: Mass = GENERIC_DENSITY*METER*METER*DEPTH;
+  constant!(SECOND: Time = (1<<10));
+  constant!(METER: Distance = (1<<10));
+  constant!(DEPTH: Distance = (1));
+  constant!(GENERIC_DENSITY: Density = (1<<10));
+  constant!(GENERIC_MASS: Mass = GENERIC_DENSITY.value_unsafe*METER.value_unsafe*METER.value_unsafe*DEPTH.value_unsafe);
 }
 
 use units::*;
@@ -153,14 +163,15 @@ impl TreeContinuumPhysics for Physics {
   fn initialize_split_child <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, child: NewChildInfo<Self>)->Self::NodeVarying {
     NodeVarying {
       last_change: *accessor.now(),
-      ink_at_last_change: child.splitting_varying.data.mass_at_last_change >> 2,
-      accumulation_rate: 0,
-      slope: [0; 2],
+      mass_at_last_change: child.splitting_varying.data.mass_at_last_change >> 2,
+      accumulation_rate: 0*MASS_PER_TIME_UNIT,
+      next_change: None,
     }
   }
   fn initialize_split_boundary <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, boundary: NewBoundaryInfo<Self>)->Self::BoundaryVarying {
     BoundaryVarying {
-      momentum_at_last_change: 0*MOMENTUM_UNIT,
+      last_change: *accessor.now(),
+      momentum: 0*MOMENTUM_UNIT,
       forces: [0*FORCE_UNIT; 2],
       next_change: None,
     }
@@ -176,7 +187,7 @@ impl TreeContinuumPhysics for Physics {
     
     for boundary in new_boundaries {
       //printlnerr!("{:?}", (boundary.center, split_node.center, split_node.width, boundary.nodes[0].center, boundary.nodes[0].width, boundary.nodes[1].center, boundary.nodes[1].width));
-      update_transfer_change_prediction (accessor, &boundary);
+      update_momentum_change_prediction (accessor, &boundary);
     }
   }
   
@@ -184,7 +195,8 @@ impl TreeContinuumPhysics for Physics {
   //fn initialize_merge_parent <A: EventAccessor <Steward = Self::Steward>> (accessor: &A)->Self::NodeVarying;
   fn initialize_merge_boundary <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, boundary: MergeBoundaryInfo<Self>)->Self::BoundaryVarying {
     BoundaryVarying {
-      momentum_at_last_change: 0*MOMENTUM_UNIT,
+      last_change: *accessor.now(),
+      momentum: 0*MOMENTUM_UNIT,
       forces: [0*FORCE_UNIT; 2],
       next_change: None,
     }
@@ -207,8 +219,8 @@ fn update_inferred_node_properties <A: EventAccessor <Steward = Steward >> (acce
     let data = &mut varying.data;
     iterate_boundaries (& varying.boundaries, | dimension, direction, boundary | {
       let direction_signum = (direction as i64*2)-1;
-      let neighbor = boundary.nodes [dimension];
-      let transfer_rate = query_ref (accessor, & boundary.varying).data.momentum / ((node.width + neighbor.width) >> 1);
+      let neighbor = &boundary.nodes [dimension];
+      let transfer_rate = query_ref (accessor, & boundary.varying).data.momentum / ((node.width + neighbor.width)*LENGTH_UNIT >> 1);
       data.accumulation_rate -= transfer_rate*direction_signum;
     });
   }
@@ -223,12 +235,13 @@ fn update_forces <A: EventAccessor <Steward = Steward>> (accessor: &A, node: &No
     //assert!(varying.last_change == *accessor.now());
     
     let pressure = density*(GENERIC_MASS/SECOND/SECOND/METER)/(4*GENERIC_DENSITY);
+    //printlnerr!("{:?}", (pressure));
   
     iterate_boundaries (& varying.boundaries, | dimension, direction, boundary | {
       update_boundary(accessor, boundary);
       let mut boundary_varying = query (accessor, &boundary.varying);
   
-      boundary_varying.data.forces [(direction + 1) & 1] = pressure * (boundary.length*DEPTH);
+      boundary_varying.data.forces [(direction + 1) & 1] = pressure * (boundary.length*LENGTH_UNIT*DEPTH);
   
       set (accessor, &boundary.varying, boundary_varying);
     });
@@ -271,13 +284,13 @@ fn momentum_at <A: Accessor <Steward = Steward >> (accessor: &A, node: &Boundary
 fn update_momentum_change_prediction <A: EventAccessor <Steward = Steward >> (accessor: &A, boundary: &BoundaryHandle) {
   let mut varying = query (accessor, &boundary.varying);
   
-  let time = Some(varying.data.last_change + accessor.id().to_rng().gen_range(SECOND.value_unsafe/4, SECOND.value_unsafe/3)*TIME_UNIT);
+  let time = Some(max(*accessor.now(), varying.data.last_change + accessor.id().to_rng().gen_range(SECOND.value_unsafe/4, SECOND.value_unsafe/3)*TIME_UNIT));
     
   varying.data.next_change = time.map (|time| {
     accessor.create_prediction (
       time,
       DeterministicRandomId::new (&(accessor.id(), boundary.center)),
-      TransferChange {boundary: boundary.clone()}
+      MomentumChange {boundary: boundary.clone()}
     )
   });
   
@@ -288,7 +301,7 @@ fn update_force_change_prediction <A: EventAccessor <Steward = Steward >> (acces
   let mut varying = unwrap_leaf (query (accessor, &node.varying));
   
   
-  let time = Some(varying.data.last_change + accessor.id().to_rng().gen_range(SECOND.value_unsafe/4, SECOND.value_unsafe/3)*TIME_UNIT);
+  let time = Some(max(*accessor.now(), varying.data.last_change + accessor.id().to_rng().gen_range(SECOND.value_unsafe/4, SECOND.value_unsafe/3)*TIME_UNIT));
     
   varying.data.next_change = time.map (|time| {
     accessor.create_prediction (
@@ -322,7 +335,19 @@ impl Event for MomentumChange {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    
+    let nodes = &self.boundary.nodes;
+    for node in nodes.iter() {
+      update_node (accessor, node);
+      update_inferred_node_properties (accessor, node);
+    }
+    update_boundary (accessor, & self.boundary);
+    for node in nodes.iter() {
+      update_force_change_prediction (accessor, node);
+      let changed_boundaries = unwrap_leaf_ref (&query_ref (accessor, & node.varying)).boundaries.clone();
+      iterate_boundaries (& changed_boundaries, | dimension, direction, boundary | {
+        update_momentum_change_prediction (accessor, boundary);
+      });
+    }
     // TODO: invalidation
   }
 
@@ -340,7 +365,13 @@ impl Event for ForceChange {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    
+    update_node(accessor, &self.node);
+    update_forces(accessor, &self.node);
+    let changed_boundaries = unwrap_leaf_ref (&query_ref (accessor, & self.node.varying)).boundaries.clone();
+    update_force_change_prediction (accessor, &self.node);
+    iterate_boundaries (& changed_boundaries, | dimension, direction, boundary | {
+      update_momentum_change_prediction (accessor, boundary);
+    });
     // TODO: invalidation
   }
 
@@ -380,8 +411,10 @@ impl Event for AddMass {
     let changed_boundaries = varying.boundaries.clone();
     set_leaf (accessor, &node.varying, varying);
     
+    update_forces(accessor, &node);
+    update_force_change_prediction (accessor, &node);
     iterate_boundaries (& changed_boundaries, | dimension, direction, boundary | {
-      update_transfer_change_prediction (accessor, boundary);
+      update_momentum_change_prediction (accessor, boundary);
     });
   }
   fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, _accessor: &mut Accessor, _: ()) {
