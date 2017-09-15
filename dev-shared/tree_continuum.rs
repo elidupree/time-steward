@@ -43,7 +43,7 @@ use simple_timeline::{SimpleTimeline, query, tracking_query, tracking_query_ref,
 
 type Distance = i64;
 
-const DIMENSIONS: usize = 2; // $DIMENSIONS;
+pub const DIMENSIONS: usize = 2; // $DIMENSIONS;
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub enum FaceBoundaries<Physics: TreeContinuumPhysics> {
