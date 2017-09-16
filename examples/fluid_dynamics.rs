@@ -28,7 +28,7 @@ macro_rules! printlnerr(
 
 
 use rand::Rng;
-use std::cmp::{min, max};
+use std::cmp::{min, max, Ordering};
 use std::collections::HashSet;
 
 //use dimensioned::
@@ -237,6 +237,7 @@ fn mass_accumulation_rate <A: Accessor <Steward = Steward >> (accessor: &A, node
     let transfer_to_me_rate = -transfer_rate*direction_signum;
     result += transfer_to_me_rate;
   });
+  if result.abs() < 4*MASS_UNIT/TIME_UNIT {return 0*MASS_UNIT/TIME_UNIT}
   result
 }
 
@@ -300,6 +301,7 @@ fn momentum_accumulation_rate <A: Accessor <Steward = Steward >> (accessor: &A, 
       });
     });
   }
+  if result.abs() < 4*FORCE_UNIT {return 0*FORCE_UNIT}
   result
 }
 
@@ -339,10 +341,27 @@ fn momentum_at <A: Accessor <Steward = Steward >> (accessor: &A, boundary: &Boun
 }
 
 
+// A macro so I don't have to bother getting the generic types right
+macro_rules! when_escapes {
+  ($accessor: ident, $current: ident, $accumulation_rate: ident, $min: expr, $max: expr) => {{
+    assert!($max >= $min);
+    if $current<$min || $current>$max {Some (*$accessor.now())}
+    else {match $accumulation_rate.value_unsafe.cmp(&0) {
+      Ordering::Equal => None,
+      Ordering::Greater => Some (*$accessor.now() + 1*TIME_UNIT + ($max - $current)/$accumulation_rate),
+      Ordering::Less => Some (*$accessor.now() + 1*TIME_UNIT + ($min - $current)/$accumulation_rate),
+    }}
+  }}
+}
+
+
 fn update_momentum_change_prediction <A: EventAccessor <Steward = Steward >> (accessor: &A, boundary: &BoundaryHandle) {
   let mut varying = query (accessor, &boundary.varying);
   
-  let time = Some(max(*accessor.now(), varying.data.last_fixed_update + accessor.id().to_rng().gen_range(SECOND.value_unsafe/4, SECOND.value_unsafe/3)*TIME_UNIT));
+  let momentum_now = momentum_at (accessor, boundary, *accessor.now());
+  let accumulation_rate = momentum_accumulation_rate(accessor, boundary);
+  
+  let time = when_escapes!(accessor, momentum_now, accumulation_rate, varying.data.fixed_approximate_momentum - (GENERIC_MASS*METER/(SECOND*10)), varying.data.fixed_approximate_momentum + (GENERIC_MASS*METER/(SECOND*10)));
     
   varying.data.next_update = time.map (|time| {
     accessor.create_prediction (
@@ -355,11 +374,14 @@ fn update_momentum_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   set (accessor, &boundary.varying, varying);
 }
 
+
 fn update_mass_change_prediction <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandle) {
   let mut varying = unwrap_leaf (query (accessor, &node.varying));
   
+  let mass_now = mass_at (accessor, node, *accessor.now());
+  let accumulation_rate = mass_accumulation_rate(accessor, node);
   
-  let time = Some(max(*accessor.now(), varying.data.last_fixed_update + accessor.id().to_rng().gen_range(SECOND.value_unsafe/4, SECOND.value_unsafe/3)*TIME_UNIT));
+  let time = when_escapes!(accessor, mass_now, accumulation_rate, varying.data.fixed_approximate_mass*3/4, (varying.data.fixed_approximate_mass*5+3*MASS_UNIT)/4);
     
   varying.data.next_update = time.map (|time| {
     accessor.create_prediction (
@@ -417,6 +439,22 @@ impl Event for MomentumChange {
     
     set (accessor, &self.boundary.varying, varying);
     update_momentum_change_prediction (accessor, &self.boundary);
+    
+    for node in nodes.iter() {
+      update_mass_change_prediction (accessor, node);
+      
+      let guard = query_ref (accessor, &node.varying);
+      let node_varying = unwrap_leaf_ref (&guard);
+      iterate_boundaries (& node_varying.boundaries, | dimension2, direction2, boundary2 | {    
+        let neighbor = &boundary2.nodes [direction2];
+        let neighbor_guard = query_ref (accessor, &neighbor.varying);
+        let neighbor_varying = unwrap_leaf_ref (&guard);
+        iterate_boundaries (& neighbor_varying.boundaries, | dimension3, direction3, boundary3 | {
+          update_momentum_change_prediction (accessor, & boundary3);
+        });
+      });
+    }
+    
     // TODO: invalidation
   }
 
@@ -442,9 +480,12 @@ impl Event for MassChange {
     
     varying.data.fixed_approximate_mass = varying.data.mass_at_last_change;
     varying.data.last_fixed_update = *accessor.now();
-    
+    let boundaries = varying.boundaries.clone();
     set_leaf (accessor, &self.node.varying, varying);
     update_mass_change_prediction (accessor, &self.node);
+    iterate_boundaries (& boundaries, | dimension, direction, boundary | {
+      update_momentum_change_prediction (accessor, & boundary);
+    });
     // TODO: invalidation
   }
 
@@ -482,6 +523,7 @@ impl Event for AddMass {
     varying.data.mass_at_last_change += self.amount;
     //node.fiat_accumulation_rate += self.accumulation;
     set_leaf (accessor, &node.varying, varying);
+    update_mass_change_prediction (accessor, &node);
   }
   fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, _accessor: &mut Accessor, _: ()) {
     unimplemented!()
