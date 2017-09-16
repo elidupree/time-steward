@@ -348,8 +348,8 @@ macro_rules! when_escapes {
     if $current<$min || $current>$max {Some (*$accessor.now())}
     else {match $accumulation_rate.value_unsafe.cmp(&0) {
       Ordering::Equal => None,
-      Ordering::Greater => Some (*$accessor.now() + 1*TIME_UNIT + ($max - $current)/$accumulation_rate),
-      Ordering::Less => Some (*$accessor.now() + 1*TIME_UNIT + ($min - $current)/$accumulation_rate),
+      Ordering::Greater => Some (*$accessor.now() + ($max - $current)/$accumulation_rate),
+      Ordering::Less => Some (*$accessor.now() + ($min - $current)/$accumulation_rate),
     }}
   }}
 }
@@ -361,7 +361,7 @@ fn update_momentum_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   let momentum_now = momentum_at (accessor, boundary, *accessor.now());
   let accumulation_rate = momentum_accumulation_rate(accessor, boundary);
   
-  let time = when_escapes!(accessor, momentum_now, accumulation_rate, varying.data.fixed_approximate_momentum - (GENERIC_MASS*METER/(SECOND*10)), varying.data.fixed_approximate_momentum + (GENERIC_MASS*METER/(SECOND*10)));
+  let time = when_escapes!(accessor, momentum_now, accumulation_rate, varying.data.fixed_approximate_momentum - (GENERIC_MASS*METER/(SECOND*10)) - accumulation_rate.abs()*TIME_UNIT, varying.data.fixed_approximate_momentum + (GENERIC_MASS*METER/(SECOND*10)) + accumulation_rate.abs()*TIME_UNIT);
     
   varying.data.next_update = time.map (|time| {
     accessor.create_prediction (
@@ -381,7 +381,7 @@ fn update_mass_change_prediction <A: EventAccessor <Steward = Steward >> (access
   let mass_now = mass_at (accessor, node, *accessor.now());
   let accumulation_rate = mass_accumulation_rate(accessor, node);
   
-  let time = when_escapes!(accessor, mass_now, accumulation_rate, varying.data.fixed_approximate_mass*3/4, (varying.data.fixed_approximate_mass*5+3*MASS_UNIT)/4);
+  let time = when_escapes!(accessor, mass_now, accumulation_rate, varying.data.fixed_approximate_mass*3/4, (varying.data.fixed_approximate_mass*5+accumulation_rate.abs()*TIME_UNIT+3*MASS_UNIT)/4);
     
   varying.data.next_update = time.map (|time| {
     accessor.create_prediction (
@@ -484,7 +484,8 @@ impl Event for MassChange {
     set_leaf (accessor, &self.node.varying, varying);
     update_mass_change_prediction (accessor, &self.node);
     iterate_boundaries (& boundaries, | dimension, direction, boundary | {
-      update_momentum_change_prediction (accessor, & boundary);
+      //update_momentum_change_prediction (accessor, & boundary);
+      MomentumChange {boundary:boundary.clone()}.execute(accessor);
     });
     // TODO: invalidation
   }
@@ -544,8 +545,8 @@ impl Event for Initialize {
     set_leaf (accessor, &globals.root.varying, tree_continuum::LeafVarying {
       data: NodeVarying {
         last_change: 0*TIME_UNIT,
-        mass_at_last_change: 0*MASS_UNIT,
-        fixed_approximate_mass: 0*MASS_UNIT,
+        mass_at_last_change: GENERIC_MASS*100,
+        fixed_approximate_mass: GENERIC_MASS*100,
         
         last_fixed_update: 0*TIME_UNIT,
         next_update: None,
