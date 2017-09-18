@@ -286,12 +286,12 @@ fn momentum_accumulation_rate <A: Accessor <Steward = Steward >> (accessor: &A, 
       iterate_face_boundaries (corresponding_face, boundary.normal_dimension, | boundary3 | {
         let boundary3_momentum = query_ref (accessor, & boundary3.varying).data.fixed_approximate_momentum;
         
-        if boundary2_momentum.signum() == direction2_signum {
+        if boundary2_momentum.signum() == direction2_signum && boundary_varying.data.fixed_approximate_momentum.signum() == -direction_signum {
           let time_to_empty: Time = max(1*TIME_UNIT, node_varying.data.fixed_approximate_mass*boundary2_transfer_distance/boundary2_momentum.abs());
           result -= boundary_varying.data.fixed_approximate_momentum/time_to_empty;
         }
         
-        if boundary2_momentum.signum() == -direction2_signum {
+        if boundary2_momentum.signum() == -direction2_signum && boundary3_momentum.signum() == -direction_signum {
           let time_to_empty: Time = max(1*TIME_UNIT, neighbor_varying.data.fixed_approximate_mass*boundary2_transfer_distance/boundary2_momentum.abs());
           let drain_rate = boundary_varying.data.fixed_approximate_momentum/time_to_empty;
           
