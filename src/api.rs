@@ -52,26 +52,72 @@ impl<T: Any + Debug + Clone + Eq + Serialize + DeserializeOwned> QueryResult for
 
 //These would be associated type constructors if Rust supported those: DataTimelineHandle, EventHandle, DynamicEventHandle, PredictionHandle
 
-
+/// Structures that represent a value that can change over time in a simulation.
+///
+/// A DataTimeline implementor keeps track of a **history** of a specific piece of data. With respect to *simulation* time, it must be a **fully retroactive data structure**. This means that you can make queries, and insert and remove operations, at arbitrary times within the simulation. With respect to *computer* time, it must be a **partially persistent data structure**, in the sense that it can be queried with a *pair* (simulation-time, computer-time), and still give the same result it gave at that computer-time. 
+///
+/// DataTimeline implementors may rely on the following conditions:
+/// * The computer times given in calls to insert() and remove() are always >= all computer times given in previous calls to query() on the same object. (TODO: what about concurrency?)
+/// * The computer times given in calls to insert(), remove(), and query() are always >= the computer time when the object was created and any computer time given in previous calls to forget_before().
+/// * The simulation times given in calls to insert(), remove(), and query() are always >= any simulation time given in previous calls to forget_before().
+/// *
+///
+/// If these conditions are violated, DataTimeline methods are permitted to panic or behave incorrectly. However, they are not permitted to be memory unsafe.
 pub trait DataTimeline: Any + Clone + Serialize + DeserializeOwned + Default + Debug {
   type Basics: Basics;
 
   /// Make a clone of only the data necessary to report accurately at a specific time.
-  // audit: the clone yields the same query results immediately before and after the time
-  fn clone_for_snapshot (&self, time: &ExtendedTime <Self::Basics>)->Self;
+  ///
+  /// This must not have side effects.
+  // audit: the clone yields the same query results at the time
+  fn clone_for_snapshot (&self, time: &ExtendedTime <Self::Basics>, computer_time: ComputerTime)->Self;
   
+  /// Free memory used to store old data.
+  ///
+  /// This must not have side effects.
+  ///
+  /// How is this possible? By calling forget_before(), the caller promises that all future inputs will happen at computer times >= the given computer time, and simulation times >= the given simulation time. This may make it possible to discard old data without changing any of the object's behavior in response to future *legal* inputs.
   // audit: forget functions don't change any query results except those forgotten
   fn forget_before (&mut self, time: &ExtendedTime <Self::Basics>);
 }
+/// A possible query into a specific DataTimeline type.
+///
+/// DataTimeline implementors may provide multiple ways to query them. Each implementation of this trait provides a query interface for the type Q.
+///
+/// This trait name may be awkward. It could theoretically be phrased as `trait DataTimelineQuery<D: DataTimeline> : Query`. However, then it wouldn't be possible to implement, say, `impl DataTimelineQuery<MyDataTimeline> for u64` in your own crate.
 pub trait DataTimelineQueriableWith<Q: Query>: DataTimeline {
   type QueryResult: QueryResult;
   
+  /// Run a query.
+  ///
+  /// Queries must not have side effects.
+  ///
+  /// The second part of the return value is some sort of information about how the query result has changed at later computer times (TODO).
   // audit: queries must not have side effects (do a separate action for manual dependency tracking)
   // audit: queries don't return PredictionHandles that don't exist at the time
-  fn query (&self, query: &Q, time: &ExtendedTime <Self::Basics>)->Self::QueryResult;
+  fn query (&self, query: &Q, simulation_time: &ExtendedTime <Self::Basics>, computer_time: ComputerTime)->(Self::QueryResult, bool);
 }
+/// A possible query into a specific DataTimeline type that can also be returned by reference.
+///
+/// This is an optimization only, and must be consistent with the corresponding DataTimelineQueriableWith impl.
 pub trait DataTimelineQueryRefableWith<Q: Query>: DataTimelineQueriableWith<Q> {
+  /// Run the query, returning the result by reference.
   fn query_ref (&self, query: &Q, time: &ExtendedTime <Self::Basics>)->&<Self as DataTimelineQueriableWith<Q>>::QueryResult;
+}
+
+/// A possible operation on a specific DataTimeline type.
+///
+/// DataTimeline implementors may provide multiple ways to operate on them. Each implementation of this trait provides an operation interface for the type D.
+///
+/// 
+///
+/// If an operation is inserted at computer-time A, and removed at computer-time B, its existence must not have any side effects on computer-times outside the range [A, B].
+pub trait DataTimelineOperatableWith<D: Query>: DataTimeline {
+  /// Insert an operation.
+  fn insert (&mut self, data: D, event: EventHandle);
+  
+  /// Remove/undo an operation.
+  fn remove (&mut self, data: D, event: EventHandle);
 }
 
 
