@@ -7,30 +7,133 @@ use self::simple_timeline::{SimpleTimeline, GetVarying, tracking_query, tracking
 pub type Coordinate = u32;
 pub type NumDimensions = u32;
 
-
-pub trait BoundingBoxCollisionDetectable: PersistentlyIdentifiedType {
+/// If there's only one interpretation of how your objects are arranged in space, it makes sense to implement this on a unit-like struct.
+pub trait Space: SimulationStateData + PersistentlyIdentifiedType {
   type Steward: TimeSteward;
   type Object: SimulationStateData + PersistentlyIdentifiedType;
-  type Space; // a way to distinguish if the same object can be put in multiple collision detectors of the same type. Can easily be () if not.
+  type DetectorDataPerObject: SimulationStateData;
   
   const DIMENSIONS: NumDimensions;
 
   // An Object generally has to store some opaque data for the collision detector.
   // It would normally include a DataHandle to a tree node.
   // These are getter and setter methods for that data.
-  fn get_collision_detector_data<A: EventAccessor <Steward = Self::Steward>>(accessor: &A, object: &DataHandle<Self::Object>, space: &Self::Space)->Option<&ObjectData<Self>>>;
-  fn set_collision_detector_data<A: EventAccessor <Steward = Self::Steward>>(accessor: &A, object: &DataHandle<Self::Object>, space: &Self::Space, data: Option<ObjectData<Self>>);
+  fn get_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<&DetectorDataPerObject<Self>>>;
+  fn set_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, data: Option<DetectorDataPerObject<Self>>);
 
-  fn calculate_current_bounding_box<A: EventAccessor <Steward = Self::Steward>>(accessor: &A, object: &DataHandle<Self::Object>, space: &Self::Space)->BoundingBox;
-  fn when_escapes<A: EventAccessor <Steward = Self::Steward>>(accessor: &A, object: &DataHandle<Self::Object>, space: &Self::Space, BoundingBox)-><Self::Steward as TimeSteward>::Basics::Time;
+  fn current_bounding_box<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->BoundingBox;
+  fn when_escapes<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, space: &Self::Space, BoundingBox)-><Self::Steward as TimeSteward>::Basics::Time;
   
-  fn become_nearby<A: EventAccessor <Steward = Self::Steward>>(accessor: &A, objects: [&DataHandle<Self::Object>; 2], space: &Self::Space) {}
-  fn stop_being_nearby<A: EventAccessor <Steward = Self::Steward>>(accessor: &A, objects: [&DataHandle<Self::Object>; 2], space: &Self::Space) {}
+  fn become_neighbors<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, objects: [&DataHandle<Self::Object>; 2]) {}
+  fn stop_being_neighbors<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, objects: [&DataHandle<Self::Object>; 2]) {}
+}
+
+pub trait Detector: SimulationStateData {
+  type Steward: TimeSteward;
+  type Object: SimulationStateData + PersistentlyIdentifiedType;
+  type DetectorDataPerObject: SimulationStateData;
+
+  pub fn insert<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, space: &S, object: &DataHandle<S::Object>, location_hint: Option <& DataHandle<B::Object>>);
+  pub fn remove<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, space: &S, object: &DataHandle<S::Object>);
+  pub fn changed<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, space: &S, object: &DataHandle<S::Object>);
+  pub fn nearby_objects<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, space: &S, object: &DataHandle<S::Object>) ->Vec<DataHandle<S::Object>>;
 }
 
 pub struct BoundingBox<B: BoundingBoxCollisionDetectable> {
   pub bounds: [[Coordinate; 2]; B::DIMENSIONS],
 }
+
+
+
+
+
+pub mod simple_grid {
+  use super::*;
+  
+  pub struct SimpleGridDetector <Steward: TimeSteward> {
+    cell_size: Coordinate,
+    cells: DataTimelineCell<SimpleTimeline<HashMap <[Coordinate; DIMENSIONS], Cell>>>,
+  }
+  
+  struct DetectorDataPerObject {
+    current_grid_bounds: BoundingBox,
+    escapes_bounds_prediction: Option <<Steward as TimeSteward>::EventHandle>,
+  }
+  struct Cell {
+    objects: Vec<Object>,
+  }
+  
+  impl Detector for SimpleGridDetector {
+    type Steward = Steward;
+    type Object = Object;
+    type DetectorDataPerObject = DetectorDataPerObject;
+    
+    insert (accessor, space, object, location_hint) {
+      
+    }
+    
+    changed (accessor, space, object) {
+      let data = match space.get_detector_data (accessor, object) {None => return, Some (a) => a};
+      let new_bounds = space.current_bounding_box (accessor, object);
+      let new_grid_bounds = self.grid_box (new_bounds);
+      
+      let mut cells = get (accessor, self.cells);
+      let mut new_neighbors =
+      let mut removed_neighbors =
+      
+      for location in new_bounds.locations () {
+        if let Some(cell) = cells.get_mut (location) {
+          for neighbor in cell.objects {
+            new_neighbors.insert (neighbor) ;
+          }
+          if !old_bounds.contains (location) {
+            cell.objects.insert (object.clone());
+          }
+        }
+      }
+      for location in old_bounds.locations () {
+        if !new_bounds.contains (location) {
+          let cell = cells.entry (location).or_insert (Default::default());
+          for neighbor in cell.objects {
+            if !new_neighbors.contains (neighbor) {
+              removed_neighbors.insert (neighbor);
+            }
+          }
+          cell.objects.insert (object.clone());
+        }
+      }
+      
+      for neighbor in removed_neighbors {
+        space.stop_being_neighbors (accessor, [object, neighbor]);
+      }
+      for neighbor in new_neighbors {
+        space.become_neighbors (accessor, [object, neighbor]);
+      }
+      
+      
+    }
+  }
+  
+  impl SimpleGridDetector {
+    fn grid_box (&self, exact_box: & BoundingBox) -> BoundingBox {
+      Array::from_fn (| dimension | Array::from_fn (| direction | {
+        exact_box [dimension] [direction] + direction*(self.cell_size - 1)/self.cell_size
+      }))
+    }
+    fn real_box_from_grid (&self, grid_box: & BoundingBox) -> BoundingBox {
+      Array::from_fn (| dimension | Array::from_fn (| direction | {
+        grid_box [dimension] [direction] * self.cell_size
+      }))
+    }
+  }
+}
+
+
+
+
+
+
+/*
 struct NodeBounds<B: BoundingBoxCollisionDetectable> {
   half_size_shift: u32,
   center: [Coordinate; B::DIMENSIONS],
@@ -124,3 +227,5 @@ impl<B: BoundingBoxCollisionDetectable> BoundingBoxCollisionDetector<B> {
     }
   }
 }
+
+*/
