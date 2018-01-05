@@ -33,16 +33,39 @@ pub trait Detector: SimulationStateData {
   type Object: SimulationStateData + PersistentlyIdentifiedType;
   type DetectorDataPerObject: SimulationStateData;
 
-  pub fn insert<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, space: &S, object: &DataHandle<S::Object>, location_hint: Option <& DataHandle<B::Object>>);
-  pub fn remove<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, space: &S, object: &DataHandle<S::Object>);
-  pub fn changed<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, space: &S, object: &DataHandle<S::Object>);
-  pub fn nearby_objects<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, space: &S, object: &DataHandle<S::Object>) ->Vec<DataHandle<S::Object>>;
+  fn insert<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, space: &S, object: &DataHandle<S::Object>, location_hint: Option <& DataHandle<B::Object>>);
+  fn remove<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, space: &S, object: &DataHandle<S::Object>);
+  fn changed<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, space: &S, object: &DataHandle<S::Object>);
+  fn nearby_objects<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, space: &S, object: &DataHandle<S::Object>) ->Vec<DataHandle<S::Object>>;
 }
 
 pub struct BoundingBox<B: BoundingBoxCollisionDetectable> {
   pub bounds: [[Coordinate; 2]; B::DIMENSIONS],
 }
 
+impl BoundingBox {
+  pub fn locations (&self)->Vec<[Coordinate; DIMENSIONS]> {
+    let mut result = Vec::new() ;
+    let mut position = Array::map (self.bounds, | [first, _] | first);
+    'outer: loop {
+      for dimension in 0..DIMENSIONS {
+        let mut dimension = 0;
+        position [dimension] += 1;
+        if position [dimension] <= self.bounds[dimension] [1] {
+          result.push (result);
+          continue 'outer;
+        }
+        position [dimension] = self.bounds[dimension] [0];
+      }
+      break 'outer;
+    }
+    result
+  }
+  
+  pub fn contains_location (&self, location: [Coordinate; DIMENSIONS])->bool {
+    self.bounds.iter().enumerate().all (| (dimension, [first, second]) | location [dimension] >= first && location [dimension] <= second))
+  }
+}
 
 
 
@@ -69,48 +92,29 @@ pub mod simple_grid {
     type DetectorDataPerObject = DetectorDataPerObject;
     
     insert (accessor, space, object, location_hint) {
-      
+      let new_bounds = space.current_bounding_box (accessor, object);
+      let new_grid_bounds = self.grid_box (new_bounds);
+      self.update(accessor, space, object, Some());
+    }
+    remove (accessor, space, object, location_hint) {
+      self.update(accessor, space, object, None);
     }
     
     changed (accessor, space, object) {
+      self.insert(accessor, space, object, None);
+    }
+    
+    fn nearby_objects<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, space: &S, object: &DataHandle<S::Object>) ->Vec<DataHandle<S::Object>> {
       let data = match space.get_detector_data (accessor, object) {None => return, Some (a) => a};
-      let new_bounds = space.current_bounding_box (accessor, object);
-      let new_grid_bounds = self.grid_box (new_bounds);
-      
-      let mut cells = get (accessor, self.cells);
-      let mut new_neighbors =
-      let mut removed_neighbors =
-      
-      for location in new_bounds.locations () {
-        if let Some(cell) = cells.get_mut (location) {
+      let mut result =;
+      for location in data.current_grid_bounds.locations () {
+        if let Some(cell) = cells.get (location) {
           for neighbor in cell.objects {
-            new_neighbors.insert (neighbor) ;
-          }
-          if !old_bounds.contains (location) {
-            cell.objects.insert (object.clone());
+            result.insert (neighbor);
           }
         }
       }
-      for location in old_bounds.locations () {
-        if !new_bounds.contains (location) {
-          let cell = cells.entry (location).or_insert (Default::default());
-          for neighbor in cell.objects {
-            if !new_neighbors.contains (neighbor) {
-              removed_neighbors.insert (neighbor);
-            }
-          }
-          cell.objects.insert (object.clone());
-        }
-      }
-      
-      for neighbor in removed_neighbors {
-        space.stop_being_neighbors (accessor, [object, neighbor]);
-      }
-      for neighbor in new_neighbors {
-        space.become_neighbors (accessor, [object, neighbor]);
-      }
-      
-      
+      result
     }
   }
   
@@ -124,6 +128,56 @@ pub mod simple_grid {
       Array::from_fn (| dimension | Array::from_fn (| direction | {
         grid_box [dimension] [direction] * self.cell_size
       }))
+    }
+    fn update(accessor, space, object, new_bounds: Option<BoundingBox>) {
+      let old_data = match space.get_detector_data (accessor, object) {None => return, Some (a) => a};
+      
+      let mut cells = get (accessor, &self.cells);
+      let mut new_neighbors =
+      let mut old_neighbors =
+      
+      if let Some(new_bounds) = new_data.as_ref() {
+        for location in new_bounds.locations () {
+          if let Some(cell) = cells.get_mut (location) {
+            for neighbor in cell.objects {
+              old_neighbors.insert (neighbor);
+            }
+            cell.objects.insert (object.clone());
+          }
+        }
+      }
+      if let Some(old_data) = old_data {
+        for location in old_bounds.locations () {
+          if new_data.map_or(true, |new_bounds| !new_bounds.contains (location)) {
+            let cell = cells.entry (location).or_insert (Default::default());
+            for neighbor in cell.objects {
+              if !new_neighbors.contains (neighbor) {
+                old_neighbors.insert (neighbor);
+              }
+            }
+            cell.objects.remove(object.clone());
+          }
+        }
+      }
+      
+      for neighbor in old_neighbors {
+        if !new_neighbors.contains (neighbor) {
+          space.stop_being_neighbors (accessor, [object, neighbor]);
+        }
+      }
+      for neighbor in new_neighbors {
+        if !old_neighbors.contains (neighbor) {
+          space.become_neighbors (accessor, [object, neighbor]);
+        }
+      }
+      
+      let new_data = new_bounds.map (| new_bounds | DetectorDataPerObject {
+        current_grid_bounds: new_bounds.clone(),
+        .escapes_bounds_prediction: 
+      });
+      
+      space.set_detector_data (accessor, object, new_data);
+      set (accessor, &self.cells, cells);
     }
   }
 }
