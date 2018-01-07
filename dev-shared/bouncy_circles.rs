@@ -1,14 +1,14 @@
-use time_steward::support;
+//use time_steward::support;
 use time_steward::support::time_functions::QuadraticTrajectory;
 use nalgebra::Vector2;
-use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
+//use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
 
 
 use time_steward::{DeterministicRandomId};
-use time_steward::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataHandleTrait, DataTimelineCellTrait, ExtendedTime, Basics as BasicsTrait};
+use time_steward::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataHandleTrait, DataTimelineCellTrait, Basics as BasicsTrait};
 pub use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline, bbox_collision_detector as collisions};
-use simple_timeline::{SimpleTimeline, GetVarying, tracking_query, tracking_query_ref, set, unset};
+use steward_module::{TimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, bbox_collision_detector as collisions};
+use simple_timeline::{SimpleTimeline, tracking_query, tracking_query_ref, set};
 
 use rand::Rng;
 

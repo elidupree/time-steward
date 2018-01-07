@@ -11,7 +11,7 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
-use docopt::Docopt;
+//use docopt::Docopt;
 
 const USAGE: &'static str = "
 Bouncy Circles, a simple TimeSteward test case.
@@ -36,12 +36,12 @@ struct Args {
 }
 
 
-use std::time::{Instant, Duration};
+use std::time::{Instant};
 use glium::{DisplayBuild, Surface};
 
 use time_steward::{DeterministicRandomId};
 //use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, Accessor, SnapshotAccessor, simple_timeline};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, Accessor, simple_timeline};
 use simple_timeline::{query};
 
 #[path = "../dev-shared/bouncy_circles.rs"] mod bouncy_circles;
@@ -59,8 +59,8 @@ struct Vertex {
 }
 implement_vertex!(Vertex, direction, center, radius);
 
-use std::net::{TcpListener, TcpStream};
-use std::io::{BufReader, BufWriter};
+//use std::net::{TcpListener, TcpStream};
+//use std::io::{BufReader, BufWriter};
 
 fn main() {
   // For some reason, docopt checking the arguments caused build_glium() to fail in emscripten.
