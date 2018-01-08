@@ -1,55 +1,73 @@
-use ::{DeterministicRandomId, PersistentTypeId, ListedType, PersistentlyIdentifiedType, SimulationStateData, DataHandleTrait, DataTimelineCellTrait, ExtendedTime};
-use ::stewards::{simple_full as steward_module};
-use self::steward_module::{TimeSteward, Event, DataTimelineCellReadGuard, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
-use self::simple_timeline::{SimpleTimeline, GetVarying, tracking_query, tracking_query_ref, set, unset};
+#[doc (hidden)]
+#[macro_export]
+macro_rules! time_steward_define_bbox_collision_detection {
+  () => {
+    time_steward_define_bbox_collision_detection!(2, bbox_collision_detection_2d);
+    time_steward_define_bbox_collision_detection!(3, bbox_collision_detection_3d);
+  };
+  
+  ($dims: expr, $mod: ident) => {
+mod $mod {
+use super::*;
+use ::{DeterministicRandomId, PersistentlyIdentifiedType, SimulationStateData, DataTimelineCellTrait};
+use super::{TimeSteward, Event, DataHandle, DataTimelineCell, EventAccessor, FutureCleanupAccessor};
+use super::simple_timeline::{SimpleTimeline, query, set};
 
 
 pub type Coordinate = u32;
 pub type NumDimensions = u32;
+
+const DIMENSIONS: NumDimensions = $dims;
 
 /// If there's only one interpretation of how your objects are arranged in space, it makes sense to implement this on a unit-like struct.
 pub trait Space: SimulationStateData + PersistentlyIdentifiedType {
   type Steward: TimeSteward;
   type Object: SimulationStateData + PersistentlyIdentifiedType;
   type DetectorDataPerObject: SimulationStateData;
+  type UniqueId: SimulationStateData;
   
   const DIMENSIONS: NumDimensions;
 
   // An Object generally has to store some opaque data for the collision detector.
   // It would normally include a DataHandle to a tree node.
   // These are getter and setter methods for that data.
-  fn get_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<&DetectorDataPerObject<Self>>>;
-  fn set_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, data: Option<DetectorDataPerObject<Self>>);
+  fn get_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<& Self::DetectorDataPerObject>;
+  fn set_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, data: Option<Self::DetectorDataPerObject>);
+  
+  // must be unique among ALL objects/space pairs
+  fn unique_id<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Self::UniqueId;
 
-  fn current_bounding_box<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->BoundingBox;
-  fn when_escapes<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, BoundingBox)->Option <<Self::Steward as TimeSteward>::Basics::Time>;
+  fn current_bounding_box<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->BoundingBox<Self>;
+  fn when_escapes<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, BoundingBox<Self>)->Option <<<Self::Steward as TimeSteward>::Basics as Basics>::Time>;
   
   fn become_neighbors<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, objects: [&DataHandle<Self::Object>; 2]) {}
   fn stop_being_neighbors<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, objects: [&DataHandle<Self::Object>; 2]) {}
 }
 
-pub trait Detector: SimulationStateData {
-  type Steward: TimeSteward;
-  type Object: SimulationStateData + PersistentlyIdentifiedType;
-  type DetectorDataPerObject: SimulationStateData;
+pub trait Detector: SimulationStateData + PersistentlyIdentifiedType {
+  type Space: Space;
+  //type DetectorDataPerObject: SimulationStateData;
 
-  fn insert<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>, location_hint: Option <& DataHandle<B::Object>>);
-  fn remove<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>);
-  fn changed_position<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>);
-  fn changed_course<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>);
-  fn nearby_objects<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>) ->Vec<DataHandle<S::Object>>;
+  fn insert<A: EventAccessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>, location_hint: Option <& DataHandle<<Self::Space as Space>::Object>>);
+  fn remove<A: EventAccessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>);
+  fn changed_position<A: EventAccessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>);
+  fn changed_course<A: EventAccessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>);
+  fn nearby_objects<A: EventAccessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>) ->Vec<DataHandle<<Self::Space as Space>::Object>>;
 }
 
-pub struct BoundingBox<B: BoundingBoxCollisionDetectable> {
-  pub bounds: [[Coordinate; 2]; B::DIMENSIONS],
+#[derive (Serialize, Deserialize, Debug, Derivative)]
+#[derivative (Clone (bound = ""))]
+pub struct BoundingBox<S: Space> {
+  pub bounds: [[Coordinate; 2]; DIMENSIONS as usize],
+  pub _marker: PhantomData<S>, // waiting for the DIMENSIONS associated constant to be usable
 }
 
-impl BoundingBox {
-  pub fn locations (&self)->Vec<[Coordinate; DIMENSIONS]> {
+impl<S: Space> BoundingBox<S> {
+  pub fn locations (&self)->Vec<[Coordinate; DIMENSIONS as usize]> {
     let mut result = Vec::new() ;
-    let mut position = Array::map (self.bounds, | [first, _] | first);
+    let mut position = Array::map (self.bounds, | bounds | bounds [0]);
     'outer: loop {
-      for dimension in 0..DIMENSIONS {
+      for dimension in 0..DIMENSIONS as usize {
         let mut dimension = 0;
         position [dimension] += 1;
         if position [dimension] <= self.bounds[dimension] [1] {
@@ -63,8 +81,8 @@ impl BoundingBox {
     result
   }
   
-  pub fn contains_location (&self, location: [Coordinate; DIMENSIONS])->bool {
-    self.bounds.iter().enumerate().all (| (dimension, [first, second]) | location [dimension] >= first && location [dimension] <= second))
+  pub fn contains_location (&self, location: [Coordinate; DIMENSIONS as usize])->bool {
+    self.bounds.iter().enumerate().all (| (dimension, bounds) | location [dimension] >= bounds [0] && location [dimension] <= bounds [1])
   }
 }
 
@@ -73,63 +91,83 @@ impl BoundingBox {
 
 pub mod simple_grid {
   use super::*;
+  use array_ext::*;
   
-  pub struct SimpleGridDetector <Space: Space> {
-    space: Space,
+  #[derive (Serialize, Deserialize, Debug, Derivative)]
+  #[derivative (Clone (bound = ""))]
+  pub struct SimpleGridDetector <S: Space> {
+    space: S,
     cell_size: Coordinate,
-    cells: DataTimelineCell<SimpleTimeline<HashMap <[Coordinate; DIMENSIONS], Cell>>>,
+    cells: DataTimelineCell<SimpleTimeline<HashMap <[Coordinate; DIMENSIONS as usize], Cell<S>>, S::Steward>>,
+  }
+  impl <S: Space> PersistentlyIdentifiedType for SimpleGridDetector<S> {
+    const ID: PersistentTypeId = PersistentTypeId(0x6763f785bae6fe43 ^ S::ID.0);
   }
   
-  struct DetectorDataPerObject {
-    current_grid_bounds: BoundingBox,
-    escapes_bounds_prediction: Option <<Steward as TimeSteward>::EventHandle>,
+  #[derive (Serialize, Deserialize, Debug, Derivative)]
+  #[derivative (Clone (bound = ""))]
+  struct DetectorDataPerObject <S: Space> {
+    current_grid_bounds: BoundingBox<S>,
+    escapes_bounds_prediction: Option <<S::Steward as TimeSteward>::EventHandle>,
   }
-  struct Cell {
-    objects: Vec<Object>,
+  #[derive (Serialize, Deserialize, Debug, Derivative)]
+  #[derivative (Clone (bound = ""), PartialEq (bound = ""), Eq (bound = ""), Default (bound = ""))]
+  struct Cell <S: Space> {
+    objects: Vec<DataHandle<S::Object>>,
   }
-  struct Escape {
-    detector: DataHandle<SimpleGridDetector>,
-    object: DataHandle<Object>,
+  #[derive (Serialize, Deserialize, Debug, Derivative)]
+  #[derivative (Clone (bound = ""))]
+  struct Escape <S: Space> {
+    detector: DataHandle<SimpleGridDetector<S>>,
+    object: DataHandle<S::Object>,
   }
-  impl Event for Escape {
-    fn execute (&self, accessor) {
+  impl <S: Space> PersistentlyIdentifiedType for Escape <S> {
+    const ID: PersistentTypeId = PersistentTypeId(0xf693c99eca6bee45 ^ S::ID.0);
+  }
+  impl<S: Space> Event for Escape <S> {
+    type Steward = S::Steward;
+    type ExecutionData = ();
+    fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
       SimpleGridDetector::changed_position (accessor, & self.detector, & self.object);
     }
+    fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+      unimplemented!()
+    }
   }
     
-  impl Detector for SimpleGridDetector {
-    type Steward = Steward;
-    type Object = Object;
-    type DetectorDataPerObject = DetectorDataPerObject;
+  impl<S: Space> Detector for SimpleGridDetector<S> {
+    type Space = S;
+    //type DetectorDataPerObject = DetectorDataPerObject;
     
-    insert (accessor, detector, object, location_hint) {
+    fn insert <A: EventAccessor <Steward = S::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>, location_hint: Option <& DataHandle <S::Object>>) {
       let new_bounds = detector.space.current_bounding_box (accessor, object);
-      let new_grid_bounds = self.grid_box (new_bounds);
-      self.update(accessor, detector, object, Some());
+      let new_grid_bounds = detector.grid_box (new_bounds);
+      Self::update(accessor, detector, object, Some());
     }
-    remove (accessor, space, object, location_hint) {
-      self.update(accessor, detector, object, None);
-    }
-    
-    changed_position (accessor, space, object) {
-      self.insert(accessor, detector, object, None);
+    fn remove <A: EventAccessor <Steward = S::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>) {
+      Self::update(accessor, detector, object, None);
     }
     
-    changed_course (accessor, space, object) {
+    fn changed_position <A: EventAccessor <Steward = S::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>) {
+      Self::insert(accessor, detector, object, None);
+    }
+    
+    fn changed_course <A: EventAccessor <Steward = S::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>) {
       let mut data = match detector.space.get_detector_data (accessor, object) {None => return, Some (a) => a};
       
-      data.escapes_bounds_prediction = self.
+      data.escapes_bounds_prediction = Self::create_prediction (accessor, detector, object, data.current_grid_bounds);
       
-      space.set_detector_data (accessor, object, Some(data));
+      detector.space.set_detector_data (accessor, object, Some(data));
     }
     
-    fn nearby_objects<A: EventAccessor <Steward = Self::Steward>, S: Space <DetectorDataPerObject = Self::DetectorDataPerObject>>(accessor: &A, space: &S, object: &DataHandle<S::Object>) ->Vec<DataHandle<S::Object>> {
-      let data = match space.get_detector_data (accessor, object) {None => return, Some (a) => a};
-      let mut result =;
+    fn nearby_objects<A: EventAccessor <Steward = S::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>) ->Vec<DataHandle<S::Object>> {
+      let data = match detector.space.get_detector_data (accessor, object) {None => return, Some (a) => a};
+      let cells = query (accessor, detector.cells);
+      let mut result = Vec::new();
       for location in data.current_grid_bounds.locations () {
         if let Some(cell) = cells.get (location) {
           for neighbor in cell.objects {
-            result.insert (neighbor);
+            if !result.contains (neighbor) {result.push (neighbor);}
           }
         }
       }
@@ -137,69 +175,72 @@ pub mod simple_grid {
     }
   }
   
-  impl SimpleGridDetector {
-    fn grid_box (&self, exact_box: & BoundingBox) -> BoundingBox {
+  impl<S: Space <DetectorDataPerObject = DetectorDataPerObject<S>>> SimpleGridDetector<S> {
+    fn grid_box (&self, exact_box: & BoundingBox<S>) -> BoundingBox<S> {
       Array::from_fn (| dimension | Array::from_fn (| direction | {
         exact_box [dimension] [direction] + direction*(self.cell_size - 1)/self.cell_size
       }))
     }
-    fn real_box_from_grid (&self, grid_box: & BoundingBox) -> BoundingBox {
+    fn real_box_from_grid (&self, grid_box: & BoundingBox<S>) -> BoundingBox<S> {
       Array::from_fn (| dimension | Array::from_fn (| direction | {
         grid_box [dimension] [direction] * self.cell_size
       }))
     }
-    fn update(accessor, space, object, new_bounds: Option<BoundingBox>) {
-      let old_data = space.get_detector_data (accessor, object);
+    fn update <A: EventAccessor <Steward = S::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>, new_bounds: Option<BoundingBox<S>>) {
+      let old_data = detector.space.get_detector_data (accessor, object);
       
-      let mut cells = get (accessor, &self.cells);
-      let mut new_neighbors =
-      let mut old_neighbors =
+      let mut cells = query (accessor, &detector.cells);
+      let mut new_neighbors = Vec::new();
+      let mut old_neighbors = Vec::new();
       
-      if let Some(new_bounds) = new_data.as_ref() {
+      if let Some(new_bounds) = new_bounds.as_ref() {
         for location in new_bounds.locations () {
           if let Some(cell) = cells.get_mut (location) {
-            for neighbor in cell.objects {
-              old_neighbors.insert (neighbor);
+            for neighbor in cell.objects.iter() {
+              if !new_neighbors.contains(&neighbor) {new_neighbors.push(neighbor);}
             }
             cell.objects.insert (object.clone());
           }
         }
       }
       if let Some(old_data) = old_data {
-        for location in old_bounds.locations () {
-          if new_data.map_or(true, |new_bounds| !new_bounds.contains (location)) {
+        for location in old_data.current_grid_bounds.locations () {
+          if new_bounds.map_or(true, |new_bounds| !new_bounds.contains_location (location)) {
             let cell = cells.entry (location).or_insert (Default::default());
-            for neighbor in cell.objects {
-              if !new_neighbors.contains (neighbor) {
-                old_neighbors.insert (neighbor);
+            for neighbor in cell.objects.iter() {
+              if !new_neighbors.contains (&neighbor) {
+                if !old_neighbors.contains(&neighbor) {old_neighbors.push(neighbor);}
               }
             }
-            cell.objects.remove(object.clone());
+            cell.objects.retain(|a| a != object);
           }
         }
       }
       
-      for neighbor in old_neighbors {
-        if !new_neighbors.contains (neighbor) {
-          space.stop_being_neighbors (accessor, [object, neighbor]);
+      for neighbor in old_neighbors.iter() {
+        if !new_neighbors.contains (&neighbor) {
+          detector.space.stop_being_neighbors (accessor, [object, neighbor]);
         }
       }
-      for neighbor in new_neighbors {
-        if !old_neighbors.contains (neighbor) {
-          space.become_neighbors (accessor, [object, neighbor]);
+      for neighbor in new_neighbors.iter() {
+        if !old_neighbors.contains (&neighbor) {
+          detector.space.become_neighbors (accessor, [object, neighbor]);
         }
       }
       
       let new_data = new_bounds.map (| new_bounds | DetectorDataPerObject {
         current_grid_bounds: new_bounds.clone(),
-        escapes_bounds_prediction: space.when_escapes (accessor, object, self.real_box_from_grid (& new_bounds)).map (| time | {
-          let time_id = accessor.extended_now().id;
-          accessor.create_prediction (time, DeterministicRandomId::new (& (0xe5d3c2856ad28bef, time_id, space.unique_id (object))), Escape {object: object.clone()})
-        }),
+        escapes_bounds_prediction: Self::create_prediction (accessor, detector, object, &new_bounds),
       });
       
-      space.set_detector_data (accessor, object, new_data);
-      set (accessor, &self.cells, cells);
+      detector.space.set_detector_data (accessor, object, new_data);
+      set (accessor, & detector.cells, cells);
+    }
+    fn create_prediction<A: EventAccessor <Steward = S::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>, grid_box: & BoundingBox<S>)->Option <<S::Steward as TimeSteward>::EventHandle> {
+      detector.space.when_escapes (accessor, object, detector.real_box_from_grid (& grid_box)).map (| time | {
+        let time_id = accessor.extended_now().id;
+        accessor.create_prediction (time, DeterministicRandomId::new (& (0xe5d3c2856ad28bef, time_id, detector.space.unique_id (accessor, object))), Escape {detector: detector.clone(), object: object.clone()})
+      })
     }
   }
 }
@@ -305,3 +346,6 @@ impl<B: BoundingBoxCollisionDetectable> BoundingBoxCollisionDetector<B> {
 }
 
 */
+}
+  };
+}

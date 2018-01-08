@@ -82,6 +82,7 @@ pub mod support {
   pub mod rounding_error_tolerant_math;
   pub mod time_functions;
   #[macro_use] pub mod simple_timeline;
+  #[macro_use] pub mod bbox_collision_detection;
 }
 
 #[macro_use]

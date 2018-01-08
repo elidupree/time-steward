@@ -8,7 +8,9 @@ use time_steward::{DeterministicRandomId};
 use time_steward::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataHandleTrait, DataTimelineCellTrait, Basics as BasicsTrait};
 pub use time_steward::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, bbox_collision_detector as collisions};
-use simple_timeline::{SimpleTimeline, tracking_query, tracking_query_ref, set};
+use simple_timeline::{SimpleTimeline, tracking_query, tracking_query_ref, set, destroy};
+use collisions::{BoundingBox, NumDimensions};
+use collisions::simple_grid::{SimpleGridDetector};
 
 use rand::Rng;
 
@@ -102,7 +104,7 @@ impl collisions::Space for Space {
       [center [1] - object.radius, center [1] + object.radius],
     ]}
   }
-  fn when_escapes<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, space: &Self::Space, BoundingBox)-><Self::Steward as TimeSteward>::Basics::Time {
+  fn when_escapes<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, space: &Self::Space, bounds: BoundingBox)-><Self::Steward as TimeSteward>::Basics::Time {
     let varying = tracking_query (accessor, & object.varying);
     varying.position.approximately_when_escapes (
       varying.last_change.clone(),
@@ -325,7 +327,7 @@ impl Event for Initialize {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    set (accessor, &accessor.globals().detector, accessor::new_handle (SimpleGridDetector::new (Space)));
+    set (accessor, &accessor.globals().detector, accessor.new_handle (SimpleGridDetector::new (Space)));
     let circles = accessor.globals();
     let mut varying = Vec::new();
     let mut generator = DeterministicRandomId::new (&2u8).to_rng();
