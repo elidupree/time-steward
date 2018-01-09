@@ -229,14 +229,18 @@ pub mod simple_grid {
       }
       if let Some(old_data) = old_data.as_ref() {
         for location in old_data.current_grid_bounds.locations () {
-          let cell = cells.get_mut (&location).unwrap();
-          for neighbor in cell.objects.iter() {
-            if neighbor != object && !old_neighbors.contains(neighbor) {old_neighbors.push(neighbor.clone());}
+          let remove;
+          {
+            let cell = cells.get_mut (&location).unwrap();
+            for neighbor in cell.objects.iter() {
+              if neighbor != object && !old_neighbors.contains(neighbor) {old_neighbors.push(neighbor.clone());}
+            }
+            if new_bounds.as_ref().map_or(true, |new_bounds| !new_bounds.contains_location (location)) {
+              cell.objects.retain(|a| a != object);
+            }
+            remove = cell.objects.is_empty();
           }
-          if new_bounds.as_ref().map_or(true, |new_bounds| !new_bounds.contains_location (location)) {
-            cell.objects.retain(|a| a != object);
-            // TODO remove if empty
-          }
+          if remove {cells.remove (& location);}
         }
       }
       
