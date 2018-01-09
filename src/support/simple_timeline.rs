@@ -283,7 +283,7 @@ pub fn set <VaryingData: QueryResult, Steward: TimeSteward, Accessor: EventAcces
   #[cfg (debug_assertions)]
   let confirm2 = modification.clone();
   
-  let mut do_modify = true;
+  let /*mut*/ do_modify = true;
   if let Some(accessor) = accessor.future_cleanup() {
     // currently, we can't do this culling because
     // distinct predictions at the same time compare equal to each other, so
