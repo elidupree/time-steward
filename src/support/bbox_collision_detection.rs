@@ -7,10 +7,10 @@ macro_rules! time_steward_define_bbox_collision_detection {
   };
   
   ($dims: expr, $mod: ident) => {
-mod $mod {
+pub mod $mod {
 use super::*;
 use array_ext::*;
-use ::{DeterministicRandomId, PersistentlyIdentifiedType, SimulationStateData};
+use ::{DeterministicRandomId, PersistentlyIdentifiedType, SimulationStateData, QueryResult};
 use super::{TimeSteward, Event, DataHandle, DataTimelineCell, EventAccessor, FutureCleanupAccessor};
 use super::simple_timeline::{SimpleTimeline, query, set};
 
@@ -24,7 +24,7 @@ const DIMENSIONS: NumDimensions = $dims;
 pub trait Space: SimulationStateData + PersistentlyIdentifiedType {
   type Steward: TimeSteward;
   type Object: SimulationStateData + PersistentlyIdentifiedType;
-  type DetectorDataPerObject: SimulationStateData;
+  type DetectorDataPerObject: QueryResult;
   type UniqueId: SimulationStateData;
   
   const DIMENSIONS: NumDimensions;
@@ -59,7 +59,8 @@ pub trait Detector: SimulationStateData + PersistentlyIdentifiedType {
 }
 
 #[derive (Serialize, Deserialize, Debug, Derivative)]
-#[derivative (Clone (bound = ""))]
+#[derivative (Clone (bound = ""), PartialEq (bound = ""), Eq (bound = ""))]
+#[serde(bound = "")]
 pub struct BoundingBox<S: Space> {
   pub bounds: [[Coordinate; 2]; DIMENSIONS as usize],
   pub _marker: PhantomData<S>, // waiting for the DIMENSIONS associated constant to be usable
@@ -95,6 +96,8 @@ pub mod simple_grid {
   use super::*;
   //use array_ext::*;
   
+  pub type Types<S> = (ListedType<SimpleGridDetector<S>>, ListedType<Escape<S>>);
+  
   #[derive (Serialize, Deserialize, Debug)]
   #[serde(bound = "")]
   pub struct SimpleGridDetector <S: Space> {
@@ -107,7 +110,7 @@ pub mod simple_grid {
   }
   
   #[derive (Serialize, Deserialize, Debug, Derivative)]
-  #[derivative (Clone (bound = ""))]
+  #[derivative (Clone (bound = ""), PartialEq (bound = ""), Eq (bound = ""))]
   #[serde(bound = "")]
   pub struct DetectorDataPerObject <S: Space> {
     current_grid_bounds: BoundingBox<S>,
@@ -122,7 +125,7 @@ pub mod simple_grid {
   #[derive (Serialize, Deserialize, Debug, Derivative)]
   #[derivative (Clone (bound = ""))]
   #[serde(bound = "")]
-  struct Escape <S: Space> {
+  pub struct Escape <S: Space> {
     detector: DataHandle<SimpleGridDetector<S>>,
     object: DataHandle<S::Object>,
   }

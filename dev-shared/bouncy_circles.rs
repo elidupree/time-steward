@@ -2,15 +2,15 @@
 use time_steward::support::time_functions::QuadraticTrajectory;
 use nalgebra::Vector2;
 //use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
-
+use std::marker::PhantomData;
 
 use time_steward::{DeterministicRandomId};
 use time_steward::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataHandleTrait, DataTimelineCellTrait, Basics as BasicsTrait};
 pub use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, bbox_collision_detector as collisions};
-use simple_timeline::{SimpleTimeline, tracking_query, tracking_query_ref, set, destroy};
-use collisions::{BoundingBox, NumDimensions};
-use collisions::simple_grid::{SimpleGridDetector};
+use steward_module::{TimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, bbox_collision_detection_2d as collisions};
+use simple_timeline::{SimpleTimeline, query, tracking_query, tracking_query_ref, set, destroy};
+use self::collisions::{BoundingBox, NumDimensions, Detector};
+use self::collisions::simple_grid::{SimpleGridDetector};
 
 use rand::Rng;
 
@@ -38,9 +38,10 @@ impl BasicsTrait for Basics {
 pub type Steward = steward_module::Steward <Basics>;
 
 
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Globals {
-  circles: Vec<CircleHandle>,
-  detector: DataTimelineCell <SimpleTimeline <DataHandle <SimpleGridDetector<Space>>, Steward>>,
+  pub circles: Vec<CircleHandle>,
+  pub detector: DataTimelineCell <SimpleTimeline <DataHandle <SimpleGridDetector<Space>>, Steward>>,
 }
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -56,6 +57,7 @@ pub struct CircleVarying {
   pub relationships: Vec<RelationshipHandle>,
   pub boundary_induced_acceleration: Option <Vector2<SpaceCoordinate>>,
   pub next_boundary_change: Option <<Steward as TimeSteward>::EventHandle>,
+  pub collision_data: Option<collisions::simple_grid::DetectorDataPerObject<Space>>,
 }
 impl PersistentlyIdentifiedType for Circle {
   const ID: PersistentTypeId = PersistentTypeId(0xd711cc7240c71607);
@@ -87,31 +89,42 @@ impl collisions::Space for Space {
   type Steward = Steward;
   type Object = Circle;
   type DetectorDataPerObject = collisions::simple_grid::DetectorDataPerObject<Self>;
+  type UniqueId = usize;
   
   const DIMENSIONS: NumDimensions = 2;
 
   // An Object generally has to store some opaque data for the collision detector.
   // It would normally include a DataHandle to a tree node.
   // These are getter and setter methods for that data.
-  fn get_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<&DetectorDataPerObject<Self>>> {Some(query (accessor, object.varying).collision_data)}
-  fn set_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, data: Option<DetectorDataPerObject<Self>>);
+  fn get_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<&Self::DetectorDataPerObject> {
+    Some(query (accessor, &object.varying).collision_data)
+  }
+  fn set_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, data: Option<Self::DetectorDataPerObject>) {
+  
+  }
+  fn unique_id<A: EventAccessor <Steward = Self::Steward>>(&self, _accessor: &A, object: &DataHandle<Self::Object>)->Self::UniqueId {
+    object.index
+  }
 
-  fn current_bounding_box<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->BoundingBox {
+  fn current_bounding_box<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->BoundingBox <Self> {
     let varying = tracking_query (accessor, & object.varying);
     let center = varying.position.updated_by (accessor.now() - varying.last_change).unwrap().evaluate();
-    BoundingBox {bounds: [
-      [center [0] - object.radius, center [0] + object.radius],
-      [center [1] - object.radius, center [1] + object.radius],
-    ]}
+    BoundingBox {
+      bounds: [
+        [center [0] - object.radius, center [0] + object.radius],
+        [center [1] - object.radius, center [1] + object.radius],
+      ],
+      _marker: PhantomData
+    }
   }
-  fn when_escapes<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, space: &Self::Space, bounds: BoundingBox)-><Self::Steward as TimeSteward>::Basics::Time {
+  fn when_escapes<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, bounds: BoundingBox <Self>)->Option<<<Self::Steward as TimeSteward>::Basics as BasicsTrait>::Time> {
     let varying = tracking_query (accessor, & object.varying);
     varying.position.approximately_when_escapes (
       varying.last_change.clone(),
       accessor.now().clone(),
       [
-        [bounds [0] [0] + object.radius, bounds [0] [1] - object.radius],
-        [bounds [1] [0] + object.radius, bounds [1] [1] - object.radius],
+        [bounds.bounds [0] [0] + object.radius, bounds.bounds [0] [1] - object.radius],
+        [bounds.bounds [1] [0] + object.radius, bounds.bounds [1] [1] - object.radius],
       ]
     )
   }
@@ -130,20 +143,20 @@ impl collisions::Space for Space {
       varying.relationships.push (relationship.clone());
       set (accessor, & object.varying, varying);
     }
-    update_relationship_change_prediction (accessor, relationship) ;
+    update_relationship_change_prediction (accessor, &relationship) ;
   }
   fn stop_being_neighbors<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, objects: [&DataHandle<Self::Object>; 2]) {
     let varying = tracking_query (accessor, & objects[0].varying);
     let relationship = varying.relationships.iter().find (| relationship | (
-      relationship.circles == (objects[0], objects[1])
-      || relationship.circles == (objects[1], objects[0])
+      relationship.circles == (*objects[0], *objects[1])
+      || relationship.circles == (*objects[1], *objects[0])
     )).unwrap().clone();
     destroy (accessor, & relationship.varying);
     for object in objects.iter() {
       let mut varying = tracking_query (accessor, & object.varying);
       varying.relationships.retain (| relationship | !(
-        relationship.circles == (objects[0], objects[1])
-        || relationship.circles == (objects[1], objects[0])
+        relationship.circles == (*objects[0], *objects[1])
+        || relationship.circles == (*objects[1], *objects[0])
       ));
       set (accessor, & object.varying, varying);
     }
@@ -234,8 +247,8 @@ impl Event for RelationshipChange {
     set (accessor, & self.relationship_handle.varying, relationship_varying);
     set (accessor, & circles.0.varying, new.0.clone());
     set (accessor, & circles.1.varying, new.1.clone());
-    SimpleGridDetector::changed_course(accessor, accessor.globals().detector, & circles.0);
-    SimpleGridDetector::changed_course(accessor, accessor.globals().detector, & circles.1);
+    SimpleGridDetector::changed_course(accessor, &query(accessor, &accessor.globals().detector), & circles.0);
+    SimpleGridDetector::changed_course(accessor, &query(accessor, &accessor.globals().detector), & circles.1);
     // TODO no repeating the relationship between these 2 in particular
     update_predictions (accessor, &circles.0, & new.0);
     update_predictions (accessor, &circles.1, & new.1);
@@ -310,7 +323,7 @@ impl Event for BoundaryChange {
     }
     set (accessor, &self.circle_handle.varying, new.clone());
     update_predictions (accessor, &self.circle_handle, & new);
-    SimpleGridDetector::changed_course(accessor, accessor.globals().detector, & self.circle_handle);
+    SimpleGridDetector::changed_course(accessor, &query(accessor, &accessor.globals().detector), & self.circle_handle);
   }
 
   fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
@@ -328,7 +341,7 @@ impl Event for Initialize {
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     set (accessor, &accessor.globals().detector, accessor.new_handle (SimpleGridDetector::new (Space)));
-    let circles = accessor.globals();
+    let circles = &accessor.globals().circles;
     let mut varying = Vec::new();
     let mut generator = DeterministicRandomId::new (&2u8).to_rng();
     let thingy = ARENA_SIZE / 20;
@@ -347,11 +360,12 @@ impl Event for Initialize {
         relationships: Vec::new(),
         boundary_induced_acceleration: None,
         next_boundary_change: None,
-      })
+        collision_data: None,
+      });
       set (accessor, & circles [index].varying, varying [index].clone());
     }
     for index in 0..HOW_MANY_CIRCLES {
-      accessor.globals().detector.insert (accessor, Space, & circles [index], None);
+      SimpleGridDetector::insert (accessor, &query(accessor, &accessor.globals().detector), & circles [index], None);
     }
   }
 
@@ -400,7 +414,7 @@ impl Event for Disturb {
     }
     set (accessor, & best_handle.varying, new.clone());
     update_predictions (accessor, & best_handle, & new);
-    SimpleGridDetector::changed_course(accessor, accessor.globals().detector, & best_handle);
+    SimpleGridDetector::changed_course(accessor, &query(accessor, &accessor.globals().detector), & best_handle);
   }
 
   fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
