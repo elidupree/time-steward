@@ -15,7 +15,7 @@ use super::{TimeSteward, Event, DataHandle, DataTimelineCell, EventAccessor, Fut
 use super::simple_timeline::{SimpleTimeline, query, set};
 
 
-pub type Coordinate = u32;
+pub type Coordinate = u64;
 pub type NumDimensions = u32;
 
 const DIMENSIONS: NumDimensions = $dims;
@@ -32,7 +32,7 @@ pub trait Space: SimulationStateData + PersistentlyIdentifiedType {
   // An Object generally has to store some opaque data for the collision detector.
   // It would normally include a DataHandle to a tree node.
   // These are getter and setter methods for that data.
-  fn get_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<& Self::DetectorDataPerObject>;
+  fn get_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<Self::DetectorDataPerObject>;
   fn set_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, data: Option<Self::DetectorDataPerObject>);
   
   // must be unique among ALL objects/space pairs
@@ -68,6 +68,7 @@ pub struct BoundingBox<S: Space> {
 
 impl<S: Space> BoundingBox<S> {
   pub fn locations (&self)->Vec<[Coordinate; DIMENSIONS as usize]> {
+    for bounds in self.bounds.iter() {assert!(bounds [0] <= bounds [1], "invalid bounding box");}
     let mut result = Vec::new() ;
     let mut position = self.bounds.map (| bounds | bounds [0]);
     'outer: loop {
@@ -175,7 +176,7 @@ pub mod simple_grid {
       for location in data.current_grid_bounds.locations () {
         if let Some(cell) = cells.get (&location) {
           for neighbor in cell.objects.iter() {
-            if !result.contains (neighbor) {result.push (neighbor.clone());}
+            if neighbor != object && !result.contains (neighbor) {result.push (neighbor.clone());}
           }
         }
       }
@@ -184,10 +185,19 @@ pub mod simple_grid {
   }
   
   impl<S: Space <DetectorDataPerObject = DetectorDataPerObject<S>>> SimpleGridDetector<S> {
+    pub fn new<A: EventAccessor <Steward = S::Steward>>(accessor: &A, space: S, cell_size: Coordinate)->DataHandle<Self> {
+      let result = accessor.new_handle (SimpleGridDetector {
+        space: space,
+        cell_size: cell_size,
+        cells: DataTimelineCell::new (SimpleTimeline::new ()),
+      });
+      set (accessor, & result.cells, HashMap::new());
+      result
+    }
     fn grid_box (&self, exact_box: & BoundingBox<S>) -> BoundingBox<S> {
       BoundingBox {
         bounds: Array::from_fn (| dimension | Array::from_fn (| direction | {
-          exact_box.bounds [dimension] [direction] + (direction as Coordinate)*(self.cell_size - 1)/self.cell_size
+          (exact_box.bounds [dimension] [direction] + (direction as Coordinate)*(self.cell_size - 1))/self.cell_size
         })),
         _marker: PhantomData,
       }
@@ -211,7 +221,7 @@ pub mod simple_grid {
         for location in new_bounds.locations () {
           if let Some(cell) = cells.get_mut (&location) {
             for neighbor in cell.objects.iter() {
-              if !new_neighbors.contains(neighbor) {new_neighbors.push(neighbor.clone());}
+              if neighbor != object && !new_neighbors.contains(neighbor) {new_neighbors.push(neighbor.clone());}
             }
             if !cell.objects.contains (object) {cell.objects.push (object.clone());}
           }
@@ -222,7 +232,7 @@ pub mod simple_grid {
           if new_bounds.as_ref().map_or(true, |new_bounds| !new_bounds.contains_location (location)) {
             let cell = cells.entry (location).or_insert (Default::default());
             for neighbor in cell.objects.iter() {
-              if !new_neighbors.contains (neighbor) {
+              if neighbor != object && !new_neighbors.contains (neighbor) {
                 if !old_neighbors.contains(neighbor) {old_neighbors.push(neighbor.clone());}
               }
             }

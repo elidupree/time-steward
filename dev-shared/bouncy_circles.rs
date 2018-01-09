@@ -80,8 +80,15 @@ impl PersistentlyIdentifiedType for Relationship {
 type RelationshipHandle = DataHandle <Relationship>;
 
 
+fn to_collision_space (coordinate: SpaceCoordinate)->collisions::Coordinate {
+  (coordinate as collisions::Coordinate).wrapping_sub(1u64 << 63)
+}
+fn from_collision_space (coordinate: collisions::Coordinate)->SpaceCoordinate {
+  (coordinate.wrapping_add(1u64 << 63)) as SpaceCoordinate
+}
+
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
-struct Space;
+pub struct Space;
 impl PersistentlyIdentifiedType for Space {
   const ID: PersistentTypeId = PersistentTypeId(0x879511343e48addd);
 }
@@ -96,11 +103,13 @@ impl collisions::Space for Space {
   // An Object generally has to store some opaque data for the collision detector.
   // It would normally include a DataHandle to a tree node.
   // These are getter and setter methods for that data.
-  fn get_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<&Self::DetectorDataPerObject> {
-    Some(query (accessor, &object.varying).collision_data)
+  fn get_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<Self::DetectorDataPerObject> {
+    query (accessor, &object.varying).collision_data
   }
   fn set_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, data: Option<Self::DetectorDataPerObject>) {
-  
+    let mut varying = query (accessor, &object.varying);
+    varying.collision_data = data;
+    set (accessor, &object.varying, varying);
   }
   fn unique_id<A: EventAccessor <Steward = Self::Steward>>(&self, _accessor: &A, object: &DataHandle<Self::Object>)->Self::UniqueId {
     object.index
@@ -111,8 +120,8 @@ impl collisions::Space for Space {
     let center = varying.position.updated_by (accessor.now() - varying.last_change).unwrap().evaluate();
     BoundingBox {
       bounds: [
-        [center [0] - object.radius, center [0] + object.radius],
-        [center [1] - object.radius, center [1] + object.radius],
+        [to_collision_space (center [0] - object.radius), to_collision_space (center [0] + object.radius)],
+        [to_collision_space (center [1] - object.radius), to_collision_space (center [1] + object.radius)],
       ],
       _marker: PhantomData
     }
@@ -123,13 +132,14 @@ impl collisions::Space for Space {
       varying.last_change.clone(),
       accessor.now().clone(),
       [
-        [bounds.bounds [0] [0] + object.radius, bounds.bounds [0] [1] - object.radius],
-        [bounds.bounds [1] [0] + object.radius, bounds.bounds [1] [1] - object.radius],
+        [from_collision_space (bounds.bounds [0] [0]) + object.radius, from_collision_space (bounds.bounds [0] [1]) - object.radius],
+        [from_collision_space (bounds.bounds [1] [0]) + object.radius, from_collision_space (bounds.bounds [1] [1]) - object.radius],
       ]
     )
   }
   
   fn become_neighbors<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, objects: [&DataHandle<Self::Object>; 2]) {
+    println!("become {:?}", (objects [0].index, objects [1].index));
     let relationship = accessor.new_handle (Relationship {
       circles: (objects [0].clone(), objects [1].clone()),
       varying: DataTimelineCell::new(SimpleTimeline::new ()),
@@ -146,17 +156,18 @@ impl collisions::Space for Space {
     update_relationship_change_prediction (accessor, &relationship) ;
   }
   fn stop_being_neighbors<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, objects: [&DataHandle<Self::Object>; 2]) {
+    println!("stop {:?}", (objects [0].index, objects [1].index));
     let varying = tracking_query (accessor, & objects[0].varying);
     let relationship = varying.relationships.iter().find (| relationship | (
-      relationship.circles == (*objects[0], *objects[1])
-      || relationship.circles == (*objects[1], *objects[0])
+      [&relationship.circles.0, &relationship.circles.1] == objects
+      || [&relationship.circles.1, &relationship.circles.0] == objects
     )).unwrap().clone();
     destroy (accessor, & relationship.varying);
     for object in objects.iter() {
       let mut varying = tracking_query (accessor, & object.varying);
       varying.relationships.retain (| relationship | !(
-        relationship.circles == (*objects[0], *objects[1])
-        || relationship.circles == (*objects[1], *objects[0])
+        [&relationship.circles.0, &relationship.circles.1] == objects
+        || [&relationship.circles.1, &relationship.circles.0] == objects
       ));
       set (accessor, & object.varying, varying);
     }
@@ -340,7 +351,7 @@ impl Event for Initialize {
   type Steward = Steward;
   type ExecutionData = ();
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
-    set (accessor, &accessor.globals().detector, accessor.new_handle (SimpleGridDetector::new (Space)));
+    set (accessor, &accessor.globals().detector, SimpleGridDetector::new (accessor, Space, (ARENA_SIZE >> 4) as collisions::Coordinate));
     let circles = &accessor.globals().circles;
     let mut varying = Vec::new();
     let mut generator = DeterministicRandomId::new (&2u8).to_rng();
