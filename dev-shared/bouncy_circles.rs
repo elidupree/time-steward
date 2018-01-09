@@ -139,7 +139,7 @@ impl collisions::Space for Space {
   }
   
   fn become_neighbors<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, objects: [&DataHandle<Self::Object>; 2]) {
-    println!("become {:?}", (objects [0].index, objects [1].index));
+    //println!("become {:?}", (objects [0].index, objects [1].index));
     let relationship = accessor.new_handle (Relationship {
       circles: (objects [0].clone(), objects [1].clone()),
       varying: DataTimelineCell::new(SimpleTimeline::new ()),
@@ -156,7 +156,7 @@ impl collisions::Space for Space {
     update_relationship_change_prediction (accessor, &relationship) ;
   }
   fn stop_being_neighbors<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, objects: [&DataHandle<Self::Object>; 2]) {
-    println!("stop {:?}", (objects [0].index, objects [1].index));
+    //println!("stop {:?}", (objects [0].index, objects [1].index));
     let varying = tracking_query (accessor, & objects[0].varying);
     let relationship = varying.relationships.iter().find (| relationship | (
       [&relationship.circles.0, &relationship.circles.1] == objects
@@ -258,11 +258,11 @@ impl Event for RelationshipChange {
     set (accessor, & self.relationship_handle.varying, relationship_varying);
     set (accessor, & circles.0.varying, new.0.clone());
     set (accessor, & circles.1.varying, new.1.clone());
-    SimpleGridDetector::changed_course(accessor, &query(accessor, &accessor.globals().detector), & circles.0);
-    SimpleGridDetector::changed_course(accessor, &query(accessor, &accessor.globals().detector), & circles.1);
     // TODO no repeating the relationship between these 2 in particular
     update_predictions (accessor, &circles.0, & new.0);
     update_predictions (accessor, &circles.1, & new.1);
+    SimpleGridDetector::changed_course(accessor, &query(accessor, &accessor.globals().detector), & circles.0);
+    SimpleGridDetector::changed_course(accessor, &query(accessor, &accessor.globals().detector), & circles.1);
   }
 
   fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, _accessor: &mut Accessor, _: ()) {

@@ -216,27 +216,26 @@ pub mod simple_grid {
       let mut cells = query (accessor, &detector.cells);
       let mut new_neighbors = Vec::new();
       let mut old_neighbors = Vec::new();
-      
+      //printlnerr!("{:?}", (& detector.space. unique_id (accessor, object), &new_bounds));
       if let Some(new_bounds) = new_bounds.as_ref() {
         for location in new_bounds.locations () {
-          if let Some(cell) = cells.get_mut (&location) {
-            for neighbor in cell.objects.iter() {
-              if neighbor != object && !new_neighbors.contains(neighbor) {new_neighbors.push(neighbor.clone());}
-            }
-            if !cell.objects.contains (object) {cell.objects.push (object.clone());}
+          let cell = cells.entry (location).or_insert (Default::default());
+          //printlnerr!("{:?}", (& location, cell.objects.iter().map (| object |detector.space. unique_id (accessor, object)).collect::<Vec<_>>()));
+          for neighbor in cell.objects.iter() {
+            if neighbor != object && !new_neighbors.contains(neighbor) {new_neighbors.push(neighbor.clone());}
           }
+          if !cell.objects.contains (object) {cell.objects.push (object.clone());}
         }
       }
       if let Some(old_data) = old_data.as_ref() {
         for location in old_data.current_grid_bounds.locations () {
+          let cell = cells.get_mut (&location).unwrap();
+          for neighbor in cell.objects.iter() {
+            if neighbor != object && !old_neighbors.contains(neighbor) {old_neighbors.push(neighbor.clone());}
+          }
           if new_bounds.as_ref().map_or(true, |new_bounds| !new_bounds.contains_location (location)) {
-            let cell = cells.entry (location).or_insert (Default::default());
-            for neighbor in cell.objects.iter() {
-              if neighbor != object && !new_neighbors.contains (neighbor) {
-                if !old_neighbors.contains(neighbor) {old_neighbors.push(neighbor.clone());}
-              }
-            }
             cell.objects.retain(|a| a != object);
+            // TODO remove if empty
           }
         }
       }
