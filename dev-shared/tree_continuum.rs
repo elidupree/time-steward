@@ -1,3 +1,5 @@
+#![allow (unused_imports)]
+
 #[allow (unused_macros)]
 macro_rules! printlnerr(
     ($($arg:tt)*) => { {use std::io::Write;
