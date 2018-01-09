@@ -13,7 +13,7 @@ extern crate serde_derive;
 
 //use docopt::Docopt;
 
-const USAGE: &'static str = "
+/*const USAGE: &'static str = "
 Bouncy Circles, a simple TimeSteward test case.
 
 Usage:
@@ -24,7 +24,7 @@ Usage:
 Options:
   -l, --listen   Start a synchronized simulation by listening for TCP connections.
   -c, --connect  Start a synchronized simulation by making a TCP connection.
-";
+";*/
 
 #[derive(Debug, Deserialize)]
 struct Args {
@@ -151,7 +151,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
     let start = Instant::now();
 
     let frame = || {
-      let frame_begin = Instant::now();
+      //let frame_begin = Instant::now();
       let time = 1+((start.elapsed().as_secs() as i64 * 1000000000i64) +
                             start.elapsed().subsec_nanos() as i64) *
                            SECOND / 1000000000i64;
