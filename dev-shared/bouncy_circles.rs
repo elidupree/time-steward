@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 use time_steward::{DeterministicRandomId};
 use time_steward::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataHandleTrait, DataTimelineCellTrait, Basics as BasicsTrait};
 pub use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, bbox_collision_detection_2d as collisions};
+use steward_module::{TimeSteward, Event, DataHandle, DataTimelineCell, EventAccessor, FutureCleanupAccessor, bbox_collision_detection_2d as collisions};
 use simple_timeline::{SimpleTimeline, query, tracking_query, tracking_query_ref, set, destroy};
 use self::collisions::{BoundingBox, NumDimensions, Detector};
 use self::collisions::simple_grid::{SimpleGridDetector};
@@ -20,8 +20,8 @@ pub type SpaceCoordinate = i64;
 
 pub const HOW_MANY_CIRCLES: usize = 20;
 pub const ARENA_SIZE_SHIFT: u32 = 20;
-pub const ARENA_SIZE: SpaceCoordinate = 1 << 20;
-pub const GRID_SIZE_SHIFT: u32 = ARENA_SIZE_SHIFT - 3;
+pub const ARENA_SIZE: SpaceCoordinate = 1 << ARENA_SIZE_SHIFT;
+// pub const GRID_SIZE_SHIFT: u32 = ARENA_SIZE_SHIFT - 3;
 // pub const GRID_SIZE: SpaceCoordinate = 1 << GRID_SIZE_SHIFT;
 pub const MAX_DISTANCE_TRAVELED_AT_ONCE: SpaceCoordinate = ARENA_SIZE << 4;
 pub const TIME_SHIFT: u32 = 20;
@@ -265,7 +265,7 @@ impl Event for RelationshipChange {
     update_predictions (accessor, &circles.1, & new.1);
   }
 
-  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, _accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
@@ -337,7 +337,7 @@ impl Event for BoundaryChange {
     SimpleGridDetector::changed_course(accessor, &query(accessor, &accessor.globals().detector), & self.circle_handle);
   }
 
-  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, _accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
@@ -380,7 +380,7 @@ impl Event for Initialize {
     }
   }
 
-  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, _accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
@@ -428,7 +428,7 @@ impl Event for Disturb {
     SimpleGridDetector::changed_course(accessor, &query(accessor, &accessor.globals().detector), & best_handle);
   }
 
-  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor, _: ()) {
+  fn undo <Accessor: FutureCleanupAccessor <Steward = Self::Steward>> (&self, _accessor: &mut Accessor, _: ()) {
     unimplemented!()
   }
 }
