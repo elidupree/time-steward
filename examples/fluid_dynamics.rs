@@ -72,6 +72,7 @@ mod units {
   macro_rules! unit {
     ($CONSTANT: ident: $Type: ident; $Basis: ident) => {
       pub type $Type = $Basis<i64>;
+      #[allow (dead_code)]
       pub const $CONSTANT: $Type = $Type {
         value_unsafe: 1,
         _marker: ::std::marker::PhantomData,
@@ -181,7 +182,7 @@ impl TreeContinuumPhysics for Physics {
       next_update: None,
     }
   }
-  fn initialize_split_boundary <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, boundary: NewBoundaryInfo<Self>)->Self::BoundaryVarying {
+  fn initialize_split_boundary <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, _boundary: NewBoundaryInfo<Self>)->Self::BoundaryVarying {
     BoundaryVarying {
       last_change: *accessor.now(),
       momentum_at_last_change: 0*MOMENTUM_UNIT,
@@ -194,7 +195,7 @@ impl TreeContinuumPhysics for Physics {
     let guard = query_ref (accessor, & split_node.varying);
     let branch_varying = unwrap_branch_ref(&guard);
   
-    iterate_children (& branch_varying.children, | coordinates, child | {
+    iterate_children (& branch_varying.children, | _coordinates, child | {
       update_mass_change_prediction(accessor, child);
     });
     
@@ -206,7 +207,7 @@ impl TreeContinuumPhysics for Physics {
   
   //fn before_merge <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, merging_node: & NodeHandle <Self>) {}
   //fn initialize_merge_parent <A: EventAccessor <Steward = Self::Steward>> (accessor: &A)->Self::NodeVarying;
-  fn initialize_merge_boundary <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, boundary: MergeBoundaryInfo<Self>)->Self::BoundaryVarying {
+  fn initialize_merge_boundary <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, _boundary: MergeBoundaryInfo<Self>)->Self::BoundaryVarying {
     BoundaryVarying {
       last_change: *accessor.now(),
       momentum_at_last_change: 0*MOMENTUM_UNIT,
@@ -244,7 +245,7 @@ fn mass_accumulation_rate <A: Accessor <Steward = Steward >> (accessor: &A, node
 fn momentum_accumulation_rate <A: Accessor <Steward = Steward >> (accessor: &A, boundary: &BoundaryHandle)->Force {
   let boundary_varying = query_ref (accessor, & boundary.varying);
   
-  let area = boundary.length*LENGTH_UNIT*DEPTH;
+  //let area = boundary.length*LENGTH_UNIT*DEPTH;
   
   let mut result = 0*FORCE_UNIT;
   for (direction, node) in boundary.nodes.iter().enumerate() {
@@ -259,7 +260,7 @@ fn momentum_accumulation_rate <A: Accessor <Steward = Steward >> (accessor: &A, 
     result -= direction_signum*pressure_times_densityfactor*(boundary.length*LENGTH_UNIT*DEPTH)/(4*GENERIC_DENSITY);
     
     // incorporate momentum transfer rate from other boundaries
-    iterate_boundaries (& node_varying.boundaries, | dimension2, direction2, boundary2 | {    
+    iterate_boundaries (& node_varying.boundaries, | _dimension2, direction2, boundary2 | {    
       let direction2_signum = (direction2 as i64*2)-1;
       
       /*
@@ -275,10 +276,10 @@ fn momentum_accumulation_rate <A: Accessor <Steward = Steward >> (accessor: &A, 
       */
       let neighbor = &boundary2.nodes [direction2];
       let neighbor_guard = query_ref (accessor, &neighbor.varying);
-      let neighbor_varying = unwrap_leaf_ref (&guard);
+      let neighbor_varying = unwrap_leaf_ref (&neighbor_guard);
       
       let corresponding_face = face_by_dimension_and_direction (& neighbor_varying.boundaries, boundary.normal_dimension, other_direction);
-      let corresponding_area = neighbor.width*LENGTH_UNIT*DEPTH;
+      //let corresponding_area = neighbor.width*LENGTH_UNIT*DEPTH;
       
       let boundary2_momentum = query_ref (accessor, & boundary2.varying).data.fixed_approximate_momentum;
       let boundary2_transfer_distance = (neighbor.width + node.width)*LENGTH_UNIT >> 1;
@@ -421,11 +422,11 @@ impl Event for MomentumChange {
       
       let guard = query_ref (accessor, &node.varying);
       let node_varying = unwrap_leaf_ref (&guard);
-      iterate_boundaries (& node_varying.boundaries, | dimension2, direction2, boundary2 | {    
+      iterate_boundaries (& node_varying.boundaries, | _dimension2, direction2, boundary2 | {    
         let neighbor = &boundary2.nodes [direction2];
         let neighbor_guard = query_ref (accessor, &neighbor.varying);
-        let neighbor_varying = unwrap_leaf_ref (&guard);
-        iterate_boundaries (& neighbor_varying.boundaries, | dimension3, direction3, boundary3 | {
+        let neighbor_varying = unwrap_leaf_ref (&neighbor_guard);
+        iterate_boundaries (& neighbor_varying.boundaries, | _dimension3, _direction3, boundary3 | {
           update_boundary_free_values (accessor, & boundary3);
         });
       });
@@ -445,11 +446,11 @@ impl Event for MomentumChange {
       
       let guard = query_ref (accessor, &node.varying);
       let node_varying = unwrap_leaf_ref (&guard);
-      iterate_boundaries (& node_varying.boundaries, | dimension2, direction2, boundary2 | {    
+      iterate_boundaries (& node_varying.boundaries, | _dimension2, direction2, boundary2 | {    
         let neighbor = &boundary2.nodes [direction2];
         let neighbor_guard = query_ref (accessor, &neighbor.varying);
-        let neighbor_varying = unwrap_leaf_ref (&guard);
-        iterate_boundaries (& neighbor_varying.boundaries, | dimension3, direction3, boundary3 | {
+        let neighbor_varying = unwrap_leaf_ref (&neighbor_guard);
+        iterate_boundaries (& neighbor_varying.boundaries, | _dimension3, _direction3, boundary3 | {
           update_momentum_change_prediction (accessor, & boundary3);
         });
       });
@@ -474,7 +475,7 @@ impl Event for MassChange {
   fn execute <Accessor: EventAccessor <Steward = Self::Steward>> (&self, accessor: &mut Accessor) {
     update_node_free_values (accessor, &self.node);
     let mut varying = unwrap_leaf (query (accessor, &self.node.varying));
-    iterate_boundaries (& varying.boundaries, | dimension, direction, boundary | {
+    iterate_boundaries (& varying.boundaries, | _dimension, _direction, boundary | {
       update_boundary_free_values (accessor, & boundary);
     });
     
@@ -483,7 +484,7 @@ impl Event for MassChange {
     let boundaries = varying.boundaries.clone();
     set_leaf (accessor, &self.node.varying, varying);
     update_mass_change_prediction (accessor, &self.node);
-    iterate_boundaries (& boundaries, | dimension, direction, boundary | {
+    iterate_boundaries (& boundaries, | _dimension, _direction, boundary | {
       //update_momentum_change_prediction (accessor, & boundary);
       MomentumChange {boundary:boundary.clone()}.execute(accessor);
     });
@@ -742,7 +743,7 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
     while let Some(handle) = to_draw.pop() {
       let guard = query_ref(&accessor, &handle.varying);
       match *guard {
-        tree_continuum::NodeVarying::Branch (ref b) => iterate_children (&b.children, | coordinates, child | to_draw.push(child.clone())),
+        tree_continuum::NodeVarying::Branch (ref b) => iterate_children (&b.children, | _coordinates, child | to_draw.push(child.clone())),
         tree_continuum::NodeVarying::Leaf (ref leaf) => {
           let size_factor = (accessor.globals().size [0]/2).value_unsafe as f32;
           let density_factor = (GENERIC_DENSITY.value_unsafe) as f32;
