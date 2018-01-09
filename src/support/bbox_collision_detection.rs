@@ -10,6 +10,7 @@ macro_rules! time_steward_define_bbox_collision_detection {
 pub mod $mod {
 use super::*;
 use array_ext::*;
+use rpds::HashTrieMap;
 use ::{DeterministicRandomId, PersistentlyIdentifiedType, SimulationStateData, QueryResult};
 use super::{TimeSteward, Event, DataHandle, DataTimelineCell, EventAccessor, FutureCleanupAccessor};
 use super::simple_timeline::{SimpleTimeline, query, set};
@@ -104,7 +105,7 @@ pub mod simple_grid {
   pub struct SimpleGridDetector <S: Space> {
     space: S,
     cell_size: Coordinate,
-    cells: DataTimelineCell<SimpleTimeline<HashMap <[Coordinate; DIMENSIONS as usize], Cell<S>>, S::Steward>>,
+    cells: DataTimelineCell<SimpleTimeline<HashTrieMap <[Coordinate; DIMENSIONS as usize], Cell<S>>, S::Steward>>,
   }
   impl <S: Space> PersistentlyIdentifiedType for SimpleGridDetector<S> {
     const ID: PersistentTypeId = PersistentTypeId(0x6763f785bae6fe43 ^ S::ID.0);
@@ -191,7 +192,7 @@ pub mod simple_grid {
         cell_size: cell_size,
         cells: DataTimelineCell::new (SimpleTimeline::new ()),
       });
-      set (accessor, & result.cells, HashMap::new());
+      set (accessor, & result.cells, HashTrieMap::new());
       result
     }
     fn grid_box (&self, exact_box: & BoundingBox<S>) -> BoundingBox<S> {
@@ -219,28 +220,32 @@ pub mod simple_grid {
       //printlnerr!("{:?}", (& detector.space. unique_id (accessor, object), &new_bounds));
       if let Some(new_bounds) = new_bounds.as_ref() {
         for location in new_bounds.locations () {
-          let cell = cells.entry (location).or_insert (Default::default());
+          let mut cell = cells.get (&location).cloned().unwrap_or (Default::default());
           //printlnerr!("{:?}", (& location, cell.objects.iter().map (| object |detector.space. unique_id (accessor, object)).collect::<Vec<_>>()));
           for neighbor in cell.objects.iter() {
             if neighbor != object && !new_neighbors.contains(neighbor) {new_neighbors.push(neighbor.clone());}
           }
-          if !cell.objects.contains (object) {cell.objects.push (object.clone());}
+          if !cell.objects.contains (object) {
+            cell.objects.push (object.clone());
+            cells = cells.insert (location, cell);
+          }
         }
       }
       if let Some(old_data) = old_data.as_ref() {
         for location in old_data.current_grid_bounds.locations () {
-          let remove;
-          {
-            let cell = cells.get_mut (&location).unwrap();
-            for neighbor in cell.objects.iter() {
-              if neighbor != object && !old_neighbors.contains(neighbor) {old_neighbors.push(neighbor.clone());}
-            }
-            if new_bounds.as_ref().map_or(true, |new_bounds| !new_bounds.contains_location (location)) {
-              cell.objects.retain(|a| a != object);
-            }
-            remove = cell.objects.is_empty();
+          let mut cell = cells.get (&location).unwrap().clone();
+          for neighbor in cell.objects.iter() {
+            if neighbor != object && !old_neighbors.contains(neighbor) {old_neighbors.push(neighbor.clone());}
           }
-          if remove {cells.remove (& location);}
+          if new_bounds.as_ref().map_or(true, |new_bounds| !new_bounds.contains_location (location)) {
+            cell.objects.retain(|a| a != object);
+            if cell.objects.is_empty() {
+              cells = cells.remove (& location);
+            }
+            else {
+              cells = cells.insert (location, cell);
+            }
+          }
         }
       }
       

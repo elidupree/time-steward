@@ -31,6 +31,7 @@ extern crate rand;
 extern crate nalgebra;
 extern crate siphasher;
 extern crate array_ext;
+extern crate rpds;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
