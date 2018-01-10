@@ -23,9 +23,7 @@ version = "0.12"
 features = ["serde-serialize"]
 
 [dependencies.rpds]
-#version = "0.2"
-git = "https://github.com/idupree/rpds"
-branch = "serde-impls-submission-2"
+version = "0.3"
 features = ["serde"]
 
 [dev-dependencies]
