@@ -1,3 +1,5 @@
+#![feature (macro_vis_matcher)]
+
 extern crate time_steward;
 
 #[macro_use]

@@ -1,4 +1,5 @@
 #![feature (test)]
+#![feature (macro_vis_matcher)]
 
 extern crate test;
 #[macro_use]
