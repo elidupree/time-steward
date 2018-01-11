@@ -13,6 +13,7 @@ use self::collisions::{BoundingBox, NumDimensions, Detector};
 use self::collisions::simple_grid::{SimpleGridDetector};
 
 use rand::Rng;
+use boolinator::Boolinator;
 
 pub type Time = i64;
 pub type SpaceCoordinate = i64;
@@ -251,17 +252,14 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
       panic!(" fail {:?} {:?} {:?}", relationship_handle, relationship_varying, us)
     }
   
-    relationship_varying.next_change = None;
-    if let Some(yes) = time {
-      if yes >= *accessor.now() {
-        // println!(" planned for {}", &yes);
-        relationship_varying.next_change = Some(accessor.create_prediction (
-          yes,
-          DeterministicRandomId::new (&(accessor.extended_now().id, circles.0.index, circles.1.index.wrapping_add (0x6515c48170b61837))),
-          RelationshipChange {relationship_handle: relationship_handle.clone()}
-        ));
-      }
-    }
+    relationship_varying.next_change = time.and_then (| time | (time >= *accessor.now()).as_some_from(||
+      // println!(" planned for {}", &yes);
+      accessor.create_prediction (
+        time,
+        DeterministicRandomId::new (&(accessor.extended_now().id, circles.0.index, circles.1.index.wrapping_add (0x6515c48170b61837))),
+        RelationshipChange {relationship_handle: relationship_handle.clone()}
+      )
+    ));
   });
 }
 
@@ -304,17 +302,14 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
       (varying.last_change, & varying.position),
       (0, & arena_center));
     
-    varying.next_boundary_change = None;
-    if let Some(yes) = time {
-      if yes >= *accessor.now() {
-        // println!(" planned for {}", &yes);
-        varying.next_boundary_change = Some(accessor.create_prediction (
-          yes,
-          DeterministicRandomId::new (&(accessor.extended_now().id, circle_handle.index)),
-          BoundaryChange {circle_handle: circle_handle.clone()}
-        ));
-      }
-    }
+    varying.next_boundary_change = time.and_then (| time | (time >= *accessor.now()).as_some_from(||
+      // println!(" planned for {}", &yes);
+      accessor.create_prediction (
+        time,
+        DeterministicRandomId::new (&(accessor.extended_now().id, circle_handle.index)),
+        BoundaryChange {circle_handle: circle_handle.clone()}
+      )
+    ));
   });
 }
 

@@ -30,6 +30,7 @@ features = ["serde"]
 glium = "0.15"
 docopt = "0.8"
 fnv = "1.0"
+boolinator = "2.4"
 
 [profile.bench]
 debug = true

@@ -10,6 +10,7 @@ extern crate glium;
 
 extern crate nalgebra;
 extern crate rand;
+extern crate boolinator;
 extern crate docopt;
 
 extern crate serde;
