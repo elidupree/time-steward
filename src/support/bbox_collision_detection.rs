@@ -33,7 +33,7 @@ pub trait Space: SimulationStateData + PersistentlyIdentifiedType {
   // An Object generally has to store some opaque data for the collision detector.
   // It would normally include a DataHandle to a tree node.
   // These are getter and setter methods for that data.
-  fn get_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<Self::DetectorDataPerObject>;
+  fn get_detector_data<A: Accessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<Self::DetectorDataPerObject>;
   fn set_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, data: Option<Self::DetectorDataPerObject>);
   
   // must be unique among ALL objects/space pairs
@@ -56,7 +56,8 @@ pub trait Detector: SimulationStateData + PersistentlyIdentifiedType {
   fn remove<A: EventAccessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>);
   fn changed_position<A: EventAccessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>);
   fn changed_course<A: EventAccessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>);
-  fn nearby_objects<A: EventAccessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>) ->Vec<DataHandle<<Self::Space as Space>::Object>>;
+  fn objects_near_object <A: Accessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>) ->Vec<DataHandle<<Self::Space as Space>::Object>>;
+  fn objects_near_box <A: Accessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, bounds: BoundingBox <Self::Space>, location_hint: Option < &DataHandle<<Self::Space as Space>::Object>>) ->Vec<DataHandle<<Self::Space as Space>::Object>>;
 }
 
 #[derive (Serialize, Deserialize, Debug, Derivative)]
@@ -170,7 +171,7 @@ pub mod simple_grid {
       detector.space.set_detector_data (accessor, object, Some(data));
     }
     
-    fn nearby_objects<A: EventAccessor <Steward = S::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>) ->Vec<DataHandle<S::Object>> {
+    fn objects_near_object <A: Accessor <Steward = S::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>) ->Vec<DataHandle<S::Object>> {
       let data = match detector.space.get_detector_data (accessor, object) {None => return Vec::new(), Some (a) => a};
       let cells = query (accessor, &detector.cells);
       let mut result = Vec::new();
@@ -178,6 +179,19 @@ pub mod simple_grid {
         if let Some(cell) = cells.get (&location) {
           for neighbor in cell.objects.iter() {
             if neighbor != object && !result.contains (neighbor) {result.push (neighbor.clone());}
+          }
+        }
+      }
+      result
+    }
+    
+    fn objects_near_box <A: Accessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, bounds: BoundingBox <Self::Space>, _location_hint: Option < &DataHandle<<Self::Space as Space>::Object>>) ->Vec<DataHandle<<Self::Space as Space>::Object>> {
+      let cells = query (accessor, &detector.cells);
+      let mut result = Vec::new();
+      for location in detector.grid_box (&bounds).locations () {
+        if let Some(cell) = cells.get (&location) {
+          for neighbor in cell.objects.iter() {
+            if !result.contains (neighbor) {result.push (neighbor.clone());}
           }
         }
       }

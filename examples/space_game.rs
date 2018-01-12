@@ -40,12 +40,15 @@ struct Args {
 
 
 use std::time::{Instant};
+use std::marker::PhantomData;
 use glium::{DisplayBuild, Surface};
 
 use time_steward::{DeterministicRandomId};
 //use time_steward::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Accessor, simple_timeline};
 use simple_timeline::{query};
+use steward_module::bbox_collision_detection_2d::{BoundingBox, Detector};
+use steward_module::bbox_collision_detection_2d::simple_grid::SimpleGridDetector;
 
 #[path = "../dev-shared/space_game.rs"] mod space_game;
 use space_game::*;
@@ -189,7 +192,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
         .expect("steward failed to provide snapshot");
       stew.forget_before(& time);
       settle (&mut stew, time);
-      for handle in accessor.globals().circles.iter() {
+      for handle in SimpleGridDetector::objects_near_box (& accessor, & query (& accessor, & accessor.globals().detector), BoundingBox {bounds: [[to_collision_space (0), to_collision_space (ARENA_SIZE)],[to_collision_space (0), to_collision_space (ARENA_SIZE)]],_marker: PhantomData}, None).iter() {
         let circle = query (& accessor, &handle.varying);
         let position = circle.position.updated_by(accessor.now() - circle.last_change).unwrap().evaluate();
         let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,

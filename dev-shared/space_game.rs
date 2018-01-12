@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 use time_steward::{DeterministicRandomId};
 use time_steward::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataHandleTrait, DataTimelineCellTrait, QueryResult, Basics as BasicsTrait};
 pub use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, Event, DataHandle, DataTimelineCell, EventAccessor, FutureCleanupAccessor, bbox_collision_detection_2d as collisions};
+use steward_module::{TimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, bbox_collision_detection_2d as collisions};
 use simple_timeline::{SimpleTimeline, query, tracking_query, tracking_query_ref, set, destroy};
 use self::collisions::{BoundingBox, NumDimensions, Detector};
 use self::collisions::simple_grid::{SimpleGridDetector};
@@ -148,10 +148,10 @@ impl PersistentlyIdentifiedType for Relationship {
 type RelationshipHandle = DataHandle <Relationship>;
 
 
-fn to_collision_space (coordinate: SpaceCoordinate)->collisions::Coordinate {
+pub fn to_collision_space (coordinate: SpaceCoordinate)->collisions::Coordinate {
   (coordinate as collisions::Coordinate).wrapping_sub(1u64 << 63)
 }
-fn from_collision_space (coordinate: collisions::Coordinate)->SpaceCoordinate {
+pub fn from_collision_space (coordinate: collisions::Coordinate)->SpaceCoordinate {
   (coordinate.wrapping_add(1u64 << 63)) as SpaceCoordinate
 }
 
@@ -171,7 +171,7 @@ impl collisions::Space for Space {
   // An Object generally has to store some opaque data for the collision detector.
   // It would normally include a DataHandle to a tree node.
   // These are getter and setter methods for that data.
-  fn get_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<Self::DetectorDataPerObject> {
+  fn get_detector_data<A: Accessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<Self::DetectorDataPerObject> {
     query (accessor, &object.varying).collision_data
   }
   fn set_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, data: Option<Self::DetectorDataPerObject>) {
