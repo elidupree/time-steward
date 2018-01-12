@@ -1,3 +1,6 @@
+#![allow (unused_imports)]
+
+#[allow (unused_macros)]
 macro_rules! printlnerr(
     ($($arg:tt)*) => { {use std::io::Write;
         let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
@@ -21,6 +24,7 @@ pub trait TreeContinuumPhysics: Clone + Eq + Serialize + DeserializeOwned + Debu
   //fn before_split <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, splitting_node: & NodeHandle <Self>) {}
   fn initialize_split_child <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, child: NewChildInfo<Self>)->Self::NodeVarying;
   fn initialize_split_boundary <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, boundary: NewBoundaryInfo<Self>)->Self::BoundaryVarying;
+  #[allow (unused_variables)]
   fn after_split <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, split_node: & NodeHandle <Self>, new_boundaries: Vec<BoundaryHandle <Self>>) {}
   
   //fn before_merge <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, merging_node: & NodeHandle <Self>) {}
@@ -176,7 +180,7 @@ pub fn iterate_face_boundaries <Physics: TreeContinuumPhysics, F: FnMut(& Bounda
     &FaceBoundaries::WorldEdge => (),
     &FaceBoundaries::SingleBoundary (ref handle) => callback (handle),
     &FaceBoundaries::SplitBoundary (ref array) => {
-      iterate_split_boundary (array, dimension, | coordinates, handle | {
+      iterate_split_boundary (array, dimension, | _coordinates, handle | {
         callback (handle);
       });
     }
@@ -263,12 +267,12 @@ fn audit_all <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
 fn audit_node <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics::Steward>> (accessor: &A, node: &NodeHandle<Physics>) {
   match query(accessor, &node.varying) {
     NodeVarying::Branch (branch) => {
-      iterate_children (& branch.children, | coordinates, child | {
+      iterate_children (& branch.children, | _coordinates, child | {
         audit_node (accessor, child);
       });
     },
     NodeVarying::Leaf (leaf) => {
-      iterate_boundaries (& leaf.boundaries, | dimension, direction, boundary | {
+      iterate_boundaries (& leaf.boundaries, | _dimension, direction, boundary | {
         assert!(&boundary.nodes[(direction+1)&1] == node);
         audit_boundary (accessor, boundary);
       });

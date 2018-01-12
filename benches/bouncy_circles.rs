@@ -1,4 +1,5 @@
 #![feature (test)]
+#![feature (macro_vis_matcher)]
 
 extern crate test;
 #[macro_use]
@@ -9,6 +10,7 @@ extern crate glium;
 
 extern crate nalgebra;
 extern crate rand;
+extern crate boolinator;
 extern crate docopt;
 
 extern crate serde;
@@ -32,9 +34,11 @@ fn bouncy_circles_straightforward(bencher: &mut Bencher) {
   bencher.iter(|| {
     let mut steward: Steward = Steward::from_globals (make_globals());
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize {}).unwrap();
-    // make sure to check for inefficiencies in the forgetting code
-    steward.forget_before(& 0);
-    steward.snapshot_before(& (10*SECOND)).expect("steward failed to provide snapshot");
+    for index in 0..1000 {
+      let time = 10*SECOND*index/1000;
+      steward.snapshot_before(& time).expect("steward failed to provide snapshot");
+      steward.forget_before(& time);
+    }
   })
 }
 
@@ -47,8 +51,11 @@ fn bouncy_circles_disturbed (bencher: &mut Bencher) {
     for index in 1..10 {
       steward.insert_fiat_event (index*SECOND, DeterministicRandomId::new (& index), Disturb{ coordinates: [ARENA_SIZE/3,ARENA_SIZE/3]}).unwrap();
     }
-    steward.forget_before(& 0);
-    steward.snapshot_before(& (10*SECOND)).expect("steward failed to provide snapshot");
+    for index in 0..1000 {
+      let time = 10*SECOND*index/1000;
+      steward.snapshot_before(& time).expect("steward failed to provide snapshot");
+      steward.forget_before(& time);
+    }
   })
 }
 /*

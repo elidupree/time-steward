@@ -30,6 +30,8 @@
 extern crate rand;
 extern crate nalgebra;
 extern crate siphasher;
+extern crate array_ext;
+extern crate rpds;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -82,6 +84,7 @@ pub mod support {
   pub mod rounding_error_tolerant_math;
   pub mod time_functions;
   #[macro_use] pub mod simple_timeline;
+  #[macro_use] pub mod bbox_collision_detection;
 }
 
 #[macro_use]

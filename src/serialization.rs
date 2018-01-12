@@ -11,7 +11,7 @@
 macro_rules! time_steward_serialization_impls {
   () => {
   
-  
+  #[allow (unused_variables)]
   pub trait TimeStewardStructuresVisitor <Steward: TimeSteward> {
     fn visit_data_handle <T: SimulationStateData + PersistentlyIdentifiedType> (&mut self, handle: & DataHandle <T>) {}
     fn visit_event_handle (&mut self, handle: & Steward::EventHandle) {}
@@ -38,8 +38,8 @@ macro_rules! time_steward_serialization_impls {
     fn visit_data_timeline_cell <T: DataTimeline> (&mut self, cell: & DataTimelineCell <T>)->bool;
   }
   impl <Steward: TimeSteward, MaybeVisitor> MaybeVisitSerializeHack <Steward> for MaybeVisitor {
-    default fn visit_event_handle (&mut self, handle: & Steward::EventHandle)->bool {false}
-    default fn visit_data_timeline_cell <T: DataTimeline> (&mut self, cell: & DataTimelineCell <T>)->bool {false}
+    default fn visit_event_handle (&mut self, _handle: & Steward::EventHandle)->bool {false}
+    default fn visit_data_timeline_cell <T: DataTimeline> (&mut self, _cell: & DataTimelineCell <T>)->bool {false}
   }
   impl <'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> MaybeVisitSerializeHack <Steward> for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward> {
     fn visit_event_handle (&mut self, handle: & Steward::EventHandle)->bool {
@@ -56,7 +56,7 @@ macro_rules! time_steward_serialization_impls {
     fn visit_data_handle <T: SimulationStateData + PersistentlyIdentifiedType> (&mut self, handle: & DataHandle <T>)->bool;
   }
   impl <MaybeVisitor> MaybeVisitSerializeHackUntyped for MaybeVisitor {
-    default fn visit_data_handle <T: SimulationStateData + PersistentlyIdentifiedType> (&mut self, handle: & DataHandle <T>)->bool {false}
+    default fn visit_data_handle <T: SimulationStateData + PersistentlyIdentifiedType> (&mut self, _handle: & DataHandle <T>)->bool {false}
   }
   impl <'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> MaybeVisitSerializeHackUntyped for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward> {
     fn visit_data_handle <T: SimulationStateData + PersistentlyIdentifiedType> (&mut self, handle: & DataHandle <T>)->bool {
@@ -71,7 +71,7 @@ macro_rules! time_steward_serialization_impls {
   #[derive (Debug)]
   struct NeverError(!);
   impl ser::Error for NeverError {
-    fn custom<T: Display>(msg: T) -> Self {
+    fn custom<T: Display>(_msg: T) -> Self {
         panic!()
     }
 }
@@ -81,7 +81,7 @@ impl ::std::error::Error for NeverError {
     }
 }
 impl Display for NeverError {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, _formatter: &mut fmt::Formatter) -> fmt::Result {
         unreachable!()
     }
 }
@@ -128,13 +128,13 @@ impl Display for NeverError {
         self,
         _name: &'static str,
         _variant_index: u32,
-        variant: &'static str,
+        _variant: &'static str,
         value: &T
     )  -> Result<(),NeverError> 
         where T: ?Sized + Serialize { value.serialize(self) }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq,NeverError> { Ok(self) }
-    fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple,NeverError> { Ok(self) }
+    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple,NeverError> { Ok(self) }
     fn serialize_tuple_struct(
         self,
         _name: &'static str,

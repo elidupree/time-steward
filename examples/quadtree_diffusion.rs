@@ -15,6 +15,7 @@ extern crate glium;
 #[path = "../dev-shared/emscripten_compatibility.rs"] mod emscripten_compatibility;
 pub use emscripten_compatibility::canvas_click;
 
+#[allow (unused_macros)]
 macro_rules! printlnerr(
     ($($arg:tt)*) => { {use std::io::Write;
         let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
@@ -86,7 +87,7 @@ impl TreeContinuumPhysics for Physics {
     let guard = query_ref (accessor, & split_node.varying);
     let branch_varying = unwrap_branch_ref(&guard);
   
-    iterate_children (& branch_varying.children, | coordinates, child | {
+    iterate_children (& branch_varying.children, | _coordinates, child | {
       update_node(accessor, child);
       update_inferred_node_properties (accessor, child);
     });
@@ -99,7 +100,7 @@ impl TreeContinuumPhysics for Physics {
   
   //fn before_merge <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, merging_node: & NodeHandle <Self>) {}
   //fn initialize_merge_parent <A: EventAccessor <Steward = Self::Steward>> (accessor: &A)->Self::NodeVarying;
-  fn initialize_merge_boundary <A: EventAccessor <Steward = Self::Steward>> (accessor: &A, boundary: MergeBoundaryInfo<Self>)->Self::BoundaryVarying {
+  fn initialize_merge_boundary <A: EventAccessor <Steward = Self::Steward>> (_accessor: &A, _boundary: MergeBoundaryInfo<Self>)->Self::BoundaryVarying {
     BoundaryVarying {
       transfer_velocity: 0,
       next_change: None,
@@ -148,6 +149,7 @@ struct BoundaryVarying {
 type BoundaryHandle = DataHandle <tree_continuum::BoundaryData <Physics>>;
 //serialization_cheat!([][BoundaryVarying]);
 
+/*
 macro_rules! get {
   ($accessor: expr, $cell: expr) => {
     query ($accessor, $cell)
@@ -161,7 +163,7 @@ macro_rules! set {
       set ($accessor, $cell, value);
     }
   }
-}
+}*/
 macro_rules! set_with {
   ($accessor: expr, $cell: expr, | $varying: ident | $actions: expr) => {
     {
@@ -171,11 +173,11 @@ macro_rules! set_with {
     }
   }
 }
-macro_rules! exists {
+/*macro_rules! exists {
   ($accessor: expr, $cell: expr) => {
     $accessor.query ($cell, &GetVarying).is_some()
   }
-}
+}*/
 
 fn set_leaf<A: EventAccessor <Steward = Steward >> (accessor: &A, varying: & DataTimelineCell <SimpleTimeline <tree_continuum::NodeVarying<Physics>, Steward>>, data:tree_continuum::LeafVarying<Physics>) {
   set (accessor, &varying, tree_continuum::NodeVarying::Leaf (data));
@@ -370,7 +372,7 @@ fn maybe_split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &Nod
   let varying = unwrap_leaf_ref (&guard);
   let mut averaged_ideal_velocities = [0; 2];
   
-  iterate_boundaries (& varying.boundaries, | dimension, direction, boundary | {
+  iterate_boundaries (& varying.boundaries, | dimension, _direction, boundary | {
     let density_difference =
       density_at (accessor, &boundary.nodes[0], *accessor.now()) - 
       density_at (accessor, &boundary.nodes[1], *accessor.now());
@@ -382,7 +384,7 @@ fn maybe_split <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &Nod
     averaged_ideal_velocities [dimension] /= 2*node.width as Amount;
   }
   
-  iterate_boundaries (& varying.boundaries, | dimension, direction, boundary | {
+  iterate_boundaries (& varying.boundaries, | dimension, _direction, boundary | {
     let density_difference =
       density_at (accessor, &boundary.nodes[0], *accessor.now()) - 
       density_at (accessor, &boundary.nodes[1], *accessor.now());
@@ -415,7 +417,7 @@ fn maybe_merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &Nod
   
   let mut averaged_ideal_velocities = [0; 2];
   let mut abort = false;
-  iterate_children (& varying.children, | coordinates, child | {
+  iterate_children (& varying.children, | _coordinates, child | {
     let child_guard = query_ref (accessor, &child.varying);
     let child_varying = match *child_guard  {
       tree_continuum::NodeVarying::Branch (_) => {abort = true; return},
@@ -443,10 +445,10 @@ fn maybe_merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &Nod
     averaged_ideal_velocities [dimension] /= 4*node.width as Amount;
   }
   
-  iterate_children (& varying.children, | coordinates, child | {
+  iterate_children (& varying.children, | _coordinates, child | {
     let child_guard = query_ref (accessor, &child.varying);
     let child_varying = unwrap_leaf_ref (&child_guard);
-    iterate_boundaries (& child_varying.boundaries, | dimension, direction, boundary | {
+    iterate_boundaries (& child_varying.boundaries, | dimension, _direction, boundary | {
       let density_difference =
         density_at (accessor, &boundary.nodes[0], *accessor.now()) - 
         density_at (accessor, &boundary.nodes[1], *accessor.now());
@@ -479,7 +481,7 @@ fn merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
       slope: [0; 2],
     };
   
-    iterate_children (& branch_varying.children, | coordinates, child | {
+    iterate_children (& branch_varying.children, | _coordinates, child | {
       update_node(accessor, child);
       let child_guard = query_ref (accessor, &child.varying);
       let child_varying = unwrap_leaf_ref (&child_guard);
@@ -496,7 +498,7 @@ fn merge <A: EventAccessor <Steward = Steward >> (accessor: &A, node: &NodeHandl
     let guard = query_ref (accessor, &node.varying);
     let leaf_varying = unwrap_leaf_ref(&guard);
     
-    iterate_boundaries (& leaf_varying.boundaries, | dimension, direction, boundary | {
+    iterate_boundaries (& leaf_varying.boundaries, | _dimension, _direction, boundary | {
       update_transfer_change_prediction (accessor, boundary);
     });
   }
@@ -578,7 +580,7 @@ impl Event for TransferChange {
     }
     for node in nodes.iter() {
       let guard = query_ref(accessor, &node.varying);
-      iterate_boundaries (& unwrap_leaf_ref (&guard).boundaries, | dimension, direction, boundary | {
+      iterate_boundaries (& unwrap_leaf_ref (&guard).boundaries, | _dimension, _direction, boundary | {
         update_transfer_change_prediction (accessor, boundary);
       });
     }
@@ -641,7 +643,7 @@ impl Event for AddInk {
     let changed_boundaries = varying.boundaries.clone();
     set_leaf (accessor, &node.varying, varying) ;
     
-    iterate_boundaries (& changed_boundaries, | dimension, direction, boundary | {
+    iterate_boundaries (& changed_boundaries, | _dimension, _direction, boundary | {
       update_transfer_change_prediction (accessor, boundary);
     });
   }
@@ -859,7 +861,7 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
     while let Some(handle) = to_draw.pop() {
       let guard = query_ref(&accessor, &handle.varying);
       match *guard {
-        tree_continuum::NodeVarying::Branch (ref b) => iterate_children (&b.children, | coordinates, child | to_draw.push(child.clone())),
+        tree_continuum::NodeVarying::Branch (ref b) => iterate_children (&b.children, | _coordinates, child | to_draw.push(child.clone())),
         tree_continuum::NodeVarying::Leaf (ref leaf) => {
           let size_factor = (accessor.globals().size [0]/2) as f32;
           let density_factor = (GENERIC_DENSITY) as f32;

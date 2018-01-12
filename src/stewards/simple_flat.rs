@@ -394,3 +394,4 @@ impl<B: Basics> IncrementalTimeSteward for Steward<B> {
 impl<B: Basics> CanonicalTimeSteward for Steward<B> {}
 
 time_steward_define_simple_timeline!();
+time_steward_define_bbox_collision_detection!();

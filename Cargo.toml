@@ -16,16 +16,21 @@ bincode = "0.8"
 siphasher = "0.2.2"
 derivative = "1.0"
 dimensioned = "0.6"
+array_ext = "0.2"
 
 [dependencies.nalgebra]
 version = "0.12"
 features = ["serde-serialize"]
 
+[dependencies.rpds]
+version = "0.3"
+features = ["serde"]
+
 [dev-dependencies]
 glium = "0.15"
 docopt = "0.8"
 fnv = "1.0"
-array_ext = "0.2"
+boolinator = "2.4"
 
 [profile.bench]
 debug = true

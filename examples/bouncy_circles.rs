@@ -1,3 +1,5 @@
+#![feature (macro_vis_matcher)]
+
 extern crate time_steward;
 
 #[macro_use]
@@ -5,15 +7,16 @@ extern crate glium;
 
 extern crate nalgebra;
 extern crate rand;
+extern crate boolinator;
 extern crate docopt;
 
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
-use docopt::Docopt;
+//use docopt::Docopt;
 
-const USAGE: &'static str = "
+/*const USAGE: &'static str = "
 Bouncy Circles, a simple TimeSteward test case.
 
 Usage:
@@ -24,7 +27,7 @@ Usage:
 Options:
   -l, --listen   Start a synchronized simulation by listening for TCP connections.
   -c, --connect  Start a synchronized simulation by making a TCP connection.
-";
+";*/
 
 #[derive(Debug, Deserialize)]
 struct Args {
@@ -36,12 +39,12 @@ struct Args {
 }
 
 
-use std::time::{Instant, Duration};
+use std::time::{Instant};
 use glium::{DisplayBuild, Surface};
 
 use time_steward::{DeterministicRandomId};
 //use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, Accessor, SnapshotAccessor, simple_timeline};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, Accessor, simple_timeline};
 use simple_timeline::{query};
 
 #[path = "../dev-shared/bouncy_circles.rs"] mod bouncy_circles;
@@ -59,8 +62,8 @@ struct Vertex {
 }
 implement_vertex!(Vertex, direction, center, radius);
 
-use std::net::{TcpListener, TcpStream};
-use std::io::{BufReader, BufWriter};
+//use std::net::{TcpListener, TcpStream};
+//use std::io::{BufReader, BufWriter};
 
 fn main() {
   // For some reason, docopt checking the arguments caused build_glium() to fail in emscripten.
@@ -151,7 +154,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
     let start = Instant::now();
 
     let frame = || {
-      let frame_begin = Instant::now();
+      //let frame_begin = Instant::now();
       let time = 1+((start.elapsed().as_secs() as i64 * 1000000000i64) +
                             start.elapsed().subsec_nanos() as i64) *
                            SECOND / 1000000000i64;
@@ -186,7 +189,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
         .expect("steward failed to provide snapshot");
       stew.forget_before(& time);
       settle (&mut stew, time);
-      for handle in accessor.globals().iter() {
+      for handle in accessor.globals().circles.iter() {
         let circle = query (& accessor, &handle.varying);
         let position = circle.position.updated_by(accessor.now() - circle.last_change).unwrap().evaluate();
         let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,
