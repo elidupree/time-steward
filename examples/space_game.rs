@@ -192,7 +192,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
         .expect("steward failed to provide snapshot");
       stew.forget_before(& time);
       settle (&mut stew, time);
-      for handle in SimpleGridDetector::objects_near_box (& accessor, & query (& accessor, & accessor.globals().detector), BoundingBox {bounds: [[to_collision_space (0), to_collision_space (ARENA_SIZE)],[to_collision_space (0), to_collision_space (ARENA_SIZE)]],_marker: PhantomData}, None).iter() {
+      for handle in SimpleGridDetector::objects_near_box (& accessor, & query (& accessor, & accessor.globals().detector), BoundingBox {bounds: [[to_collision_space (-ARENA_SIZE/2), to_collision_space (ARENA_SIZE*3/2)],[to_collision_space (-ARENA_SIZE/2), to_collision_space (ARENA_SIZE*3/2)]],_marker: PhantomData}, None).iter() {
         let circle = query (& accessor, &handle.varying);
         let position = circle.position.updated_by(accessor.now() - circle.last_change).unwrap().evaluate();
         let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,
