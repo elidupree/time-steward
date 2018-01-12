@@ -101,7 +101,7 @@ pub type Steward = steward_module::Steward <Basics>;
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub enum ObjectType {
-  Generic,
+  Shot,
   Turret {last_fired: Time, shots_fired: usize, next_shoot: Option <<Steward as TimeSteward>::EventHandle>,},
 }
 
@@ -343,9 +343,13 @@ define_event!{
 
 pub fn update_shoot_prediction <Accessor: EventAccessor <Steward = Steward>>(accessor: &Accessor, circle_handle: &CircleHandle) {
   modify (accessor, & circle_handle.varying, | new | {
-    if let ObjectType::Turret {last_fired, shots_fired, next_shoot} = new.object_type.clone() {
-        
-      new.object_type = ObjectType::Turret {last_fired: last_fired, shots_fired: shots_fired, next_shoot};
+    if let ObjectType::Turret {last_fired, shots_fired, ..} = new.object_type.clone() {
+      
+      new.object_type = ObjectType::Turret {last_fired: last_fired, shots_fired: shots_fired, next_shoot: Some(accessor.create_prediction (
+        last_fired + SECOND/10,
+        DeterministicRandomId::new (&(accessor.extended_now().id, circle_handle.id, 0xd3e65114a9b8cdbau64)),
+        Shoot {circle_handle: circle_handle.clone()}
+      ))};
     }
   });
 }
@@ -355,10 +359,31 @@ define_event!{
   pub struct Shoot {pub circle_handle: CircleHandle},
   PersistentTypeId(0xc50c51edbe4943f1),
   fn execute (&self, accessor: &mut Accessor) {
-    modify (accessor, & self.circle_handle.varying, | new | {
-      if let ObjectType::Turret {last_fired, shots_fired, next_shoot} = new.object_type.clone() {
+    modify_trajectory (accessor, & self.circle_handle, | new | {
+      if let ObjectType::Turret {shots_fired, next_shoot, ..} = new.object_type.clone() {
         
         new.object_type = ObjectType::Turret {last_fired: accessor.now().clone(), shots_fired: shots_fired + 1, next_shoot};
+        
+        let shot = accessor.new_handle(Circle {id: DeterministicRandomId::new (& (self.circle_handle.id, shots_fired)), radius: ARENA_SIZE/60, varying:DataTimelineCell::new(SimpleTimeline::new ())}) ;
+        let position_now = new.position.evaluate();
+        let position = QuadraticTrajectory::new(TIME_SHIFT,
+                              MAX_DISTANCE_TRAVELED_AT_ONCE,
+                              [position_now [0] + self.circle_handle.radius,
+                               position_now [1],
+                               0,
+                               0,
+                               0,
+                               0]);
+        set (accessor, & shot.varying, CircleVarying {
+          object_type: ObjectType::Shot,
+          position: position,
+          last_change: *accessor.now(),
+          relationships: Vec::new(),
+          boundary_induced_acceleration: None,
+          next_boundary_change: None,
+          collision_data: None,
+        });
+        SimpleGridDetector::insert (accessor, &query(accessor, &accessor.globals().detector), & shot, None);
       }
     });
     update_shoot_prediction (accessor, & self.circle_handle);

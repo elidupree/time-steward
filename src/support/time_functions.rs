@@ -76,7 +76,7 @@ impl QuadraticTrajectory {
                                     now: Coordinate,
                                     bounds: [[Coordinate; 2]; 2])
                                     -> Option<Coordinate> {
-    time_until_which_quadratic_trajectory_may_remain_in_bounds (now - base, & self.data, & bounds, self.time_scale_shift, max_error_for_distance_traveled (self.max_distance_traveled_at_once)).map (| time | time + base)
+    time_until_which_quadratic_trajectory_may_remain_in_bounds (now - base, & self.data, & bounds, self.time_scale_shift, max_error_for_distance_traveled (self.max_distance_traveled_at_once)).and_then(| time | time.checked_add(base))
   }
 
   // direction == -1->"when the distance between the trajectories drops below the distance argument"
