@@ -350,7 +350,7 @@ pub fn update_shoot_prediction <Accessor: EventAccessor <Steward = Steward>>(acc
     if let ObjectType::Turret {last_fired, shots_fired, ..} = new.object_type.clone() {
       
       new.object_type = ObjectType::Turret {last_fired: last_fired, shots_fired: shots_fired, next_shoot: Some(accessor.create_prediction (
-        last_fired + SECOND/1,
+        last_fired + SECOND/10,
         DeterministicRandomId::new (&(accessor.extended_now().id, circle_handle.id, 0xd3e65114a9b8cdbau64)),
         Shoot {circle_handle: circle_handle.clone()}
       ))};
@@ -400,7 +400,7 @@ define_event!{
   pub struct Initialize {},
   PersistentTypeId(0xbf7ba1ff2ab76640),
   fn execute (&self, accessor: &mut Accessor) {
-    set (accessor, &accessor.globals().detector, SimpleGridDetector::new (accessor, Space, (ARENA_SIZE >> 2) as collisions::Coordinate));
+    set (accessor, &accessor.globals().detector, SimpleGridDetector::new (accessor, Space, (ARENA_SIZE >> 4) as collisions::Coordinate));
     let circles = &accessor.globals().circles;
     let mut varying = Vec::new();
     let mut generator = DeterministicRandomId::new (&2u8).to_rng();
