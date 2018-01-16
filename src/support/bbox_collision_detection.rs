@@ -69,6 +69,13 @@ pub struct BoundingBox<S: Space> {
 }
 
 impl<S: Space> BoundingBox<S> {
+  pub fn new (bounds: [[Coordinate; 2]; DIMENSIONS as usize])->Self {
+    BoundingBox {bounds: bounds,_marker: PhantomData}
+  }
+  pub fn centered (center: [Coordinate; DIMENSIONS as usize], radius: Coordinate)->Self {
+    Self::new (Array::from_fn (|dimension|
+      [center [dimension] - radius, center [dimension] + radius]))
+  }
   pub fn locations (&self)->Vec<[Coordinate; DIMENSIONS as usize]> {
     for bounds in self.bounds.iter() {assert!(bounds [0] <= bounds [1], "invalid bounding box");}
     let mut result = Vec::new() ;
