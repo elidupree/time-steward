@@ -10,7 +10,7 @@ macro_rules! time_steward_define_bbox_collision_detection {
 pub mod $mod {
 use super::*;
 use array_ext::*;
-use rpds::HashTrieMap;
+use rpds::RedBlackTreeMap;
 use ::{DeterministicRandomId, PersistentlyIdentifiedType, SimulationStateData, QueryResult};
 use super::{TimeSteward, Event, DataHandle, DataTimelineCell, EventAccessor, FutureCleanupAccessor};
 use super::simple_timeline::{SimpleTimeline, query, set};
@@ -113,7 +113,7 @@ pub mod simple_grid {
   pub struct SimpleGridDetector <S: Space> {
     space: S,
     cell_size: Coordinate,
-    cells: DataTimelineCell<SimpleTimeline<HashTrieMap <[Coordinate; DIMENSIONS as usize], Cell<S>>, S::Steward>>,
+    cells: DataTimelineCell<SimpleTimeline<RedBlackTreeMap <[Coordinate; DIMENSIONS as usize], Cell<S>>, S::Steward>>,
   }
   impl <S: Space> PersistentlyIdentifiedType for SimpleGridDetector<S> {
     const ID: PersistentTypeId = PersistentTypeId(0x6763f785bae6fe43 ^ S::ID.0);
@@ -213,7 +213,7 @@ pub mod simple_grid {
         cell_size: cell_size,
         cells: DataTimelineCell::new (SimpleTimeline::new ()),
       });
-      set (accessor, & result.cells, HashTrieMap::new());
+      set (accessor, & result.cells, RedBlackTreeMap::new());
       result
     }
     fn grid_box (&self, exact_box: & BoundingBox<S>) -> BoundingBox<S> {
