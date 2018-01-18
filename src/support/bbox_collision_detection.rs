@@ -11,6 +11,7 @@ pub mod $mod {
 use super::*;
 use array_ext::*;
 use rpds::RedBlackTreeMap;
+use std::collections::HashSet;
 use ::{DeterministicRandomId, PersistentlyIdentifiedType, SimulationStateData, QueryResult};
 use super::{TimeSteward, Event, DataHandle, DataTimelineCell, EventAccessor, FutureCleanupAccessor};
 use super::simple_timeline::{SimpleTimeline, query, set};
@@ -194,11 +195,12 @@ pub mod simple_grid {
     
     fn objects_near_box <A: Accessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, bounds: BoundingBox <Self::Space>, _location_hint: Option < &DataHandle<<Self::Space as Space>::Object>>) ->Vec<DataHandle<<Self::Space as Space>::Object>> {
       let cells = query (accessor, &detector.cells);
+      let mut result_existences = HashSet::new();
       let mut result = Vec::new();
       for location in detector.grid_box (&bounds).locations () {
         if let Some(cell) = cells.get (&location) {
           for neighbor in cell.objects.iter() {
-            if !result.contains (neighbor) {result.push (neighbor.clone());}
+            if result_existences.insert (neighbor) {result.push (neighbor.clone());}
           }
         }
       }
