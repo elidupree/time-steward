@@ -58,13 +58,13 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
 }
 
 
-#[derive (Debug, Derivative)]
+#[derive (Derivative)]
 #[derivative (Clone (bound = ""))]
 pub struct DataHandle <T: SimulationStateData + PersistentlyIdentifiedType> {
   data: Rc<T>
 }
 
-#[derive (Debug, Derivative)]
+#[derive (Derivative)]
 #[derivative (Clone (bound = ""))]
 pub struct EventHandle <B: Basics> {
   data: Rc <EventInner<B>>
