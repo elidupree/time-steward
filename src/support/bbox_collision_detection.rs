@@ -301,7 +301,21 @@ pub mod simple_grid {
 }
 
 
+/*
+pub mod tree {
 
+use super::*;
+
+trait NodeAugmentation <S: Space>: Default {
+  fn start_overlapping <A: EventAccessor <Steward = <Self::Space as Space>::Steward> (&mut self, accessor: &A, object: & DataHandle <S::Object>) ;
+  fn stop_overlapping <A: EventAccessor <Steward = <Self::Space as Space>::Steward> (&mut self, accessor: &A, object: & DataHandle <S::Object>) ;
+}
+trait AugmentedSearchable: Detector {
+  fn search <A: Accessor <Steward = <Self::Space as Space>::Steward>, F: Fn (& augmentation)->bool>(accessor: &A, detector: &DataHandle<Self>, bounds: BoundingBox <Self::Space>, location_hint: Option < &DataHandle<<Self::Space as Space>::Object>>, filter: F) ->Vec<DataHandle<<Self::Space as Space>::Object>>;
+
+}
+
+}*/
 
 
 
