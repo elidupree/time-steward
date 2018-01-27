@@ -10,7 +10,8 @@ macro_rules! time_steward_define_bbox_collision_detection {
 pub mod $mod {
 use super::*;
 use array_ext::*;
-use rpds::HashTrieMap;
+use rpds::RedBlackTreeMap;
+use std::collections::HashSet;
 use ::{DeterministicRandomId, PersistentlyIdentifiedType, SimulationStateData, QueryResult};
 use super::{TimeSteward, Event, DataHandle, DataTimelineCell, EventAccessor, FutureCleanupAccessor};
 use super::simple_timeline::{SimpleTimeline, query, set};
@@ -33,7 +34,7 @@ pub trait Space: SimulationStateData + PersistentlyIdentifiedType {
   // An Object generally has to store some opaque data for the collision detector.
   // It would normally include a DataHandle to a tree node.
   // These are getter and setter methods for that data.
-  fn get_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<Self::DetectorDataPerObject>;
+  fn get_detector_data<A: Accessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->Option<Self::DetectorDataPerObject>;
   fn set_detector_data<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, data: Option<Self::DetectorDataPerObject>);
   
   // must be unique among ALL objects/space pairs
@@ -56,7 +57,8 @@ pub trait Detector: SimulationStateData + PersistentlyIdentifiedType {
   fn remove<A: EventAccessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>);
   fn changed_position<A: EventAccessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>);
   fn changed_course<A: EventAccessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>);
-  fn nearby_objects<A: EventAccessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>) ->Vec<DataHandle<<Self::Space as Space>::Object>>;
+  fn objects_near_object <A: Accessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<<Self::Space as Space>::Object>) ->Vec<DataHandle<<Self::Space as Space>::Object>>;
+  fn objects_near_box <A: Accessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, bounds: BoundingBox <Self::Space>, location_hint: Option < &DataHandle<<Self::Space as Space>::Object>>) ->Vec<DataHandle<<Self::Space as Space>::Object>>;
 }
 
 #[derive (Serialize, Deserialize, Debug, Derivative)]
@@ -68,6 +70,13 @@ pub struct BoundingBox<S: Space> {
 }
 
 impl<S: Space> BoundingBox<S> {
+  pub fn new (bounds: [[Coordinate; 2]; DIMENSIONS as usize])->Self {
+    BoundingBox {bounds: bounds,_marker: PhantomData}
+  }
+  pub fn centered (center: [Coordinate; DIMENSIONS as usize], radius: Coordinate)->Self {
+    Self::new (Array::from_fn (|dimension|
+      [center [dimension] - radius, center [dimension] + radius]))
+  }
   pub fn locations (&self)->Vec<[Coordinate; DIMENSIONS as usize]> {
     for bounds in self.bounds.iter() {assert!(bounds [0] <= bounds [1], "invalid bounding box");}
     let mut result = Vec::new() ;
@@ -105,7 +114,7 @@ pub mod simple_grid {
   pub struct SimpleGridDetector <S: Space> {
     space: S,
     cell_size: Coordinate,
-    cells: DataTimelineCell<SimpleTimeline<HashTrieMap <[Coordinate; DIMENSIONS as usize], Cell<S>>, S::Steward>>,
+    cells: DataTimelineCell<SimpleTimeline<RedBlackTreeMap <[Coordinate; DIMENSIONS as usize], Cell<S>>, S::Steward>>,
   }
   impl <S: Space> PersistentlyIdentifiedType for SimpleGridDetector<S> {
     const ID: PersistentTypeId = PersistentTypeId(0x6763f785bae6fe43 ^ S::ID.0);
@@ -170,7 +179,7 @@ pub mod simple_grid {
       detector.space.set_detector_data (accessor, object, Some(data));
     }
     
-    fn nearby_objects<A: EventAccessor <Steward = S::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>) ->Vec<DataHandle<S::Object>> {
+    fn objects_near_object <A: Accessor <Steward = S::Steward>>(accessor: &A, detector: &DataHandle<Self>, object: &DataHandle<S::Object>) ->Vec<DataHandle<S::Object>> {
       let data = match detector.space.get_detector_data (accessor, object) {None => return Vec::new(), Some (a) => a};
       let cells = query (accessor, &detector.cells);
       let mut result = Vec::new();
@@ -178,6 +187,20 @@ pub mod simple_grid {
         if let Some(cell) = cells.get (&location) {
           for neighbor in cell.objects.iter() {
             if neighbor != object && !result.contains (neighbor) {result.push (neighbor.clone());}
+          }
+        }
+      }
+      result
+    }
+    
+    fn objects_near_box <A: Accessor <Steward = <Self::Space as Space>::Steward>>(accessor: &A, detector: &DataHandle<Self>, bounds: BoundingBox <Self::Space>, _location_hint: Option < &DataHandle<<Self::Space as Space>::Object>>) ->Vec<DataHandle<<Self::Space as Space>::Object>> {
+      let cells = query (accessor, &detector.cells);
+      let mut result_existences = HashSet::new();
+      let mut result = Vec::new();
+      for location in detector.grid_box (&bounds).locations () {
+        if let Some(cell) = cells.get (&location) {
+          for neighbor in cell.objects.iter() {
+            if result_existences.insert (neighbor) {result.push (neighbor.clone());}
           }
         }
       }
@@ -192,7 +215,7 @@ pub mod simple_grid {
         cell_size: cell_size,
         cells: DataTimelineCell::new (SimpleTimeline::new ()),
       });
-      set (accessor, & result.cells, HashTrieMap::new());
+      set (accessor, & result.cells, RedBlackTreeMap::new());
       result
     }
     fn grid_box (&self, exact_box: & BoundingBox<S>) -> BoundingBox<S> {
@@ -278,7 +301,21 @@ pub mod simple_grid {
 }
 
 
+/*
+pub mod tree {
 
+use super::*;
+
+trait NodeAugmentation <S: Space>: Default {
+  fn start_overlapping <A: EventAccessor <Steward = <Self::Space as Space>::Steward> (&mut self, accessor: &A, object: & DataHandle <S::Object>) ;
+  fn stop_overlapping <A: EventAccessor <Steward = <Self::Space as Space>::Steward> (&mut self, accessor: &A, object: & DataHandle <S::Object>) ;
+}
+trait AugmentedSearchable: Detector {
+  fn search <A: Accessor <Steward = <Self::Space as Space>::Steward>, F: Fn (& augmentation)->bool>(accessor: &A, detector: &DataHandle<Self>, bounds: BoundingBox <Self::Space>, location_hint: Option < &DataHandle<<Self::Space as Space>::Object>>, filter: F) ->Vec<DataHandle<<Self::Space as Space>::Object>>;
+
+}
+
+}*/
 
 
 

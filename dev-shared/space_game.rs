@@ -99,6 +99,11 @@ impl BasicsTrait for Basics {
 
 pub type Steward = steward_module::Steward <Basics>;
 
+#[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub enum ObjectType {
+  Shot,
+  Turret {last_fired: Time, shots_fired: usize, next_shoot: Option <<Steward as TimeSteward>::EventHandle>,},
+}
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Globals {
@@ -108,12 +113,13 @@ pub struct Globals {
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Circle {
-  pub index: usize,
+  pub id: DeterministicRandomId,
   pub radius: SpaceCoordinate,
   pub varying: DataTimelineCell <SimpleTimeline <CircleVarying, Steward>>,
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct CircleVarying {
+  pub object_type: ObjectType,
   pub position: QuadraticTrajectory,
   pub last_change: Time,
   pub relationships: Vec<RelationshipHandle>,
@@ -142,10 +148,10 @@ impl PersistentlyIdentifiedType for Relationship {
 type RelationshipHandle = DataHandle <Relationship>;
 
 
-fn to_collision_space (coordinate: SpaceCoordinate)->collisions::Coordinate {
+pub fn to_collision_space (coordinate: SpaceCoordinate)->collisions::Coordinate {
   (coordinate as collisions::Coordinate).wrapping_sub(1u64 << 63)
 }
-fn from_collision_space (coordinate: collisions::Coordinate)->SpaceCoordinate {
+pub fn from_collision_space (coordinate: collisions::Coordinate)->SpaceCoordinate {
   (coordinate.wrapping_add(1u64 << 63)) as SpaceCoordinate
 }
 
@@ -158,7 +164,7 @@ impl collisions::Space for Space {
   type Steward = Steward;
   type Object = Circle;
   type DetectorDataPerObject = collisions::simple_grid::DetectorDataPerObject<Self>;
-  type UniqueId = usize;
+  type UniqueId = DeterministicRandomId;
   
   const DIMENSIONS: NumDimensions = 2;
 
@@ -172,7 +178,7 @@ impl collisions::Space for Space {
     modify (accessor, &object.varying, | varying | varying.collision_data = data);
   }
   fn unique_id<A: EventAccessor <Steward = Self::Steward>>(&self, _accessor: &A, object: &DataHandle<Self::Object>)->Self::UniqueId {
-    object.index
+    object.id
   }
 
   fn current_bounding_box<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->BoundingBox <Self> {
@@ -199,7 +205,7 @@ impl collisions::Space for Space {
   }
   
   fn become_neighbors<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, objects: [&DataHandle<Self::Object>; 2]) {
-    //println!("become {:?}", (objects [0].index, objects [1].index));
+    //println!("become {:?}", (objects [0].id, objects [1].id));
     let relationship = accessor.new_handle (Relationship {
       circles: (objects [0].clone(), objects [1].clone()),
       varying: DataTimelineCell::new(SimpleTimeline::new ()),
@@ -214,7 +220,7 @@ impl collisions::Space for Space {
     update_relationship_change_prediction (accessor, &relationship) ;
   }
   fn stop_being_neighbors<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, objects: [&DataHandle<Self::Object>; 2]) {
-    //println!("stop {:?}", (objects [0].index, objects [1].index));
+    //println!("stop {:?}", (objects [0].id, objects [1].id));
     let varying = tracking_query (accessor, & objects[0].varying);
     let relationship = varying.relationships.iter().find (| relationship | (
       [&relationship.circles.0, &relationship.circles.1] == objects
@@ -222,10 +228,14 @@ impl collisions::Space for Space {
     )).unwrap().clone();
     destroy (accessor, & relationship.varying);
     for object in objects.iter() {
-      modify (accessor, &object.varying, | varying | varying.relationships.retain (| relationship | !(
-        [&relationship.circles.0, &relationship.circles.1] == objects
-        || [&relationship.circles.1, &relationship.circles.0] == objects
-      )));
+      modify (accessor, &object.varying, | varying | {
+        let old_size = varying.relationships.len();
+        varying.relationships.retain (| relationship | !(
+          [&relationship.circles.0, &relationship.circles.1] == objects
+          || [&relationship.circles.1, &relationship.circles.0] == objects
+        ));
+        assert_eq!(varying.relationships.len(), old_size - 1);
+      });
     }
   }
 }
@@ -256,7 +266,7 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
       // println!(" planned for {}", &yes);
       accessor.create_prediction (
         time,
-        DeterministicRandomId::new (&(accessor.extended_now().id, circles.0.index, circles.1.index.wrapping_add (0x6515c48170b61837))),
+        DeterministicRandomId::new (&(accessor.extended_now().id, circles.0.id, circles.1.id, 0x6515c48170b61837u64)),
         RelationshipChange {relationship_handle: relationship_handle.clone()}
       )
     ));
@@ -306,7 +316,7 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
       // println!(" planned for {}", &yes);
       accessor.create_prediction (
         time,
-        DeterministicRandomId::new (&(accessor.extended_now().id, circle_handle.index)),
+        DeterministicRandomId::new (&(accessor.extended_now().id, circle_handle.id)),
         BoundaryChange {circle_handle: circle_handle.clone()}
       )
     ));
@@ -334,11 +344,63 @@ define_event!{
   }
 }
 
+
+pub fn update_shoot_prediction <Accessor: EventAccessor <Steward = Steward>>(accessor: &Accessor, circle_handle: &CircleHandle) {
+  modify (accessor, & circle_handle.varying, | new | {
+    if let ObjectType::Turret {last_fired, shots_fired, ..} = new.object_type.clone() {
+      
+      new.object_type = ObjectType::Turret {last_fired: last_fired, shots_fired: shots_fired, next_shoot: Some(accessor.create_prediction (
+        last_fired + SECOND/10,
+        DeterministicRandomId::new (&(accessor.extended_now().id, circle_handle.id, 0xd3e65114a9b8cdbau64)),
+        Shoot {circle_handle: circle_handle.clone()}
+      ))};
+    }
+  });
+}
+
+
+define_event!{
+  pub struct Shoot {pub circle_handle: CircleHandle},
+  PersistentTypeId(0xc50c51edbe4943f1),
+  fn execute (&self, accessor: &mut Accessor) {
+    let mut shotpass = None;
+    modify_trajectory (accessor, & self.circle_handle, | new | {
+      if let ObjectType::Turret {shots_fired, next_shoot, ..} = new.object_type.clone() {
+        
+        new.object_type = ObjectType::Turret {last_fired: accessor.now().clone(), shots_fired: shots_fired + 1, next_shoot};
+        
+        let shot = accessor.new_handle(Circle {id: DeterministicRandomId::new (& (self.circle_handle.id, shots_fired)), radius: ARENA_SIZE/60, varying:DataTimelineCell::new(SimpleTimeline::new ())}) ;
+        let position_now = new.position.evaluate();
+        let position = QuadraticTrajectory::new(TIME_SHIFT,
+                              MAX_DISTANCE_TRAVELED_AT_ONCE,
+                              [position_now [0] + self.circle_handle.radius,
+                               position_now [1],
+                               0,
+                               0,
+                               0,
+                               0]);
+        set (accessor, & shot.varying, CircleVarying {
+          object_type: ObjectType::Shot,
+          position: position,
+          last_change: *accessor.now(),
+          relationships: Vec::new(),
+          boundary_induced_acceleration: None,
+          next_boundary_change: None,
+          collision_data: None,
+        });
+        shotpass = Some(shot);
+      }
+    });
+    SimpleGridDetector::insert (accessor, &query(accessor, &accessor.globals().detector), & shotpass.unwrap(), None);
+    update_shoot_prediction (accessor, & self.circle_handle);
+  }
+}
+
 define_event!{
   pub struct Initialize {},
   PersistentTypeId(0xbf7ba1ff2ab76640),
   fn execute (&self, accessor: &mut Accessor) {
-    set (accessor, &accessor.globals().detector, SimpleGridDetector::new (accessor, Space, (ARENA_SIZE >> 2) as collisions::Coordinate));
+    set (accessor, &accessor.globals().detector, SimpleGridDetector::new (accessor, Space, (ARENA_SIZE >> 4) as collisions::Coordinate));
     let circles = &accessor.globals().circles;
     let mut varying = Vec::new();
     let mut generator = DeterministicRandomId::new (&2u8).to_rng();
@@ -353,6 +415,9 @@ define_event!{
                                0,
                                0]);
       varying.push (CircleVarying {
+        object_type: if index == 0 {
+          ObjectType::Turret {last_fired: 0, shots_fired: 0, next_shoot: None}
+        } else {ObjectType::Shot},
         position: position,
         last_change: 0,
         relationships: Vec::new(),
@@ -364,6 +429,7 @@ define_event!{
     }
     for index in 0..HOW_MANY_CIRCLES {
       SimpleGridDetector::insert (accessor, &query(accessor, &accessor.globals().detector), & circles [index], None);
+      update_shoot_prediction (accessor, & circles [index]);
     }
   }
 }
@@ -406,7 +472,7 @@ pub fn make_globals()-> <Basics as BasicsTrait>::Globals {
     let radius = generator.gen_range(ARENA_SIZE / 30, ARENA_SIZE / 15);
 
     circles.push (DataHandle::new_for_globals (Circle {
-      index: index,
+      id: DeterministicRandomId::new (& index),
       radius: radius,
       varying: DataTimelineCell::new(SimpleTimeline::new ())
     }));

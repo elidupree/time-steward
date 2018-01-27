@@ -35,5 +35,8 @@ boolinator = "2.4"
 [profile.bench]
 debug = true
 
+[profile.release]
+codegen-units = 1
+
 [replace]
 #"backtrace:0.2.3" = { git = "https://github.com/elidupree/backtrace-rs", branch = "emscripten-fix" }
