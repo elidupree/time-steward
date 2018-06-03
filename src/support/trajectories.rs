@@ -7,7 +7,72 @@ use array_ext::*;
 
 pub type Time = i64;
 
-pub trait Vector: Clone + Add <Self, Output = Self> + Sub <Self, Output = Self> + Mul <i64, Output = Self> + Zero +
+pub trait IntegerVector: Clone + Add <Self, Output = Self> + Sub <Self, Output = Self> + Mul <i64, Output = Self> + Zero + {
+  type DistanceProxy: Scalar;
+  fn distance_proxy (&self, other: & Self)->Self::DistanceProxy;
+}
+
+pub trait ScalarTrajectory: Trajectory <Value: Scalar> {
+  /// 
+  fn non_strict_bounds (&self, input_range: [Time; 2])->[T; 2];
+  fn next_time_ge (&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
+    //default impl that works for all locally Lipschitz functions; can optimize more in explicit impls
+    let mut current_value = self.evaluate (start) ;
+    if current_value >= target {return Some (start)}
+    let mut start = start;
+    let mut increment = Self::Value::one();
+    loop {
+      let [max,_] = self.slope_range ([start, start + increment]);
+      if max >= target {increment >>= 1; break;}
+      if start + increment == end {increment = end - start; break;}
+      increment <<= 1;
+      if start + increment > end {increment = end - start;}
+    }
+    loop {
+      start += increment;
+      current_value = self.evaluate (start);
+      if current_value >= target {return Some (start)}
+      if start == end {return None;}
+      if start + increment > end {increment = end - start;}
+      loop {
+        let [max,_] = self.slope_range ([start, start + increment]);
+        if max >= target {increment >>= 1;}
+        else {break;}
+      }
+    }
+  }
+  pub fn next_time_gt (&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
+    self.next_time_ge (now, value + Vector::one())
+  }
+  pub fn next_time_(&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
+    (-self).next_time_ge (now, -value)
+  }
+  pub fn next_time_lt (&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
+    self.next_time_le (now, value - Vector::one())
+  }
+}
+
+pub struct DistanceProxyTrajectory <'a, Vector: IntegerVector, T: Trajectory <Vector>> {
+  first: & 'a T,
+  second: & 'a T,
+}
+impl <'a, Vector: IntegerVector, T: Trajectory <Vector>> ScalarTrajectory <Vector::DistanceProxy> for DistanceProxyTrajectory <'a, Vector, T> {
+  fn non_strict_bounds (&self, input_range: [Time; 2])->[Self::Value; 2] {
+    {
+      let first_bounds = self.first.component (dimension).non_strict_bounds (input_range);
+      let second_bounds = self.second.component (dimension).non_strict_bounds (input_range);
+      max_vector [dimension] = max (first_bounds [1] - second_bounds [0], second_bounds [1] - first_bounds [0]);
+      min_vector [dimension] = if bounds_intersect (first_bounds, second_bounds) {Self::Value::zero()} else {
+    [min_vector.distance_proxy(), max_vector.distance_proxy()]
+  }
+}
+
+pub trait Trajectory: {
+  type Value: IntegerVector;
+  fn distance_proxy_trajectory (&self, other: & Self)->impl ScalarTrajectory <T::Component> {
+  
+  }
+}
 
 macro_rules! impl_trajectory_binop {
   ($Trajectory: ident, $Trait: ident, $method: ident) => {
