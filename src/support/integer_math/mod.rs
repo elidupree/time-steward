@@ -43,6 +43,9 @@ pub fn evaluate_polynomial_fractional <Coefficient: Copy, T: PrimInt + Signed + 
 #[cfg (test)]
 mod tests {
   use super::*;
+  use num::FromPrimitive;
+  use num::bigint::BigInt;
+  use num::rational::{Ratio, BigRational};  
   
   #[test]
   fn test_right_shift_nicely_rounded() {
@@ -63,14 +66,13 @@ mod tests {
       let half = 1i64 << (shift - 1);
       let input = ((input as i64)*half) >> 31;
       let result = evaluate_polynomial_fractional (& coefficients, input, shift) ;
-      let mut float_result = 0.0;
-      let float_input = input as f64/(1i64 << shift) as f64;
+      let mut perfect_result: BigRational = Ratio::from_integer (FromPrimitive::from_i64 (0).unwrap());
+      let perfect_input = Ratio::from_integer (BigInt::from_i64 (input).unwrap())/Ratio::from_integer (BigInt::from_i64 (1i64).unwrap() << shift);
       for coefficient in coefficients.iter().rev() {
-        float_result = float_result*float_input +*coefficient as f64;
+        perfect_result = perfect_result*& perfect_input + Ratio::from_integer (FromPrimitive::from_i32 (*coefficient).unwrap ());
       }
-      let difference = result as f64 - float_result;
-      //allow a little leeway for the floats to be an accurate as well
-      difference <= 1.0001
+      let difference = Ratio::from_integer (FromPrimitive::from_i64 (result).unwrap()) - perfect_result;
+      difference < Ratio::from_integer (FromPrimitive::from_i64 (1).unwrap())
     }
   }
 }
