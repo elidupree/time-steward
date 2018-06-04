@@ -28,6 +28,7 @@
 //#![cfg_attr(test,feature(core_intrinsics))]
 
 extern crate rand;
+extern crate num;
 extern crate nalgebra;
 extern crate siphasher;
 extern crate array_ext;
@@ -83,7 +84,7 @@ pub mod api_impls;
 pub mod support {
   pub mod rounding_error_tolerant_math;
   pub mod time_functions;
-  pub mod trajectories;
+  pub mod integer_math;
   #[macro_use] pub mod simple_timeline;
   #[macro_use] pub mod bbox_collision_detection;
 }
