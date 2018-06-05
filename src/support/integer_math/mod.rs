@@ -24,7 +24,11 @@ pub fn right_shift_nicely_rounded <T: PrimInt> (input: T, shift: usize)->T {
 /// Approximately evaluate an integer polynomial at an input in the range [-0.5, 0.5].
 ///
 /// The input is represented as an integer combined with a right-shift size.
-/// The coefficients are required to be small enough that `coefficient.abs() << shift` does not overflow.
+/// For a signed integer type with B bits:
+/// Each coefficient, except the constant one, must obey coefficient.abs() < 1 << (B - 1 - shift),
+/// i.e. be small enough that `coefficient.abs() << shift` does not overflow.
+/// The constant coefficient must obey coefficient.abs() <= (1 << (B - 1)) - (1 << (B - 1 - shift)),
+/// i.e. be small enough that you can add one of the other coefficients to it without overflowing.
 /// Given these conditions, the result is guaranteed to be strictly within 1 of the ideal result.
 /// For instance, if the ideal result was 2.125, this function could return 2 or 3,
 /// but if it was 2, this function can only return exactly 2.
@@ -68,11 +72,13 @@ mod tests {
       let shift = 1 << shift;
       let half = 1i64 << (shift - 1);
       let maximum = ((1u64 << (63 - shift)) - 1) as i64;
+      let constant_maximum = ((1u64 << 63) - (1u64 << (63 - shift))) as i64;
       let range = Range::new_inclusive (- maximum, maximum) ;
+      let constant_range = Range::new_inclusive (- constant_maximum, constant_maximum);
       let mut test_inputs = vec![- half, - half + 1, - 1, 0, 1, half - 1, half];
-      if half > 2 {for _ in 0..4 {test_inputs.push (generator.gen_range (- half + 2, half - 1));}}
-      for _ in 0..4 {
-        let mut coefficients = vec![generator.gen()];
+      if half > 2 {for _ in 0..6 {test_inputs.push (generator.gen_range (- half + 2, half - 1));}}
+      for _ in 0..40 {
+        let mut coefficients = vec![constant_range.sample (&mut generator)];
         while generator.gen() {coefficients.push (range.sample (&mut generator));}
         for input in test_inputs.iter() {
           let result = evaluate_polynomial_fractional (& coefficients,*input, shift);
