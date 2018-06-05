@@ -1,6 +1,5 @@
 use nalgebra::Vector2;
 use std::cmp::max;
-use super::rounding_error_tolerant_math::*;
 use std::ops::{Add, Sub, Mul, Neg, Shl, Shr, BitAnd};
 use array_ext::*;
 use num::{PrimInt, Signed};
@@ -45,7 +44,10 @@ mod tests {
   use super::*;
   use num::FromPrimitive;
   use num::bigint::BigInt;
-  use num::rational::{Ratio, BigRational};  
+  use num::rational::{Ratio, BigRational};
+  use rand::distributions::Distribution;  
+  use rand::distributions::range::{Range};
+  use rand::{Rng, SeedableRng};
   
   #[test]
   fn test_right_shift_nicely_rounded() {
@@ -59,20 +61,31 @@ mod tests {
     }
   }
   
-  quickcheck! {
-    fn evaluate_polynomial_fractional_is_accurate (coefficients: Vec<i32>, input: i32, shift: u8)->bool {
-      //scale everything to reasonable values
-      let shift = (shift >> 5) as usize + 1; //up to 16, so all i32 coefficients are valid
+  #[test]
+  fn test_evaluate_polynomial_fractional() {
+    let mut generator =::rand::chacha::ChaChaRng::from_seed ([33; 32]) ;
+    for shift in 0..5 {
+      let shift = 1 << shift;
       let half = 1i64 << (shift - 1);
-      let input = ((input as i64)*half) >> 31;
-      let result = evaluate_polynomial_fractional (& coefficients, input, shift) ;
-      let mut perfect_result: BigRational = Ratio::from_integer (FromPrimitive::from_i64 (0).unwrap());
-      let perfect_input = Ratio::from_integer (BigInt::from_i64 (input).unwrap())/Ratio::from_integer (BigInt::from_i64 (1i64).unwrap() << shift);
-      for coefficient in coefficients.iter().rev() {
-        perfect_result = perfect_result*& perfect_input + Ratio::from_integer (FromPrimitive::from_i32 (*coefficient).unwrap ());
+      let maximum = ((1u64 << (63 - shift)) - 1) as i64;
+      let range = Range::new_inclusive (- maximum, maximum) ;
+      let mut test_inputs = vec![- half, - half + 1, - 1, 0, 1, half - 1, half];
+      if half > 2 {for _ in 0..4 {test_inputs.push (generator.gen_range (- half + 2, half - 1));}}
+      for _ in 0..4 {
+        let mut coefficients = vec![generator.gen()];
+        while generator.gen() {coefficients.push (range.sample (&mut generator));}
+        for input in test_inputs.iter() {
+          let result = evaluate_polynomial_fractional (& coefficients,*input, shift);
+          
+          let mut perfect_result: BigRational = Ratio::from_integer (FromPrimitive::from_i64 (0).unwrap());
+          let perfect_input = Ratio::from_integer (BigInt::from_i64 (*input).unwrap())/Ratio::from_integer (BigInt::from_i64 (1i64).unwrap() << shift);
+          for coefficient in coefficients.iter().rev() {
+            perfect_result = perfect_result*& perfect_input + Ratio::from_integer (FromPrimitive::from_i64 (*coefficient).unwrap ());
+          }
+          let difference = Ratio::from_integer (FromPrimitive::from_i64 (result).unwrap()) - perfect_result;
+          assert!(difference < Ratio::from_integer (FromPrimitive::from_i64 (1).unwrap()));
+        }
       }
-      let difference = Ratio::from_integer (FromPrimitive::from_i64 (result).unwrap()) - perfect_result;
-      difference < Ratio::from_integer (FromPrimitive::from_i64 (1).unwrap())
     }
   }
 }
