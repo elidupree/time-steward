@@ -28,6 +28,7 @@
 //#![cfg_attr(test,feature(core_intrinsics))]
 
 extern crate rand;
+extern crate rand_core;
 extern crate num;
 extern crate nalgebra;
 extern crate siphasher;

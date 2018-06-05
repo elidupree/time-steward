@@ -3,7 +3,8 @@ use std::hash::{Hash, Hasher};
 use siphasher::sip::SipHasher;
 use std::fmt;
 use std::io::{self, Write};
-use rand::{Rng, ChaChaRng};
+use rand::{self, Rng, RngCore, ChaChaRng};
+use rand_core;
 use serde::{Serialize};
 use bincode;
 
@@ -128,7 +129,7 @@ impl DeterministicRandomIdRng {
     self.state= DeterministicRandomId::new (& self.state) ;
   }
 }
-impl Rng for DeterministicRandomIdRng {
+impl RngCore for DeterministicRandomIdRng {
   fn next_u32(&mut self) -> u32 {
     let result = (self.state.data [(self.index >> 1) as usize] >> (32*(self.index & 1))) as u32;
     self.index += 1;
@@ -137,6 +138,15 @@ impl Rng for DeterministicRandomIdRng {
       self.index = 0;
     }
     result
+  }
+  fn next_u64 (&mut self)->u64 {
+    rand_core::impls::next_u64_via_u32 (self)
+  }
+  fn fill_bytes (&mut self, destination: &mut [u8]) {
+    rand_core::impls::fill_bytes_via_next (self, destination)
+  }
+  fn try_fill_bytes (&mut self, destination: &mut [u8])->Result <(), rand::Error> {
+    Ok (self.fill_bytes (destination))
   }
 }
 

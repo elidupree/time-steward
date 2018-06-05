@@ -185,7 +185,7 @@ impl Event for TweakUnsafe {
     let inconsistent = INCONSISTENT.with (| value | {
       *value
     });
-    let mut rng = ChaChaRng::from_seed (& [inconsistent, accessor.id().data() [1] as u32]);
+    let mut rng = ChaChaRng::from_seed ([inconsistent.wrapping_add (accessor.id().data() [1] as u32) as u8 ; 32]);
     
     let now = *accessor.now();
     let friend_id = rng.gen_range(0, HOW_MANY_PHILOSOPHERS);
@@ -197,7 +197,7 @@ impl Event for TweakUnsafe {
     let inconsistent = INCONSISTENT.with (| value | {
       *value
     });
-    let mut rng = ChaChaRng::from_seed (& [inconsistent, accessor.id().data() [1] as u32]);
+    let mut rng = ChaChaRng::from_seed ([inconsistent.wrapping_add (accessor.id().data() [1] as u32) as u8; 32]);
     
     let friend_id = rng.gen_range(0, HOW_MANY_PHILOSOPHERS);
     let philosophers = accessor.globals();
