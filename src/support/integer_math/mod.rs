@@ -199,12 +199,20 @@ mod tests {
   }
   
   quickcheck! {
-    fn safe_translation_range_is_safe (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
+    fn exact_safe_translation_range_is_safe (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
       let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
       let maxima = | index: usize | coefficients_and_maxima [index].1;
       let range = exact_safe_polynomial_translation_range (& coefficients, maxima);
       println!( "{:?}", range);
       range < 0 || safe_to_translate_polynomial_to (& coefficients, range, maxima)
+    }
+    
+    fn exact_safe_translation_range_is_maximal (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
+      let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
+      let maxima = | index: usize | coefficients_and_maxima [index].1;
+      let range = exact_safe_polynomial_translation_range (& coefficients, maxima);
+      println!( "{:?}", range);
+      range == i64::max_value() || !safe_to_translate_polynomial_to (& coefficients, range + 1, maxima)
     }
   }
 }
