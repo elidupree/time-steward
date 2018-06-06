@@ -52,7 +52,7 @@ mod tests {
     let mut result: BigRational = Ratio::zero();
     let input = Ratio::new(BigInt::from (input), BigInt::one() << shift);
     for coefficient in coefficients.iter().rev() {
-      result = result*&input + Ratio::from_integer (BigInt::from(*coefficient));
+      result = result*&input + BigInt::from(*coefficient);
     }
     result
   }
