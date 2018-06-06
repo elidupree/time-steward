@@ -1,5 +1,6 @@
 use num::{PrimInt, Signed};
 use std::mem;
+use std::cmp::{min};
 
 /// Right-shift an integer, but round to nearest, with ties rounding to even.
 ///
@@ -43,24 +44,14 @@ pub fn evaluate_polynomial_at_small_input <Coefficient: Copy, T: PrimInt + Signe
 /// This is equivalent to replacing its coefficients with its Taylor coefficients at the given input.
 /// This is equivalent to translating the graph *left* by the given input amount.
 ///
-/// To avoid overflow, each term, when evaluating that the given input,
+/// For constant polynomials, this is a no-op.
+///
+/// Otherwise, to avoid overflow, each term, when evaluating at the given input,
 /// must obey term.abs() <= T::max_value() >> (coefficients.len() - 1).
 /// If this condition is broken, translate_polynomial() returns Err and makes no changes.
 pub fn translate_polynomial <T: PrimInt + Signed> (coefficients: &mut [T], input: T)->Result <(),()> {
-  if coefficients.len() == 0 {return Ok(());}
-  let maximum = T::max_value() >> (coefficients.len() - 1) ;
-  let mut factor = T::one();
-  for (index, coefficient) in coefficients.iter().enumerate() {
-    if coefficient == &T::min_value() {return Err (());}
-    match coefficient.abs().checked_mul (&factor) {
-      None => return Err (()),
-      Some (term) => if term > maximum {return Err (());},
-    }
-    if index + 1 < coefficients.len() { match factor.checked_mul (&input) {
-      None => return Err (()),
-      Some (next_factor) => factor = next_factor,
-    }}
-  }
+  if coefficients.len() <= 1 {return Ok(());}
+  if !safe_to_translate_polynomial_to (coefficients, input, |_| T::max_value()) {return Err (())}
   translate_polynomial_unchecked (coefficients, input) ;
   Ok (())
 }
@@ -68,7 +59,7 @@ pub fn translate_polynomial <T: PrimInt + Signed> (coefficients: &mut [T], input
 /// Same as translate_polynomial(), but assume no overflow will occur.
 ///
 /// Useful in performance-critical code when you already know there won't be overflow,
-/// such as in the range returned by TODO.
+/// such as in the range returned by conservative_safe_polynomial_translation_range.
 pub fn translate_polynomial_unchecked <T: PrimInt + Signed> (coefficients: &mut [T], input: T) {
   coefficients.reverse();
   for index in 0..coefficients.len() {
@@ -78,6 +69,71 @@ pub fn translate_polynomial_unchecked <T: PrimInt + Signed> (coefficients: &mut 
     }
     coefficients [0] = coefficients [0]*input + coefficient
   }
+}
+
+pub fn safe_to_translate_polynomial_to <T: PrimInt + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], input: T, maximum: MaximumFn)->bool {
+  if coefficients.len() <= 1 {return true;}
+  let mut factor = T::one();
+  let input = input.abs();
+  let global_maximum = T::max_value() >> (coefficients.len() - 1) ;
+  for (index, coefficient) in coefficients.iter().enumerate() {
+    let maximum = min (global_maximum, maximum (index));
+    if coefficient == &T::min_value() {return false;}
+    match coefficient.abs().checked_mul (&factor) {
+      None => return false,
+      Some (term) => if term > maximum {return false;},
+    }
+    if index + 1 < coefficients.len() { match factor.checked_mul (&input) {
+      None => return false,
+      Some (next_factor) => factor = next_factor,
+    }}
+  }
+  true
+}
+
+/// Find the range of inputs to which the polynomial can safely be translated.
+///
+/// Anything in the range [-result, result] is safe to translate to; anything outside isn't.
+///
+/// The third argument can impose a stricter maximum on the resulting coefficients.
+pub fn exact_safe_polynomial_translation_range <T: PrimInt + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], maximum: MaximumFn)->Option <T> {
+  if coefficients.len() <= 1 || coefficients [1..].iter().all (| coefficient | coefficient == &T::zero()) {return Some (T::max_value())}
+  // if we know that there's at least one nonzero non-constant coefficient, T::max_value is never legal, so we can pick a min that definitely legal and a max that's definitely not
+  let mut min = -T::one();
+  let mut max = T::max_value();
+  while min + T::one() < max {
+    let mid = (min >> 1) + (max >> 1) + (min & max & T::one());
+    if safe_to_translate_polynomial_to (coefficients, mid, & maximum) {
+      min = mid;
+    } else {
+      max = mid;
+    }
+  }
+  if min < T::zero() {None}
+  else {Some (min)}
+}
+
+/// Find a range of inputs to which the polynomial can safely be translated.
+///
+/// Anything in the range [-result, result] is safe to translate to.
+/// Anything outside the range (-result*2, result*2) isn't.
+///
+/// The third argument can impose a stricter maximum on the resulting coefficients.
+///
+/// This function is much faster than exact_safe_polynomial_translation_range, at the cost of being less precise.
+pub fn conservative_safe_polynomial_translation_range <T: PrimInt + Signed, MaximumFn: Fn (usize)->T> (coefficients: &mut [T], maximum: MaximumFn)->Option <T> {
+  if coefficients.len() <= 1 {return Some (T::max_value())}
+  let global_maximum = T::max_value() >> (coefficients.len() - 1) ;
+  let mut result_shift = mem::size_of::<T>()*8 - 2;
+  for (power, coefficient) in coefficients.iter().enumerate() {
+    let magnitude = coefficient.abs();
+    let maximum = min (global_maximum, maximum (power));
+    while magnitude > (maximum >> (result_shift*power)) {
+      if result_shift == 0 {return None;}
+      result_shift -= 1;
+    }
+  }
+  Some (T::one() << result_shift)
 }
 
 #[cfg (test)]
