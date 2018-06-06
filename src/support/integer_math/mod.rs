@@ -47,11 +47,10 @@ pub fn evaluate_polynomial_at_small_input <Coefficient: Copy, T: PrimInt + Signe
 ///
 /// For constant polynomials, this is a no-op.
 ///
-/// Otherwise, to avoid overflow, each term, when evaluating at the given input,
+/// To avoid overflow, each term, when evaluating at the given input,
 /// must obey term.abs() <= T::max_value() >> (coefficients.len() - 1).
 /// If this condition is broken, translate_polynomial() returns Err and makes no changes.
 pub fn translate_polynomial <T: PrimInt + Signed + CheckedShr> (coefficients: &mut [T], input: T)->Result <(),()> {
-  if coefficients.len() <= 1 {return Ok(());}
   if !safe_to_translate_polynomial_to (coefficients, input, |_| T::max_value()) {return Err (())}
   translate_polynomial_unchecked (coefficients, input) ;
   Ok (())
@@ -73,7 +72,7 @@ pub fn translate_polynomial_unchecked <T: PrimInt + Signed> (coefficients: &mut 
 }
 
 pub fn safe_to_translate_polynomial_to <T: PrimInt + Signed + CheckedShr, MaximumFn: Fn (usize)->T> (coefficients: & [T], input: T, maximum: MaximumFn)->bool {
-  if coefficients.len() <= 1 {return true;}
+  if coefficients.len() == 0 {return true;}
   let mut factor = T::one();
   let input = input.abs();
   let sum_safety_shift = coefficients.len() as u32 - 1;
@@ -81,7 +80,9 @@ pub fn safe_to_translate_polynomial_to <T: PrimInt + Signed + CheckedShr, Maximu
   for (power, coefficient) in coefficients.iter().enumerate() {
     running_maximum = min (running_maximum, maximum (power).checked_shr (sum_safety_shift).unwrap_or (T::zero()));
     if coefficient == &T::min_value() {return false;}
-    match coefficient.abs().checked_mul (&factor) {
+    let magnitude = coefficient.abs();
+    if magnitude > running_maximum {return false;}
+    match magnitude.checked_mul (&factor) {
       None => return false,
       Some (term) => if term > running_maximum {return false;},
     }
@@ -100,16 +101,16 @@ pub fn safe_to_translate_polynomial_to <T: PrimInt + Signed + CheckedShr, Maximu
 ///
 /// The third argument can impose a stricter maximum on the resulting coefficients.
 pub fn exact_safe_polynomial_translation_range <T: PrimInt + Signed + CheckedShr, MaximumFn: Fn (usize)->T> (coefficients: & [T], maximum: MaximumFn)->T {
-  if coefficients.len() <= 1 || coefficients [1..].iter().all (| coefficient | coefficient == &T::zero()) {return T::max_value()}
-  // if we know that there's at least one nonzero non-constant coefficient, T::max_value is never legal, so we can pick a min that definitely legal and a max that's definitely not
-  let mut min = -T::one();
+  if !safe_to_translate_polynomial_to (coefficients, T::zero(), & maximum) {return -T::one();}
+  // pick a min that's definitely legal and a max where max + 1 is definitely illegal
+  let mut min = T::zero();
   let mut max = T::max_value();
-  while min + T::one() < max {
-    let mid = (min >> 1u32) + (max >> 1u32) + (min & max & T::one());
+  while min < max {
+    let mid = (min >> 1u32) + (max >> 1u32) + ((min | max) & T::one());
     if safe_to_translate_polynomial_to (coefficients, mid, & maximum) {
       min = mid;
     } else {
-      max = mid;
+      max = mid - T::one();
     }
   }
   min
@@ -125,7 +126,7 @@ pub fn exact_safe_polynomial_translation_range <T: PrimInt + Signed + CheckedShr
 ///
 /// This function is much faster than exact_safe_polynomial_translation_range, at the cost of being less precise.
 pub fn conservative_safe_polynomial_translation_range <T: PrimInt + Signed + CheckedShr, MaximumFn: Fn (usize)->T> (coefficients: &[T], maximum: MaximumFn)->T {
-  if coefficients.len() <= 1 {return T::max_value()}
+  if coefficients.len() == 0 {return T::max_value()}
   let sum_safety_shift = coefficients.len() as u32 - 1;
   let mut running_maximum = T::max_value();
   let mut result_shift = mem::size_of::<T>()*8 - 2;
