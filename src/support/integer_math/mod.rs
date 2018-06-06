@@ -178,6 +178,17 @@ mod tests {
     result
   }
   
+  fn perfect_shr_nicely_rounded <T: Integer> (input: T, shift: u32)->BigInt where BigInt: From <T> {
+    let perfect_result = Ratio::new (BigInt::from (input), BigInt::one() << shift as usize);
+    let rounded_down = perfect_result.floor();
+    let fraction = & perfect_result - & rounded_down;
+    let rounded_down = rounded_down.to_integer();
+    match fraction.cmp (& Ratio::new (BigInt::one(), BigInt::one() << 1)) {
+      Ordering::Less => rounded_down, Ordering::Greater => rounded_down + BigInt::one() ,
+      Ordering::Equal => & rounded_down + rounded_down.mod_floor (& (BigInt::one() << 1)),
+    }
+  }
+  
   #[test]
   fn test_shr_nicely_rounded() {
     let inputs: Vec<(i64, u32, i64)> = vec![
@@ -217,16 +228,16 @@ mod tests {
   }
   
   quickcheck! {
-    fn quickcheck_shr_nicely_rounded (input: i64, shift: u8)->bool {
+    fn quickcheck_shr_nicely_rounded_signed (input: i32, shift: u8)->bool {
       let result = shr_nicely_rounded (input, shift as u32);
-      let perfect_result = Ratio::new (BigInt::from (input), BigInt::one() << shift as usize);
-      let rounded_down = perfect_result.floor();
-      let fraction = & perfect_result - & rounded_down;
-      let rounded_down = rounded_down.to_integer();
-      let perfect_result = match fraction.cmp (& Ratio::new (BigInt::one(), BigInt::one() << 1)) {
-        Ordering::Less => rounded_down, Ordering::Greater => rounded_down + BigInt::one() ,
-        Ordering::Equal => & rounded_down + rounded_down.mod_floor (& (BigInt::one() << 1)),
-      };
+      let perfect_result = perfect_shr_nicely_rounded (input, shift as u32);
+      println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
+      perfect_result == BigInt::from (result)
+    }
+    
+    fn quickcheck_shr_nicely_rounded_unsigned (input: u32, shift: u8)->bool {
+      let result = shr_nicely_rounded (input, shift as u32);
+      let perfect_result = perfect_shr_nicely_rounded (input, shift as u32);
       println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
       perfect_result == BigInt::from (result)
     }
