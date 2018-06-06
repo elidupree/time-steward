@@ -87,6 +87,6 @@ impl<K: Eq + Hash, V, S: BuildHasher> IntoIterator for HashMap<K, V, S> {
   type Item = (K, V);
   type IntoIter = IntoIter<K, V>;
   fn into_iter(self) -> Self::IntoIter {
-    IntoIter { data: unsafe { self.data.into_inner().into_iter() } }
+    IntoIter { data: self.data.into_inner().into_iter() }
   }
 }

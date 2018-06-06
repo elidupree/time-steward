@@ -1,7 +1,3 @@
-use nalgebra::Vector2;
-use std::cmp::max;
-use std::ops::{Add, Sub, Mul, Neg, Shl, Shr, BitAnd};
-use array_ext::*;
 use num::{PrimInt, Signed};
 
 
