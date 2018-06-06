@@ -1,5 +1,5 @@
 use num::{PrimInt, Signed};
-
+use std::mem;
 
 /// Right-shift an integer, but round to nearest, with ties rounding to even.
 ///
@@ -36,6 +36,48 @@ pub fn evaluate_polynomial_at_small_input <Coefficient: Copy, T: PrimInt + Signe
     result = right_shift_nicely_rounded ((result + (*coefficient).into())*input, shift);
   }
   result + coefficients [0].into()
+}
+
+/// Translate a polynomial horizontally, letting it take inputs relative to a given input instead of relative to 0.
+///
+/// This is equivalent to replacing its coefficients with its Taylor coefficients at the given input.
+/// This is equivalent to translating the graph *left* by the given input amount.
+///
+/// To avoid overflow, each term, when evaluating that the given input,
+/// must obey term.abs() <= T::max_value() >> (coefficients.len() - 1).
+/// If this condition is broken, translate_polynomial() returns Err and makes no changes.
+pub fn translate_polynomial <T: PrimInt + Signed> (coefficients: &mut [T], input: T)->Result <(),()> {
+  if coefficients.len() == 0 {return Ok(());}
+  let maximum = T::max_value() >> (coefficients.len() - 1) ;
+  let mut factor = T::one();
+  for (index, coefficient) in coefficients.iter().enumerate() {
+    if coefficient == &T::min_value() {return Err (());}
+    match coefficient.abs().checked_mul (&factor) {
+      None => return Err (()),
+      Some (term) => if term > maximum {return Err (());},
+    }
+    if index + 1 < coefficients.len() { match factor.checked_mul (&input) {
+      None => return Err (()),
+      Some (next_factor) => factor = next_factor,
+    }}
+  }
+  translate_polynomial_unchecked (coefficients, input) ;
+  Ok (())
+}
+
+/// Same as translate_polynomial(), but assume no overflow will occur.
+///
+/// Useful in performance-critical code when you already know there won't be overflow,
+/// such as in the range returned by TODO.
+pub fn translate_polynomial_unchecked <T: PrimInt + Signed> (coefficients: &mut [T], input: T) {
+  coefficients.reverse();
+  for index in 0..coefficients.len() {
+    let coefficient = mem::replace (&mut coefficients [index], T::zero());
+    for derivative in (1..(index + 1)).rev() {
+      coefficients [derivative] = coefficients [derivative]*input + coefficients [derivative - 1]
+    }
+    coefficients [0] = coefficients [0]*input + coefficient
+  }
 }
 
 #[cfg (test)]
