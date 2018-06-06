@@ -210,6 +210,19 @@ mod tests {
       safe_to_translate_polynomial_to(& coefficients, 0, maxima)
     }
     
+    fn quickcheck_safe_translation_reverses_correctly (coefficients: Vec<i64>, input: i64)->bool {
+      let mut coefficients = coefficients;
+      let maxima = |_: usize | i64::max_value();
+      if input == i64::min_value () {return true}
+      let original_coefficients = coefficients.clone ();
+      if !safe_to_translate_polynomial_to(& coefficients, input, maxima) {return true}
+      translate_polynomial_unchecked (&mut coefficients, input);
+      if !safe_to_translate_polynomial_to(& coefficients, -input, maxima) {return true}
+      println!( "{:?}", coefficients);
+      translate_polynomial_unchecked (&mut coefficients, -input);
+      coefficients == original_coefficients
+    }
+    
     fn quickcheck_exact_safe_translation_range_is_safe (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
       let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
       let maxima = | index: usize | coefficients_and_maxima [index].1;
