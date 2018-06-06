@@ -75,15 +75,16 @@ pub fn safe_to_translate_polynomial_to <T: PrimInt + Signed, MaximumFn: Fn (usiz
   if coefficients.len() <= 1 {return true;}
   let mut factor = T::one();
   let input = input.abs();
-  let global_maximum = T::max_value() >> (coefficients.len() - 1) ;
-  for (index, coefficient) in coefficients.iter().enumerate() {
-    let maximum = min (global_maximum, maximum (index));
+  let sum_safety_shift = coefficients.len() - 1;
+  let mut running_maximum = T::max_value();
+  for (power, coefficient) in coefficients.iter().enumerate() {
+    running_maximum = min (running_maximum, maximum (power) >> sum_safety_shift);
     if coefficient == &T::min_value() {return false;}
     match coefficient.abs().checked_mul (&factor) {
       None => return false,
-      Some (term) => if term > maximum {return false;},
+      Some (term) => if term > running_maximum {return false;},
     }
-    if index + 1 < coefficients.len() { match factor.checked_mul (&input) {
+    if power + 1 < coefficients.len() { match factor.checked_mul (&input) {
       None => return false,
       Some (next_factor) => factor = next_factor,
     }}
@@ -123,12 +124,13 @@ pub fn exact_safe_polynomial_translation_range <T: PrimInt + Signed, MaximumFn: 
 /// This function is much faster than exact_safe_polynomial_translation_range, at the cost of being less precise.
 pub fn conservative_safe_polynomial_translation_range <T: PrimInt + Signed, MaximumFn: Fn (usize)->T> (coefficients: &mut [T], maximum: MaximumFn)->Option <T> {
   if coefficients.len() <= 1 {return Some (T::max_value())}
-  let global_maximum = T::max_value() >> (coefficients.len() - 1) ;
+  let sum_safety_shift = coefficients.len() - 1;
+  let mut running_maximum = T::max_value();
   let mut result_shift = mem::size_of::<T>()*8 - 2;
   for (power, coefficient) in coefficients.iter().enumerate() {
     let magnitude = coefficient.abs();
-    let maximum = min (global_maximum, maximum (power));
-    while magnitude > (maximum >> (result_shift*power)) {
+    running_maximum = min (running_maximum, maximum (power) >> sum_safety_shift);
+    while magnitude > (running_maximum >> (result_shift*power)) {
       if result_shift == 0 {return None;}
       result_shift -= 1;
     }
