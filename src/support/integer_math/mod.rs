@@ -124,7 +124,7 @@ pub fn exact_safe_polynomial_translation_range <T: PrimInt + Signed + CheckedShr
 /// The third argument can impose a stricter maximum on the resulting coefficients.
 ///
 /// This function is much faster than exact_safe_polynomial_translation_range, at the cost of being less precise.
-pub fn conservative_safe_polynomial_translation_range <T: PrimInt + Signed + CheckedShr, MaximumFn: Fn (usize)->T> (coefficients: &mut [T], maximum: MaximumFn)->T {
+pub fn conservative_safe_polynomial_translation_range <T: PrimInt + Signed + CheckedShr, MaximumFn: Fn (usize)->T> (coefficients: &[T], maximum: MaximumFn)->T {
   if coefficients.len() <= 1 {return T::max_value()}
   let sum_safety_shift = coefficients.len() as u32 - 1;
   let mut running_maximum = T::max_value();
@@ -213,6 +213,24 @@ mod tests {
       let range = exact_safe_polynomial_translation_range (& coefficients, maxima);
       println!( "{:?}", range);
       range == i64::max_value() || !safe_to_translate_polynomial_to (& coefficients, range + 1, maxima)
+    }
+    
+    fn conservative_safe_translation_range_is_safe (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
+      let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
+      let maxima = | index: usize | coefficients_and_maxima [index].1;
+      let exact_range = exact_safe_polynomial_translation_range (& coefficients, maxima);
+      let conservative_range = conservative_safe_polynomial_translation_range (& coefficients, maxima);
+      println!( "{:?}", (exact_range, conservative_range));
+      conservative_range <= exact_range
+    }
+    
+    fn conservative_safe_translation_range_is_within_half_maximal (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
+      let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
+      let maxima = | index: usize | coefficients_and_maxima [index].1;
+      let exact_range = exact_safe_polynomial_translation_range (& coefficients, maxima);
+      let conservative_range = conservative_safe_polynomial_translation_range (& coefficients, maxima);
+      println!( "{:?}", (exact_range, conservative_range));
+      conservative_range == exact_range || conservative_range > exact_range >> 1
     }
   }
 }
