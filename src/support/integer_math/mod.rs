@@ -23,6 +23,29 @@ pub fn shr_nicely_rounded <T: Integer> (input: T, shift: u32)->T {
   }
 }
 
+/// Left-shift an integer, returning Some(input*(2^shift)) if it fits within the type, None otherwise.
+pub fn overflow_checked_shl <T: Integer> (input: T, shift: u32)->Option <T> {
+  let maximum = match T::max_value().checked_shr (shift) {
+    None => return None,
+    Some (value) => value,
+  };
+  if input > maximum {return None}
+  let minimum = T::min_value() >> shift;
+  if input < minimum {return None}
+  input << shift
+}
+
+/// Compute the arithmetic mean of two integers, rounded towards negative infinity. Never overflows.
+pub fn mean_floor <T: Integer> (first: T, second: T)->T {
+  (first >> 1u32) + (second >> 1u32) + (first & second & T::one())
+}
+
+/// Compute the arithmetic mean of two integers, rounded towards positive infinity. Never overflows.
+pub fn mean_ceil <T: Integer> (first: T, second: T)->T {
+  (first >> 1u32) + (second >> 1u32) + ((first | second) & T::one())
+}
+
+
 
 /// Approximately evaluate an integer polynomial at an input in the range [-0.5, 0.5].
 ///
@@ -121,7 +144,7 @@ pub fn exact_safe_polynomial_translation_range <T: Integer + Signed, MaximumFn: 
   let mut min = T::zero();
   let mut max = T::max_value();
   while min < max {
-    let mid = (min >> 1u32) + (max >> 1u32) + ((min | max) & T::one());
+    let mid = mean_ceil (min, max);
     if safe_to_translate_polynomial_to (coefficients, mid, & maximum) {
       min = mid;
     } else {
