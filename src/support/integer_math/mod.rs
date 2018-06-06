@@ -25,6 +25,7 @@ pub fn shr_nicely_rounded <T: Integer> (input: T, shift: u32)->T {
 
 /// Left-shift an integer, returning Some(input*(2^shift)) if it fits within the type, None otherwise.
 pub fn overflow_checked_shl <T: Integer> (input: T, shift: u32)->Option <T> {
+  if input == T::zero() {return Some (T::zero())}
   let maximum = match T::max_value().checked_shr (shift) {
     None => return None,
     Some (value) => value,
@@ -32,7 +33,7 @@ pub fn overflow_checked_shl <T: Integer> (input: T, shift: u32)->Option <T> {
   if input > maximum {return None}
   let minimum = T::min_value() >> shift;
   if input < minimum {return None}
-  input << shift
+  Some (input << shift)
 }
 
 /// Compute the arithmetic mean of two integers, rounded towards negative infinity. Never overflows.
