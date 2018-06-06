@@ -1,4 +1,5 @@
 use num::{PrimInt, Signed};
+use num::traits::CheckedShr;
 use std::mem;
 use std::cmp::{min};
 
@@ -49,7 +50,7 @@ pub fn evaluate_polynomial_at_small_input <Coefficient: Copy, T: PrimInt + Signe
 /// Otherwise, to avoid overflow, each term, when evaluating at the given input,
 /// must obey term.abs() <= T::max_value() >> (coefficients.len() - 1).
 /// If this condition is broken, translate_polynomial() returns Err and makes no changes.
-pub fn translate_polynomial <T: PrimInt + Signed> (coefficients: &mut [T], input: T)->Result <(),()> {
+pub fn translate_polynomial <T: PrimInt + Signed + CheckedShr> (coefficients: &mut [T], input: T)->Result <(),()> {
   if coefficients.len() <= 1 {return Ok(());}
   if !safe_to_translate_polynomial_to (coefficients, input, |_| T::max_value()) {return Err (())}
   translate_polynomial_unchecked (coefficients, input) ;
@@ -71,14 +72,14 @@ pub fn translate_polynomial_unchecked <T: PrimInt + Signed> (coefficients: &mut 
   }
 }
 
-pub fn safe_to_translate_polynomial_to <T: PrimInt + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], input: T, maximum: MaximumFn)->bool {
+pub fn safe_to_translate_polynomial_to <T: PrimInt + Signed + CheckedShr, MaximumFn: Fn (usize)->T> (coefficients: & [T], input: T, maximum: MaximumFn)->bool {
   if coefficients.len() <= 1 {return true;}
   let mut factor = T::one();
   let input = input.abs();
-  let sum_safety_shift = coefficients.len() - 1;
+  let sum_safety_shift = coefficients.len() as u32 - 1;
   let mut running_maximum = T::max_value();
   for (power, coefficient) in coefficients.iter().enumerate() {
-    running_maximum = min (running_maximum, maximum (power) >> sum_safety_shift);
+    running_maximum = min (running_maximum, maximum (power).checked_shr (sum_safety_shift).unwrap_or (T::zero()));
     if coefficient == &T::min_value() {return false;}
     match coefficient.abs().checked_mul (&factor) {
       None => return false,
@@ -94,48 +95,49 @@ pub fn safe_to_translate_polynomial_to <T: PrimInt + Signed, MaximumFn: Fn (usiz
 
 /// Find the range of inputs to which the polynomial can safely be translated.
 ///
-/// Anything in the range [-result, result] is safe to translate to; anything outside isn't.
+/// Magnitudes <= result are safe to translate to; magnitudes > result aren't.
+/// If even the initial value is out of bounds, this function returns -1.
 ///
 /// The third argument can impose a stricter maximum on the resulting coefficients.
-pub fn exact_safe_polynomial_translation_range <T: PrimInt + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], maximum: MaximumFn)->Option <T> {
-  if coefficients.len() <= 1 || coefficients [1..].iter().all (| coefficient | coefficient == &T::zero()) {return Some (T::max_value())}
+pub fn exact_safe_polynomial_translation_range <T: PrimInt + Signed + CheckedShr, MaximumFn: Fn (usize)->T> (coefficients: & [T], maximum: MaximumFn)->T {
+  if coefficients.len() <= 1 || coefficients [1..].iter().all (| coefficient | coefficient == &T::zero()) {return T::max_value()}
   // if we know that there's at least one nonzero non-constant coefficient, T::max_value is never legal, so we can pick a min that definitely legal and a max that's definitely not
   let mut min = -T::one();
   let mut max = T::max_value();
   while min + T::one() < max {
-    let mid = (min >> 1) + (max >> 1) + (min & max & T::one());
+    let mid = (min >> 1u32) + (max >> 1u32) + (min & max & T::one());
     if safe_to_translate_polynomial_to (coefficients, mid, & maximum) {
       min = mid;
     } else {
       max = mid;
     }
   }
-  if min < T::zero() {None}
-  else {Some (min)}
+  min
 }
 
 /// Find a range of inputs to which the polynomial can safely be translated.
 ///
-/// Anything in the range [-result, result] is safe to translate to.
-/// Anything outside the range (-result*2, result*2) isn't.
+/// Magnitudes <= result are safe to translate to.
+/// Magnitudes >= result*2 aren't.
+/// If even the initial value is out of bounds, this function returns -1.
 ///
 /// The third argument can impose a stricter maximum on the resulting coefficients.
 ///
 /// This function is much faster than exact_safe_polynomial_translation_range, at the cost of being less precise.
-pub fn conservative_safe_polynomial_translation_range <T: PrimInt + Signed, MaximumFn: Fn (usize)->T> (coefficients: &mut [T], maximum: MaximumFn)->Option <T> {
-  if coefficients.len() <= 1 {return Some (T::max_value())}
-  let sum_safety_shift = coefficients.len() - 1;
+pub fn conservative_safe_polynomial_translation_range <T: PrimInt + Signed + CheckedShr, MaximumFn: Fn (usize)->T> (coefficients: &mut [T], maximum: MaximumFn)->T {
+  if coefficients.len() <= 1 {return T::max_value()}
+  let sum_safety_shift = coefficients.len() as u32 - 1;
   let mut running_maximum = T::max_value();
   let mut result_shift = mem::size_of::<T>()*8 - 2;
   for (power, coefficient) in coefficients.iter().enumerate() {
     let magnitude = coefficient.abs();
-    running_maximum = min (running_maximum, maximum (power) >> sum_safety_shift);
+    running_maximum = min (running_maximum, maximum (power).checked_shr (sum_safety_shift).unwrap_or (T::zero()));
     while magnitude > (running_maximum >> (result_shift*power)) {
-      if result_shift == 0 {return None;}
+      if result_shift == 0 {return -T::one();}
       result_shift -= 1;
     }
   }
-  Some (T::one() << result_shift)
+  T::one() << result_shift
 }
 
 #[cfg (test)]
@@ -193,6 +195,16 @@ mod tests {
           assert!(difference < Ratio::from_integer (FromPrimitive::from_i64 (1).unwrap()));
         }
       }
+    }
+  }
+  
+  quickcheck! {
+    fn safe_translation_range_is_safe (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
+      let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
+      let maxima = | index: usize | coefficients_and_maxima [index].1;
+      let range = exact_safe_polynomial_translation_range (& coefficients, maxima);
+      println!( "{:?}", range);
+      range < 0 || safe_to_translate_polynomial_to (& coefficients, range, maxima)
     }
   }
 }
