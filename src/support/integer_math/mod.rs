@@ -5,14 +5,13 @@ use num::{PrimInt, Signed};
 ///
 /// This minimizes error, and avoids a directional bias.
 pub fn right_shift_nicely_rounded <T: PrimInt> (input: T, shift: usize)->T {
-  if shift == 0 {return input}
-  let half = T::one() << (shift - 1);
-  let mask = (T::one() << shift) - T::one();
-  if input & mask == half {
+  let divisor = T::one() << shift;
+  let mask = divisor - T::one();
+  if (input & mask) << 1 == divisor {
     let shifted = input >> shift;
     shifted + (shifted & T::one())
   } else {
-    (input + half) >> shift
+    (input + (divisor >> 1)) >> shift
   }
 }
 
