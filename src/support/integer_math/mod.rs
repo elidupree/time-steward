@@ -1,19 +1,21 @@
 use num::{PrimInt, Signed};
-use num::traits::CheckedShr;
+use num::traits::{WrappingSub, CheckedShl, CheckedShr};
 use std::mem;
 use std::cmp::{min};
 
 /// Right-shift an integer, but round to nearest, with ties rounding to even.
 ///
 /// This minimizes error, and avoids a directional bias.
-pub fn right_shift_nicely_rounded <T: PrimInt> (input: T, shift: usize)->T {
-  let divisor = T::one() << shift;
-  let mask = divisor - T::one();
-  if (input & mask) << 1 == divisor {
-    let shifted = input >> shift;
+pub fn shr_nicely_rounded <T: PrimInt + CheckedShl + WrappingSub> (input: T, shift: u32)->T {
+  if shift == 0 {return input}
+  let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
+  let half = T::one() << (shift as usize - 1);
+  let mask = divisor.wrapping_sub (&T::one());
+  if (input & mask) == half {
+    let shifted = input >> shift as usize;
     shifted + (shifted & T::one())
   } else {
-    (input + (divisor >> 1)) >> shift
+    (input + half) >> shift as usize
   }
 }
 
@@ -27,7 +29,7 @@ pub fn right_shift_nicely_rounded <T: PrimInt> (input: T, shift: usize)->T {
 /// Given these conditions, the result is guaranteed to be strictly within 1 of the ideal result.
 /// For instance, if the ideal result was 2.125, this function could return 2 or 3,
 /// but if it was 2, this function can only return exactly 2.
-pub fn evaluate_polynomial_at_small_input <Coefficient: Copy, T: PrimInt + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: usize)->T {
+pub fn evaluate_polynomial_at_small_input <Coefficient: Copy, T: PrimInt + Signed + CheckedShl + WrappingSub + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->T {
   let half = (T::one() << shift) >> 1;
   assert!(-half <= input && input <= half, "inputs to evaluate_polynomial_at_small_input must be in the range [-0.5, 0.5]");
   
@@ -35,7 +37,7 @@ pub fn evaluate_polynomial_at_small_input <Coefficient: Copy, T: PrimInt + Signe
     
   let mut result = T::zero();
   for coefficient in coefficients.iter().skip(1).rev() {
-    result = right_shift_nicely_rounded ((result + (*coefficient).into())*input, shift);
+    result = shr_nicely_rounded ((result + (*coefficient).into())*input, shift);
   }
   result + coefficients [0].into()
 }
@@ -154,17 +156,18 @@ pub fn conservative_safe_polynomial_translation_range <T: PrimInt + Signed + Che
 #[cfg (test)]
 mod tests {
   use super::*;
-  use num::{Zero, One, FromPrimitive};
+  use num::{Zero, One, FromPrimitive, Integer};
   use num::bigint::BigInt;
   use num::rational::{Ratio, BigRational};
   use rand::distributions::Distribution;  
   use rand::distributions::range::{Range};
   use rand::{Rng, SeedableRng};
+  use std::cmp::Ordering;
   
-  fn evaluate_polynomial_exactly <Coefficient: Copy, T: PrimInt + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: usize)->BigRational
+  fn evaluate_polynomial_exactly <Coefficient: Copy, T: PrimInt + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->BigRational
     where BigInt: From <Coefficient> + From <T> {
     let mut result: BigRational = Ratio::zero();
-    let input = Ratio::new(BigInt::from (input), BigInt::one() << shift);
+    let input = Ratio::new(BigInt::from (input), BigInt::one() << shift as usize);
     for coefficient in coefficients.iter().rev() {
       result = result*&input + BigInt::from(*coefficient);
     }
@@ -172,14 +175,14 @@ mod tests {
   }
   
   #[test]
-  fn test_right_shift_nicely_rounded() {
-    let inputs: Vec<(i64, usize, i64)> = vec![
+  fn test_shr_nicely_rounded() {
+    let inputs: Vec<(i64, u32, i64)> = vec![
       (0, 0, 0), (0, 5, 0), (1, 3, 0), (4, 3, 0), (5, 3, 1),
       (999, 1, 500), (998, 1, 499), (997, 1, 498)
     ];
     for (input, shift, result) in inputs {
-      assert_eq!(right_shift_nicely_rounded (input, shift), result);
-      assert_eq!(right_shift_nicely_rounded (-input, shift), -result);
+      assert_eq!(shr_nicely_rounded (input, shift), result);
+      assert_eq!(shr_nicely_rounded (-input, shift), -result);
     }
   }
   
@@ -210,6 +213,20 @@ mod tests {
   }
   
   quickcheck! {
+    fn quickcheck_shr_nicely_rounded (input: i64, shift: u8)->bool {
+      let result = shr_nicely_rounded (input, shift as u32);
+      let perfect_result = Ratio::new (BigInt::from (input), BigInt::one() << shift as usize);
+      let rounded_down = perfect_result.floor();
+      let fraction = & perfect_result - & rounded_down;
+      let rounded_down = rounded_down.to_integer();
+      let perfect_result = match fraction.cmp (& Ratio::new (BigInt::one(), BigInt::one() << 1)) {
+        Ordering::Less => rounded_down, Ordering::Greater => rounded_down + BigInt::one() ,
+        Ordering::Equal => & rounded_down + rounded_down.mod_floor (& (BigInt::one() << 1)),
+      };
+      println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
+      perfect_result == BigInt::from (result)
+    }
+    
     fn quickcheck_safe_translation_is_safe (coefficients_and_maxima: Vec<(i64, i64)>, input: i64)->bool {
       let mut coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
       let maxima = | index: usize | coefficients_and_maxima [index].1.checked_abs().unwrap_or (0);
