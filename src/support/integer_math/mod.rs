@@ -184,7 +184,7 @@ pub fn conservative_safe_polynomial_translation_range <T: Integer + Signed, Maxi
 #[cfg (test)]
 mod tests {
   use super::*;
-  use num::{Zero, One, FromPrimitive, Integer};
+  use num::{Zero, One, FromPrimitive, ToPrimitive, Integer};
   use num::bigint::BigInt;
   use num::rational::{Ratio, BigRational};
   use rand::distributions::Distribution;  
@@ -264,6 +264,12 @@ mod tests {
       let perfect_result = perfect_shr_nicely_rounded (input, shift as u32);
       println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
       perfect_result == BigInt::from (result)
+    }
+    
+    fn quickcheck_overflow_checked_shl (input: i32, shift: u8)->bool {
+      let result = overflow_checked_shl (input, shift as u32);
+      let perfect_result = BigInt::from (input) << shift as usize;
+      result == perfect_result.to_i32()
     }
     
     fn quickcheck_safe_translation_is_safe (coefficients_and_maxima: Vec<(i64, i64)>, input: i64)->bool {
