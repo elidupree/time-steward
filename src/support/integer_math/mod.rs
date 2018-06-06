@@ -132,7 +132,7 @@ pub fn conservative_safe_polynomial_translation_range <T: PrimInt + Signed + Che
   for (power, coefficient) in coefficients.iter().enumerate() {
     let magnitude = coefficient.abs();
     running_maximum = min (running_maximum, maximum (power).checked_shr (sum_safety_shift).unwrap_or (T::zero()));
-    while magnitude > (running_maximum >> (result_shift*power)) {
+    while magnitude > running_maximum.checked_shr((result_shift*power) as u32).unwrap_or (T::zero()) {
       if result_shift == 0 {return -T::one();}
       result_shift -= 1;
     }
