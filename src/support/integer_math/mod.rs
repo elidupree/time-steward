@@ -1,21 +1,25 @@
-use num::{PrimInt, Signed};
-use num::traits::{WrappingSub, CheckedShl, CheckedShr};
+use num::{self, Signed};
+use num::traits::{WrappingAdd, WrappingSub, WrappingMul, CheckedShl, CheckedShr};
 use std::mem;
 use std::cmp::{min};
+use std::ops::{Shl, Shr};
+
+pub trait Integer: num::PrimInt + num::Integer + WrappingAdd + WrappingSub + WrappingMul + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> {}
+impl <T: num::PrimInt + num::Integer + WrappingAdd + WrappingSub + WrappingMul + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> > Integer for T {}
 
 /// Right-shift an integer, but round to nearest, with ties rounding to even.
 ///
 /// This minimizes error, and avoids a directional bias.
-pub fn shr_nicely_rounded <T: PrimInt + CheckedShl + WrappingSub> (input: T, shift: u32)->T {
+pub fn shr_nicely_rounded <T: Integer> (input: T, shift: u32)->T {
   if shift == 0 {return input}
   let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
-  let half = T::one() << (shift as usize - 1);
+  let half = T::one() << (shift - 1);
   let mask = divisor.wrapping_sub (&T::one());
   if (input & mask) == half {
-    let shifted = input >> shift as usize;
+    let shifted = input >> shift;
     shifted + (shifted & T::one())
   } else {
-    (input + half) >> shift as usize
+    (input + half) >> shift
   }
 }
 
@@ -29,8 +33,8 @@ pub fn shr_nicely_rounded <T: PrimInt + CheckedShl + WrappingSub> (input: T, shi
 /// Given these conditions, the result is guaranteed to be strictly within 1 of the ideal result.
 /// For instance, if the ideal result was 2.125, this function could return 2 or 3,
 /// but if it was 2, this function can only return exactly 2.
-pub fn evaluate_polynomial_at_small_input <Coefficient: Copy, T: PrimInt + Signed + CheckedShl + WrappingSub + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->T {
-  let half = (T::one() << shift) >> 1;
+pub fn evaluate_polynomial_at_small_input <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->T {
+  let half = (T::one() << shift) >> 1u32;
   assert!(-half <= input && input <= half, "inputs to evaluate_polynomial_at_small_input must be in the range [-0.5, 0.5]");
   
   if coefficients.len () == 0 {return T::zero()}
@@ -52,7 +56,7 @@ pub fn evaluate_polynomial_at_small_input <Coefficient: Copy, T: PrimInt + Signe
 /// To avoid overflow, each term, when evaluating at the given input,
 /// must obey term.abs() <= T::max_value() >> (coefficients.len() - 1).
 /// If this condition is broken, translate_polynomial() returns Err and makes no changes.
-pub fn translate_polynomial <T: PrimInt + Signed + CheckedShr> (coefficients: &mut [T], input: T)->Result <(),()> {
+pub fn translate_polynomial <T: Integer + Signed> (coefficients: &mut [T], input: T)->Result <(),()> {
   if !safe_to_translate_polynomial_to (coefficients, input, |_| T::max_value()) {return Err (())}
   translate_polynomial_unchecked (coefficients, input) ;
   Ok (())
@@ -62,7 +66,7 @@ pub fn translate_polynomial <T: PrimInt + Signed + CheckedShr> (coefficients: &m
 ///
 /// Useful in performance-critical code when you already know there won't be overflow,
 /// such as in the range returned by conservative_safe_polynomial_translation_range.
-pub fn translate_polynomial_unchecked <T: PrimInt + Signed> (coefficients: &mut [T], input: T) {
+pub fn translate_polynomial_unchecked <T: Integer + Signed> (coefficients: &mut [T], input: T) {
   coefficients.reverse();
   for index in 0..coefficients.len() {
     let coefficient = mem::replace (&mut coefficients [index], T::zero());
@@ -73,7 +77,7 @@ pub fn translate_polynomial_unchecked <T: PrimInt + Signed> (coefficients: &mut 
   }
 }
 
-pub fn polynomial_is_within_bounds <T: PrimInt + Signed + CheckedShr, MaximumFn: Fn (usize)->T> (coefficients: & [T], maximum: MaximumFn)->bool {
+pub fn polynomial_is_within_bounds <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], maximum: MaximumFn)->bool {
   for (power, coefficient) in coefficients.iter().enumerate() {
     if coefficient == &T::min_value() {return false;}
     let magnitude = coefficient.abs();
@@ -82,7 +86,7 @@ pub fn polynomial_is_within_bounds <T: PrimInt + Signed + CheckedShr, MaximumFn:
   true
 }
 
-pub fn safe_to_translate_polynomial_to <T: PrimInt + Signed + CheckedShr, MaximumFn: Fn (usize)->T> (coefficients: & [T], input: T, maximum: MaximumFn)->bool {
+pub fn safe_to_translate_polynomial_to <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], input: T, maximum: MaximumFn)->bool {
   if coefficients.len() == 0 {return true;}
   if input == T::zero() {return polynomial_is_within_bounds (coefficients, maximum);}
   let mut factor = T::one();
@@ -111,7 +115,7 @@ pub fn safe_to_translate_polynomial_to <T: PrimInt + Signed + CheckedShr, Maximu
 /// If even the initial value is out of bounds, this function returns -1.
 ///
 /// The third argument can impose a stricter maximum on the resulting coefficients.
-pub fn exact_safe_polynomial_translation_range <T: PrimInt + Signed + CheckedShr, MaximumFn: Fn (usize)->T> (coefficients: & [T], maximum: MaximumFn)->T {
+pub fn exact_safe_polynomial_translation_range <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], maximum: MaximumFn)->T {
   if !polynomial_is_within_bounds (coefficients, & maximum) {return -T::one();}
   // pick a min that's definitely legal and a max where max + 1 is definitely illegal
   let mut min = T::zero();
@@ -136,7 +140,7 @@ pub fn exact_safe_polynomial_translation_range <T: PrimInt + Signed + CheckedShr
 /// The third argument can impose a stricter maximum on the resulting coefficients.
 ///
 /// This function is much faster than exact_safe_polynomial_translation_range, at the cost of being less precise.
-pub fn conservative_safe_polynomial_translation_range <T: PrimInt + Signed + CheckedShr, MaximumFn: Fn (usize)->T> (coefficients: &[T], maximum: MaximumFn)->T {
+pub fn conservative_safe_polynomial_translation_range <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: &[T], maximum: MaximumFn)->T {
   if coefficients.len() == 0 {return T::max_value()}
   if !polynomial_is_within_bounds (coefficients, & maximum) {return -T::one();}
   let sum_safety_shift = coefficients.len() as u32 - 1;
@@ -164,7 +168,7 @@ mod tests {
   use rand::{Rng, SeedableRng};
   use std::cmp::Ordering;
   
-  fn evaluate_polynomial_exactly <Coefficient: Copy, T: PrimInt + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->BigRational
+  fn evaluate_polynomial_exactly <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->BigRational
     where BigInt: From <Coefficient> + From <T> {
     let mut result: BigRational = Ratio::zero();
     let input = Ratio::new(BigInt::from (input), BigInt::one() << shift as usize);
