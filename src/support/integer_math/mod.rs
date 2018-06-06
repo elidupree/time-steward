@@ -200,6 +200,16 @@ mod tests {
   }
   
   quickcheck! {
+    fn quickcheck_safe_translation_is_safe (coefficients_and_maxima: Vec<(i64, i64)>, input: i64)->bool {
+      let mut coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
+      let maxima = | index: usize | coefficients_and_maxima [index].1;
+      let safe = safe_to_translate_polynomial_to(& coefficients, input, maxima);
+      if !safe {return true}
+      translate_polynomial_unchecked (&mut coefficients, input);
+      println!( "{:?}", coefficients);
+      safe_to_translate_polynomial_to(& coefficients, 0, maxima)
+    }
+    
     fn quickcheck_exact_safe_translation_range_is_safe (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
       let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
       let maxima = | index: usize | coefficients_and_maxima [index].1;
