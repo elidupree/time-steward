@@ -202,7 +202,7 @@ mod tests {
   quickcheck! {
     fn quickcheck_safe_translation_is_safe (coefficients_and_maxima: Vec<(i64, i64)>, input: i64)->bool {
       let mut coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
-      let maxima = | index: usize | coefficients_and_maxima [index].1;
+      let maxima = | index: usize | coefficients_and_maxima [index].1.checked_abs().unwrap_or (0);
       let safe = safe_to_translate_polynomial_to(& coefficients, input, maxima);
       if !safe {return true}
       translate_polynomial_unchecked (&mut coefficients, input);
@@ -225,7 +225,7 @@ mod tests {
     
     fn quickcheck_exact_safe_translation_range_is_safe (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
       let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
-      let maxima = | index: usize | coefficients_and_maxima [index].1;
+      let maxima = | index: usize | coefficients_and_maxima [index].1.checked_abs().unwrap_or (0);
       let range = exact_safe_polynomial_translation_range (& coefficients, maxima);
       println!( "{:?}", range);
       range < 0 || safe_to_translate_polynomial_to (& coefficients, range, maxima)
@@ -233,7 +233,7 @@ mod tests {
     
     fn quickcheck_exact_safe_translation_range_is_maximal (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
       let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
-      let maxima = | index: usize | coefficients_and_maxima [index].1;
+      let maxima = | index: usize | coefficients_and_maxima [index].1.checked_abs().unwrap_or (0);
       let range = exact_safe_polynomial_translation_range (& coefficients, maxima);
       println!( "{:?}", range);
       range == i64::max_value() || !safe_to_translate_polynomial_to (& coefficients, range + 1, maxima)
@@ -241,7 +241,7 @@ mod tests {
     
     fn quickcheck_conservative_safe_translation_range_is_safe (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
       let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
-      let maxima = | index: usize | coefficients_and_maxima [index].1;
+      let maxima = | index: usize | coefficients_and_maxima [index].1.checked_abs().unwrap_or (0);
       let exact_range = exact_safe_polynomial_translation_range (& coefficients, maxima);
       let conservative_range = conservative_safe_polynomial_translation_range (& coefficients, maxima);
       println!( "{:?}", (exact_range, conservative_range));
@@ -250,7 +250,7 @@ mod tests {
     
     fn quickcheck_conservative_safe_translation_range_is_within_half_maximal (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
       let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
-      let maxima = | index: usize | coefficients_and_maxima [index].1;
+      let maxima = | index: usize | coefficients_and_maxima [index].1.checked_abs().unwrap_or (0);
       let exact_range = exact_safe_polynomial_translation_range (& coefficients, maxima);
       let conservative_range = conservative_safe_polynomial_translation_range (& coefficients, maxima);
       println!( "{:?}", (exact_range, conservative_range));
