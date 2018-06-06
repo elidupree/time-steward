@@ -20,7 +20,6 @@ pub fn right_shift_nicely_rounded <T: PrimInt> (input: T, shift: usize)->T {
 /// Approximately evaluate an integer polynomial at an input in the range [-0.5, 0.5].
 ///
 /// The input is represented as an integer combined with a right-shift size.
-/// For a signed integer type with B bits:
 /// Each coefficient, except the constant one, must obey coefficient.abs() <= T::max_value() >> shift.
 /// The constant coefficient must obey coefficient.abs() <= T::max_value() - (T::max_value() >> shift),
 /// i.e. be small enough that you can add one of the other coefficients to it without overflowing.
