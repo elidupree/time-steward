@@ -1,4 +1,4 @@
-#![feature (i128_type, custom_attribute)]
+#![feature (custom_attribute)]
 
 extern crate serde;
 #[macro_use]

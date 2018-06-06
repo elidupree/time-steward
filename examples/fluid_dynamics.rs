@@ -20,6 +20,7 @@ extern crate glium;
 #[path = "../dev-shared/emscripten_compatibility.rs"] mod emscripten_compatibility;
 pub use emscripten_compatibility::canvas_click;
 
+#[allow (unused_macros)]
 macro_rules! printlnerr(
     ($($arg:tt)*) => { {use std::io::Write;
         let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
