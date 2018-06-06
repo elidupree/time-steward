@@ -28,7 +28,7 @@ pub fn right_shift_nicely_rounded <T: PrimInt> (input: T, shift: usize)->T {
 /// but if it was 2, this function can only return exactly 2.
 pub fn evaluate_polynomial_at_small_input <Coefficient: Copy, T: PrimInt + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: usize)->T {
   if coefficients.len () == 0 {return T::zero()}
-  let half = T::one() << (shift - 1);
+  let half = (T::one() << shift) >> 1;
   assert!(-half <= input && input <= half, "inputs to evaluate_polynomial_at_small_input must be in the range [-0.5, 0.5]");
   let mut result = T::zero();
   for coefficient in coefficients.iter().skip(1).rev() {
