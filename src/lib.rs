@@ -43,6 +43,8 @@ extern crate bincode;
 extern crate quickcheck;
 #[macro_use]
 extern crate derivative;
+#[macro_use]
+extern crate failure;
 
 macro_rules! printlnerr(
     ($($arg:tt)*) => { {use std::io::Write;
