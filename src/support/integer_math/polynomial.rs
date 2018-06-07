@@ -12,9 +12,9 @@ use super::*;
 /// Given these conditions, the result is guaranteed to be strictly within 1 of the ideal result.
 /// For instance, if the ideal result was 2.125, this function could return 2 or 3,
 /// but if it was 2, this function can only return exactly 2.
-pub fn evaluate_polynomial_at_small_input <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->T {
+pub fn evaluate_at_small_input <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->T {
   let half = (T::one() << shift) >> 1u32;
-  assert!(-half <= input && input <= half, "inputs to evaluate_polynomial_at_small_input must be in the range [-0.5, 0.5]");
+  assert!(-half <= input && input <= half, "inputs to evaluate_at_small_input must be in the range [-0.5, 0.5]");
   
   if coefficients.len () == 0 {return T::zero()}
     
@@ -34,18 +34,18 @@ pub fn evaluate_polynomial_at_small_input <Coefficient: Copy, T: Integer + Signe
 ///
 /// To avoid overflow, each term, when evaluating at the given input,
 /// must obey term.abs() <= T::max_value() >> (coefficients.len() - 1).
-/// If this condition is broken, translate_polynomial() returns Err and makes no changes.
-pub fn translate_polynomial <T: Integer + Signed> (coefficients: &mut [T], input: T)->Result <(),()> {
-  if !safe_to_translate_polynomial_to (coefficients, input, |_| T::max_value()) {return Err (())}
-  translate_polynomial_unchecked (coefficients, input) ;
+/// If this condition is broken, translate() returns Err and makes no changes.
+pub fn translate <T: Integer + Signed> (coefficients: &mut [T], input: T)->Result <(),()> {
+  if !safe_to_translate_to (coefficients, input, |_| T::max_value()) {return Err (())}
+  translate_unchecked (coefficients, input) ;
   Ok (())
 }
 
-/// Same as translate_polynomial(), but assume no overflow will occur.
+/// Same as translate(), but assume no overflow will occur.
 ///
 /// Useful in performance-critical code when you already know there won't be overflow,
-/// such as in the range returned by conservative_safe_polynomial_translation_range.
-pub fn translate_polynomial_unchecked <T: Integer + Signed> (coefficients: &mut [T], input: T) {
+/// such as in the range returned by conservative_safe_translation_range.
+pub fn translate_unchecked <T: Integer + Signed> (coefficients: &mut [T], input: T) {
   coefficients.reverse();
   for index in 0..coefficients.len() {
     let coefficient = mem::replace (&mut coefficients [index], T::zero());
@@ -56,7 +56,7 @@ pub fn translate_polynomial_unchecked <T: Integer + Signed> (coefficients: &mut 
   }
 }
 
-pub fn polynomial_is_within_bounds <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], maximum: MaximumFn)->bool {
+pub fn is_within_bounds <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], maximum: MaximumFn)->bool {
   for (power, coefficient) in coefficients.iter().enumerate() {
     if coefficient == &T::min_value() {return false;}
     let magnitude = coefficient.abs();
@@ -65,9 +65,9 @@ pub fn polynomial_is_within_bounds <T: Integer + Signed, MaximumFn: Fn (usize)->
   true
 }
 
-pub fn safe_to_translate_polynomial_to <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], input: T, maximum: MaximumFn)->bool {
+pub fn safe_to_translate_to <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], input: T, maximum: MaximumFn)->bool {
   if coefficients.len() == 0 {return true;}
-  if input == T::zero() {return polynomial_is_within_bounds (coefficients, maximum);}
+  if input == T::zero() {return is_within_bounds (coefficients, maximum);}
   let mut factor = T::one();
   let input = input.abs();
   let sum_safety_shift = coefficients.len() as u32 - 1;
@@ -94,14 +94,14 @@ pub fn safe_to_translate_polynomial_to <T: Integer + Signed, MaximumFn: Fn (usiz
 /// If even the initial value is out of bounds, this function returns -1.
 ///
 /// The third argument can impose a stricter maximum on the resulting coefficients.
-pub fn exact_safe_polynomial_translation_range <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], maximum: MaximumFn)->T {
-  if !polynomial_is_within_bounds (coefficients, & maximum) {return -T::one();}
+pub fn exact_safe_translation_range <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], maximum: MaximumFn)->T {
+  if !is_within_bounds (coefficients, & maximum) {return -T::one();}
   // pick a min that's definitely legal and a max where max + 1 is definitely illegal
   let mut min = T::zero();
   let mut max = T::max_value();
   while min < max {
     let mid = mean_ceil (min, max);
-    if safe_to_translate_polynomial_to (coefficients, mid, & maximum) {
+    if safe_to_translate_to (coefficients, mid, & maximum) {
       min = mid;
     } else {
       max = mid - T::one();
@@ -118,10 +118,10 @@ pub fn exact_safe_polynomial_translation_range <T: Integer + Signed, MaximumFn: 
 ///
 /// The third argument can impose a stricter maximum on the resulting coefficients.
 ///
-/// This function is much faster than exact_safe_polynomial_translation_range, at the cost of being less precise.
-pub fn conservative_safe_polynomial_translation_range <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: &[T], maximum: MaximumFn)->T {
+/// This function is much faster than exact_safe_translation_range, at the cost of being less precise.
+pub fn conservative_safe_translation_range <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: &[T], maximum: MaximumFn)->T {
   if coefficients.len() == 0 {return T::max_value()}
-  if !polynomial_is_within_bounds (coefficients, & maximum) {return -T::one();}
+  if !is_within_bounds (coefficients, & maximum) {return -T::one();}
   let sum_safety_shift = coefficients.len() as u32 - 1;
   let mut running_maximum = T::max_value();
   let mut result_shift = mem::size_of::<T>()*8 - 2;
@@ -146,7 +146,7 @@ mod tests {
   use rand::distributions::range::{Range};
   use rand::{Rng, SeedableRng};
   
-  fn evaluate_polynomial_exactly <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->BigRational
+  fn evaluate_exactly <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->BigRational
     where BigInt: From <Coefficient> + From <T> {
     let mut result: BigRational = Ratio::zero();
     let input = Ratio::new(BigInt::from (input), BigInt::one() << shift as usize);
@@ -157,7 +157,7 @@ mod tests {
   }
   
   #[test]
-  fn test_evaluate_polynomial_at_small_input() {
+  fn test_evaluate_at_small_input() {
     let mut generator =::rand::chacha::ChaChaRng::from_seed ([33; 32]) ;
     for shift in 0..5 {
       let shift = 1 << shift;
@@ -172,9 +172,9 @@ mod tests {
         let mut coefficients = vec![constant_range.sample (&mut generator)];
         while generator.gen() {coefficients.push (range.sample (&mut generator));}
         for input in test_inputs.iter() {
-          let result = evaluate_polynomial_at_small_input (& coefficients,*input, shift);
+          let result = evaluate_at_small_input (& coefficients,*input, shift);
           
-          let perfect_result = evaluate_polynomial_exactly (& coefficients,*input, shift);
+          let perfect_result = evaluate_exactly (& coefficients,*input, shift);
           let difference = Ratio::from_integer (FromPrimitive::from_i64 (result).unwrap()) - perfect_result;
           assert!(difference < Ratio::from_integer (FromPrimitive::from_i64 (1).unwrap()));
         }
@@ -186,11 +186,11 @@ mod tests {
     fn quickcheck_safe_translation_is_safe (coefficients_and_maxima: Vec<(i64, i64)>, input: i64)->bool {
       let mut coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
       let maxima = | index: usize | coefficients_and_maxima [index].1.checked_abs().unwrap_or (0);
-      let safe = safe_to_translate_polynomial_to(& coefficients, input, maxima);
+      let safe = safe_to_translate_to(& coefficients, input, maxima);
       if !safe {return true}
-      translate_polynomial_unchecked (&mut coefficients, input);
+      translate_unchecked (&mut coefficients, input);
       println!( "{:?}", coefficients);
-      polynomial_is_within_bounds (& coefficients, maxima)
+      is_within_bounds (& coefficients, maxima)
     }
     
     fn quickcheck_safe_translation_reverses_correctly (coefficients: Vec<i64>, input: i64)->bool {
@@ -198,35 +198,35 @@ mod tests {
       let maxima = |_: usize | i64::max_value();
       if input == i64::min_value () {return true}
       let original_coefficients = coefficients.clone ();
-      if !safe_to_translate_polynomial_to(& coefficients, input, maxima) {return true}
-      translate_polynomial_unchecked (&mut coefficients, input);
-      if !safe_to_translate_polynomial_to(& coefficients, -input, maxima) {return true}
+      if !safe_to_translate_to(& coefficients, input, maxima) {return true}
+      translate_unchecked (&mut coefficients, input);
+      if !safe_to_translate_to(& coefficients, -input, maxima) {return true}
       println!( "{:?}", coefficients);
-      translate_polynomial_unchecked (&mut coefficients, -input);
+      translate_unchecked (&mut coefficients, -input);
       coefficients == original_coefficients
     }
     
     fn quickcheck_exact_safe_translation_range_is_safe (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
       let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
       let maxima = | index: usize | coefficients_and_maxima [index].1.checked_abs().unwrap_or (0);
-      let range = exact_safe_polynomial_translation_range (& coefficients, maxima);
+      let range = exact_safe_translation_range (& coefficients, maxima);
       println!( "{:?}", range);
-      range < 0 || safe_to_translate_polynomial_to (& coefficients, range, maxima)
+      range < 0 || safe_to_translate_to (& coefficients, range, maxima)
     }
     
     fn quickcheck_exact_safe_translation_range_is_maximal (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
       let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
       let maxima = | index: usize | coefficients_and_maxima [index].1.checked_abs().unwrap_or (0);
-      let range = exact_safe_polynomial_translation_range (& coefficients, maxima);
+      let range = exact_safe_translation_range (& coefficients, maxima);
       println!( "{:?}", range);
-      range == i64::max_value() || !safe_to_translate_polynomial_to (& coefficients, range + 1, maxima)
+      range == i64::max_value() || !safe_to_translate_to (& coefficients, range + 1, maxima)
     }
     
     fn quickcheck_conservative_safe_translation_range_is_safe (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
       let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
       let maxima = | index: usize | coefficients_and_maxima [index].1.checked_abs().unwrap_or (0);
-      let exact_range = exact_safe_polynomial_translation_range (& coefficients, maxima);
-      let conservative_range = conservative_safe_polynomial_translation_range (& coefficients, maxima);
+      let exact_range = exact_safe_translation_range (& coefficients, maxima);
+      let conservative_range = conservative_safe_translation_range (& coefficients, maxima);
       println!( "{:?}", (exact_range, conservative_range));
       conservative_range <= exact_range
     }
@@ -234,8 +234,8 @@ mod tests {
     fn quickcheck_conservative_safe_translation_range_is_within_half_maximal (coefficients_and_maxima: Vec<(i64, i64)>)->bool {
       let coefficients: Vec<_> = coefficients_and_maxima.iter().map (| & (coefficient,_) | coefficient).collect();
       let maxima = | index: usize | coefficients_and_maxima [index].1.checked_abs().unwrap_or (0);
-      let exact_range = exact_safe_polynomial_translation_range (& coefficients, maxima);
-      let conservative_range = conservative_safe_polynomial_translation_range (& coefficients, maxima);
+      let exact_range = exact_safe_translation_range (& coefficients, maxima);
+      let conservative_range = conservative_safe_translation_range (& coefficients, maxima);
       println!( "{:?}", (exact_range, conservative_range));
       conservative_range == exact_range || conservative_range > exact_range >> 1
     }
