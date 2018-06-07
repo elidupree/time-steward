@@ -90,24 +90,20 @@ pub fn within_bounds_check <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coef
   Ok (())
 }
 
-pub fn translate_check <T: Integer + Signed, MaximumFn: Fn (usize)->T> (mut coefficients: & [T], input: T, maximum: MaximumFn)->Result <(), Error <T>> {
-  let original_len = coefficients.len();
-  loop {
-    if coefficients.len() == 0 {return Ok (());}
-    if coefficients [coefficients.len() - 1] == T::zero() {coefficients = & coefficients [..(coefficients.len() - 1)];}
-    else {break;}
-  }
-  let coefficients = coefficients;
+pub fn translate_check <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], input: T, maximum: MaximumFn)->Result <(), Error <T>> {
+  if coefficients.len() == 0 {return Ok (());}
   if input == T::zero() {within_bounds_check (coefficients, maximum)?; return Ok (());}
   let mut factor = T::one();
   let input = input.abs();
-  // base the safety check on the original length, so that the bounds are consistent
-  // for all polynomials with a given len(), rather than being dependent on the values in them
-  let sum_safety_shift = original_len as u32 - 1;
+  let sum_safety_shift = coefficients.len() as u32 - 1;
   let mut running_maximum = T::max_value();
   for (power, coefficient) in coefficients.iter().enumerate() {
     if power > 0 { match factor.checked_mul (&input) {
-      None => return Err (Error::TermOverflowed {power, input, coefficient:*coefficient}),
+      // note: there's a slight weirdness here, where if the factor overflows
+      // but the current coefficient is 0, we still advance to the next iteration,
+      // and the factor is the "wrong" value on that iteration.
+      // However, it just overflows again, leading to the correct result.
+      None => if coefficient != &T::zero() {return Err (Error::TermOverflowed {power, input, coefficient:*coefficient})},
       Some (next_factor) => factor = next_factor,
     }}
     running_maximum = min (running_maximum, maximum (power).checked_shr (sum_safety_shift).unwrap_or (T::zero()));
