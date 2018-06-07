@@ -45,6 +45,7 @@ extern crate quickcheck;
 extern crate derivative;
 #[macro_use]
 extern crate failure;
+extern crate smallvec;
 
 macro_rules! printlnerr(
     ($($arg:tt)*) => { {use std::io::Write;

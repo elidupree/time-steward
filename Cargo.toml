@@ -20,6 +20,7 @@ dimensioned = "0.6"
 array_ext = "0.2"
 num = "0.1.42"
 failure = "0.1.1"
+smallvec = "0.6.1"
 
 [dependencies.nalgebra]
 version = "0.12"

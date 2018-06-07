@@ -1,4 +1,5 @@
 use num::{Signed};
+use smallvec::SmallVec;
 
 use super::*;
 
@@ -80,17 +81,37 @@ pub fn translate_unchecked <T: Integer + Signed> (coefficients: &mut [T], input:
   }
 }
 
-pub fn within_bounds_check <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], maximum: MaximumFn)->Result <(), Error <T>> {
+/// Approximately evaluate an integer polynomial at a non-integer input.
+///
+/// The result is guaranteed to be strictly within 1 of the ideal result.
+/// For instance, if the ideal result was 2.125, this function could return 2 or 3,
+/// but if it was 2, this function can only return exactly 2.
+pub fn evaluate_at_fractional_input <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->Result <T, Error <T>>  {
+  let rounded_input = shr_nicely_rounded (input, shift);
+  translate_check (coefficients, rounded_input, coefficient_bounds_for_evaluate_at_small_input::<T> (shift))?;
+  let mut translated: SmallVec <[T; 8]> = coefficients.iter().map (| coefficient | (*coefficient).into()).collect();
+  translate_unchecked (&mut translated, rounded_input);
+  let small_input = input - (rounded_input << shift);
+  Ok(evaluate_at_small_input (& translated, small_input, shift))
+}
+
+pub fn coefficient_bounds_for_evaluate_at_small_input <T: Integer + Signed> (shift: u32)->impl Fn (usize)->T {
+  let non_constant_max = T::max_value() >> shift;
+  move | power | if power == 0 {T::max_value() - non_constant_max} else {non_constant_max}
+}
+
+pub fn within_bounds_check <Coefficient: Copy, T: Integer + Signed + From <Coefficient>, MaximumFn: Fn (usize)->T> (coefficients: & [Coefficient], maximum: MaximumFn)->Result <(), Error <T>> {
   for (power, coefficient) in coefficients.iter().enumerate() {
+    let coefficient: T = (*coefficient).into();
     let max = maximum (power);
-    if coefficient == &T::min_value() {return Err (Error::CoefficientOutOfBounds {power, coefficient: *coefficient, maximum_abs: max})}
+    if coefficient == T::min_value() {return Err (Error::CoefficientOutOfBounds {power, coefficient, maximum_abs: max})}
     let magnitude = coefficient.abs();
-    if magnitude > max {return Err (Error::CoefficientOutOfBounds {power, coefficient: *coefficient, maximum_abs: max})}
+    if magnitude > max {return Err (Error::CoefficientOutOfBounds {power, coefficient, maximum_abs: max})}
   }
   Ok (())
 }
 
-pub fn translate_check <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], input: T, maximum: MaximumFn)->Result <(), Error <T>> {
+pub fn translate_check <Coefficient: Copy, T: Integer + Signed + From <Coefficient>, MaximumFn: Fn (usize)->T> (coefficients: & [Coefficient], input: T, maximum: MaximumFn)->Result <(), Error <T>> {
   if coefficients.len() == 0 {return Ok (());}
   if input == T::zero() {within_bounds_check (coefficients, maximum)?; return Ok (());}
   let mut factor = T::one();
@@ -98,20 +119,21 @@ pub fn translate_check <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coeffici
   let sum_safety_shift = coefficients.len() as u32 - 1;
   let mut running_maximum = T::max_value();
   for (power, coefficient) in coefficients.iter().enumerate() {
+    let coefficient: T = (*coefficient).into();
     if power > 0 { match factor.checked_mul (&input) {
       // note: there's a slight weirdness here, where if the factor overflows
       // but the current coefficient is 0, we still advance to the next iteration,
       // and the factor is the "wrong" value on that iteration.
       // However, it just overflows again, leading to the correct result.
-      None => if coefficient != &T::zero() {return Err (Error::TermOverflowed {power, input, coefficient:*coefficient})},
+      None => if coefficient != T::zero() {return Err (Error::TermOverflowed {power, input, coefficient})},
       Some (next_factor) => factor = next_factor,
     }}
     running_maximum = min (running_maximum, maximum (power).checked_shr (sum_safety_shift).unwrap_or (T::zero()));
-    if coefficient == &T::min_value() {return Err (Error::TermOverflowed {power, input, coefficient:*coefficient});}
+    if coefficient == T::min_value() {return Err (Error::TermOverflowed {power, input, coefficient});}
     let magnitude = coefficient.abs();
     match magnitude.checked_mul (&factor) {
-      None => return Err (Error::TermOverflowed {power, input, coefficient:*coefficient}),
-      Some (term) => if term > running_maximum {return Err (Error::TermOutOfBounds {power, input, coefficient:*coefficient, value: term, maximum_abs: running_maximum})},
+      None => return Err (Error::TermOverflowed {power, input, coefficient}),
+      Some (term) => if term > running_maximum {return Err (Error::TermOutOfBounds {power, input, coefficient, value: term, maximum_abs: running_maximum})},
     }
   }
   Ok (())
@@ -206,6 +228,39 @@ mod tests {
           let perfect_result = evaluate_exactly (& coefficients,*input, shift);
           let difference = Ratio::from_integer (FromPrimitive::from_i64 (result).unwrap()) - perfect_result;
           assert!(difference < Ratio::from_integer (FromPrimitive::from_i64 (1).unwrap()));
+        }
+      }
+    }
+  }
+  
+    
+  #[test]
+  fn test_evaluate_at_fractional_input() {
+    let mut generator =::rand::chacha::ChaChaRng::from_seed ([33; 32]) ;
+    for shift in 0..5 {
+      let shift = 1 << shift;
+      let maximum = i64::max_value() >> shift;
+      let constant_maximum = i64::max_value() - maximum;
+      let range = Range::new_inclusive (- maximum >> 5, maximum >> 5) ;
+      let constant_range = Range::new_inclusive (- constant_maximum, constant_maximum);
+      
+      for _ in 0..160 {
+        let mut coefficients = vec![generator.gen::<i64>() >> shift];
+        while coefficients.len() < 8 && generator.gen::<f64>() < 0.7 {
+          let coefficient_shift = shift + coefficients.len() as u32*4;
+          coefficients.push (generator.gen::<i64>() >> coefficient_shift);
+        }
+        
+        let input_maximum = exact_safe_translation_range (& coefficients, coefficient_bounds_for_evaluate_at_small_input::<i64> (shift));
+        if input_maximum >= 0 {
+          let input_range = Range::new_inclusive (- input_maximum, input_maximum) ;
+          for _ in 0..3 {
+            let input = input_range.sample (&mut generator);
+            let result = evaluate_at_fractional_input (& coefficients, input, shift).unwrap();
+            let perfect_result = evaluate_exactly (& coefficients, input, shift);
+            let difference = Ratio::from_integer (FromPrimitive::from_i64 (result).unwrap()) - perfect_result;
+            assert!(difference < Ratio::from_integer (FromPrimitive::from_i64 (1).unwrap()));
+          }
         }
       }
     }
