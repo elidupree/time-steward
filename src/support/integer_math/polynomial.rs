@@ -1,5 +1,6 @@
 use num::{Signed};
 use smallvec::SmallVec;
+use array_ext::*;
 
 use super::*;
 
@@ -186,6 +187,71 @@ pub fn conservative_safe_translation_range <T: Integer + Signed, MaximumFn: Fn (
   }
   T::one() << result_shift
 }
+
+
+pub enum RootSearchResult <T> {
+  Root (T),
+  Overflow (T),
+  Finished,
+}
+
+mod impls {
+use super::*;
+
+struct RootSearchMetadata <'a, T: 'a> {
+  shift: u32,
+  derivatives: SmallVec<[& 'a [T]; 8]>,
+}
+
+/// Search for root, assuming that which_derivative is almost-monotonic
+fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range: [T; 2], which_derivative: usize)->RootSearchResult <T> {
+  let shift = metadata.shift;
+  let bound_values = range.map (| bound | evaluate_at_fractional_input (metadata.derivatives [which_derivative], bound, shift));
+  
+  if (bound_values[0] >= T::zero() && bound_values[1] >= T::zero()) ||
+     (bound_values[0] <= T::zero() && bound_values[1] <= T::zero()) {
+    // if this is an integer range, then we are exactly monotonic,
+    // so we are exactly not-0-crossing and our anti-derivative is exactly monotonic.
+    // If this is a fractional range, its length is <= half, and "almost monotonic" means that our maximum movement in the "wrong direction" is less than 1. Combined with the error of 1 in evaluating us, this guarantees that our furthest possible value in the "wrong direction" is less than 2, meaning that our anti-derivative has a maximum slope-in-the-wrong-direction less than 2 over a length <= half, so our anti-derivative also "almost monotonic".
+    // Either way, our anti-derivative is "almost monotonic".
+    if which_derivative > 0 {
+      return root_search (metadata, range, which_derivative - 1);
+    } else {
+      if bound_values [0] == T::zero() || bound_values [1] == T::zero() { return RootSearchResult::Root (range [0]); }
+      return RootSearchResult::Finished;
+    }
+  }
+  
+  // we are definitely 0-crossing on this interval, so we can't recurse into a lower derivative yet.
+  // But maybe we are not-0-crossing on one half of this interval?
+  let integer_range = range.map (| bound | bound >> shift);
+  let split_point;
+  // don't use fractional inputs until necessary
+  let distance = range [1].saturating_sub (range [0]);
+  if distance > T::one() << shift {
+    split_point = mean_floor (range [0] >> shift, range [1] >> shift) << shift;
+  } else if distance > T::one() {
+    split_point = mean_floor (range [0], range [1]);
+  } else {
+    if which_derivative > 0 {
+      //although the ideal polynomial isn't necessarily monotonic on this interval,
+      //the "polynomial evaluated only at scaled-integer inputs" is ALWAYS monotonic
+      //on an interval with only 2 points in it.
+      //So we can skip straight down to the original polynomial.
+      return root_search (metadata, range, 0);
+    } else {
+      // the original polynomial is definitely 0-crossing on this interval: success!
+      return RootSearchResult::Root (range [0]);
+    }
+  }
+  
+  let first_half_result = root_search (metadata, [range [0], split_point], which_derivative);
+  match first_half_result { Finished =>(),_=> return first_half_result; }
+  root_search (metadata, [split_point, range [1]], which_derivative)
+}
+
+}
+
 
 #[cfg (test)]
 mod tests {
