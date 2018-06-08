@@ -2,10 +2,11 @@ use num::{self};
 use num::traits::{WrappingAdd, WrappingSub, WrappingMul, CheckedShl, CheckedShr};
 use std::mem;
 use std::cmp::{min};
-use std::ops::{Shl, Shr};
+use std::ops::{AddAssign, SubAssign, Shl, Shr};
+use std::fmt::Debug;
 
-pub trait Integer: num::PrimInt + num::Integer + WrappingAdd + WrappingSub + WrappingMul + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> {}
-impl <T: num::PrimInt + num::Integer + WrappingAdd + WrappingSub + WrappingMul + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> > Integer for T {}
+pub trait Integer: num::PrimInt + num::Integer + AddAssign <Self> + SubAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug {}
+impl <T: num::PrimInt + num::Integer + AddAssign <Self> + SubAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug> Integer for T {}
 
 /// Right-shift an integer, but round to nearest, with ties rounding to even.
 ///
@@ -20,6 +21,17 @@ pub fn shr_nicely_rounded <T: Integer> (input: T, shift: u32)->T {
     shifted + (shifted & T::one())
   } else {
     (input + half) >> shift
+  }
+}
+
+/// Right-shift an integer, but round to even.
+///
+/// This avoids a directional bias.
+pub fn shr_round_to_even <T: Integer> (input: T, shift: u32)->T {
+  if shift == 0 {return input}
+  match input.checked_shr (shift) {
+    Some (value) => value + (value & T::one()),
+    None => return T::zero()
   }
 }
 

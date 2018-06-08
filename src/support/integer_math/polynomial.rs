@@ -1,6 +1,7 @@
 use num::{Signed};
 use smallvec::SmallVec;
 use array_ext::*;
+use std::cmp::max;
 
 use super::*;
 
@@ -87,13 +88,65 @@ pub fn translate_unchecked <T: Integer + Signed> (coefficients: &mut [T], input:
 /// The result is guaranteed to be strictly within 1 of the ideal result.
 /// For instance, if the ideal result was 2.125, this function could return 2 or 3,
 /// but if it was 2, this function can only return exactly 2.
-pub fn evaluate_at_fractional_input <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->Result <T, Error <T>>  {
-  let rounded_input = shr_nicely_rounded (input, shift);
-  translate_check (coefficients, rounded_input, coefficient_bounds_for_evaluate_at_small_input::<T> (shift))?;
-  let mut translated: SmallVec <[T; 8]> = coefficients.iter().map (| coefficient | (*coefficient).into()).collect();
-  translate_unchecked (&mut translated, rounded_input);
-  let small_input = input - (rounded_input << shift);
-  Ok(evaluate_at_small_input (& translated, small_input, shift))
+pub fn evaluate_at_fractional_input <Coefficient: Copy + Debug, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, input_shift: u32)->Result <T, ()>  {
+  evaluate_at_fractional_input_check (coefficients, input, input_shift)?;
+  if coefficients.len () == 0 {return Ok(T::zero())}
+  if coefficients.len () == 1 || input == T::zero() {return Ok(coefficients [0].into())}
+  let integer_input = shr_nicely_rounded (input, input_shift);
+  let small_input = input - (integer_input << input_shift);
+  let bits = mem::size_of::<T>() as u32*8;
+  let min_precision_shift = 2; //at the end, the error can be slightly more than one, and it must be reduced to less than half
+  let precision_shift_increment = (bits + 1).saturating_sub ((input.abs() - T::one()).leading_zeros() + input_shift);
+  debug_assert! (precision_shift_increment < bits, "{:?}", (input, input_shift, precision_shift_increment));
+  debug_assert! ((T::one() << precision_shift_increment) >= (integer_input.abs() << 1u32), "{:?}", (input, input_shift, precision_shift_increment));
+  let mut precision_shift = min_precision_shift + precision_shift_increment*(coefficients.len() as u32 - 1);
+  let mut result = T::zero();
+  for coefficient in coefficients.iter().skip(1).rev() {
+    let coefficient: T = (*coefficient).into();
+    result += coefficient << precision_shift;
+    let integer_part = result*integer_input;
+    let fractional_part = shr_round_to_even (result*small_input, input_shift);
+    result = integer_part + fractional_part;
+    precision_shift -= precision_shift_increment;
+    result = shr_round_to_even (result, precision_shift_increment);
+  }
+  Ok(shr_nicely_rounded (result, precision_shift) + coefficients [0].into())
+}
+
+
+pub fn evaluate_at_fractional_input_check <Coefficient: Copy + Debug, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, input_shift: u32)->Result <(), ()> {
+  if coefficients.len() <= 1 || input == T::zero() {return Ok (());}
+  let bits = mem::size_of::<T>() as u32*8;
+  let min_precision_shift = 2; //at the end, the error can be slightly more than one, and it must be reduced to less than half paste that
+  let precision_shift_increment = (bits + 1).saturating_sub ((input.abs() - T::one()).leading_zeros() + input_shift);
+  let mut precision_shift = min_precision_shift + precision_shift_increment*(coefficients.len() as u32 -1) + max (precision_shift_increment, input_shift);
+  for coefficient in coefficients.iter().skip(1).rev() {
+    let coefficient: T = (*coefficient).into();
+    if overflow_checked_shl (coefficient, precision_shift).is_none() {return Err (()) ;}
+    precision_shift -= precision_shift_increment;
+  }
+
+  Ok (())
+}
+
+pub fn evaluate_at_fractional_input_range <Coefficient: Copy + Debug, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_shift: u32)->T {
+  if coefficients.len() <= 1 {return T::max_value();}
+  let bits = mem::size_of::<T>() as u32*8;
+  let min_precision_shift = 2; //at the end, the error can be slightly more than one, and it must be reduced to less than half paste that
+  let mut precision_shift_increment = bits - 1 - min_precision_shift;
+  for (power, coefficient ) in coefficients.iter().enumerate().skip(1).rev() {
+    let coefficient: T = (*coefficient).into();
+    while overflow_checked_shl (coefficient, precision_shift_increment*(power as u32) + max (precision_shift_increment, input_shift) + min_precision_shift).is_none() {
+      if precision_shift_increment == 1 {return T::zero() ;}
+      precision_shift_increment -= 1;
+    }
+  }
+
+  let input = T::one() << (precision_shift_increment + input_shift - 1);
+  
+  let verified_precision_shift_increment = (bits + 1).saturating_sub ((input.abs() - T::one()).leading_zeros() + input_shift);
+  assert_eq! (precision_shift_increment, verified_precision_shift_increment);
+  input
 }
 
 pub fn coefficient_bounds_for_evaluate_at_small_input <T: Integer + Signed> (shift: u32)->impl Fn (usize)->T {
@@ -317,11 +370,16 @@ mod tests {
           coefficients.push (generator.gen::<i64>() >> coefficient_shift);
         }
         
-        let input_maximum = exact_safe_translation_range (& coefficients, coefficient_bounds_for_evaluate_at_small_input::<i64> (shift));
+  println!("jkh {:?}", (& coefficients, shift));
+        let input_maximum: i64 = evaluate_at_fractional_input_range(& coefficients, shift);
+  println!("jh {:?}", (& coefficients, input_maximum, shift));
+        evaluate_at_fractional_input_check (& coefficients, input_maximum, shift).unwrap();
         if input_maximum >= 0 {
           let input_range = Range::new_inclusive (- input_maximum, input_maximum) ;
           for _ in 0..3 {
             let input = input_range.sample (&mut generator);
+  println!("{:?}", (& coefficients, input_maximum, input, shift));
+            //if evaluate_at_fractional_input_check (& coefficients, input, shift).is_err() {continue;}
             let result = evaluate_at_fractional_input (& coefficients, input, shift).unwrap();
             let perfect_result = evaluate_exactly (& coefficients, input, shift);
             let difference = Ratio::from_integer (FromPrimitive::from_i64 (result).unwrap()) - perfect_result;
