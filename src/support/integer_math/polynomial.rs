@@ -95,11 +95,13 @@ pub fn evaluate_at_fractional_input <Coefficient: Copy + Debug, T: Integer + Sig
   let integer_input = shr_nicely_rounded (input, input_shift);
   let small_input = input - (integer_input << input_shift);
   let bits = mem::size_of::<T>() as u32*8;
-  let min_precision_shift = 2; //at the end, the error can be slightly more than one, and it must be reduced to less than half
-  let precision_shift_increment = (bits + 1).saturating_sub ((input.abs() - T::one()).leading_zeros() + input_shift);
+  let min_precision_shift = 3; //at the end, the error can be as much as 3, and it must be reduced to less than half
+  let precision_shift_increment = max (1, (bits + 1).saturating_sub ((input.abs() - T::one()).leading_zeros() + input_shift));
   debug_assert! (precision_shift_increment < bits, "{:?}", (input, input_shift, precision_shift_increment));
   debug_assert! ((T::one() << precision_shift_increment) >= (integer_input.abs() << 1u32), "{:?}", (input, input_shift, precision_shift_increment));
+  debug_assert! (precision_shift_increment >0);
   let mut precision_shift = min_precision_shift + precision_shift_increment*(coefficients.len() as u32 - 1);
+  println!("ll {:?}", (precision_shift_increment, integer_input, small_input));
   let mut result = T::zero();
   for coefficient in coefficients.iter().skip(1).rev() {
     let coefficient: T = (*coefficient).into();
@@ -110,6 +112,7 @@ pub fn evaluate_at_fractional_input <Coefficient: Copy + Debug, T: Integer + Sig
     precision_shift -= precision_shift_increment;
     result = shr_round_to_even (result, precision_shift_increment);
   }
+  debug_assert! (precision_shift == min_precision_shift);
   Ok(shr_nicely_rounded (result, precision_shift) + coefficients [0].into())
 }
 
@@ -117,8 +120,8 @@ pub fn evaluate_at_fractional_input <Coefficient: Copy + Debug, T: Integer + Sig
 pub fn evaluate_at_fractional_input_check <Coefficient: Copy + Debug, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, input_shift: u32)->Result <(), ()> {
   if coefficients.len() <= 1 || input == T::zero() {return Ok (());}
   let bits = mem::size_of::<T>() as u32*8;
-  let min_precision_shift = 2; //at the end, the error can be slightly more than one, and it must be reduced to less than half paste that
-  let precision_shift_increment = (bits + 1).saturating_sub ((input.abs() - T::one()).leading_zeros() + input_shift);
+  let min_precision_shift = 3; //at the end, the error can be as much as 3, and it must be reduced to less than half
+  let precision_shift_increment = max (1, (bits + 1).saturating_sub ((input.abs() - T::one()).leading_zeros() + input_shift));
   let mut precision_shift = min_precision_shift + precision_shift_increment*(coefficients.len() as u32 -1) + max (precision_shift_increment, input_shift);
   for coefficient in coefficients.iter().skip(1).rev() {
     let coefficient: T = (*coefficient).into();
@@ -132,7 +135,7 @@ pub fn evaluate_at_fractional_input_check <Coefficient: Copy + Debug, T: Integer
 pub fn evaluate_at_fractional_input_range <Coefficient: Copy + Debug, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_shift: u32)->T {
   if coefficients.len() <= 1 {return T::max_value();}
   let bits = mem::size_of::<T>() as u32*8;
-  let min_precision_shift = 2; //at the end, the error can be slightly more than one, and it must be reduced to less than half paste that
+  let min_precision_shift = 3; //at the end, the error can be as much as 3, and it must be reduced to less than half
   let mut precision_shift_increment = bits - 1 - min_precision_shift;
   for (power, coefficient ) in coefficients.iter().enumerate().skip(1).rev() {
     let coefficient: T = (*coefficient).into();
@@ -144,7 +147,7 @@ pub fn evaluate_at_fractional_input_range <Coefficient: Copy + Debug, T: Integer
 
   let input = T::one() << (precision_shift_increment + input_shift - 1);
   
-  let verified_precision_shift_increment = (bits + 1).saturating_sub ((input.abs() - T::one()).leading_zeros() + input_shift);
+  let verified_precision_shift_increment = max (1, (bits + 1).saturating_sub ((input.abs() - T::one()).leading_zeros() + input_shift));
   assert_eq! (precision_shift_increment, verified_precision_shift_increment);
   input
 }
