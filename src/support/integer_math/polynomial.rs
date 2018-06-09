@@ -284,7 +284,7 @@ pub (super) fn root_search <Coefficient: Copy, T: Integer + Signed + From <Coeff
   
   use self::impls::RootSearchMetadata;
   let mut metadata = RootSearchMetadata {
-    input_shift, derivatives: Default::default()
+    input_shift, original_range: range, derivatives: Default::default()
   };
   
   let mut derivative_start = 0;
@@ -293,7 +293,10 @@ pub (super) fn root_search <Coefficient: Copy, T: Integer + Signed + From <Coeff
     derivative_start += derivative_size;
   }
   
-  self::impls::root_search (& metadata, range, coefficients.len() - 1)
+  self::impls::root_search (& metadata, [
+    (range [0] >> input_shift) << input_shift,
+    shr_ceil (range [1], input_shift) << input_shift,
+  ], coefficients.len() - 1)
 }
 
 
@@ -302,6 +305,7 @@ use super::*;
 
 pub (super) struct RootSearchMetadata <'a, T: 'a> {
   pub (super) input_shift: u32,
+  pub (super) original_range: [T; 2],
   pub (super) derivatives: SmallVec<[& 'a [T]; 8]>,
 }
 
@@ -350,9 +354,14 @@ pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata
     }
   }
   
-  let first_half_result = root_search (metadata, [range [0], split_point], which_derivative);
-  match first_half_result { RootSearchResult::Finished =>(),_=> return first_half_result }
-  root_search (metadata, [split_point, range [1]], which_derivative)
+  if split_point > metadata.original_range [0] {
+    let first_half_result = root_search (metadata, [range [0], split_point], which_derivative);
+    match first_half_result { RootSearchResult::Finished =>(),_=> return first_half_result }
+  }
+  if split_point < metadata.original_range [1] {
+    return root_search (metadata, [split_point, range [1]], which_derivative)
+  }
+  RootSearchResult::Finished
 }
 
 }

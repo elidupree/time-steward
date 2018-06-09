@@ -35,6 +35,13 @@ pub fn shr_round_to_even <T: Integer> (input: T, shift: u32)->T {
   }
 }
 
+/// Right-shift an integer, but round towards positive infinity.
+pub fn shr_ceil <T: Integer> (input: T, shift: u32)->T {
+  let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
+  let mask = divisor.wrapping_sub (&T::one());
+  (input >> shift) + if input & mask != T::zero() {T::one()} else {T::zero()}
+}
+
 /// Left-shift an integer, returning Some(input*(2^shift)) if it fits within the type, None otherwise.
 pub fn overflow_checked_shl <T: Integer> (input: T, shift: u32)->Option <T> {
   if input == T::zero() {return Some (T::zero())}
