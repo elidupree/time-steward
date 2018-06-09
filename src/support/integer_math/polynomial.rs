@@ -88,6 +88,8 @@ pub fn translate_unchecked <T: Integer + Signed> (coefficients: &mut [T], input:
 /// The result is guaranteed to be strictly within 1 of the ideal result.
 /// For instance, if the ideal result was 2.125, this function could return 2 or 3,
 /// but if it was 2, this function can only return exactly 2.
+///
+/// If the input is an integer, the result is guaranteed to be exactly the ideal result.
 pub fn evaluate_at_fractional_input <Coefficient: Copy + Debug, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, input_shift: u32)->Result <T, ()>  {
   evaluate_at_fractional_input_check (coefficients, input, input_shift)?;
   if coefficients.len () == 0 {return Ok(T::zero())}
@@ -447,9 +449,13 @@ mod tests {
   println!("{:?}", (& coefficients, input_maximum, input, shift));
             //if evaluate_at_fractional_input_check (& coefficients, input, shift).is_err() {continue;}
             let result = evaluate_at_fractional_input (& coefficients, input, shift).unwrap();
+            let result = Ratio::from_integer (FromPrimitive::from_i64 (result).unwrap());
             let perfect_result = evaluate_exactly (& coefficients, input, shift);
-            let difference = Ratio::from_integer (FromPrimitive::from_i64 (result).unwrap()) - perfect_result;
+            let difference = &result - &perfect_result;
             assert!(difference < Ratio::from_integer (FromPrimitive::from_i64 (1).unwrap()));
+            if (input >> shift << shift) == input {
+              assert_eq!(result, perfect_result);
+            }
           }
         }
       }
