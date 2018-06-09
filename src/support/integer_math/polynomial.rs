@@ -325,7 +325,12 @@ pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata
     if which_derivative > 0 {
       return root_search (metadata, range, which_derivative - 1);
     } else {
-      if first == T::zero() || last == T::zero() { return RootSearchResult::Root (range [0]); }
+      // if the polynomial value is "almost not 0 crossing" on in interval,
+      // we generally don't have to return any results for that interval.
+      // However, if we ignored a "positive then 0" interval followed by a "0 then negative" interval,
+      // then we would miss a 0 crossing. So explicitly notice zeros at the bounds of intervals.
+      if first == T::zero() && range [0] >= metadata.original_range [0] { return RootSearchResult::Root (range [0]); }
+      if last == T::zero() && range [1] <= metadata.original_range [1] { return RootSearchResult::Root (range [1]); }
       return RootSearchResult::Finished;
     }
   }}
