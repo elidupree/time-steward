@@ -2,11 +2,11 @@ use num::{self};
 use num::traits::{WrappingAdd, WrappingSub, WrappingMul, CheckedShl, CheckedShr};
 use std::mem;
 use std::cmp::{min};
-use std::ops::{AddAssign, SubAssign, Shl, Shr};
+use std::ops::{AddAssign, SubAssign, MulAssign, Shl, Shr};
 use std::fmt::Debug;
 
-pub trait Integer: num::PrimInt + num::Integer + AddAssign <Self> + SubAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug {}
-impl <T: num::PrimInt + num::Integer + AddAssign <Self> + SubAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug> Integer for T {}
+pub trait Integer: num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug {}
+impl <T: num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug> Integer for T {}
 
 /// Right-shift an integer, but round to nearest, with ties rounding to even.
 ///

@@ -105,6 +105,7 @@ pub fn evaluate_at_fractional_input <Coefficient: Copy + Debug, T: Integer + Sig
   let mut result = T::zero();
   for coefficient in coefficients.iter().skip(1).rev() {
     let coefficient: T = (*coefficient).into();
+    //note: we don't need to do the multiplying and dividing by precision_shift on the FIRST iteration; TODO fix
     result += coefficient << precision_shift;
     let integer_part = result*integer_input;
     let fractional_part = shr_round_to_even (result*small_input, input_shift);
@@ -245,40 +246,87 @@ pub fn conservative_safe_translation_range <T: Integer + Signed, MaximumFn: Fn (
 }
 
 
+
+pub fn compute_derivative <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], results: &mut [T])->Result <(),()> {
+  assert_eq!(results.len() + 1, coefficients.len());
+  let mut factor = T::one();
+  for ((power, coefficient), result) in coefficients.iter().enumerate().skip (1).zip(results.iter_mut()) {
+    let coefficient: T = (*coefficient).into();
+    factor *= T::from_usize (power).unwrap();
+    match coefficient.checked_mul (&factor) {
+      Some (value) => *result = value,
+      None => return Err (()),
+    }
+  }
+  Ok (())
+}
+
 pub enum RootSearchResult <T> {
   Root (T),
   Overflow (T),
   Finished,
 }
 
+
+pub (super) fn root_search <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], range: [T; 2], input_shift: u32)->RootSearchResult <T> {
+  let mut derivatives: SmallVec<[T; 15]> = SmallVec::with_capacity ((coefficients.len()*(coefficients.len() + 1)) >> 1);
+  
+  derivatives.extend (coefficients.iter().map (| coefficient | (*coefficient).into()));
+  
+  let mut derivative_start = 0;
+  for derivative_size in (3..coefficients.len() + 1).rev() {
+    let (first, second) = derivatives.split_at_mut (derivative_start + derivative_size);
+    if compute_derivative (& first [derivative_start..], &mut second [..derivative_size - 1]).is_err() {
+      return RootSearchResult::Overflow (range [0]);
+    }
+    derivative_start += derivative_size;
+  }
+  
+  use self::impls::RootSearchMetadata;
+  let mut metadata = RootSearchMetadata {
+    input_shift, derivatives: Default::default()
+  };
+  
+  let mut derivative_start = 0;
+  for derivative_size in (3..coefficients.len() + 1).rev() {
+    metadata.derivatives.push (& derivatives [derivative_start..derivative_start + derivative_size]);
+    derivative_start += derivative_size;
+  }
+  
+  self::impls::root_search (& metadata, range, coefficients.len() - 1)
+}
+
+
 mod impls {
 use super::*;
 
-struct RootSearchMetadata <'a, T: 'a> {
-  shift: u32,
-  derivatives: SmallVec<[& 'a [T]; 8]>,
+pub (super) struct RootSearchMetadata <'a, T: 'a> {
+  pub (super) input_shift: u32,
+  pub (super) derivatives: SmallVec<[& 'a [T]; 8]>,
 }
 
 /// Search for root, assuming that which_derivative is almost-monotonic
-fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range: [T; 2], which_derivative: usize)->RootSearchResult <T> {
-  let shift = metadata.shift;
+pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range: [T; 2], which_derivative: usize)->RootSearchResult <T> {
+  let shift = metadata.input_shift;
   let bound_values = range.map (| bound | evaluate_at_fractional_input (metadata.derivatives [which_derivative], bound, shift));
+  if bound_values [0].is_err () {return RootSearchResult::Overflow (range [0])}
   
-  if (bound_values[0] >= T::zero() && bound_values[1] >= T::zero()) ||
-     (bound_values[0] <= T::zero() && bound_values[1] <= T::zero()) {
+  if let [Ok (first), Ok (last)] = bound_values {
+  if (first >= T::zero() && last >= T::zero()) ||
+     (first <= T::zero() && last <= T::zero()) {
     // if this is an integer range, then we are exactly monotonic,
     // so we are exactly not-0-crossing and our anti-derivative is exactly monotonic.
-    // If this is a fractional range, its length is <= half, and "almost monotonic" means that our maximum movement in the "wrong direction" is less than 1. Combined with the error of 1 in evaluating us, this guarantees that our furthest possible value in the "wrong direction" is less than 2, meaning that our anti-derivative has a maximum slope-in-the-wrong-direction less than 2 over a length <= half, so our anti-derivative also "almost monotonic".
+    // If this is a fractional range, its length is <= half, and "almost monotonic" means that our maximum movement in the "wrong direction" is less than 1. Combined with the error of 1 in evaluating us, this guarantees that our furthest possible value in the "wrong direction" is less than 2, meaning that our anti-derivative has a maximum slope-in-the-wrong-direction less than 2 over a length <= half, so our anti-derivative is also "almost monotonic".
     // Either way, our anti-derivative is "almost monotonic".
     if which_derivative > 0 {
       return root_search (metadata, range, which_derivative - 1);
     } else {
-      if bound_values [0] == T::zero() || bound_values [1] == T::zero() { return RootSearchResult::Root (range [0]); }
+      if first == T::zero() || last == T::zero() { return RootSearchResult::Root (range [0]); }
       return RootSearchResult::Finished;
     }
-  }
+  }}
   
-  // we are definitely 0-crossing on this interval, so we can't recurse into a lower derivative yet.
+  // we might be 0-crossing on this interval, so we can't recurse into a lower derivative yet.
   // But maybe we are not-0-crossing on one half of this interval?
   let integer_range = range.map (| bound | bound >> shift);
   let split_point;
@@ -289,6 +337,7 @@ fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range:
   } else if distance > T::one() {
     split_point = mean_floor (range [0], range [1]);
   } else {
+    if bound_values [1].is_err() { return RootSearchResult::Overflow (range [1]) }
     if which_derivative > 0 {
       //although the ideal polynomial isn't necessarily monotonic on this interval,
       //the "polynomial evaluated only at scaled-integer inputs" is ALWAYS monotonic
@@ -302,7 +351,7 @@ fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range:
   }
   
   let first_half_result = root_search (metadata, [range [0], split_point], which_derivative);
-  match first_half_result { Finished =>(),_=> return first_half_result; }
+  match first_half_result { RootSearchResult::Finished =>(),_=> return first_half_result }
   root_search (metadata, [split_point, range [1]], which_derivative)
 }
 
