@@ -41,6 +41,8 @@ extern crate bincode;
 //extern crate crossbeam;
 #[cfg_attr(test, macro_use)]
 extern crate quickcheck;
+#[cfg_attr(test, macro_use)]
+extern crate proptest;
 #[macro_use]
 extern crate derivative;
 #[macro_use]

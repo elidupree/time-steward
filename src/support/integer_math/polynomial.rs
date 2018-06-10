@@ -1,7 +1,7 @@
 use num::{Signed};
 use smallvec::SmallVec;
 use array_ext::*;
-use std::cmp::max;
+use std::cmp::{min, max};
 
 use super::*;
 
@@ -157,7 +157,9 @@ pub fn evaluate_at_fractional_input_range <Coefficient: Copy + Debug, T: Integer
     }
   }
 
-  let input_numerator = T::one() << (precision_shift_increment + input_shift - 1);
+  let input_numerator = match overflow_checked_shl (T::one(), precision_shift_increment + input_shift - 1) {
+    Some (value) => value, None => return T::max_value(),
+  };
   
   let verified_precision_shift_increment = evaluate_at_fractional_input_impls::precision_shift_increment (input_numerator, input_shift);
   assert_eq! (precision_shift_increment, verified_precision_shift_increment);
@@ -398,6 +400,31 @@ mod tests {
   use rand::distributions::Distribution;  
   use rand::distributions::range::{Range};
   use rand::{Rng, SeedableRng};
+  use proptest::prelude::*;
+  
+  fn polynomial(input_shift: u32)->BoxedStrategy <Vec<i64>> {
+    let bits_left = 63 - input_shift as usize;
+    prop::collection::vec (any::<i64>(), 0.. min (16, bits_left - 1)).prop_flat_map (move | source_values | {
+      let len = source_values.len() as u32;
+      let divisor = max (2, len) - 1;
+      (Just (source_values), 0..(63 - input_shift)/divisor)
+    }).prop_flat_map (move | (source_values, time_scale_shift) | {
+      (Just (
+        source_values.iter().enumerate().map (move | (power, coefficient) | coefficient >> (input_shift + power as u32*time_scale_shift)).collect()
+      ))
+    }).boxed()
+  }
+  
+  fn polynomial_and_shift ()->BoxedStrategy <(Vec<i64>, u32)> {
+    (0..62u32).prop_flat_map (| input_shift | (polynomial (input_shift), Just (input_shift))).boxed()
+  }
+  
+  fn polynomial_and_valid_fractional_input_and_shift()->BoxedStrategy <(Vec<i64>, i64, u32)> {
+    polynomial_and_shift().prop_flat_map (| (coefficients, shift) | {
+      let input_maximum: i64 = evaluate_at_fractional_input_range(& coefficients, shift);
+      (Just (coefficients), - input_maximum..input_maximum.saturating_add (1), Just (shift))
+    }).boxed()
+  }
   
   fn evaluate_exactly <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->BigRational
     where BigInt: From <Coefficient> + From <T> {
@@ -407,6 +434,20 @@ mod tests {
       result = result*&input + BigInt::from(*coefficient);
     }
     result
+  }
+  
+  proptest! {
+    #[test]
+    fn randomly_test_evaluate_at_fractional_input ((ref coefficients, input_numerator, input_shift) in polynomial_and_valid_fractional_input_and_shift()) {
+      let result = evaluate_at_fractional_input (& coefficients, input_numerator, input_shift).unwrap();
+      let result = Ratio::from_integer (FromPrimitive::from_i64 (result).unwrap());
+      let perfect_result = evaluate_exactly (& coefficients, input_numerator, input_shift);
+      let difference = &result - &perfect_result;
+      prop_assert!(difference < Ratio::from_integer (FromPrimitive::from_i64 (1).unwrap()));
+      if (input_numerator >> input_shift << input_shift) == input_numerator {
+        prop_assert_eq!(result, perfect_result);
+      }
+    } 
   }
   
   #[test]
