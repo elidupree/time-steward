@@ -39,7 +39,7 @@ pub enum Error <T: Integer> {
 /// Given these conditions, the result is guaranteed to be strictly within 1 of the ideal result.
 /// For instance, if the ideal result was 2.125, this function could return 2 or 3,
 /// but if it was 2, this function can only return exactly 2.
-pub fn evaluate_at_small_input <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->T {
+pub fn evaluate_at_small_input <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->T {
   let half = (T::one() << shift) >> 1u32;
   assert!(-half <= input && input <= half, "inputs to evaluate_at_small_input must be in the range [-0.5, 0.5]");
   
@@ -102,7 +102,7 @@ mod evaluate_at_fractional_input_impls {
 /// but if it was 2, this function can only return exactly 2.
 ///
 /// If the input is an integer, the result is guaranteed to be exactly the ideal result.
-pub fn evaluate_at_fractional_input <Coefficient: Copy + Debug, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_numerator: T, input_shift: u32)->Result <T, ()>  {
+pub fn evaluate_at_fractional_input <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_numerator: T, input_shift: u32)->Result <T, ()>  {
   evaluate_at_fractional_input_check (coefficients, input_numerator, input_shift)?;
   if coefficients.len () <= 1 || input_numerator == T::zero() {
     if coefficients.len () == 0 {return Ok(T::zero())}
@@ -116,6 +116,12 @@ pub fn evaluate_at_fractional_input <Coefficient: Copy + Debug, T: Integer + Sig
   debug_assert! (precision_shift_increment >0);*/
   let mut precision_shift = evaluate_at_fractional_input_impls::MIN_PRECISION_SHIFT + precision_shift_increment*(coefficients.len() as u32 - 1);
   println!("ll {:?}", (precision_shift_increment, integer_input, small_input));
+  let bits = mem::size_of::<T>() as u32*8;
+  if precision_shift >= bits {
+    //special case that can only occur under certain circumstances
+    assert! (coefficients [1..].iter().all (| coefficient | coefficient == &Coefficient::zero()));
+    return Ok(coefficients [0].into())
+  }
   let mut result = T::zero();
   for coefficient in coefficients.iter().skip(1).rev() {
     let coefficient: T = (*coefficient).into();
@@ -132,7 +138,7 @@ pub fn evaluate_at_fractional_input <Coefficient: Copy + Debug, T: Integer + Sig
 }
 
 
-pub fn evaluate_at_fractional_input_check <Coefficient: Copy + Debug, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_numerator: T, input_shift: u32)->Result <(), ()> {
+pub fn evaluate_at_fractional_input_check <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_numerator: T, input_shift: u32)->Result <(), ()> {
   if coefficients.len() <= 1 || input_numerator == T::zero() {return Ok (());}
   let constant_coefficient: T = coefficients [0].into();
   if constant_coefficient > (T::max_value() >> 1u32) || constant_coefficient < -(T::max_value() >> 1u32) {return Err (()) ;}
@@ -147,12 +153,12 @@ pub fn evaluate_at_fractional_input_check <Coefficient: Copy + Debug, T: Integer
   Ok (())
 }
 
-pub fn evaluate_at_fractional_input_range <Coefficient: Copy + Debug, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_shift: u32)->T {
+pub fn evaluate_at_fractional_input_range <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_shift: u32)->T {
   if coefficients.len() <= 1 {return T::max_value();}
   let constant_coefficient: T = coefficients [0].into();
   if constant_coefficient > (T::max_value() >> 1u32) || constant_coefficient < -(T::max_value() >> 1u32) {return T::zero()}
   let bits = mem::size_of::<T>() as u32*8;
-  let mut precision_shift_increment = bits - 1 - evaluate_at_fractional_input_impls::MIN_PRECISION_SHIFT;
+  let mut precision_shift_increment = bits - input_shift;
   for (power, coefficient ) in coefficients.iter().enumerate().skip(1).rev() {
     let coefficient: T = (*coefficient).into();
     while overflow_checked_shl (coefficient, precision_shift_increment*(power as u32) + max (precision_shift_increment, input_shift) + evaluate_at_fractional_input_impls::MIN_PRECISION_SHIFT ).is_none() {
@@ -175,7 +181,7 @@ pub fn coefficient_bounds_for_evaluate_at_small_input <T: Integer + Signed> (shi
   move | power | if power == 0 {T::max_value() - non_constant_max} else {non_constant_max}
 }
 
-pub fn within_bounds_check <Coefficient: Copy, T: Integer + Signed + From <Coefficient>, MaximumFn: Fn (usize)->T> (coefficients: & [Coefficient], maximum: MaximumFn)->Result <(), Error <T>> {
+pub fn within_bounds_check <Coefficient: Integer, T: Integer + Signed + From <Coefficient>, MaximumFn: Fn (usize)->T> (coefficients: & [Coefficient], maximum: MaximumFn)->Result <(), Error <T>> {
   for (power, coefficient) in coefficients.iter().enumerate() {
     let coefficient: T = (*coefficient).into();
     let max = maximum (power);
@@ -186,7 +192,7 @@ pub fn within_bounds_check <Coefficient: Copy, T: Integer + Signed + From <Coeff
   Ok (())
 }
 
-pub fn translate_check <Coefficient: Copy, T: Integer + Signed + From <Coefficient>, MaximumFn: Fn (usize)->T> (coefficients: & [Coefficient], input: T, maximum: MaximumFn)->Result <(), Error <T>> {
+pub fn translate_check <Coefficient: Integer, T: Integer + Signed + From <Coefficient>, MaximumFn: Fn (usize)->T> (coefficients: & [Coefficient], input: T, maximum: MaximumFn)->Result <(), Error <T>> {
   if coefficients.len() == 0 {return Ok (());}
   if input == T::zero() {within_bounds_check (coefficients, maximum)?; return Ok (());}
   let mut factor = T::one();
@@ -264,7 +270,7 @@ pub fn conservative_safe_translation_range <T: Integer + Signed, MaximumFn: Fn (
 
 
 
-pub fn compute_derivative <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], results: &mut [T])->Result <(),()> {
+pub fn compute_derivative <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], results: &mut [T])->Result <(),()> {
   assert_eq!(results.len() + 1, coefficients.len());
   for ((power, coefficient), result) in coefficients.iter().enumerate().skip (1).zip(results.iter_mut()) {
     let coefficient: T = (*coefficient).into();
@@ -277,7 +283,7 @@ pub fn compute_derivative <Coefficient: Copy, T: Integer + Signed + From <Coeffi
 }
 
 
-pub fn derivative_unchecked <'a, Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & 'a [Coefficient])->impl Iterator <Item = T> + 'a {
+pub fn derivative_unchecked <'a, Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & 'a [Coefficient])->impl Iterator <Item = T> + 'a {
   coefficients.iter().enumerate().skip (1).map (| (power, coefficient) | {
     let coefficient: T = (*coefficient).into();
     coefficient*T::from_usize (power).unwrap()
@@ -430,7 +436,7 @@ mod tests {
     }).boxed()
   }
   
-  fn evaluate_exactly <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->BigRational
+  fn evaluate_exactly <Coefficient: Copy + Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input: T, shift: u32)->BigRational
     where BigInt: From <Coefficient> + From <T> {
     let mut result: BigRational = Ratio::zero();
     let input = Ratio::new(BigInt::from (input), BigInt::one() << shift as usize);
@@ -457,6 +463,7 @@ mod tests {
     fn randomly_test_evaluation_range_is_strict ((ref coefficients, input_shift) in polynomial_and_shift(), input_numerator in any::<i64>()) {
       let input_maximum: i64 = evaluate_at_fractional_input_range(& coefficients, input_shift);
       let valid = evaluate_at_fractional_input_check (& coefficients, input_numerator, input_shift).is_ok();
+      println!( "{:?}", (input_maximum, input_numerator));
       prop_assert_eq! (valid, input_numerator >= - input_maximum && input_numerator <= input_maximum) ;
     }
   }
