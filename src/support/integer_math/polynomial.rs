@@ -109,7 +109,7 @@ pub fn evaluate_at_fractional_input <Coefficient: Copy + Debug, T: Integer + Sig
     return Ok(coefficients [0].into())
   }
   let integer_input = shr_nicely_rounded (input_numerator, input_shift);
-  let small_input = input_numerator - (integer_input << input_shift);
+  let small_input = input_numerator.wrapping_sub (& (integer_input << input_shift));
   let precision_shift_increment = evaluate_at_fractional_input_impls::precision_shift_increment (input_numerator, input_shift);
   /*debug_assert! (precision_shift_increment < bits, "{:?}", (input, input_shift, precision_shift_increment));
   debug_assert! ((T::one() << precision_shift_increment) >= (integer_input.abs() << 1u32), "{:?}", (input, input_shift, precision_shift_increment));

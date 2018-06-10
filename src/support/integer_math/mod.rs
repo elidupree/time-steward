@@ -14,13 +14,14 @@ impl <T: num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + S
 pub fn shr_nicely_rounded <T: Integer> (input: T, shift: u32)->T {
   if shift == 0 {return input}
   let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
-  let half = T::one() << (shift - 1);
+  let half_shift = shift - 1;
+  let half = T::one() << half_shift;
   let mask = divisor.wrapping_sub (&T::one());
   if (input & mask) == half {
     let shifted = input >> shift;
     shifted + (shifted & T::one())
   } else {
-    (input + half) >> shift
+    (input >> shift) + ((input & half) >> half_shift)
   }
 }
 
