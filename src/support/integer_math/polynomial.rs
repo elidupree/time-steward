@@ -286,7 +286,7 @@ pub enum RootSearchResult <T> {
 }
 
 
-pub (super) fn root_search <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], range: [T; 2], input_shift: u32)->RootSearchResult <T> {
+pub fn root_search <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], range: [T; 2], input_shift: u32)->RootSearchResult <T> {
   let mut derivatives: SmallVec<[T; 15]> = SmallVec::with_capacity ((coefficients.len()*(coefficients.len() + 1)) >> 1);
   
   derivatives.extend (coefficients.iter().map (| coefficient | (*coefficient).into()));
@@ -355,7 +355,6 @@ pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata
   
   // we might be 0-crossing on this interval, so we can't recurse into a lower derivative yet.
   // But maybe we are not-0-crossing on one half of this interval?
-  let integer_range = range.map (| bound | bound >> shift);
   let split_point;
   // don't use fractional inputs until necessary
   let distance = range [1].saturating_sub (range [0]);
@@ -442,10 +441,6 @@ mod tests {
     let mut generator =::rand::chacha::ChaChaRng::from_seed ([33; 32]) ;
     for shift in 0..5 {
       let shift = 1 << shift;
-      let maximum = i64::max_value() >> shift;
-      let constant_maximum = i64::max_value() - maximum;
-      let range = Range::new_inclusive (- maximum >> 5, maximum >> 5) ;
-      let constant_range = Range::new_inclusive (- constant_maximum, constant_maximum);
       
       for _ in 0..160 {
         let mut coefficients = vec![generator.gen::<i64>() >> shift];
