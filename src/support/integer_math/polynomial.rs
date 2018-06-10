@@ -270,6 +270,15 @@ pub fn compute_derivative <Coefficient: Copy, T: Integer + Signed + From <Coeffi
   Ok (())
 }
 
+
+pub fn derivative_unchecked <'a, Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & 'a [Coefficient])->impl Iterator <Item = T> + 'a {
+  coefficients.iter().enumerate().skip (1).map (| (power, coefficient) | {
+    let coefficient: T = (*coefficient).into();
+    coefficient*T::from_usize (power).unwrap()
+  })
+}
+
+
 pub enum RootSearchResult <T> {
   Root (T),
   Overflow (T),
