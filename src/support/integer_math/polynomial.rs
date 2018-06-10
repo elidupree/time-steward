@@ -442,6 +442,7 @@ mod tests {
         let input_maximum: i64 = evaluate_at_fractional_input_range(& coefficients, shift);
   println!("jh {:?}", (& coefficients, input_maximum, shift));
         evaluate_at_fractional_input_check (& coefficients, input_maximum, shift).unwrap();
+        if input_maximum <i64::max_value() {assert!(evaluate_at_fractional_input_check (& coefficients, input_maximum + 1, shift).is_err());}
         if input_maximum >= 0 {
           let input_range = Range::new_inclusive (- input_maximum, input_maximum) ;
           for _ in 0..3 {
