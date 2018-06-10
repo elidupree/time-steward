@@ -260,11 +260,9 @@ pub fn conservative_safe_translation_range <T: Integer + Signed, MaximumFn: Fn (
 
 pub fn compute_derivative <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], results: &mut [T])->Result <(),()> {
   assert_eq!(results.len() + 1, coefficients.len());
-  let mut factor = T::one();
   for ((power, coefficient), result) in coefficients.iter().enumerate().skip (1).zip(results.iter_mut()) {
     let coefficient: T = (*coefficient).into();
-    factor *= T::from_usize (power).unwrap();
-    match coefficient.checked_mul (&factor) {
+    match coefficient.checked_mul (&T::from_usize (power).unwrap()) {
       Some (value) => *result = value,
       None => return Err (()),
     }
