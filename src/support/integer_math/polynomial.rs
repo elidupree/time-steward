@@ -134,6 +134,8 @@ pub fn evaluate_at_fractional_input <Coefficient: Copy + Debug, T: Integer + Sig
 
 pub fn evaluate_at_fractional_input_check <Coefficient: Copy + Debug, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_numerator: T, input_shift: u32)->Result <(), ()> {
   if coefficients.len() <= 1 || input_numerator == T::zero() {return Ok (());}
+  let constant_coefficient: T = coefficients [0].into();
+  if constant_coefficient > (T::max_value() >> 1u32) || constant_coefficient < -(T::max_value() >> 1u32) {return Err (()) ;}
   let precision_shift_increment = evaluate_at_fractional_input_impls::precision_shift_increment (input_numerator, input_shift);
   let mut precision_shift = evaluate_at_fractional_input_impls::MIN_PRECISION_SHIFT + precision_shift_increment*(coefficients.len() as u32 - 1) + max (precision_shift_increment, input_shift);
   for coefficient in coefficients.iter().skip(1).rev() {
@@ -147,6 +149,8 @@ pub fn evaluate_at_fractional_input_check <Coefficient: Copy + Debug, T: Integer
 
 pub fn evaluate_at_fractional_input_range <Coefficient: Copy + Debug, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_shift: u32)->T {
   if coefficients.len() <= 1 {return T::max_value();}
+  let constant_coefficient: T = coefficients [0].into();
+  if constant_coefficient > (T::max_value() >> 1u32) || constant_coefficient < -(T::max_value() >> 1u32) {return T::zero()}
   let bits = mem::size_of::<T>() as u32*8;
   let mut precision_shift_increment = bits - 1 - evaluate_at_fractional_input_impls::MIN_PRECISION_SHIFT;
   for (power, coefficient ) in coefficients.iter().enumerate().skip(1).rev() {
