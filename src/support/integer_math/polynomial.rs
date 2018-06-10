@@ -299,7 +299,8 @@ pub enum RootSearchResult <T> {
 
 
 pub fn root_search <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], range: [T; 2], input_shift: u32)->RootSearchResult <T> {
-  let mut derivatives: SmallVec<[T; 15]> = SmallVec::with_capacity ((coefficients.len()*(coefficients.len() + 1)) >> 1);
+  let all_derivatives_terms = (coefficients.len()*(coefficients.len() + 1)) >> 1;
+  let mut derivatives: SmallVec<[T; 15]> = smallvec! [T::zero(); all_derivatives_terms];
   
   derivatives.extend (coefficients.iter().map (| coefficient | (*coefficient).into()));
   
@@ -360,7 +361,7 @@ pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata
       // However, if we ignored a "positive then 0" interval followed by a "0 then negative" interval,
       // then we would miss a 0 crossing. So explicitly notice zeros at the bounds of intervals.
       if first == T::zero() && range [0] >= metadata.original_range [0] { return RootSearchResult::Root (range [0]); }
-      if last == T::zero() && range [1] <= metadata.original_range [1] { return RootSearchResult::Root (range [1]); }
+      if last == T::zero() && range [1] <= metadata.original_range [1] { return RootSearchResult::Root (range [1]-T::one()); }
       return RootSearchResult::Finished;
     }
   }}
@@ -387,7 +388,8 @@ pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata
       return RootSearchResult::Root (range [0]);
     }
   }
-  
+  assert!(split_point >range [0]);
+  assert! (split_point <range [1]);
   if split_point > metadata.original_range [0] {
     let first_half_result = root_search (metadata, [range [0], split_point], which_derivative);
     match first_half_result { RootSearchResult::Finished =>(),_=> return first_half_result }
@@ -465,6 +467,27 @@ mod tests {
       let valid = evaluate_at_fractional_input_check (& coefficients, input_numerator, input_shift).is_ok();
       println!( "{:?}", (input_maximum, input_numerator));
       prop_assert_eq! (valid, input_numerator >= - input_maximum && input_numerator <= input_maximum) ;
+    }
+    
+    #[test]
+    fn randomly_test_root_search ((ref coefficients, input_shift, (first, last)) in polynomial_and_shift().prop_flat_map (| (coefficients, input_shift) | {
+      let input_maximum: i64 = evaluate_at_fractional_input_range(& coefficients, input_shift);
+      (Just (coefficients), Just (input_shift),
+        (- input_maximum.saturating_add (1)..input_maximum).prop_flat_map (move | first | (Just (first), first+1..input_maximum.saturating_add (10)))
+      )
+    })) {
+      let check_before;
+      match root_search (coefficients, [first, last], input_shift) {
+        RootSearchResult::Root (root) => {
+          let root_value = evaluate_at_fractional_input (& coefficients, root, input_shift).unwrap();
+          let next_value = evaluate_at_fractional_input (& coefficients, root + 1, input_shift).unwrap();
+          prop_assert_ne! (root_value.signum()*next_value.signum(), 1);
+          check_before = root+1;
+        },
+        RootSearchResult::Overflow (overflow) => check_before = overflow,
+        RootSearchResult::Finished => check_before = last+1,
+      }
+      
     }
   }
   

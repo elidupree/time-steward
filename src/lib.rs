@@ -47,6 +47,7 @@ extern crate proptest;
 extern crate derivative;
 #[macro_use]
 extern crate failure;
+#[macro_use]
 extern crate smallvec;
 
 macro_rules! printlnerr(
