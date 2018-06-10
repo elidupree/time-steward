@@ -451,7 +451,14 @@ mod tests {
       if (input_numerator >> input_shift << input_shift) == input_numerator {
         prop_assert_eq!(result, perfect_result);
       }
-    } 
+    }
+
+    #[test]
+    fn randomly_test_evaluation_range_is_strict ((ref coefficients, input_shift) in polynomial_and_shift(), input_numerator in any::<i64>()) {
+      let input_maximum: i64 = evaluate_at_fractional_input_range(& coefficients, input_shift);
+      let valid = evaluate_at_fractional_input_check (& coefficients, input_numerator, input_shift).is_ok();
+      prop_assert_eq! (valid, input_numerator >= - input_maximum && input_numerator <= input_maximum) ;
+    }
   }
   
   #[test]
