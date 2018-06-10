@@ -91,7 +91,8 @@ mod evaluate_at_fractional_input_impls {
   
   pub (super) fn precision_shift_increment <T: Integer + Signed> (input_numerator: T, input_shift: u32)->u32 {
     let bits = mem::size_of::<T>() as u32*8;
-    max (1, (bits + 1).saturating_sub ((input_numerator.abs() - T::one()).leading_zeros() + input_shift))
+    let leading_zeros = if input_numerator <= T::min_value() + T::one() { bits - 1 } else { (input_numerator.abs() - T::one()).leading_zeros() };
+    max (1, (bits + 1).saturating_sub (leading_zeros + input_shift))
   }
 }
 
@@ -299,6 +300,10 @@ pub enum RootSearchResult <T> {
 
 
 pub fn root_search <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], range: [T; 2], input_shift: u32)->RootSearchResult <T> {
+  assert!(range [1] >range [0]);
+  if coefficients.len() <= 1 {
+    return RootSearchResult::Finished;
+  }
   let all_derivatives_terms = (coefficients.len()*(coefficients.len() + 1)) >> 1;
   let mut derivatives: SmallVec<[T; 15]> = smallvec! [T::zero(); all_derivatives_terms];
   
@@ -319,7 +324,7 @@ pub fn root_search <Coefficient: Copy, T: Integer + Signed + From <Coefficient>>
   };
   
   let mut derivative_start = 0;
-  for derivative_size in (3..coefficients.len() + 1).rev() {
+  for derivative_size in (min(3, coefficients.len())..coefficients.len() + 1).rev() {
     metadata.derivatives.push (& derivatives [derivative_start..derivative_start + derivative_size]);
     derivative_start += derivative_size;
   }
@@ -327,7 +332,7 @@ pub fn root_search <Coefficient: Copy, T: Integer + Signed + From <Coefficient>>
   self::impls::root_search (& metadata, [
     (range [0] >> input_shift) << input_shift,
     shr_ceil (range [1], input_shift) << input_shift,
-  ], coefficients.len() - 1)
+  ], coefficients.len() - 2)
 }
 
 
@@ -342,6 +347,7 @@ pub (super) struct RootSearchMetadata <'a, T: 'a> {
 
 /// Search for root, assuming that which_derivative is almost-monotonic
 pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range: [T; 2], which_derivative: usize)->RootSearchResult <T> {
+  assert!(range [1] >range [0]);
   let shift = metadata.input_shift;
   let bound_values = range.map (| bound | evaluate_at_fractional_input (metadata.derivatives [which_derivative], bound, shift));
   if bound_values [0].is_err () {return RootSearchResult::Overflow (range [0])}
@@ -475,7 +481,7 @@ mod tests {
       (Just (coefficients), Just (input_shift),
         (- input_maximum.saturating_add (1)..input_maximum).prop_flat_map (move | first | (Just (first), first+1..input_maximum.saturating_add (10)))
       )
-    })) {
+    }).no_shrink()) {
       let check_before;
       match root_search (coefficients, [first, last], input_shift) {
         RootSearchResult::Root (root) => {
