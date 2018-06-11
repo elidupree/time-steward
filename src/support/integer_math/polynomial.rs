@@ -30,6 +30,13 @@ pub enum Error <T: Integer> {
   },
 }
 
+
+#[derive (Copy, Clone, Debug)]
+pub struct OverflowError;
+
+use std::option::NoneError;
+impl From <NoneError> for OverflowError {fn from (_: NoneError)->OverflowError {OverflowError}}
+
 /// Approximately evaluate an integer polynomial at an input in the range [-0.5, 0.5].
 ///
 /// The input is represented as an integer combined with a right-shift size.
@@ -103,7 +110,7 @@ mod evaluate_at_fractional_input_impls {
 /// but if it was 2, this function can only return exactly 2.
 ///
 /// If the input is an integer, the result is guaranteed to be exactly the ideal result.
-pub fn evaluate_at_fractional_input <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_numerator: T, input_shift: u32)->Result <T, ()>  {
+pub fn evaluate_at_fractional_input <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_numerator: T, input_shift: u32)->Result <T, OverflowError>  {
   evaluate_at_fractional_input_check (coefficients, input_numerator, input_shift)?;
   if coefficients.len () <= 1 || input_numerator == T::zero() {
     if coefficients.len () == 0 {return Ok(T::zero())}
@@ -139,15 +146,15 @@ pub fn evaluate_at_fractional_input <Coefficient: Integer, T: Integer + Signed +
 }
 
 
-pub fn evaluate_at_fractional_input_check <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_numerator: T, input_shift: u32)->Result <(), ()> {
+pub fn evaluate_at_fractional_input_check <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_numerator: T, input_shift: u32)->Result <(), OverflowError> {
   if coefficients.len() <= 1 || input_numerator == T::zero() {return Ok (());}
   let constant_coefficient: T = coefficients [0].into();
-  if constant_coefficient > (T::max_value() >> 1u32) || constant_coefficient < -(T::max_value() >> 1u32) {return Err (()) ;}
+  if constant_coefficient > (T::max_value() >> 1u32) || constant_coefficient < -(T::max_value() >> 1u32) {return Err (OverflowError) ;}
   let precision_shift_increment = evaluate_at_fractional_input_impls::precision_shift_increment (input_numerator, input_shift);
   let mut precision_shift = evaluate_at_fractional_input_impls::MIN_PRECISION_SHIFT + precision_shift_increment*(coefficients.len() as u32 - 1) + max (precision_shift_increment, input_shift);
   for coefficient in coefficients.iter().skip(1).rev() {
     let coefficient: T = (*coefficient).into();
-    if overflow_checked_shl (coefficient, precision_shift).is_none() {return Err (()) ;}
+    overflow_checked_shl (coefficient, precision_shift)?;
     precision_shift -= precision_shift_increment;
   }
 
@@ -271,14 +278,11 @@ pub fn conservative_safe_translation_range <T: Integer + Signed, MaximumFn: Fn (
 
 
 
-pub fn compute_derivative <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], results: &mut [T])->Result <(),()> {
+pub fn compute_derivative <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], results: &mut [T])->Result <(),OverflowError> {
   assert_eq!(results.len() + 1, coefficients.len());
   for ((power, coefficient), result) in coefficients.iter().enumerate().skip (1).zip(results.iter_mut()) {
     let coefficient: T = (*coefficient).into();
-    match coefficient.checked_mul (&T::from_usize (power).unwrap()) {
-      Some (value) => *result = value,
-      None => return Err (()),
-    }
+    *result = coefficient.checked_mul (&T::from_usize (power).unwrap())?;
   }
   Ok (())
 }
@@ -291,22 +295,14 @@ pub fn derivative_unchecked <'a, Coefficient: Integer, T: Integer + Signed + Fro
   })
 }
 
-pub fn add_product_into <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (first: & [Coefficient], second: & [Coefficient], destination: &mut [T])->Result <(),()> {
+pub fn add_product_into <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (first: & [Coefficient], second: & [Coefficient], destination: &mut [T])->Result <(),OverflowError> {
   assert!(destination.len() + 1 >= first.len() + second.len());
   for (first_power, first_coefficient) in first.iter().enumerate() {
     let first_coefficient: T = (*first_coefficient).into();
     for (second_power, second_coefficient) in second.iter().enumerate() {
       let second_coefficient: T = (*second_coefficient).into();
-      match first_coefficient.checked_mul (&second_coefficient) {
-        Some (value) => {
-          let mut destination = &mut destination[first_power + second_power];
-          match destination.checked_add (&value) {
-            Some (value) =>*destination = value,
-            None => return Err (()),
-          }
-        }
-        None => return Err (()),
-      }
+      let mut destination = &mut destination[first_power + second_power];
+      *destination = destination.checked_add (&first_coefficient.checked_mul (&second_coefficient)?)?;
     }
   }
   Ok (())
@@ -379,7 +375,7 @@ pub (super) fn root_search_unknown_bound_values <T: Integer + Signed> (metadata:
   root_search (metadata, range, range.map (| bound | evaluate_at_fractional_input (metadata.derivatives [which_derivative], bound, metadata.input_shift)), which_derivative)
 }
 
-pub (super) fn root_search_split <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range: [T; 2], bound_values: [Result <T,()>; 2], which_derivative: usize, split_point: T)->RootSearchResult <T> {
+pub (super) fn root_search_split <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range: [T; 2], bound_values: [Result <T,OverflowError>; 2], which_derivative: usize, split_point: T)->RootSearchResult <T> {
   assert!(split_point >range [0]);
   assert! (split_point <range [1]);
   let split_point_value = evaluate_at_fractional_input (metadata.derivatives [which_derivative], split_point, metadata.input_shift);
@@ -397,7 +393,7 @@ pub (super) fn root_search_split <T: Integer + Signed> (metadata: & RootSearchMe
 /// range is a valid range (min < max)
 /// which_derivative is almost-monotonic on this range
 /// bound_values are the correct outputs for which_derivative at the range endpoints
-pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range: [T; 2], bound_values: [Result <T,()>; 2], which_derivative: usize)->RootSearchResult <T> {
+pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range: [T; 2], bound_values: [Result <T,OverflowError>; 2], which_derivative: usize)->RootSearchResult <T> {
   debug_assert!(range [1] >range [0]);
   //println!( "something {:?}", (range, bound_values, which_derivative));
   let shift = metadata.input_shift;
