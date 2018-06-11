@@ -320,7 +320,11 @@ pub fn root_search <Coefficient: Copy, T: Integer + Signed + From <Coefficient>>
   
   use self::impls::RootSearchMetadata;
   let mut metadata = RootSearchMetadata {
-    input_shift, original_range: range, derivatives: Default::default()
+    input_shift,
+    half: T::one() << input_shift.saturating_sub (1),
+    one: T::one() << input_shift,
+    original_range: range,
+    derivatives: Default::default(),
   };
   
   let mut derivative_start = 0;
@@ -329,9 +333,9 @@ pub fn root_search <Coefficient: Copy, T: Integer + Signed + From <Coefficient>>
     derivative_start += derivative_size;
   }
   
-  self::impls::root_search (& metadata, [
+  self::impls::root_search_unknown_bound_values (& metadata, [
     (range [0] >> input_shift) << input_shift,
-    shr_ceil (range [1], input_shift) << input_shift,
+    overflow_checked_shl (shr_ceil (range [1], input_shift), input_shift).unwrap_or (T::max_value()),
   ], coefficients.len() - 2)
 }
 
@@ -341,16 +345,56 @@ use super::*;
 
 pub (super) struct RootSearchMetadata <'a, T: 'a> {
   pub (super) input_shift: u32,
+  pub (super) half: T,
+  pub (super) one: T,
   pub (super) original_range: [T; 2],
   pub (super) derivatives: SmallVec<[& 'a [T]; 8]>,
 }
 
-/// Search for root, assuming that which_derivative is almost-monotonic
-pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range: [T; 2], which_derivative: usize)->RootSearchResult <T> {
-  assert!(range [1] >range [0]);
+pub (super) fn root_search_unknown_bound_values <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range: [T; 2], which_derivative: usize)->RootSearchResult <T> {
+  root_search (metadata, range, range.map (| bound | evaluate_at_fractional_input (metadata.derivatives [which_derivative], bound, metadata.input_shift)), which_derivative)
+}
+
+pub (super) fn root_search_split <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range: [T; 2], bound_values: [Result <T,()>; 2], which_derivative: usize, split_point: T)->RootSearchResult <T> {
+  assert!(split_point >range [0]);
+  assert! (split_point <range [1]);
+  let split_point_value = evaluate_at_fractional_input (metadata.derivatives [which_derivative], split_point, metadata.input_shift);
+  if split_point > metadata.original_range [0] {
+    let first_half_result = root_search (metadata, [range [0], split_point], [bound_values [0], split_point_value], which_derivative);
+    match first_half_result { RootSearchResult::Finished =>(),_=> return first_half_result }
+  }
+  if split_point < metadata.original_range [1] {
+    return root_search (metadata, [split_point, range [1]], [split_point_value, bound_values [1]], which_derivative)
+  }
+  RootSearchResult::Finished
+}
+
+/// Search for root, assuming the following:
+/// range is a valid range (min < max)
+/// which_derivative is almost-monotonic on this range
+/// bound_values are the correct outputs for which_derivative at the range endpoints
+pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range: [T; 2], bound_values: [Result <T,()>; 2], which_derivative: usize)->RootSearchResult <T> {
+  debug_assert!(range [1] >range [0]);
   let shift = metadata.input_shift;
-  let bound_values = range.map (| bound | evaluate_at_fractional_input (metadata.derivatives [which_derivative], bound, shift));
-  if bound_values [0].is_err () {return RootSearchResult::Overflow (range [0])}
+  
+  let distance = range [1].saturating_sub (range [0]);
+  if distance > metadata.half {
+    if distance < metadata.one {
+      return root_search_split (metadata, range, bound_values, which_derivative, mean_floor (range [0], range [1]));
+    }
+    let min_floor = range [0] >> shift << shift;
+    if min_floor != range [0] {
+      debug_assert!(min_floor + metadata.one < range [1]);
+      return root_search_split (metadata, range, bound_values, which_derivative, min_floor + metadata.one);
+    }
+    let max_floor = range [1] >> shift << shift;
+    if max_floor != range [1] {
+      debug_assert!(max_floor > range [0]);
+      return root_search_split (metadata, range, bound_values, which_derivative, max_floor);
+    }
+  }
+  
+  if range [0] >= metadata.original_range [0] && bound_values [0].is_err () {return RootSearchResult::Overflow (range [0])}
   
   if let [Ok (first), Ok (last)] = bound_values {
   if (first >= T::zero() && last >= T::zero()) ||
@@ -360,7 +404,7 @@ pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata
     // If this is a fractional range, its length is <= half, and "almost monotonic" means that our maximum movement in the "wrong direction" is less than 1. Combined with the error of 1 in evaluating us, this guarantees that our furthest possible value in the "wrong direction" is less than 2, meaning that our anti-derivative has a maximum slope-in-the-wrong-direction less than 2 over a length <= half, so our anti-derivative is also "almost monotonic".
     // Either way, our anti-derivative is "almost monotonic".
     if which_derivative > 0 {
-      return root_search (metadata, range, which_derivative - 1);
+      return root_search_unknown_bound_values (metadata, range, which_derivative - 1);
     } else {
       // if the polynomial value is "almost not 0 crossing" on in interval,
       // we generally don't have to return any results for that interval.
@@ -376,8 +420,8 @@ pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata
   // But maybe we are not-0-crossing on one half of this interval?
   let split_point;
   // don't use fractional inputs until necessary
-  let distance = range [1].saturating_sub (range [0]);
-  if distance > T::one() << shift {
+  
+  if distance > metadata.one {
     split_point = mean_floor (range [0] >> shift, range [1] >> shift) << shift;
   } else if distance > T::one() {
     split_point = mean_floor (range [0], range [1]);
@@ -388,22 +432,13 @@ pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata
       //the "polynomial evaluated only at scaled-integer inputs" is ALWAYS monotonic
       //on an interval with only 2 points in it.
       //So we can skip straight down to the original polynomial.
-      return root_search (metadata, range, 0);
+      return root_search_unknown_bound_values (metadata, range, 0);
     } else {
       // the original polynomial is definitely 0-crossing on this interval: success!
       return RootSearchResult::Root (range [0]);
     }
   }
-  assert!(split_point >range [0]);
-  assert! (split_point <range [1]);
-  if split_point > metadata.original_range [0] {
-    let first_half_result = root_search (metadata, [range [0], split_point], which_derivative);
-    match first_half_result { RootSearchResult::Finished =>(),_=> return first_half_result }
-  }
-  if split_point < metadata.original_range [1] {
-    return root_search (metadata, [split_point, range [1]], which_derivative)
-  }
-  RootSearchResult::Finished
+  root_search_split (metadata, range, bound_values, which_derivative, split_point)
 }
 
 }
