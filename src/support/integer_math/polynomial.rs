@@ -451,7 +451,7 @@ pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata
 #[cfg (test)]
 mod tests {
   use super::*;
-  use num::{Zero, One, FromPrimitive, Integer};
+  use num::{Zero, One, FromPrimitive, ToPrimitive, Integer};
   use num::bigint::BigInt;
   use num::rational::{Ratio, BigRational};
   use rand::distributions::Distribution;  
@@ -532,7 +532,13 @@ mod tests {
         RootSearchResult::Overflow (overflow) => check_before = overflow,
         RootSearchResult::Finished => check_before = last+1,
       }
-      
+      if check_before >first {
+        let sample_points = min (check_before - first, 100);
+        let values: Vec<i64> = (0..sample_points)
+          .map (| index | if index == 0 {first} else {first + (BigInt::from(check_before - first - 1)*index/(sample_points - 1)).to_i64().unwrap()})
+          .collect() ;
+        assert!(values.iter().all (| value | *value >= -2) || values.iter().all (| value | *value <= 2));
+      }
     }
   }
   
