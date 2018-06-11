@@ -291,6 +291,27 @@ pub fn derivative_unchecked <'a, Coefficient: Integer, T: Integer + Signed + Fro
   })
 }
 
+pub fn add_product_into <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (first: & [Coefficient], second: & [Coefficient], destination: &mut [T])->Result <(),()> {
+  assert!(destination.len() + 1 >= first.len() + second.len());
+  for (first_power, first_coefficient) in first.iter().enumerate() {
+    let first_coefficient: T = (*first_coefficient).into();
+    for (second_power, second_coefficient) in second.iter().enumerate() {
+      let second_coefficient: T = (*second_coefficient).into();
+      match first_coefficient.checked_mul (&second_coefficient) {
+        Some (value) => {
+          let mut destination = &mut destination[first_power + second_power];
+          match destination.checked_add (&value) {
+            Some (value) =>*destination = value,
+            None => return Err (()),
+          }
+        }
+        None => return Err (()),
+      }
+    }
+  }
+  Ok (())
+}
+
 
 #[derive (Clone, PartialEq, Eq, Hash, Debug)]
 pub enum RootSearchResult <T> {
