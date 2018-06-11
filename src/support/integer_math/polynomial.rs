@@ -116,7 +116,7 @@ pub fn evaluate_at_fractional_input <Coefficient: Integer, T: Integer + Signed +
   debug_assert! ((T::one() << precision_shift_increment) >= (integer_input.abs() << 1u32), "{:?}", (input, input_shift, precision_shift_increment));
   debug_assert! (precision_shift_increment >0);*/
   let mut precision_shift = evaluate_at_fractional_input_impls::MIN_PRECISION_SHIFT + precision_shift_increment*(coefficients.len() as u32 - 1);
-  println!("ll {:?}", (precision_shift_increment, integer_input, small_input));
+  //println!("ll {:?}", (precision_shift_increment, integer_input, small_input));
   let bits = mem::size_of::<T>() as u32*8;
   if precision_shift >= bits {
     //special case that can only occur under certain circumstances
@@ -299,15 +299,16 @@ pub enum RootSearchResult <T> {
 }
 
 
-pub fn root_search <Coefficient: Copy, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], range: [T; 2], input_shift: u32)->RootSearchResult <T> {
+pub fn root_search <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], range: [T; 2], input_shift: u32)->RootSearchResult <T> {
   assert!(range [1] >range [0]);
   if coefficients.len() <= 1 {
     return RootSearchResult::Finished;
   }
   let all_derivatives_terms = (coefficients.len()*(coefficients.len() + 1)) >> 1;
-  let mut derivatives: SmallVec<[T; 15]> = smallvec! [T::zero(); all_derivatives_terms];
+  let mut derivatives: SmallVec<[T; 15]> = SmallVec::with_capacity (all_derivatives_terms);
   
   derivatives.extend (coefficients.iter().map (| coefficient | (*coefficient).into()));
+  derivatives.resize (all_derivatives_terms, T::zero());
   
   let mut derivative_start = 0;
   for derivative_size in (3..coefficients.len() + 1).rev() {
@@ -332,6 +333,7 @@ pub fn root_search <Coefficient: Copy, T: Integer + Signed + From <Coefficient>>
     metadata.derivatives.push (& derivatives [derivative_start..derivative_start + derivative_size]);
     derivative_start += derivative_size;
   }
+  //println!( "{:?}", metadata.derivatives) ;
   
   self::impls::root_search_unknown_bound_values (& metadata, [
     (range [0] >> input_shift) << input_shift,
@@ -426,6 +428,8 @@ pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata
   } else if distance > T::one() {
     split_point = mean_floor (range [0], range [1]);
   } else {
+    assert!(range [0] >= metadata.original_range [0]);
+    assert!(range [1] <= metadata.original_range [1]);
     if bound_values [1].is_err() { return RootSearchResult::Overflow (range [1]) }
     if which_derivative > 0 {
       //although the ideal polynomial isn't necessarily monotonic on this interval,
