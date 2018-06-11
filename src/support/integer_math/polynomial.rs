@@ -292,6 +292,7 @@ pub fn derivative_unchecked <'a, Coefficient: Integer, T: Integer + Signed + Fro
 }
 
 
+#[derive (Clone, PartialEq, Eq, Hash, Debug)]
 pub enum RootSearchResult <T> {
   Root (T),
   Overflow (T),
@@ -377,6 +378,7 @@ pub (super) fn root_search_split <T: Integer + Signed> (metadata: & RootSearchMe
 /// bound_values are the correct outputs for which_derivative at the range endpoints
 pub (super) fn root_search <T: Integer + Signed> (metadata: & RootSearchMetadata <T>, range: [T; 2], bound_values: [Result <T,()>; 2], which_derivative: usize)->RootSearchResult <T> {
   debug_assert!(range [1] >range [0]);
+  //println!( "something {:?}", (range, bound_values, which_derivative));
   let shift = metadata.input_shift;
   
   let distance = range [1].saturating_sub (range [0]);
@@ -522,7 +524,8 @@ mod tests {
       )
     }).no_shrink()) {
       let check_before;
-      match root_search (coefficients, [first, last], input_shift) {
+      let result = root_search (coefficients, [first, last], input_shift);
+      match result {
         RootSearchResult::Root (root) => {
           let root_value = evaluate_at_fractional_input (& coefficients, root, input_shift).unwrap();
           let next_value = evaluate_at_fractional_input (& coefficients, root + 1, input_shift).unwrap();
@@ -533,11 +536,16 @@ mod tests {
         RootSearchResult::Finished => check_before = last+1,
       }
       if check_before >first {
-        let sample_points = min (check_before - first, 100);
-        let values: Vec<i64> = (0..sample_points)
-          .map (| index | if index == 0 {first} else {first + (BigInt::from(check_before - first - 1)*index/(sample_points - 1)).to_i64().unwrap()})
+        let sample_points = min (check_before.saturating_sub (first), 100);
+        let values: Vec<(i64, i64)> = (0..sample_points)
+          .map (| index | if index == 0 {first} else {
+            let bfirst = BigInt::from(first);
+            let offset: BigInt = (BigInt::from(check_before) - first - 1)*index/(sample_points - 1);
+            (bfirst + offset).to_i64().unwrap()
+          })
+          .map (| input | (input, evaluate_at_fractional_input (& coefficients, input, input_shift).unwrap()))
           .collect() ;
-        assert!(values.iter().all (| value | *value >= -2) || values.iter().all (| value | *value <= 2));
+        assert!(values.iter().all (| value | value.1 >= -2) || values.iter().all (| value | value.1 <= 2), "There was a significant 0 crossing before the returned result: {:?}", (result, values));
       }
     }
   }
