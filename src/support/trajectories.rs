@@ -1,33 +1,30 @@
 use nalgebra::Vector2;
 use std::cmp::max;
 use super::integer_math::*;
-use std::ops::{Add, Sub, Mul, Neg};
+use std::ops::{Add, Sub, Mul, Neg, AddAssign, SubAssign, MulAssign};
 use array_ext::*;
 
 
 pub type Time = i64;
 
 
-pub trait ScalarTrajectory: Trajectory {
-  fn next_time_ge (&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
-
-  }
-  fn next_time_gt (&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
-    self.next_time_ge (now, value + Vector::one())
-  }
-  fn next_time_le (&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
-    (-self).next_time_ge (now, -value)
-  }
-  fn next_time_lt (&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
-    self.next_time_le (now, value - Vector::one())
-  }
-}
-
 pub trait Trajectory {
   type Coefficient: Vector;
-  fn distance_proxy_trajectory (&self, other: & Self)->impl ScalarTrajectory <T::Component> {
-  
+}
+
+pub trait ScalarTrajectory: Trajectory {
+  /*fn next_time_ge (&self, start: Time, end: Time, target: Self::Coefficient)->Option <Time> {
+
   }
+  fn next_time_gt (&self, start: Time, end: Time, target: Self::Coefficient)->Option <Time> {
+    self.next_time_ge (now, target + Vector::one())
+  }
+  fn next_time_le (&self, start: Time, end: Time, target: Self::Coefficient)->Option <Time> {
+    (-self).next_time_ge (now, -target)
+  }
+  fn next_time_lt (&self, start: Time, end: Time, target: Self::Coefficient)->Option <Time> {
+    self.next_time_le (now, target - Vector::one())
+  }*/
 }
 
 macro_rules! impl_binop {
@@ -67,7 +64,7 @@ impl <$($generic_parameters)*> $TraitAssign <$Right> for $Left {
   }
 }
 
-impl <'a, $($generic_parameters)*> $Trait <& 'a $Right> for $Left {
+impl <'a, $($generic_parameters)*> $TraitAssign <& 'a $Right> for $Left {
   fn $method_assign ($self, $other: $Right)->Self {
     $assign_ref
   }
@@ -155,20 +152,23 @@ macro_rules! impl_trajectory {
   ($Trajectory: ident, $degree: expr) => {
 
 #[derive (Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug, Default)]
-pub struct $Trajectory <Vector> {
+pub struct $Trajectory <T> {
   origin: Time,
-  terms: [Vector; $degree + 1],
+  terms: [T; $degree + 1],
 }
 
-impl $Trajectory <Vector> {
-  pub fn constant (value: Vector)->Self {
-    $Trajectory {origin: Vector::zero(), terms: $Terms::constant (value)}
+impl <T: Vector> $Trajectory <T> {
+  pub fn constant (value: T)->Self {
+    let terms = [T::zero(); $degree + 1];
+    terms [0] = value;
+    $Trajectory {origin: T::zero(), terms}
   }
-  pub fn set_origin (&mut self, new_origin: Time) {
-    self.terms.set_origin (new_origin - self.origin);
+  pub fn set_origin (&mut self, new_origin: Time)->Result <(), polynomial::Error> {
+    polynomial::translate (self.terms, new_origin - self.origin)?;
     self.origin = new_origin;
+    Ok (())
   }
-  pub fn term (&self, time: Time, which: usize)->Vector {
+  pub fn term (&self, time: Time, which: usize)->T {
     self.terms.taylor_coefficient (time - self.origin, which)
   }
   pub fn set_term (&mut self, time: Time, which: usize, value: Vector) {
@@ -179,32 +179,32 @@ impl $Trajectory <Vector> {
     self.set_origin (time);
     self.terms.0 [which] += value;
   }
-  pub fn value (&mut self, time: Time)->Vector {self.term (time, 0)}
+  pub fn value (&mut self, time: Time)->T {self.term (time, 0)}
   pub fn velocity (&mut self, time: Time)->Vector {self.term (time, 1)}
   pub fn set_value (&mut self, time: Time, value: Vector) {self.set_term (time, 0, value)}
   pub fn set_velocity (&mut self, time: Time, value: Vector) {self.set_term (time, 1, value)}
-  pub fn add_value (&mut self, time: Time, value: Vector) {self.add_term (time, 0, value)}
+  pub fn add_value (&mut self, value: Vector) {self += value}
   pub fn add_velocity (&mut self, time: Time, value: Vector) {self.add_term (time, 1, value)}
 }
 
-impl <Vector: Ord + Div <Vector >> Trajectory <Vector> {
-  pub fn next_time_lt (now: Time, value: Vector)->Option <Time> {
+impl <Vector: Ord + Div <Vector >> $Trajectory <Vector> {
+  pub fn next_time_lt (&self, now: Time, value: Vector)->Option <Time> {
     if self.value (now) <value {Some (now)}
     else if $degree >= 2 && self.terms.0 [2] != Vector::zero() {
       unimplemented!()
     }
     else {
       if self.terms.0 [1] <= Vector::zero() {None}
-      else {Some (self.origin + div_ceil ((value - self.terms.0 [0]), self.terms.0 [1]))}
+      else {Some (self.origin + div_ceil (value - self.terms.0 [0], self.terms.0 [1]))}
     }
   }
-  pub fn next_time_le (now: Time, value: Vector)->Option <Time> {
+  pub fn next_time_le (&self, now: Time, value: Vector)->Option <Time> {
     self.next_time_lt (now, value + Vector::one())
   }
-  pub fn next_time_gt (now: Time, value: Vector)->Option <Time> {
+  pub fn next_time_gt (&self, now: Time, value: Vector)->Option <Time> {
     (-self).next_time_lt (now, -value)
   }
-  pub fn next_time_ge (now: Time, value: Vector)->Option <Time> {
+  pub fn next_time_ge (&self, now: Time, value: Vector)->Option <Time> {
     self.next_time_gt (now, value - Vector::one())
   }
 }

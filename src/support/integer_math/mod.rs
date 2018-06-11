@@ -1,5 +1,5 @@
 use num::{self};
-use num::traits::{WrappingAdd, WrappingSub, WrappingMul, CheckedShl, CheckedShr, Signed};
+use num::traits::{Zero, WrappingAdd, WrappingSub, WrappingMul, CheckedShl, CheckedShr, Signed};
 use std::mem;
 use std::cmp::{min};
 use std::ops::{Add, Sub, Mul, AddAssign, SubAssign, MulAssign, Shl, Shr, Neg, Index};
@@ -24,7 +24,7 @@ pub trait Vector:
   Add <Self, Output = Self> + Sub <Self, Output = Self> + Mul <<Self as HasCoordinates>::Coordinate, Output = Self> +
   for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + //for<'a> Mul <&'a <Self as HasCoordinates>::Coordinate, Output = Self> +
   AddAssign <Self> + SubAssign <Self> + MulAssign <<Self as HasCoordinates>::Coordinate> +
-  Neg <Output = Self>
+  Zero + Neg <Output = Self>
   {
 
 }
