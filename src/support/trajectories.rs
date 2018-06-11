@@ -1,5 +1,6 @@
-use nalgebra::Vector2;
-use std::cmp::max;
+//use nalgebra::Vector2;
+//use std::cmp::max;
+use num::traits::Signed;
 use super::integer_math::*;
 use std::ops::{Add, Sub, Mul, Neg, AddAssign, SubAssign, MulAssign};
 use array_ext::*;
@@ -45,27 +46,27 @@ impl <'a, $($generic_parameters)*> $Trait <& 'a $Right> for $Left {
 }
 
 impl <'a, $($generic_parameters)*> $Trait <$Right> for & 'a $Left {
-  type Output = Self;
-  fn $method ($self, $other: $Right)->Self {
+  type Output = $Left;
+  fn $method ($self, $other: $Right)->$Left {
     $ref_owned
   }
 }
 
 impl <'a, 'b, $($generic_parameters)*> $Trait <& 'b $Right> for & 'a $Left {
-  type Output = Self;
-  fn $method ($self, $other: & 'b $Right)->Self {
+  type Output = $Left;
+  fn $method ($self, $other: & 'b $Right)->$Left {
     $ref_ref
   }
 }
 
 impl <$($generic_parameters)*> $TraitAssign <$Right> for $Left {
-  fn $method_assign ($self, $other: $Right)->Self {
+  fn $method_assign (&mut $self, $other: $Right) {
     $assign_owned
   }
 }
 
 impl <'a, $($generic_parameters)*> $TraitAssign <& 'a $Right> for $Left {
-  fn $method_assign ($self, $other: $Right)->Self {
+  fn $method_assign (&mut $self, $other: & 'a $Right) {
     $assign_ref
   }
 }
@@ -161,58 +162,74 @@ impl <T: Vector> $Trajectory <T> {
   pub fn constant (value: T)->Self {
     let terms = [T::zero(); $degree + 1];
     terms [0] = value;
-    $Trajectory {origin: T::zero(), terms}
+    $Trajectory {origin: 0, terms}
   }
-  pub fn set_origin (&mut self, new_origin: Time)->Result <(), polynomial::Error> {
-    polynomial::translate (self.terms, new_origin - self.origin)?;
+  pub fn set_origin (&mut self, new_origin: Time)->Result <(), polynomial::Error <Time>> {
+    polynomial::translate (&mut self.terms, new_origin - self.origin)?;
     self.origin = new_origin;
     Ok (())
   }
   pub fn term (&self, time: Time, which: usize)->T {
     self.terms.taylor_coefficient (time - self.origin, which)
   }
-  pub fn set_term (&mut self, time: Time, which: usize, value: Vector) {
+  pub fn set_term (&mut self, time: Time, which: usize, value: T) {
     self.set_origin (time) ;
     self.terms.0 [which] = value;
   }
-  pub fn add_term (&mut self, time: Time, which: usize, value: Vector) {
+  pub fn add_term (&mut self, time: Time, which: usize, value: T) {
     self.set_origin (time);
     self.terms.0 [which] += value;
   }
   pub fn value (&mut self, time: Time)->T {self.term (time, 0)}
-  pub fn velocity (&mut self, time: Time)->Vector {self.term (time, 1)}
-  pub fn set_value (&mut self, time: Time, value: Vector) {self.set_term (time, 0, value)}
-  pub fn set_velocity (&mut self, time: Time, value: Vector) {self.set_term (time, 1, value)}
-  pub fn add_value (&mut self, value: Vector) {self += value}
-  pub fn add_velocity (&mut self, time: Time, value: Vector) {self.add_term (time, 1, value)}
+  pub fn velocity (&mut self, time: Time)->T {self.term (time, 1)}
+  pub fn set_value (&mut self, time: Time, value: T) {self.set_term (time, 0, value)}
+  pub fn set_velocity (&mut self, time: Time, value: T) {self.set_term (time, 1, value)}
+  pub fn add_value (&mut self, value: T) {self += value}
+  pub fn add_velocity (&mut self, time: Time, value: T) {self.add_term (time, 1, value)}
 }
 
-impl <Vector: Ord + Div <Vector >> $Trajectory <Vector> {
-  pub fn next_time_lt (&self, now: Time, value: Vector)->Option <Time> {
-    if self.value (now) <value {Some (now)}
-    else if $degree >= 2 && self.terms.0 [2] != Vector::zero() {
+impl <T: Integer + Signed> $Trajectory <T> {
+  pub fn next_time_lt (&self, now: Time, value: T)->Option <Time> {
+    if self.value (now) < value {Some (now)}
+    else {
       unimplemented!()
     }
-    else {
-      if self.terms.0 [1] <= Vector::zero() {None}
-      else {Some (self.origin + div_ceil (value - self.terms.0 [0], self.terms.0 [1]))}
-    }
   }
-  pub fn next_time_le (&self, now: Time, value: Vector)->Option <Time> {
-    self.next_time_lt (now, value + Vector::one())
+  pub fn next_time_le (&self, now: Time, value: T)->Option <Time> {
+    self.next_time_lt (now, value + T::one())
   }
-  pub fn next_time_gt (&self, now: Time, value: Vector)->Option <Time> {
+  pub fn next_time_gt (&self, now: Time, value: T)->Option <Time> {
     (-self).next_time_lt (now, -value)
   }
-  pub fn next_time_ge (&self, now: Time, value: Vector)->Option <Time> {
-    self.next_time_gt (now, value - Vector::one())
+  pub fn next_time_ge (&self, now: Time, value: T)->Option <Time> {
+    self.next_time_gt (now, value - T::one())
   }
 }
 
 impl_trajectory_add_sub! ($Trajectory, Add, add, AddAssign, add_assign);
 impl_trajectory_add_sub! ($Trajectory, Sub, sub, SubAssign, sub_assign);
 
-impl_binop! {
+impl<T: Vector, Coordinate> Mul<Coordinate> for $Trajectory<T> where T: MulAssign <Coordinate> {
+  type Output = Self;
+  fn mul(self, other: Coordinate) -> Self {
+    self *= other; self
+  }
+}
+
+impl<'a, T: Vector, Coordinate> Mul<Coordinate> for & 'a $Trajectory<T> where T: MulAssign <Coordinate> {
+  type Output = $Trajectory <T>;
+  fn mul(self, other: Coordinate) ->$Trajectory <T> {
+    self.clone()*other
+  }
+}
+
+impl<T: Vector, Coordinate> MulAssign <Coordinate> for $Trajectory<T> where T: MulAssign <Coordinate> {
+  fn mul_assign (&mut self, other: Coordinate) {
+    for term in self.terms.iter_mut (){MulAssign::<Coordinate>::mul_assign (term, other);}
+  }
+}
+
+/*impl_binop! {
 [T: Vector], $Trajectory <T>, T::Coordinate, Mul, mul, MulAssign, mul_assign, self, other,
 {
   self *= other;
@@ -223,20 +240,20 @@ impl_binop! {
   self
 },
 {
-  self.clone() + other
+  self.clone()*other
 },
 {
-  self.clone() + other
-},
-{
-  for term in self.terms.iter_mut (){*term *= other;}
+  self.clone()*other
 },
 {
   for term in self.terms.iter_mut (){*term *= other;}
 },
-}
+{
+  for term in self.terms.iter_mut (){*term *= other;}
+},
+}*/
 
-impl <Vector: Clone + Neg <Output = Vector>> Neg for $Trajectory <Vector> {
+impl <T: Vector + Neg <Output = T>> Neg for $Trajectory <T> {
   type Output = Self;
   fn neg (self)->Self {
     $Trajectory {
@@ -245,9 +262,9 @@ impl <Vector: Clone + Neg <Output = Vector>> Neg for $Trajectory <Vector> {
     }
   }
 }
-impl <'a, Vector> Neg for & 'a $Trajectory <Vector> where & 'a Vector: Neg <Output = Vector> {
-  type Output = $Trajectory <Vector>;
-  fn neg (self)->$Trajectory <Vector> {
+impl <'a, T: Vector> Neg for & 'a $Trajectory <T> where & 'a T: Neg <Output = T> {
+  type Output = $Trajectory <T>;
+  fn neg (self)->$Trajectory <T> {
     $Trajectory {
       origin: self.origin,
       terms: Array::from_fn (| index | (& self.terms [index]).neg()),
@@ -259,7 +276,7 @@ impl <'a, Vector> Neg for & 'a $Trajectory <Vector> where & 'a Vector: Neg <Outp
   };
 }
 
-impl_trajectory! (LinearTrajectory, 1) ;
+//impl_trajectory! (LinearTrajectory, 1) ;
 impl_trajectory! (QuadraticTrajectory, 2) ;
 
 

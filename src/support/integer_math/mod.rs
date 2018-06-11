@@ -20,10 +20,11 @@ pub trait HasCoordinates
   type Coordinate: Integer + Signed;}
 
 pub trait Vector:
-  'static + Sized + Clone + HasCoordinates +
+  'static + Sized + Copy + Clone + HasCoordinates +
   Add <Self, Output = Self> + Sub <Self, Output = Self> + Mul <<Self as HasCoordinates>::Coordinate, Output = Self> +
   for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + //for<'a> Mul <&'a <Self as HasCoordinates>::Coordinate, Output = Self> +
   AddAssign <Self> + SubAssign <Self> + MulAssign <<Self as HasCoordinates>::Coordinate> +
+  for<'a> AddAssign <&'a Self> + for<'a> SubAssign <&'a Self> + //for<'a> MulAssign <&'a <Self as HasCoordinates>::Coordinate> +
   Zero + Neg <Output = Self>
   {
 
