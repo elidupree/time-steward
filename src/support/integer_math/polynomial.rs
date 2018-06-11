@@ -328,7 +328,7 @@ pub fn root_search <Coefficient: Copy, T: Integer + Signed + From <Coefficient>>
   };
   
   let mut derivative_start = 0;
-  for derivative_size in (min(3, coefficients.len())..coefficients.len() + 1).rev() {
+  for derivative_size in (2..coefficients.len() + 1).rev() {
     metadata.derivatives.push (& derivatives [derivative_start..derivative_start + derivative_size]);
     derivative_start += derivative_size;
   }
