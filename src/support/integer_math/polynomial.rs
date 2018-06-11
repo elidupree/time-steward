@@ -54,9 +54,11 @@ pub fn evaluate_at_small_input <Coefficient: Integer, T: Integer + Signed + From
     
   let mut result = T::zero();
   for coefficient in coefficients.iter().skip(1).rev() {
-    result = shr_nicely_rounded ((result + (*coefficient).into())*input, shift);
+    let coefficient: T = (*coefficient).into();
+    result = shr_nicely_rounded ((result + coefficient)*input, shift);
   }
-  result + coefficients [0].into()
+  let constant_coefficient: T = coefficients [0].into();
+  result + constant_coefficient
 }
 
 /// Translate a polynomial horizontally, letting it take inputs relative to a given input instead of relative to 0.
@@ -142,7 +144,8 @@ pub fn evaluate_at_fractional_input <Coefficient: Integer, T: Integer + Signed +
     result = shr_round_to_even (result, precision_shift_increment);
   }
   debug_assert! (precision_shift == evaluate_at_fractional_input_impls::MIN_PRECISION_SHIFT );
-  Ok(shr_nicely_rounded (result, evaluate_at_fractional_input_impls::MIN_PRECISION_SHIFT) + coefficients [0].into())
+  let constant_coefficient: T = coefficients [0].into();
+  Ok(shr_nicely_rounded (result, evaluate_at_fractional_input_impls::MIN_PRECISION_SHIFT) + constant_coefficient)
 }
 
 

@@ -1,12 +1,39 @@
 use num::{self};
-use num::traits::{WrappingAdd, WrappingSub, WrappingMul, CheckedShl, CheckedShr};
+use num::traits::{WrappingAdd, WrappingSub, WrappingMul, CheckedShl, CheckedShr, Signed};
 use std::mem;
 use std::cmp::{min};
-use std::ops::{AddAssign, SubAssign, MulAssign, Shl, Shr};
+use std::ops::{Add, Sub, Mul, AddAssign, SubAssign, MulAssign, Shl, Shr, Neg, Index};
 use std::fmt::Debug;
 
-pub trait Integer: num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug {}
-impl <T: num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug> Integer for T {}
+pub trait Integer:
+  'static + num::PrimInt + num::Integer + num::FromPrimitive +
+  AddAssign <Self> + SubAssign <Self> + MulAssign <Self> +
+  WrappingAdd + WrappingSub + WrappingMul +
+  for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> +
+  CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> +
+  Debug {}
+impl <T: 'static + num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug> Integer for T {}
+
+pub trait Vector <Coordinate>:
+  'static + Sized + Clone +
+  Add <Self, Output = Self> + Sub <Self, Output = Self> + Mul <Coordinate, Output = Self> +
+  for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + //for<'a> Mul <&'a Coordinate, Output = Self> +
+  AddAssign <Self> + SubAssign <Self> + MulAssign <Coordinate> +
+  Neg <Output = Self> {
+  
+}
+
+pub mod impls {
+  use super::*;
+  use nalgebra::*;
+  macro_rules! impl_vector {
+    ($($Vector: ident,)*) => {
+      $(impl <T: Integer + Signed> Vector <T> for $Vector <T> {})*
+    }
+  }
+  impl_vector! (Vector1, Vector2, Vector3, Vector4, Vector5, Vector6,);
+  impl <T: Integer + Signed> Vector <T> for T {}
+}
 
 /// Right-shift an integer, but round to nearest, with ties rounding to even.
 ///
