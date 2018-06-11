@@ -14,13 +14,19 @@ pub trait Integer:
   Debug {}
 impl <T: 'static + num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug> Integer for T {}
 
-pub trait Vector <Coordinate>:
-  'static + Sized + Clone +
-  Add <Self, Output = Self> + Sub <Self, Output = Self> + Mul <Coordinate, Output = Self> +
-  for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + //for<'a> Mul <&'a Coordinate, Output = Self> +
-  AddAssign <Self> + SubAssign <Self> + MulAssign <Coordinate> +
-  Neg <Output = Self> {
-  
+
+pub trait HasCoordinates
+   {
+  type Coordinate: Integer + Signed;}
+
+pub trait Vector:
+  'static + Sized + Clone + HasCoordinates +
+  Add <Self, Output = Self> + Sub <Self, Output = Self> + Mul <<Self as HasCoordinates>::Coordinate, Output = Self> +
+  for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + //for<'a> Mul <&'a <Self as HasCoordinates>::Coordinate, Output = Self> +
+  AddAssign <Self> + SubAssign <Self> + MulAssign <<Self as HasCoordinates>::Coordinate> +
+  Neg <Output = Self>
+  {
+
 }
 
 pub mod impls {
@@ -28,11 +34,22 @@ pub mod impls {
   use nalgebra::*;
   macro_rules! impl_vector {
     ($($Vector: ident,)*) => {
-      $(impl <T: Integer + Signed> Vector <T> for $Vector <T> {})*
+      $(
+        impl <T: Integer + Signed> HasCoordinates for $Vector <T> {type Coordinate = T;}
+        impl <T: Integer + Signed> Vector for $Vector <T> {}
+      )*
+    }
+  }
+  macro_rules! impl_integer {
+    ($($Integer: ident,)*) => {
+      $(
+        impl HasCoordinates for $Integer {type Coordinate = $Integer;}
+        impl Vector for $Integer {}
+      )*
     }
   }
   impl_vector! (Vector1, Vector2, Vector3, Vector4, Vector5, Vector6,);
-  impl <T: Integer + Signed> Vector <T> for T {}
+  impl_integer! (i8, i16, i32, i64, isize,);
 }
 
 /// Right-shift an integer, but round to nearest, with ties rounding to even.

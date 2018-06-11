@@ -1,120 +1,75 @@
 use nalgebra::Vector2;
 use std::cmp::max;
-use super::rounding_error_tolerant_math::*;
+use super::integer_math::*;
 use std::ops::{Add, Sub, Mul, Neg};
 use array_ext::*;
 
 
 pub type Time = i64;
 
-pub trait IntegerVector: Clone + Add <Self, Output = Self> + Sub <Self, Output = Self> + Mul <i64, Output = Self> + Zero + {
-  type DistanceProxy: Scalar;
-  fn distance_proxy (&self, other: & Self)->Self::DistanceProxy;
-}
 
-pub trait ScalarTrajectory: Trajectory <Value: Scalar> {
-  /// 
-  fn non_strict_bounds (&self, input_range: [Time; 2])->[T; 2];
+pub trait ScalarTrajectory: Trajectory {
   fn next_time_ge (&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
-    //default impl that works for all locally Lipschitz functions; can optimize more in explicit impls
-    let mut current_value = self.evaluate (start) ;
-    if current_value >= target {return Some (start)}
-    let mut start = start;
-    let mut increment = Self::Value::one();
-    loop {
-      let [max,_] = self.slope_range ([start, start + increment]);
-      if max >= target {increment >>= 1; break;}
-      if start + increment == end {increment = end - start; break;}
-      increment <<= 1;
-      if start + increment > end {increment = end - start;}
-    }
-    loop {
-      start += increment;
-      current_value = self.evaluate (start);
-      if current_value >= target {return Some (start)}
-      if start == end {return None;}
-      if start + increment > end {increment = end - start;}
-      loop {
-        let [max,_] = self.slope_range ([start, start + increment]);
-        if max >= target {increment >>= 1;}
-        else {break;}
-      }
-    }
+
   }
-  pub fn next_time_gt (&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
+  fn next_time_gt (&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
     self.next_time_ge (now, value + Vector::one())
   }
-  pub fn next_time_(&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
+  fn next_time_le (&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
     (-self).next_time_ge (now, -value)
   }
-  pub fn next_time_lt (&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
+  fn next_time_lt (&self, start: Time, end: Time, target: Self::Value)->Option <Time> {
     self.next_time_le (now, value - Vector::one())
   }
 }
 
-pub struct DistanceProxyTrajectory <'a, Vector: IntegerVector, T: Trajectory <Vector>> {
-  first: & 'a T,
-  second: & 'a T,
-}
-impl <'a, Vector: IntegerVector, T: Trajectory <Vector>> ScalarTrajectory <Vector::DistanceProxy> for DistanceProxyTrajectory <'a, Vector, T> {
-  fn non_strict_bounds (&self, input_range: [Time; 2])->[Self::Value; 2] {
-    {
-      let first_bounds = self.first.component (dimension).non_strict_bounds (input_range);
-      let second_bounds = self.second.component (dimension).non_strict_bounds (input_range);
-      max_vector [dimension] = max (first_bounds [1] - second_bounds [0], second_bounds [1] - first_bounds [0]);
-      min_vector [dimension] = if bounds_intersect (first_bounds, second_bounds) {Self::Value::zero()} else {
-    [min_vector.distance_proxy(), max_vector.distance_proxy()]
-  }
-}
-
-pub trait Trajectory: {
-  type Value: IntegerVector;
+pub trait Trajectory {
+  type Coefficient: Vector;
   fn distance_proxy_trajectory (&self, other: & Self)->impl ScalarTrajectory <T::Component> {
   
   }
 }
 
-macro_rules! impl_trajectory_binop {
-  ($Trajectory: ident, $Trait: ident, $method: ident) => {
+macro_rules! impl_binop {
+  ([$($generic_parameters: tt)*], $Left:ty, $Right:ty, $Trait: ident, $method: ident, $TraitAssign: ident, $method_assign: ident, $self: ident, $other: ident, $owned_owned: expr, $owned_ref: expr, $ref_owned: expr, $ref_ref: expr, $assign_owned: expr, $assign_ref: expr,) => {
 
-impl <Vector: Clone + $Trait <Vector, Output = Vector>> $Trait for $Trajectory <Vector> {
+impl <$($generic_parameters)*> $Trait <$Right> for $Left {
   type Output = Self;
-  fn $method (self, other: Self)->Self {
-    $Trajectory {
-      origin: self.origin,
-      terms: Array::from_fn (| index | self.terms [index].clone().$method (other.terms [index].clone())),
-    }
+  fn $method ($self, $other: $Right)->Self {
+    $owned_owned
   }
 }
 
-
-impl <'a, Vector: Clone + $Trait <& 'a Vector, Output = Vector>> $Trait <& 'a $Trajectory <Vector>> for $Trajectory <Vector> {
+impl <'a, $($generic_parameters)*> $Trait <& 'a $Right> for $Left {
   type Output = Self;
-  fn $method (self, other: & 'a $Trajectory <Vector>)->Self {
-    $Trajectory {
-      origin: self.origin,
-      terms: Array::from_fn (| index | self.terms [index].clone().$method (& other.terms [index])),
-    }
+  fn $method ($self, $other: & 'a $Right)->Self {
+    $owned_ref
   }
 }
 
-impl <'a, Vector: Clone> $Trait <$Trajectory <Vector>> for & 'a $Trajectory <Vector> where & 'a Vector: $Trait <Vector, Output = Vector> {
-  type Output = $Trajectory <Vector>;
-  fn $method (self, other: $Trajectory <Vector>)->$Trajectory <Vector> {
-    $Trajectory {
-      origin: self.origin,
-      terms: Array::from_fn (| index | (& self.terms [index]).$method (other.terms [index].clone())),
-    }
+impl <'a, $($generic_parameters)*> $Trait <$Right> for & 'a $Left {
+  type Output = Self;
+  fn $method ($self, $other: $Right)->Self {
+    $ref_owned
   }
 }
 
-impl <'a, 'b, Vector> $Trait <& 'b $Trajectory <Vector>> for & 'a $Trajectory <Vector> where & 'a Vector: $Trait <& 'b Vector, Output = Vector> {
-  type Output = $Trajectory <Vector>;
-  fn $method (self, other: & 'b $Trajectory <Vector>)->$Trajectory <Vector> {
-    $Trajectory {
-      origin: self.origin,
-      terms: Array::from_fn (| index | (& self.terms [index]).clone().$method (& other.terms [index])),
-    }
+impl <'a, 'b, $($generic_parameters)*> $Trait <& 'b $Right> for & 'a $Left {
+  type Output = Self;
+  fn $method ($self, $other: & 'b $Right)->Self {
+    $ref_ref
+  }
+}
+
+impl <$($generic_parameters)*> $TraitAssign <$Right> for $Left {
+  fn $method_assign ($self, $other: $Right)->Self {
+    $assign_owned
+  }
+}
+
+impl <'a, $($generic_parameters)*> $Trait <& 'a $Right> for $Left {
+  fn $method_assign ($self, $other: $Right)->Self {
+    $assign_ref
   }
 }
 
@@ -122,25 +77,74 @@ impl <'a, 'b, Vector> $Trait <& 'b $Trajectory <Vector>> for & 'a $Trajectory <V
 }
 
 macro_rules! impl_trajectory_add_sub {
+  ($Trajectory:ident, $Trait: ident, $method: ident, $TraitAssign: ident, $method_assign: ident) => {
 
-
-impl_binop ($Trait, $method, $Trajectory <Vector>, $Trajectory <Vector>, $Trajectory <Vector>, self, other, {
-  //always let [$($first_identifiers),*] = self.terms;
-  let [$($second_identifiers),*] = other.terms or & other.terms;
-  $Trajectory {
-    origin: self.origin,
-    terms: [$($first_identifiers.method ($second_identifiers))*]
+impl_binop! {
+[T: Vector], $Trajectory <T>, $Trajectory <T>, $Trait, $method, $TraitAssign, $method_assign, self, other,
+{
+  self += other;
+  self
+},
+{
+  self += other;
+  self
+},
+{
+  self.clone() + other
+},
+{
+  self.clone() + other.clone()
+},
+{
+  if self.origin < other.origin {self.set_origin (other.origin).unwrap();}
+  if other.origin < self.origin {other.set_origin (self.origin).unwrap();}
+  for (mine, others) in self.terms.iter_mut().zip (other.terms.into_iter()) {
+    mine.$method_assign (others);
   }
-});
-
+},
+{
+  let mut other = other;
+  let mut other_clone;
+  if self.origin < other.origin {self.set_origin (other.origin).unwrap();}
+  if other.origin < self.origin {
+    other_clone = other.clone();
+    other_clone.set_origin (self.origin).unwrap();
+    other = & other_clone;
+  }
+  for (mine, others) in self.terms.iter_mut().zip (other.terms.iter()) {
+    mine.$method_assign (others);
+  }
+},
 }
 
-impl_binop ($Trait, $method, $Trajectory <Vector>, Scalar, $Trajectory <Vector>, self, other, {
-  $Trajectory {
-    origin: self.origin,
-    terms: [$($first_identifiers.method (other))*]
+
+impl_binop! {
+[T: Vector], $Trajectory <T>, T, $Trait, $method, $TraitAssign, $method_assign, self, other,
+{
+  self.terms[0].$method_assign (other);
+  self
+},
+{
+  self.terms[0].$method_assign (other);
+  self
+},
+{
+  self.clone() + other
+},
+{
+  self.clone() + other
+},
+{
+  self.terms[0].$method_assign (other);
+},
+{
+  self.terms[0].$method_assign (other);
+},
+}
+
+
   }
-});
+}
 
 
 
@@ -148,37 +152,12 @@ impl_binop ($Trait, $method, $Trajectory <Vector>, Scalar, $Trajectory <Vector>,
 
 
 macro_rules! impl_trajectory {
-  ($Terms: ident, $Trajectory: ident, $degree: expr) => {
-
-#[derive (Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug, Default)]
-pub struct $Terms <Vector> ([Vector; $degree + 1]);
+  ($Trajectory: ident, $degree: expr) => {
 
 #[derive (Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug, Default)]
 pub struct $Trajectory <Vector> {
   origin: Time,
-  terms: $Terms <Vector>,
-}
-
-impl <Vector> $Terms <Vector> {
-  pub fn constant (value: Vector)->Self {
-    let mut array = [Vector::zero()];
-    array [0] = value;
-    $Terms (array)
-  }
-  pub fn term (&self, time: Time, which: usize)->Vector {
-    let mut factor = 1;
-    let mut result = terms [which].clone();
-    for index in (which + 1)..($degree + 1) {
-      factor *= time;
-      result += terms [index]*(factor*binomial_coefficient (index, which));
-    }
-    result
-  }
-  pub fn set_origin (&mut self, new_origin: Time) {
-    for index in 0.. $degree {
-      self.0 [index] = self.taylor_coefficient (index, new_origin) ;
-    }
-  }
+  terms: [Vector; $degree + 1],
 }
 
 impl $Trajectory <Vector> {
@@ -230,8 +209,32 @@ impl <Vector: Ord + Div <Vector >> Trajectory <Vector> {
   }
 }
 
-impl_trajectory_arithmetic_trait! ($Trajectory, Add, add);
-impl_trajectory_arithmetic_trait! ($Trajectory, Sub, sub);
+impl_trajectory_add_sub! ($Trajectory, Add, add, AddAssign, add_assign);
+impl_trajectory_add_sub! ($Trajectory, Sub, sub, SubAssign, sub_assign);
+
+impl_binop! {
+[T: Vector], $Trajectory <T>, T::Coordinate, Mul, mul, MulAssign, mul_assign, self, other,
+{
+  self *= other;
+  self
+},
+{
+  self *= other;
+  self
+},
+{
+  self.clone() + other
+},
+{
+  self.clone() + other
+},
+{
+  for term in self.terms.iter_mut (){*term *= other;}
+},
+{
+  for term in self.terms.iter_mut (){*term *= other;}
+},
+}
 
 impl <Vector: Clone + Neg <Output = Vector>> Neg for $Trajectory <Vector> {
   type Output = Self;
@@ -256,7 +259,7 @@ impl <'a, Vector> Neg for & 'a $Trajectory <Vector> where & 'a Vector: Neg <Outp
   };
 }
 
-impl_trajectory! (LinearTrajectoryTerms, LinearTrajectory, 1) ;
+impl_trajectory! (LinearTrajectory, 1) ;
 impl_trajectory! (QuadraticTrajectory, 2) ;
 
 
