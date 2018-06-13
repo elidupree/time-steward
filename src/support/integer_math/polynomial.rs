@@ -290,6 +290,26 @@ pub fn compute_derivative <Coefficient: Integer, T: Integer + Signed + From <Coe
   Ok (())
 }
 
+pub fn compute_nth_derivative <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], results: &mut [T], which_derivative: usize)->Result <(),OverflowError> {
+  assert_eq!(results.len() + which_derivative, coefficients.len());
+  for ((power, coefficient), result) in coefficients.iter().enumerate().skip (which_derivative).zip(results.iter_mut()) {
+    let coefficient: T = (*coefficient).into();
+    let factor = (power + 1 - which_derivative..power + 1).product::<usize>();
+    *result = coefficient.checked_mul (&T::from_usize (factor).unwrap())?;
+  }
+  Ok (())
+}
+
+pub fn compute_nth_taylor_coefficient_function <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], results: &mut [T], which_derivative: usize)->Result <(),OverflowError> {
+  assert_eq!(results.len() + which_derivative, coefficients.len());
+  let factorial = (1..which_derivative + 1).product::<usize>();
+  for ((power, coefficient), result) in coefficients.iter().enumerate().skip (which_derivative).zip(results.iter_mut()) {
+    let coefficient: T = (*coefficient).into();
+    let factor = (power + 1 - which_derivative..power + 1).product::<usize>()/factorial;
+    *result = coefficient.checked_mul (&T::from_usize (factor).unwrap())?;
+  }
+  Ok (())
+}
 
 pub fn derivative_unchecked <'a, Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & 'a [Coefficient])->impl Iterator <Item = T> + 'a {
   coefficients.iter().enumerate().skip (1).map (| (power, coefficient) | {
@@ -567,6 +587,31 @@ mod tests {
           .collect() ;
         assert!(values.iter().all (| value | value.1 >= -2) || values.iter().all (| value | value.1 <= 2), "There was a significant 0 crossing before the returned result: {:?}", (result, values));
       }
+    }
+    
+    #[test]
+    fn randomly_test_nth_derivative ((ref coefficients, which_derivative) in polynomial(0).prop_flat_map (| coefficients | {
+      let len = coefficients.len();
+      (Just (coefficients), 0..len + 1)
+    })) {
+      let mut direct = vec![0; coefficients.len() - which_derivative];
+      let result = compute_nth_derivative (coefficients, &mut direct, which_derivative);
+      let mut indirect = coefficients.clone();
+      for _ in 0..which_derivative {
+        let mut next = vec![0; indirect.len() - 1];
+        if compute_derivative (& indirect, &mut next).is_err() {
+          return Ok (());
+        }
+        indirect = next;
+      }
+      prop_assert! (result.is_ok());
+      prop_assert_eq! (&direct, &indirect);
+      
+      let factorial = (1..which_derivative + 1).product::<usize>() as i64;
+      let mut taylor = vec![0; coefficients.len() - which_derivative];
+      let result = compute_nth_taylor_coefficient_function (coefficients, &mut taylor, which_derivative);
+      for coefficient in taylor.iter_mut() {*coefficient *= factorial}
+      prop_assert_eq! (&direct, &taylor);
     }
   }
   
