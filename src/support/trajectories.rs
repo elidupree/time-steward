@@ -169,23 +169,23 @@ impl <T: Vector> $Trajectory <T> {
     self.origin = new_origin;
     Ok (())
   }
-  pub fn term (&self, time: Time, which: usize)->T {
-    self.terms.taylor_coefficient (time - self.origin, which)
+  pub fn nth_term (&self, which: usize, time_numerator: Time, time_shift: u32)->Result <T, polynomial::OverflowError> {
+    polynomial::evaluate_nth_taylor_coefficient_at_fractional_input (& self.terms, time - (self.origin << time_shift)), which)
   }
-  pub fn set_term (&mut self, time: Time, which: usize, value: T) {
-    self.set_origin (time) ;
-    self.terms.0 [which] = value;
+  pub fn set_nth_term (&mut self, which: usize, time_numerator: Time, time_shift: u32) {
+    self.set_origin (time_numerator >> time_shift) ;
+    unimplemented!()
   }
-  pub fn add_term (&mut self, time: Time, which: usize, value: T) {
-    self.set_origin (time);
-    self.terms.0 [which] += value;
+  pub fn add_nth_term (&mut self, which: usize, time_numerator: Time, time_shift: u32) {
+    self.set_origin (time_numerator >> time_shift);
+    unimplemented!()
   }
-  pub fn value (&mut self, time: Time)->T {self.term (time, 0)}
-  pub fn velocity (&mut self, time: Time)->T {self.term (time, 1)}
-  pub fn set_value (&mut self, time: Time, value: T) {self.set_term (time, 0, value)}
-  pub fn set_velocity (&mut self, time: Time, value: T) {self.set_term (time, 1, value)}
+  pub fn value (&mut self, time_numerator: Time, time_shift: u32)->Result <T, polynomial::OverflowError> {self.term (0, time_numerator, time_shift)}
+  pub fn velocity (&mut self, time_numerator: Time, time_shift: u32)->Result <T, polynomial::OverflowError> {self.term (1, time_numerator, time_shift)}
+  pub fn set_value (&mut self, time_numerator: Time, time_shift: u32, value: T) {self.set_term (0, time_numerator, time_shift, value)}
+  pub fn set_velocity (&mut self, time_numerator: Time, time_shift: u32, value: T) {self.set_term (1, time_numerator, time_shift, value)}
   pub fn add_value (&mut self, value: T) {self += value}
-  pub fn add_velocity (&mut self, time: Time, value: T) {self.add_term (time, 1, value)}
+  pub fn add_velocity (&mut self, time_numerator: Time, time_shift: u32, value: T) {self.add_term (1, time_numerator, time_shift, value)}
 }
 
 impl <T: Integer + Signed> $Trajectory <T> {
