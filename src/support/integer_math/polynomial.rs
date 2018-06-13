@@ -36,6 +36,7 @@ pub struct OverflowError;
 
 use std::option::NoneError;
 impl From <NoneError> for OverflowError {fn from (_: NoneError)->OverflowError {OverflowError}}
+impl<T: Integer> From <Error<T>> for OverflowError {fn from (_: Error<T>)->OverflowError {OverflowError}}
 
 /// Approximately evaluate an integer polynomial at an input in the range [-0.5, 0.5].
 ///
@@ -331,6 +332,28 @@ pub fn add_product_into <Coefficient: Integer, T: Integer + Signed + From <Coeff
   Ok (())
 }
 
+pub fn evaluate_nth_taylor_coefficient_at_fractional_input <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], which_derivative: usize, input_numerator: T, input_shift: u32)->Result <T,OverflowError> {
+  let mut taylor_coefficient_function: SmallVec<[T; 8]> = smallvec![T::zero(); coefficients.len() - which_derivative];
+  compute_nth_taylor_coefficient_function (coefficients, &mut taylor_coefficient_function, which_derivative)?;
+  let current_value = evaluate_at_fractional_input (&taylor_coefficient_function, input_numerator, input_shift)?;
+  Ok (current_value)
+}
+
+pub fn set_nth_taylor_coefficient_at_fractional_input <T: Integer + Signed> (coefficients: &mut [T], which_derivative: usize, input_numerator: T, input_shift: u32, target_value: T)->Result <(),OverflowError> {
+  let mut target_values: SmallVec<[T; 8]> = SmallVec::with_capacity (which_derivative + 1);
+  for index in 0..which_derivative {
+    target_values.push (evaluate_nth_taylor_coefficient_at_fractional_input (coefficients, index, input_numerator, input_shift)?);
+  }
+  target_values.push (target_value);
+  for (index, target_value) in target_values.iter().enumerate().rev() {
+    let current_value = evaluate_nth_taylor_coefficient_at_fractional_input (coefficients, index, input_numerator, input_shift)?;
+    let change_size = target_value.checked_sub (&current_value)?;
+    coefficients [index] = coefficients [index].checked_add (&change_size)?;
+  }
+  Ok (())
+}
+
+
 
 #[derive (Clone, PartialEq, Eq, Hash, Debug)]
 pub enum RootSearchResult <T> {
@@ -612,6 +635,26 @@ mod tests {
       let result = compute_nth_taylor_coefficient_function (coefficients, &mut taylor, which_derivative);
       for coefficient in taylor.iter_mut() {*coefficient *= factorial}
       prop_assert_eq! (&direct, &taylor);
+    }
+        
+    #[test]
+    fn randomly_test_set_nth_taylor_coefficient_at_fractional_input ((ref coefficients, input_numerator, input_shift, which_derivative, target_value) in polynomial_and_valid_fractional_input_and_shift().prop_flat_map (| (mut coefficients, input_numerator, input_shift) | {
+      if coefficients.len() == 0 {coefficients.push (0);}
+      let len = coefficients.len();
+      let range = i64::max_value() >> input_shift >> 4;
+      (Just (coefficients), Just (input_numerator), Just (input_shift), 0..len, - range..range+1)
+    })) {
+      let mut target_values: SmallVec<[i64; 8]> = SmallVec::with_capacity (coefficients.len());
+      for index in 0..coefficients.len() {
+        target_values.push (match evaluate_nth_taylor_coefficient_at_fractional_input (coefficients, index, input_numerator, input_shift) {Ok(a)=>a, Err(_)=>return Ok (())});
+      }
+      target_values [which_derivative] = target_value;
+      let mut coefficients = coefficients.clone();
+      if set_nth_taylor_coefficient_at_fractional_input (&mut coefficients, which_derivative, input_numerator, input_shift, target_value).is_err() {return Ok (());}
+      for (index, value) in target_values.into_iter().enumerate() {
+        let observed = match evaluate_nth_taylor_coefficient_at_fractional_input (& coefficients, index, input_numerator, input_shift) {Ok(a)=>a, Err(_)=>return Ok (())};
+        prop_assert_eq! (observed, value);
+      }
     }
   }
   
