@@ -27,17 +27,23 @@ pub trait Vector:
   for<'a> AddAssign <&'a Self> + for<'a> SubAssign <&'a Self> + //for<'a> MulAssign <&'a <Self as HasCoordinates>::Coordinate> +
   Zero + Neg <Output = Self>
   {
-
+  const DIMENSIONS: usize;
+  fn coordinate (&self, which: usize)->Self::Coordinate;
+  fn set_coordinate (&mut self, which: usize, value: Self::Coordinate);
 }
 
 pub mod impls {
   use super::*;
   use nalgebra::*;
   macro_rules! impl_vector {
-    ($($Vector: ident,)*) => {
+    ($([$coordinates: expr, $Vector: ident],)*) => {
       $(
         impl <T: Integer + Signed> HasCoordinates for $Vector <T> {type Coordinate = T;}
-        impl <T: Integer + Signed> Vector for $Vector <T> {}
+        impl <T: Integer + Signed> Vector for $Vector <T> {
+          const DIMENSIONS: usize = $coordinates;
+          fn coordinate (&self, which: usize)->Self::Coordinate {self [which]}
+          fn set_coordinate (&mut self, which: usize, value: Self::Coordinate) {self [which] = value}
+        }
       )*
     }
   }
@@ -45,11 +51,15 @@ pub mod impls {
     ($($Integer: ident,)*) => {
       $(
         impl HasCoordinates for $Integer {type Coordinate = $Integer;}
-        impl Vector for $Integer {}
+        impl Vector for $Integer {
+          const DIMENSIONS: usize = 1;
+          fn coordinate (&self, which: usize)->Self::Coordinate {*self}
+          fn set_coordinate (&mut self, which: usize, value: Self::Coordinate) {*self = value}
+        }
       )*
     }
   }
-  impl_vector! (Vector1, Vector2, Vector3, Vector4, Vector5, Vector6,);
+  impl_vector! ([1, Vector1], [2, Vector2], [3, Vector3], [4, Vector4], [5, Vector5], [6, Vector6],);
   impl_integer! (i8, i16, i32, i64, isize,);
 }
 
