@@ -1,5 +1,6 @@
 //use nalgebra::Vector2;
 //use std::cmp::max;
+use num::FromPrimitive;
 use num::traits::{Signed, Bounded};
 use super::integer_math::*;
 use std::ops::{Add, Sub, Mul, Neg, AddAssign, SubAssign, MulAssign};
@@ -32,41 +33,41 @@ pub trait ScalarTrajectory: Trajectory {
 macro_rules! impl_binop {
   ([$($generic_parameters: tt)*], $Left:ty, $Right:ty, $Trait: ident, $method: ident, $TraitAssign: ident, $method_assign: ident, $self: ident, $other: ident, $owned_owned: expr, $owned_ref: expr, $ref_owned: expr, $ref_ref: expr, $assign_owned: expr, $assign_ref: expr,) => {
 
-impl <$($generic_parameters)*> $Trait <$Right> for $Left {
+impl <$($generic_parameters)*> $Trait <$Right> for $Left where Time: From <T::Coordinate> {
   type Output = Self;
-  fn $method ($self, $other: $Right)->Self {
+  fn $method (mut $self, $other: $Right)->Self {
     $owned_owned
   }
 }
 
-impl <'a, $($generic_parameters)*> $Trait <& 'a $Right> for $Left {
+impl <'a, $($generic_parameters)*> $Trait <& 'a $Right> for $Left where Time: From <T::Coordinate> {
   type Output = Self;
-  fn $method ($self, $other: & 'a $Right)->Self {
+  fn $method (mut $self, $other: & 'a $Right)->Self {
     $owned_ref
   }
 }
 
-impl <'a, $($generic_parameters)*> $Trait <$Right> for & 'a $Left {
+impl <'a, $($generic_parameters)*> $Trait <$Right> for & 'a $Left where Time: From <T::Coordinate> {
   type Output = $Left;
   fn $method ($self, $other: $Right)->$Left {
     $ref_owned
   }
 }
 
-impl <'a, 'b, $($generic_parameters)*> $Trait <& 'b $Right> for & 'a $Left {
+impl <'a, 'b, $($generic_parameters)*> $Trait <& 'b $Right> for & 'a $Left where Time: From <T::Coordinate> {
   type Output = $Left;
   fn $method ($self, $other: & 'b $Right)->$Left {
     $ref_ref
   }
 }
 
-impl <$($generic_parameters)*> $TraitAssign <$Right> for $Left {
+impl <$($generic_parameters)*> $TraitAssign <$Right> for $Left where Time: From <T::Coordinate> {
   fn $method_assign (&mut $self, $other: $Right) {
     $assign_owned
   }
 }
 
-impl <'a, $($generic_parameters)*> $TraitAssign <& 'a $Right> for $Left {
+impl <'a, $($generic_parameters)*> $TraitAssign <& 'a $Right> for $Left where Time: From <T::Coordinate> {
   fn $method_assign (&mut $self, $other: & 'a $Right) {
     $assign_ref
   }
@@ -95,6 +96,7 @@ impl_binop! {
   self.clone() + other.clone()
 },
 {
+  let mut other = other;
   if self.origin < other.origin {self.set_origin (other.origin).unwrap();}
   if other.origin < self.origin {other.set_origin (self.origin).unwrap();}
   for (mine, others) in self.coefficients.iter_mut().zip (other.coefficients.into_iter()) {
@@ -102,8 +104,8 @@ impl_binop! {
   }
 },
 {
-  let mut other = other;
   let mut other_clone;
+  let mut other = other;
   if self.origin < other.origin {self.set_origin (other.origin).unwrap();}
   if other.origin < self.origin {
     other_clone = other.clone();
@@ -159,20 +161,20 @@ pub struct $Trajectory <T> {
   coefficients: [T; $degree + 1],
 }
 
-impl <T: Vector> $Trajectory <T> {
+impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate> {
   pub fn constant (value: T)->Self {
-    let coefficients = [T::zero(); $degree + 1];
+    let mut coefficients = [T::zero(); $degree + 1];
     coefficients [0] = value;
     $Trajectory {origin: 0, coefficients}
   }
-  pub fn set_origin (&mut self, new_origin: Time)->Result <(), polynomial::Error <Time>> {
+  pub fn set_origin (&mut self, new_origin: Time)->Result <(), polynomial::OverflowError> {
     for dimension in 0..T::DIMENSIONS {
       let coefficients = self.coordinate_coefficients (dimension);
       polynomial::translate_check (&coefficients, new_origin - self.origin, |_| i64::max_value())?;
     }
     for dimension in 0..T::DIMENSIONS {
       let mut coefficients = self.coordinate_coefficients (dimension);
-      polynomial::translate_unchecked (&mut coefficients, new_origin - self.origin);
+      polynomial::translate_unchecked (&mut coefficients, T::Coordinate::from_i64 (new_origin - self.origin)?);
       for (coefficient, destination) in coefficients.iter().zip (self.coefficients.iter_mut()) {
         destination.set_coordinate (dimension, *coefficient);
       }
@@ -195,7 +197,7 @@ impl <T: Vector> $Trajectory <T> {
   pub fn nth_coefficient (&self, which: usize, time_numerator: Time, time_shift: u32)->Result <T, polynomial::OverflowError> {
     let mut result = T::zero();
     for dimension in 0..T::DIMENSIONS {
-      result.set_coordinate(dimension, polynomial::evaluate_nth_taylor_coefficient_at_fractional_input (& self.coordinate_coefficients (dimension), which, time_numerator - (self.origin << time_shift), time_shift)?) ;
+      result.set_coordinate(dimension, T::Coordinate::from_i64 (polynomial::evaluate_nth_taylor_coefficient_at_fractional_input (& self.coordinate_coefficients (dimension), which, time_numerator - (self.origin << time_shift), time_shift)?)?) ;
     }
     Ok (result)
   }
@@ -203,8 +205,8 @@ impl <T: Vector> $Trajectory <T> {
     self.set_origin (time_numerator >> time_shift)?;
     let mut transformed_coefficients: SmallVec<[[T::Coordinate; $degree + 1]; 4]> = SmallVec::with_capacity (T::DIMENSIONS);
     for dimension in 0..T::DIMENSIONS {
-      let coefficients = self.coordinate_coefficients (dimension);
-      polynomial::set_nth_taylor_coefficient_at_fractional_input (&mut coefficients, which, time_numerator - (self.origin << time_shift), time_shift, target_value.coordinate (dimension))?;
+      let mut coefficients = self.coordinate_coefficients (dimension);
+      polynomial::set_nth_taylor_coefficient_at_fractional_input (&mut coefficients, which, time_numerator - (self.origin << time_shift), time_shift, target_value.coordinate (dimension).into())?;
       transformed_coefficients.push (coefficients);
     }
     for (dimension, coefficients) in transformed_coefficients.into_iter().enumerate() {
@@ -215,7 +217,8 @@ impl <T: Vector> $Trajectory <T> {
     Ok (())
   }
   pub fn add_nth_coefficient (&mut self, which: usize, time_numerator: Time, time_shift: u32, added_value: T)->Result <(), polynomial::OverflowError> {
-    self.set_nth_coefficient (which, time_numerator, time_shift, self.nth_coefficient (which, time_numerator, time_shift)? + added_value)
+    let current_value = self.nth_coefficient (which, time_numerator, time_shift)?;
+    self.set_nth_coefficient (which, time_numerator, time_shift, current_value + added_value)
   }
   pub fn value (&mut self, time_numerator: Time, time_shift: u32)->Result <T, polynomial::OverflowError> {self.nth_coefficient (0, time_numerator, time_shift)}
   pub fn velocity (&mut self, time_numerator: Time, time_shift: u32)->Result <T, polynomial::OverflowError> {self.nth_coefficient (1, time_numerator, time_shift)}
@@ -246,21 +249,21 @@ impl <T: Integer + Signed> $Trajectory <T> {
 impl_trajectory_add_sub! ($Trajectory, Add, add, AddAssign, add_assign);
 impl_trajectory_add_sub! ($Trajectory, Sub, sub, SubAssign, sub_assign);
 
-impl<T: Vector, Coordinate> Mul<Coordinate> for $Trajectory<T> where T: MulAssign <Coordinate> {
+impl<T: Vector, Coordinate: Copy> Mul<Coordinate> for $Trajectory<T> where T: MulAssign <Coordinate> {
   type Output = Self;
-  fn mul(self, other: Coordinate) -> Self {
+  fn mul(mut self, other: Coordinate) -> Self {
     self *= other; self
   }
 }
 
-impl<'a, T: Vector, Coordinate> Mul<Coordinate> for & 'a $Trajectory<T> where T: MulAssign <Coordinate> {
+impl<'a, T: Vector, Coordinate: Copy> Mul<Coordinate> for & 'a $Trajectory<T> where T: MulAssign <Coordinate> {
   type Output = $Trajectory <T>;
   fn mul(self, other: Coordinate) ->$Trajectory <T> {
     self.clone()*other
   }
 }
 
-impl<T: Vector, Coordinate> MulAssign <Coordinate> for $Trajectory<T> where T: MulAssign <Coordinate> {
+impl<T: Vector, Coordinate: Copy> MulAssign <Coordinate> for $Trajectory<T> where T: MulAssign <Coordinate> {
   fn mul_assign (&mut self, other: Coordinate) {
     for coefficient in self.coefficients.iter_mut (){MulAssign::<Coordinate>::mul_assign (coefficient, other);}
   }

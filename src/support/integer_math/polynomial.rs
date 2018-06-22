@@ -339,7 +339,7 @@ pub fn evaluate_nth_taylor_coefficient_at_fractional_input <Coefficient: Integer
   Ok (current_value)
 }
 
-pub fn set_nth_taylor_coefficient_at_fractional_input <T: Integer + Signed> (coefficients: &mut [T], which_derivative: usize, input_numerator: T, input_shift: u32, target_value: T)->Result <(),OverflowError> {
+pub fn set_nth_taylor_coefficient_at_fractional_input <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: &mut [Coefficient], which_derivative: usize, input_numerator: T, input_shift: u32, target_value: T)->Result <(),OverflowError> {
   let mut target_values: SmallVec<[T; 8]> = SmallVec::with_capacity (which_derivative + 1);
   for index in 0..which_derivative {
     target_values.push (evaluate_nth_taylor_coefficient_at_fractional_input (coefficients, index, input_numerator, input_shift)?);
@@ -348,7 +348,7 @@ pub fn set_nth_taylor_coefficient_at_fractional_input <T: Integer + Signed> (coe
   for (index, target_value) in target_values.iter().enumerate().rev() {
     let current_value = evaluate_nth_taylor_coefficient_at_fractional_input (coefficients, index, input_numerator, input_shift)?;
     let change_size = target_value.checked_sub (&current_value)?;
-    coefficients [index] = coefficients [index].checked_add (&change_size)?;
+    coefficients [index] = coefficients [index].checked_add (& Coefficient::from (change_size)?)?;
   }
   Ok (())
 }
