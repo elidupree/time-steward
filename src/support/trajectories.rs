@@ -1,8 +1,9 @@
 //use nalgebra::Vector2;
 //use std::cmp::max;
-use num::FromPrimitive;
+use num::{FromPrimitive, One};
 use num::traits::{Signed, Bounded};
 use super::integer_math::*;
+use self::polynomial::RootSearchResult;
 use std::ops::{Add, Sub, Mul, Neg, AddAssign, SubAssign, MulAssign};
 use array_ext::*;
 use smallvec::SmallVec;
@@ -11,23 +12,26 @@ use smallvec::SmallVec;
 pub type Time = i64;
 
 
-pub trait Trajectory {
+pub trait Trajectory: Sized {
   type Coefficient: Vector;
 }
 
-pub trait ScalarTrajectory: Trajectory {
-  /*fn next_time_ge (&self, start: Time, end: Time, target: Self::Coefficient)->Option <Time> {
-
+pub trait ScalarTrajectory: Trajectory where Self::Coefficient: Integer, for <'a> & 'a Self: Neg <Output = Self> {
+  /// Find the first time within a range when the trajectory value is "significantly" >= target.
+  ///
+  /// To be "significant", the output time will obey this condition: The value at the output time is >= target, and it will not dip back to < target due to rounding error (it will only dip back if the ideal slope actually becomes negative).
+  ///
+  /// In order to guarantee this, we have to be slightly permissive, skipping over some inputs where the value is observed to be >= target. However, it still obeys this guarantee: The output time will always be <= the first time when the value is >= output + 4.
+  fn next_time_significantly_ge (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->RootSearchResult<Time>;
+  fn next_time_significantly_gt (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->RootSearchResult<Time> {
+    self.next_time_significantly_ge (range, input_shift, target + Self::Coefficient::one())
   }
-  fn next_time_gt (&self, start: Time, end: Time, target: Self::Coefficient)->Option <Time> {
-    self.next_time_ge (now, target + Vector::one())
+  fn next_time_significantly_le (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->RootSearchResult<Time> {
+    (-self).next_time_significantly_ge (range, input_shift, -target)
   }
-  fn next_time_le (&self, start: Time, end: Time, target: Self::Coefficient)->Option <Time> {
-    (-self).next_time_ge (now, -target)
+  fn next_time_significantly_lt (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->RootSearchResult<Time> {
+    self.next_time_significantly_le (range, input_shift, target - Self::Coefficient::one())
   }
-  fn next_time_lt (&self, start: Time, end: Time, target: Self::Coefficient)->Option <Time> {
-    self.next_time_le (now, target - Vector::one())
-  }*/
 }
 
 macro_rules! impl_binop {
@@ -161,6 +165,10 @@ pub struct $Trajectory <T> {
   coefficients: [T; $degree + 1],
 }
 
+impl <T: Vector> Trajectory for $Trajectory <T> {
+  type Coefficient = T;
+}
+
 impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate> {
   pub fn constant (value: T)->Self {
     let mut coefficients = [T::zero(); $degree + 1];
@@ -220,8 +228,8 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate> {
     let current_value = self.nth_coefficient (which, time_numerator, time_shift)?;
     self.set_nth_coefficient (which, time_numerator, time_shift, current_value + added_value)
   }
-  pub fn value (&mut self, time_numerator: Time, time_shift: u32)->Result <T, polynomial::OverflowError> {self.nth_coefficient (0, time_numerator, time_shift)}
-  pub fn velocity (&mut self, time_numerator: Time, time_shift: u32)->Result <T, polynomial::OverflowError> {self.nth_coefficient (1, time_numerator, time_shift)}
+  pub fn value (&self, time_numerator: Time, time_shift: u32)->Result <T, polynomial::OverflowError> {self.nth_coefficient (0, time_numerator, time_shift)}
+  pub fn velocity (&self, time_numerator: Time, time_shift: u32)->Result <T, polynomial::OverflowError> {self.nth_coefficient (1, time_numerator, time_shift)}
   pub fn set_value (&mut self, time_numerator: Time, time_shift: u32, value: T)->Result <(), polynomial::OverflowError> {self.set_nth_coefficient (0, time_numerator, time_shift, value)}
   pub fn set_velocity (&mut self, time_numerator: Time, time_shift: u32, value: T)->Result <(), polynomial::OverflowError> {self.set_nth_coefficient (1, time_numerator, time_shift, value)}
   pub fn add_value (&mut self, value: T) {*self += value}
@@ -308,6 +316,17 @@ impl <'a, T: Vector> Neg for & 'a $Trajectory <T> where & 'a T: Neg <Output = T>
     $Trajectory {
       origin: self.origin,
       coefficients: Array::from_fn (| index | (& self.coefficients [index]).neg()),
+    }
+  }
+}
+
+impl <T: Vector + Integer + Signed + HasCoordinates <Coordinate = T>> ScalarTrajectory for $Trajectory <T> where for <'a> & 'a Self: Neg <Output = Self>, Time: From <T> {
+  fn next_time_significantly_ge (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->RootSearchResult<Time> {
+    let relative = self - (target + T::one() + T::one());
+    match polynomial::root_search (& relative.coefficients, range, input_shift) {
+      RootSearchResult::Root (input) => RootSearchResult::Root (self.origin + if relative.value (self.origin + input, input_shift).unwrap() >= T::zero() {input} else {input + 1}),
+      RootSearchResult::Overflow (input) => RootSearchResult::Overflow (self.origin + input),
+      RootSearchResult::Finished => RootSearchResult::Finished,
     }
   }
 }
