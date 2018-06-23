@@ -53,7 +53,7 @@ impl <'a, $($generic_parameters)*> $Trait <& 'a $Right> for $Left where Time: Fr
 
 impl <'a, $($generic_parameters)*> $Trait <$Right> for & 'a $Left where Time: From <T::Coordinate> {
   type Output = $Output;
-  fn $method ($self, mut $other: $Right)->$Left {
+  fn $method ($self, $other: $Right)->$Left {
     $ref_owned
   }
 }
@@ -94,20 +94,19 @@ macro_rules! impl_trajectory_add_sub {
 impl_binop_and_assign! {
 [T: Vector], $Trajectory <T>, $Trajectory <T>, $Trajectory <T>, $Trait, $method, $TraitAssign, $method_assign, self, other,
 {
-  self += other;
+  self.$method_assign (other);
   self
 },
 {
-  self += other;
+  self.$method_assign (other);
   self
 },
 {
-  other += self;
-  other
+  other.$method (self)
 },
 {
-  if self.origin < other.origin {self.clone() + other}
-  else {other.clone() + self}
+  if self.origin < other.origin {self.clone().$method (other)}
+  else {other.clone().$method (self)}
 },
 {
   let mut other = other;
@@ -144,10 +143,10 @@ impl_binop_and_assign! {
   self
 },
 {
-  self.clone() + other
+  self.clone().$method (other)
 },
 {
-  self.clone() + other
+  self.clone().$method (other)
 },
 {
   self.coefficients [0].$method_assign (other);
@@ -349,9 +348,7 @@ impl_binop! {
   self.multiply_same_origin (other)
 },
 {
-  if self.origin < other.origin {let mut me = self.clone(); me.set_origin (other.origin).unwrap(); return me.multiply_same_origin (&other)}
-  if other.origin < self.origin {other.set_origin (self.origin).unwrap(); }
-  self.multiply_same_origin (&other)
+  other + self
 },
 {
   if self.origin < other.origin {let mut me = self.clone(); me.set_origin (other.origin).unwrap(); return me.multiply_same_origin (other)}
