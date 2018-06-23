@@ -1,6 +1,6 @@
 //use nalgebra::Vector2;
 //use std::cmp::max;
-use num::{FromPrimitive, One};
+use num::{FromPrimitive, Zero, One};
 use num::traits::{Signed, Bounded};
 use super::integer_math::*;
 use self::polynomial::RootSearchResult;
@@ -35,35 +35,43 @@ pub trait ScalarTrajectory: Trajectory where Self::Coefficient: Integer, for <'a
 }
 
 macro_rules! impl_binop {
-  ([$($generic_parameters: tt)*], $Left:ty, $Right:ty, $Trait: ident, $method: ident, $TraitAssign: ident, $method_assign: ident, $self: ident, $other: ident, $owned_owned: expr, $owned_ref: expr, $ref_owned: expr, $ref_ref: expr, $assign_owned: expr, $assign_ref: expr,) => {
+  ([$($generic_parameters: tt)*], $Left:ty, $Right:ty, $Output:ty, $Trait: ident, $method: ident, $self: ident, $other: ident, $owned_owned: expr, $owned_ref: expr, $ref_owned: expr, $ref_ref: expr,) => {
 
 impl <$($generic_parameters)*> $Trait <$Right> for $Left where Time: From <T::Coordinate> {
-  type Output = Self;
+  type Output = $Output;
   fn $method (mut $self, $other: $Right)->Self {
     $owned_owned
   }
 }
 
 impl <'a, $($generic_parameters)*> $Trait <& 'a $Right> for $Left where Time: From <T::Coordinate> {
-  type Output = Self;
+  type Output = $Output;
   fn $method (mut $self, $other: & 'a $Right)->Self {
     $owned_ref
   }
 }
 
 impl <'a, $($generic_parameters)*> $Trait <$Right> for & 'a $Left where Time: From <T::Coordinate> {
-  type Output = $Left;
-  fn $method ($self, $other: $Right)->$Left {
+  type Output = $Output;
+  fn $method ($self, mut $other: $Right)->$Left {
     $ref_owned
   }
 }
 
 impl <'a, 'b, $($generic_parameters)*> $Trait <& 'b $Right> for & 'a $Left where Time: From <T::Coordinate> {
-  type Output = $Left;
+  type Output = $Output;
   fn $method ($self, $other: & 'b $Right)->$Left {
     $ref_ref
   }
 }
+
+  }
+}
+
+macro_rules! impl_binop_and_assign {
+  ([$($generic_parameters: tt)*], $Left:ty, $Right:ty, $Output:ty, $Trait: ident, $method: ident, $TraitAssign: ident, $method_assign: ident, $self: ident, $other: ident, $owned_owned: expr, $owned_ref: expr, $ref_owned: expr, $ref_ref: expr, $assign_owned: expr, $assign_ref: expr,) => {
+
+impl_binop! ([$($generic_parameters)*], $Left, $Right, $Output, $Trait, $method, $self, $other, $owned_owned, $owned_ref, $ref_owned, $ref_ref,);
 
 impl <$($generic_parameters)*> $TraitAssign <$Right> for $Left where Time: From <T::Coordinate> {
   fn $method_assign (&mut $self, $other: $Right) {
@@ -83,8 +91,8 @@ impl <'a, $($generic_parameters)*> $TraitAssign <& 'a $Right> for $Left where Ti
 macro_rules! impl_trajectory_add_sub {
   ($Trajectory:ident, $Trait: ident, $method: ident, $TraitAssign: ident, $method_assign: ident) => {
 
-impl_binop! {
-[T: Vector], $Trajectory <T>, $Trajectory <T>, $Trait, $method, $TraitAssign, $method_assign, self, other,
+impl_binop_and_assign! {
+[T: Vector], $Trajectory <T>, $Trajectory <T>, $Trajectory <T>, $Trait, $method, $TraitAssign, $method_assign, self, other,
 {
   self += other;
   self
@@ -94,10 +102,12 @@ impl_binop! {
   self
 },
 {
-  self.clone() + other
+  other += self;
+  other
 },
 {
-  self.clone() + other.clone()
+  if self.origin < other.origin {self.clone() + other}
+  else {other.clone() + self}
 },
 {
   let mut other = other;
@@ -123,8 +133,8 @@ impl_binop! {
 }
 
 
-impl_binop! {
-[T: Vector], $Trajectory <T>, T, $Trait, $method, $TraitAssign, $method_assign, self, other,
+impl_binop_and_assign! {
+[T: Vector], $Trajectory <T>, T, $Trajectory <T>, $Trait, $method, $TraitAssign, $method_assign, self, other,
 {
   self.coefficients [0].$method_assign (other);
   self
@@ -157,7 +167,7 @@ impl_binop! {
 
 
 macro_rules! impl_trajectory {
-  ($Trajectory: ident, $degree: expr) => {
+  ($Trajectory: ident, $degree: expr, $multiplication: tt, $ProductTrajectory: ident) => {
 
 #[derive (Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug, Default)]
 pub struct $Trajectory <T> {
@@ -234,7 +244,31 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate> {
   pub fn set_velocity (&mut self, time_numerator: Time, time_shift: u32, value: T)->Result <(), polynomial::OverflowError> {self.set_nth_coefficient (1, time_numerator, time_shift, value)}
   pub fn add_value (&mut self, value: T) {*self += value}
   pub fn add_velocity (&mut self, time_numerator: Time, time_shift: u32, value: T)->Result <(), polynomial::OverflowError> {self.add_nth_coefficient (1, time_numerator, time_shift, value)}
+  
+  #[cfg $multiplication]
+  pub fn magnitude_squared_trajectory (&self)->Result <$ProductTrajectory <T::Coordinate>, polynomial::OverflowError> {
+    let mut coefficients = [T::Coordinate::zero(); $degree + $degree + 1];
+    for dimension in 0..T::DIMENSIONS {
+      let coordinate_coefficients = self.coordinate_coefficients (dimension);
+      polynomial::add_product_into (& coordinate_coefficients, & coordinate_coefficients, &mut coefficients)?;
+    }
+    Ok ($ProductTrajectory {
+      origin: self.origin, coefficients
+    })
+  }
 }
+
+
+/*impl <T: Vector + Integer> $Trajectory <T> where Time: From <T::Coordinate> {
+  #[cfg $multiplication]
+  fn multiply_same_origin (&self, other: & Self)->$ProductTrajectory <T> {
+    let mut coefficients = [T::zero(); $degree + $degree + 1];
+    polynomial::add_product_into (& self.coefficients, & other.coefficients, &mut coefficients).unwrap();
+    $ProductTrajectory {
+      origin: self.origin, coefficients
+    }
+  }
+}*/
 
 impl <T: Integer + Signed> $Trajectory <T> {
   /*pub fn next_time_lt (&self, now: Time, value: T)->Option <Time> {
@@ -277,8 +311,8 @@ impl<T: Vector, Coordinate: Copy> MulAssign <Coordinate> for $Trajectory<T> wher
   }
 }
 
-/*impl_binop! {
-[T: Vector], $Trajectory <T>, T::Coordinate, Mul, mul, MulAssign, mul_assign, self, other,
+/*impl_binop_and_assign! {
+[T: Vector], $Trajectory <T>, T::Coordinate, $Trajectory <T>, Mul, mul, MulAssign, mul_assign, self, other,
 {
   self *= other;
   self
@@ -298,6 +332,31 @@ impl<T: Vector, Coordinate: Copy> MulAssign <Coordinate> for $Trajectory<T> wher
 },
 {
   for term in self.terms.iter_mut (){*term *= other;}
+},
+}*/
+
+/*#[cfg $multiplication]
+impl_binop! {
+[T: Vector + Integer], $Trajectory <T>, $Trajectory <T>, $ProductTrajectory <T>, Mul, mul, self, other,
+{
+  if self.origin < other.origin {self.set_origin (other.origin).unwrap(); }
+  if other.origin < self.origin {other.set_origin (self.origin).unwrap(); }
+  self.multiply_same_origin (&other)
+},
+{
+  if other.origin < self.origin {let mut other = other.clone(); other.set_origin (self.origin).unwrap(); return self.multiply_same_origin (other)}
+  if self.origin < other.origin {self.set_origin (other.origin).unwrap(); }
+  self.multiply_same_origin (other)
+},
+{
+  if self.origin < other.origin {let mut me = self.clone(); me.set_origin (other.origin).unwrap(); return me.multiply_same_origin (&other)}
+  if other.origin < self.origin {other.set_origin (self.origin).unwrap(); }
+  self.multiply_same_origin (&other)
+},
+{
+  if self.origin < other.origin {let mut me = self.clone(); me.set_origin (other.origin).unwrap(); return me.multiply_same_origin (other)}
+  if other.origin < self.origin {let mut other = other.clone(); other.set_origin (self.origin).unwrap(); return self.multiply_same_origin (other)}
+  self.multiply_same_origin (other)
 },
 }*/
 
@@ -335,7 +394,8 @@ impl <T: Vector + Integer + Signed + HasCoordinates <Coordinate = T>> ScalarTraj
   };
 }
 
-//impl_trajectory! (LinearTrajectory, 1) ;
-impl_trajectory! (QuadraticTrajectory, 2) ;
+impl_trajectory! (LinearTrajectory, 1, (all()), QuadraticTrajectory) ;
+impl_trajectory! (QuadraticTrajectory, 2, (all()), QuarticTrajectory) ;
+impl_trajectory! (QuarticTrajectory, 4, (any()), Unused) ;
 
 
