@@ -255,6 +255,14 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate> {
       origin: self.origin, coefficients
     })
   }
+  #[cfg $multiplication]
+  pub fn next_time_magnitude_significantly_gt (&self, range: [Time; 2], input_shift: u32, target: T::Coordinate)->Result <RootSearchResult <Time>, polynomial::OverflowError> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate>, Time: From <T::Coordinate> {
+    Ok(self.magnitude_squared_trajectory()?.next_time_significantly_gt (range, input_shift, target*target))
+  }
+  #[cfg $multiplication]
+  pub fn next_time_magnitude_significantly_lt (&self, range: [Time; 2], input_shift: u32, target: T::Coordinate)->Result <RootSearchResult <Time>, polynomial::OverflowError> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate>, Time: From <T::Coordinate> {
+    Ok(self.magnitude_squared_trajectory()?.next_time_significantly_lt (range, input_shift, target*target))
+  }
 }
 
 
@@ -376,7 +384,7 @@ impl <'a, T: Vector> Neg for & 'a $Trajectory <T> where & 'a T: Neg <Output = T>
   }
 }
 
-impl <T: Vector + Integer + Signed + HasCoordinates <Coordinate = T>> ScalarTrajectory for $Trajectory <T> where for <'a> & 'a Self: Neg <Output = Self>, Time: From <T> {
+impl <T: Vector + Integer + Signed + HasCoordinates <Coordinate = T>> ScalarTrajectory for $Trajectory <T> where for <'a> & 'a T: Neg <Output = T>, Time: From <T> {
   fn next_time_significantly_ge (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->RootSearchResult<Time> {
     let relative = self - (target + T::one() + T::one());
     match polynomial::root_search (& relative.coefficients, range, input_shift) {

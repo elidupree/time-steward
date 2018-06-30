@@ -17,7 +17,7 @@ impl <T: 'static + num::PrimInt + num::Integer + num::FromPrimitive + AddAssign 
 
 pub trait HasCoordinates
    {
-  type Coordinate: Integer + Signed;}
+  type Coordinate: Integer + Signed + Vector + HasCoordinates <Coordinate = Self::Coordinate>;}
 
 pub trait Vector:
   'static + Sized + Copy + Clone + HasCoordinates +
@@ -38,8 +38,8 @@ pub mod impls {
   macro_rules! impl_vector {
     ($([$coordinates: expr, $Vector: ident],)*) => {
       $(
-        impl <T: Integer + Signed> HasCoordinates for $Vector <T> {type Coordinate = T;}
-        impl <T: Integer + Signed> Vector for $Vector <T> {
+        impl <T: Integer + Signed + Vector + HasCoordinates <Coordinate = T>> HasCoordinates for $Vector <T> {type Coordinate = T;}
+        impl <T: Integer + Signed + Vector + HasCoordinates <Coordinate = T>> Vector for $Vector <T> {
           const DIMENSIONS: usize = $coordinates;
           fn coordinate (&self, which: usize)->Self::Coordinate {self [which]}
           fn set_coordinate (&mut self, which: usize, value: Self::Coordinate) {self [which] = value}
