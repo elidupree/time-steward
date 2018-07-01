@@ -69,14 +69,14 @@ pub mod impls {
 pub fn shr_nicely_rounded <T: Integer> (input: T, shift: u32)->T {
   if shift == 0 {return input}
   let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
+  let mask = divisor.wrapping_sub (&T::one());
+  let shifted = input >> shift;
   let half_shift = shift - 1;
   let half = T::one() << half_shift;
-  let mask = divisor.wrapping_sub (&T::one());
   if (input & mask) == half {
-    let shifted = input >> shift;
     shifted + (shifted & T::one())
   } else {
-    (input >> shift) + ((input & half) >> half_shift)
+    shifted + ((input & half) >> half_shift)
   }
 }
 
@@ -87,12 +87,11 @@ pub fn shr_round_to_even <T: Integer> (input: T, shift: u32)->T {
   if shift == 0 {return input}
   let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
   let mask = divisor.wrapping_sub (&T::one());
-  let value = input >> shift;
-  if (input & mask) == T::zero() {
-    value
-  }
-  else {
-    value + (value & T::one())
+  let shifted = input >> shift;
+  if (input & mask) != T::zero() {
+    shifted + (shifted & T::one())
+  } else {
+    shifted
   }
 }
 
