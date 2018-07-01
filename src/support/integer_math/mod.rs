@@ -73,11 +73,7 @@ pub fn shr_nicely_rounded <T: Integer> (input: T, shift: u32)->T {
   let shifted = input >> shift;
   let half_shift = shift - 1;
   let half = T::one() << half_shift;
-  if (input & mask) == half {
-    shifted + (shifted & T::one())
-  } else {
-    shifted + ((input & half) >> half_shift)
-  }
+  shifted + if (input & mask)+(shifted & T::one()) > half {T::one()} else {T::zero()}
 }
 
 /// Right-shift an integer, but round to even.
@@ -87,11 +83,7 @@ pub fn shr_round_to_even <T: Integer> (input: T, shift: u32)->T {
   let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
   let mask = divisor.wrapping_sub (&T::one());
   let shifted = input >> shift;
-  if (input & mask) != T::zero() {
-    shifted + (shifted & T::one())
-  } else {
-    shifted
-  }
+  shifted + if (input & mask) != T::zero() {shifted & T::one()} else {T::zero()}
 }
 
 /// Right-shift an integer, but round towards positive infinity.
@@ -166,6 +158,7 @@ mod tests {
       (999, 1, 500), (998, 1, 499), (997, 1, 498)
     ];
     for (input, shift, result) in inputs {
+      println!( "{:?}", (input, shift, result));
       assert_eq!(shr_nicely_rounded (input, shift), result);
       assert_eq!(shr_nicely_rounded (-input, shift), -result);
     }
@@ -178,6 +171,7 @@ mod tests {
       (999, 1, 500), (998, 1, 499), (997, 1, 498)
     ];
     for (input, shift, result) in inputs {
+      println!( "{:?}", (input, shift, result));
       assert_eq!(shr_round_to_even (input, shift), result);
       assert_eq!(shr_round_to_even (-input, shift), -result);
     }
