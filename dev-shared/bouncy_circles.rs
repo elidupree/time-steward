@@ -1,5 +1,5 @@
 //use time_steward::support;
-use time_steward::support::time_functions::QuadraticTrajectory;
+use time_steward::support::trajectories;
 use nalgebra::Vector2;
 //use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
 use std::marker::PhantomData;
@@ -17,6 +17,7 @@ use boolinator::Boolinator;
 
 pub type Time = i64;
 pub type SpaceCoordinate = i64;
+pub type QuadraticTrajectory = trajectories::QuadraticTrajectory <Vector2 <SpaceCoordinate>>;
 
 
 pub const HOW_MANY_CIRCLES: usize = 20;
@@ -115,7 +116,6 @@ pub struct Circle {
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct CircleVarying {
   pub position: QuadraticTrajectory,
-  pub last_change: Time,
   pub relationships: Vec<RelationshipHandle>,
   pub boundary_induced_acceleration: Option <Vector2<SpaceCoordinate>>,
   pub next_boundary_change: Option <<Steward as TimeSteward>::EventHandle>,
@@ -393,7 +393,7 @@ define_event!{
                             Vector2::new(ARENA_SIZE / 2,
                                          ARENA_SIZE / 2)) *
                           (ARENA_SIZE * 4 / (ARENA_SIZE ));
-      new.position.add_velocity(impulse);
+      new.position.add_velocity(*accessor.now(), TIME_SHIFT, impulse);
     });
   }
 }
