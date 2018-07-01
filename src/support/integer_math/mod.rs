@@ -84,7 +84,6 @@ pub fn shr_nicely_rounded <T: Integer> (input: T, shift: u32)->T {
 ///
 /// This avoids a directional bias.
 pub fn shr_round_to_even <T: Integer> (input: T, shift: u32)->T {
-  if shift == 0 {return input}
   let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
   let mask = divisor.wrapping_sub (&T::one());
   let shifted = input >> shift;
@@ -163,7 +162,7 @@ mod tests {
   #[test]
   fn test_shr_nicely_rounded() {
     let inputs: Vec<(i64, u32, i64)> = vec![
-      (0, 0, 0), (0, 5, 0), (1, 3, 0), (4, 3, 0), (5, 3, 1),
+      (0, 0, 0), (0, 5, 0), (5, 0, 5), (1, 3, 0), (4, 3, 0), (5, 3, 1),
       (999, 1, 500), (998, 1, 499), (997, 1, 498)
     ];
     for (input, shift, result) in inputs {
@@ -175,7 +174,7 @@ mod tests {
   #[test]
   fn test_shr_round_to_even() {
     let inputs: Vec<(i64, u32, i64)> = vec![
-      (0, 0, 0), (0, 5, 0), (1, 3, 0), (4, 3, 0), (5, 3, 0),
+      (0, 0, 0), (0, 5, 0), (5, 0, 5), (1, 3, 0), (4, 3, 0), (5, 3, 0),
       (999, 1, 500), (998, 1, 499), (997, 1, 498)
     ];
     for (input, shift, result) in inputs {
