@@ -30,6 +30,13 @@ pub trait Vector:
   const DIMENSIONS: usize;
   fn coordinate (&self, which: usize)->Self::Coordinate;
   fn set_coordinate (&mut self, which: usize, value: Self::Coordinate);
+  fn map_coordinates <F: Fn(Self::Coordinate)->Self::Coordinate> (mut self, transform: F)->Self {
+    for index in 0..Self::DIMENSIONS {
+      let new_coordinate = (transform) (self.coordinate (index));
+      self.set_coordinate (index, new_coordinate);
+    }
+    self
+  }
 }
 
 pub mod impls {
