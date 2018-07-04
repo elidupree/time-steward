@@ -67,28 +67,21 @@ pub mod impls {
 ///
 /// This minimizes error, and avoids a directional bias.
 pub fn shr_nicely_rounded <T: Integer> (input: T, shift: u32)->T {
-  if shift == 0 {return input}
   let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
-  let half_shift = shift - 1;
-  let half = T::one() << half_shift;
   let mask = divisor.wrapping_sub (&T::one());
-  if (input & mask) == half {
-    let shifted = input >> shift;
-    shifted + (shifted & T::one())
-  } else {
-    (input >> shift) + ((input & half) >> half_shift)
-  }
+  let shifted = input >> shift;
+  let half = divisor >> 1u32;
+  shifted + if (input & mask)+(shifted & if shift != 0 {T::one()} else {T::zero()}) > half {T::one()} else {T::zero()}
 }
 
 /// Right-shift an integer, but round to even.
 ///
 /// This avoids a directional bias.
 pub fn shr_round_to_even <T: Integer> (input: T, shift: u32)->T {
-  if shift == 0 {return input}
-  match input.checked_shr (shift) {
-    Some (value) => value + (value & T::one()),
-    None => return T::zero()
-  }
+  let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
+  let mask = divisor.wrapping_sub (&T::one());
+  let shifted = input >> shift;
+  shifted + if (input & mask) != T::zero() {shifted & T::one()} else {T::zero()}
 }
 
 /// Right-shift an integer, but round towards positive infinity.
@@ -96,6 +89,11 @@ pub fn shr_ceil <T: Integer> (input: T, shift: u32)->T {
   let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
   let mask = divisor.wrapping_sub (&T::one());
   (input >> shift) + if input & mask != T::zero() {T::one()} else {T::zero()}
+}
+
+/// Right-shift an integer, but round towards 0.
+pub fn shr_round_towards_zero <T: Integer> (input: T, shift: u32)->T {
+  (input + if input <T::zero() {(T::one() << shift).wrapping_sub (& T::one())} else {T::zero()}) >> shift
 }
 
 /// Left-shift an integer, returning Some(input*(2^shift)) if it fits within the type, None otherwise.
@@ -143,15 +141,42 @@ mod tests {
     }
   }
   
+  fn perfect_shr_round_to_even <T: Integer> (input: T, shift: u32)->BigInt where BigInt: From <T> {
+    let perfect_result = Ratio::new (BigInt::from (input), BigInt::one() << shift as usize);
+    let rounded_down = perfect_result.floor();
+    if perfect_result == rounded_down {rounded_down.to_integer()}
+    else {
+      let rounded_down = rounded_down.to_integer();
+      if &rounded_down >> 1 << 1 == rounded_down {
+        rounded_down
+      }
+      else {rounded_down + 1}
+    }
+  }
+  
   #[test]
   fn test_shr_nicely_rounded() {
     let inputs: Vec<(i64, u32, i64)> = vec![
-      (0, 0, 0), (0, 5, 0), (1, 3, 0), (4, 3, 0), (5, 3, 1),
+      (0, 0, 0), (0, 5, 0), (5, 0, 5), (1, 3, 0), (4, 3, 0), (5, 3, 1),
       (999, 1, 500), (998, 1, 499), (997, 1, 498)
     ];
     for (input, shift, result) in inputs {
+      println!( "{:?}", (input, shift, result));
       assert_eq!(shr_nicely_rounded (input, shift), result);
       assert_eq!(shr_nicely_rounded (-input, shift), -result);
+    }
+  }
+  
+  #[test]
+  fn test_shr_round_to_even() {
+    let inputs: Vec<(i64, u32, i64)> = vec![
+      (0, 0, 0), (0, 5, 0), (5, 0, 5), (1, 3, 0), (4, 3, 0), (5, 3, 0),
+      (999, 1, 500), (998, 1, 499), (997, 1, 498)
+    ];
+    for (input, shift, result) in inputs {
+      println!( "{:?}", (input, shift, result));
+      assert_eq!(shr_round_to_even (input, shift), result);
+      assert_eq!(shr_round_to_even (-input, shift), -result);
     }
   }
   
@@ -166,6 +191,20 @@ mod tests {
     fn quickcheck_shr_nicely_rounded_unsigned (input: u32, shift: u8)->bool {
       let result = shr_nicely_rounded (input, shift as u32);
       let perfect_result = perfect_shr_nicely_rounded (input, shift as u32);
+      println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
+      perfect_result == BigInt::from (result)
+    }
+    
+    fn quickcheck_shr_round_to_even_signed (input: i32, shift: u8)->bool {
+      let result = shr_round_to_even (input, shift as u32);
+      let perfect_result = perfect_shr_round_to_even (input, shift as u32);
+      println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
+      perfect_result == BigInt::from (result)
+    }
+    
+    fn quickcheck_shr_round_to_even_unsigned (input: u32, shift: u8)->bool {
+      let result = shr_round_to_even (input, shift as u32);
+      let perfect_result = perfect_shr_round_to_even (input, shift as u32);
       println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
       perfect_result == BigInt::from (result)
     }
