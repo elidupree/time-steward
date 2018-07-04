@@ -91,6 +91,11 @@ pub fn shr_ceil <T: Integer> (input: T, shift: u32)->T {
   (input >> shift) + if input & mask != T::zero() {T::one()} else {T::zero()}
 }
 
+/// Right-shift an integer, but round towards 0.
+pub fn shr_round_towards_zero <T: Integer> (input: T, shift: u32)->T {
+  (input + if input <T::zero() {(T::one() << shift).wrapping_sub (& T::one())} else {T::zero()}) >> shift
+}
+
 /// Left-shift an integer, returning Some(input*(2^shift)) if it fits within the type, None otherwise.
 pub fn overflow_checked_shl <T: Integer> (input: T, shift: u32)->Option <T> {
   if input == T::zero() {return Some (T::zero())}
