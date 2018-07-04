@@ -27,6 +27,7 @@ pub const ARENA_SIZE: SpaceCoordinate = 1 << ARENA_SIZE_SHIFT;
 // pub const GRID_SIZE: SpaceCoordinate = 1 << GRID_SIZE_SHIFT;
 pub const MAX_DISTANCE_TRAVELED_AT_ONCE: SpaceCoordinate = ARENA_SIZE << 4;
 pub const TIME_SHIFT: u32 = 20;
+pub const STATIC_TIME_SHIFT: u32 = TIME_SHIFT;
 pub const SECOND: Time = 1 << TIME_SHIFT;
 
 
@@ -59,8 +60,6 @@ fn modify<A: EventAccessor <Steward = Steward>, T: QueryResult, F: FnOnce(&mut T
 }
 fn modify_trajectory<A: EventAccessor <Steward = Steward>, F: FnOnce(&mut CircleVarying)>(accessor: &A, circle: &CircleHandle, f: F) {
   modify (accessor, &circle.varying, |varying| {
-    varying.position.update_by(accessor.now() - varying.last_change);
-    varying.last_change = accessor.now().clone();
     (f)(varying)
   });
   trajectory_changed (accessor, circle);
@@ -69,10 +68,6 @@ fn modify_trajectories<A: EventAccessor <Steward = Steward>, F: FnOnce(&mut Rela
   modify (accessor, & relationship.varying, | relationship_varying | {
     modify (accessor, & relationship.circles.0.varying, | circle_0 | {
       modify (accessor, & relationship.circles.1.varying, | circle_1 | {
-        circle_0.position.update_by(accessor.now() - circle_0.last_change);
-        circle_0.last_change = accessor.now().clone();
-        circle_1.position.update_by(accessor.now() - circle_1.last_change);
-        circle_1.last_change = accessor.now().clone();
         (f)(relationship_varying, (circle_0, circle_1));
       });
     });
@@ -177,7 +172,7 @@ impl collisions::Space for Space {
 
   fn current_bounding_box<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->BoundingBox <Self> {
     let varying = tracking_query (accessor, & object.varying);
-    let center = varying.position.updated_by (accessor.now() - varying.last_change).unwrap().evaluate();
+    let center = varying.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap();
     BoundingBox {
       bounds: [
         [to_collision_space (center [0] - object.radius), to_collision_space (center [0] + object.radius)],
@@ -269,20 +264,20 @@ define_event!{
   fn execute (&self, accessor: &mut Accessor) {
     let circles = &self.relationship_handle.circles;
     modify_trajectories(accessor, &self.relationship_handle, | relationship_varying, new | {
-      //let new_difference = new.0.position.evaluate ()-new.1.position.evaluate ();
+      //let new_difference = new.0.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap()-new.1.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap();
       //println!("event with error {:?}", (new_difference.dot(&new_difference) as f64).sqrt() - (circles.0.radius+circles.1.radius)  as f64);
       if let Some(induced_acceleration) = relationship_varying.induced_acceleration {
-        new.0.position.add_acceleration(-induced_acceleration);
-        new.1.position.add_acceleration(induced_acceleration);
+        new.0.position.add_acceleration(*accessor.now(), STATIC_TIME_SHIFT,-induced_acceleration);
+        new.1.position.add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, induced_acceleration);
         relationship_varying.induced_acceleration = None;
         //println!("Parted {} At {}", self.id, mutator.now());
       } else {
-        let acceleration = (new.0.position.evaluate() -
-                            new.1.position.evaluate()) *
-                            (ARENA_SIZE * 4 /
+        let acceleration = (new.0.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap() -
+                            new.1.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap()) *
+                            (ARENA_SIZE * 16 /
                              (circles.0.radius + circles.1.radius));
-        new.0.position.add_acceleration(acceleration);
-        new.1.position.add_acceleration(-acceleration);
+        new.0.position.add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, acceleration);
+        new.1.position.add_acceleration(*accessor.now(), STATIC_TIME_SHIFT,-acceleration);
         relationship_varying.induced_acceleration = Some(acceleration);
         //println!("Joined {} At {}", self.id, mutator.now());
       }
@@ -296,6 +291,8 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
                                               [ARENA_SIZE / 2, ARENA_SIZE / 2, 0, 0, 0, 0]);
   
   modify (accessor, & circle_handle.varying, | varying | {
+    let difference = varying.position - arena_center;
+    
     let time = QuadraticTrajectory::approximately_when_distance_passes(
       ARENA_SIZE - circle_handle.radius,
       if varying.boundary_induced_acceleration.is_some() { -1 } else { 1 },
@@ -320,14 +317,14 @@ define_event!{
   fn execute (&self, accessor: &mut Accessor) {
     modify_trajectory (accessor, & self.circle_handle, | new | {
       if let Some(induced_acceleration) = new.boundary_induced_acceleration {
-        new.position.add_acceleration(-induced_acceleration);
+        new.position.add_acceleration(*accessor.now(), STATIC_TIME_SHIFT,-induced_acceleration);
         new.boundary_induced_acceleration = None;
       } else {
-        let acceleration = -(new.position.evaluate() -
+        let acceleration = -(new.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap() -
                               Vector2::new(ARENA_SIZE / 2,
                                            ARENA_SIZE / 2)) *
-                            (ARENA_SIZE * 400 / (ARENA_SIZE - self.circle_handle.radius));
-        new.position.add_acceleration(acceleration);
+                            (ARENA_SIZE * 1600 / (ARENA_SIZE - self.circle_handle.radius));
+        new.position.add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, acceleration);
         new.boundary_induced_acceleration = Some(acceleration);
       }
     });
@@ -354,7 +351,6 @@ define_event!{
                                0]);
       varying.push (CircleVarying {
         position: position,
-        last_change: 0,
         relationships: Vec::new(),
         boundary_induced_acceleration: None,
         next_boundary_change: None,
@@ -378,7 +374,7 @@ define_event!{
       let mut best_distance_squared = i64::max_value();
       for circle in circles.iter() {
         let varying = tracking_query_ref (accessor, &circle.varying);
-        let position = varying.position.updated_by(accessor.now() - varying.last_change).unwrap().evaluate();
+        let position = varying.position.value (*accessor.now(), STATIC_TIME_SHIFT).unwrap();
         let distance_squared = (self.coordinates [0] - position [0]) * (self.coordinates [0] - position [0]) + (self.coordinates [1] - position [1]) * (self.coordinates [1] - position [1]);
         if distance_squared <best_distance_squared {
           best_distance_squared = distance_squared;
@@ -389,7 +385,7 @@ define_event!{
     
     let best_handle = best_handle.unwrap() ;
     modify_trajectory (accessor, & best_handle, | new | {
-      let impulse = -(new.position.evaluate() -
+      let impulse = -(new.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap() -
                             Vector2::new(ARENA_SIZE / 2,
                                          ARENA_SIZE / 2)) *
                           (ARENA_SIZE * 4 / (ARENA_SIZE ));
