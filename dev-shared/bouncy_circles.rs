@@ -2,6 +2,7 @@
 use time_steward::support::trajectories;
 use nalgebra::Vector2;
 //use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
+use time_steward::support::integer_math::polynomial::RootSearchResult;
 use std::marker::PhantomData;
 
 use time_steward::{DeterministicRandomId};
@@ -236,11 +237,17 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
     tracking_query_ref (accessor, & circles.1.varying));
 
   modify (accessor, & relationship_handle.varying, | relationship_varying | {
-    let time = QuadraticTrajectory::approximately_when_distance_passes(
-      circles.0.radius + circles.1.radius,
-      if relationship_varying.induced_acceleration.is_none() { -1 } else { 1 },
-      ((us.0).last_change, &(us.0).position),
-      ((us.1).last_change, &(us.1).position));
+    let difference = &(us.1).position - &(us.0).position;
+    let radius = circles.0.radius + circles.1.radius;
+    let result = if relationship_varying.induced_acceleration.is_none() {
+      difference.next_time_magnitude_significantly_lt([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, radius)
+    } else {
+      difference.next_time_magnitude_significantly_gt([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, radius)
+    };
+    let time = match result {
+      Ok (RootSearchResult::Root (time)) => Some(time),
+      _=> None,
+    };
     
     // println!("Planning for {} At {}, {}", id, (us.0).1, (us.1).1);
     if time.is_none() && relationship_varying.induced_acceleration.is_some() {
@@ -286,18 +293,20 @@ define_event!{
 }
 
 pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Steward>>(accessor: &Accessor, circle_handle: &CircleHandle) {
-  let arena_center = QuadraticTrajectory::new(TIME_SHIFT,
-                                              MAX_DISTANCE_TRAVELED_AT_ONCE,
-                                              [ARENA_SIZE / 2, ARENA_SIZE / 2, 0, 0, 0, 0]);
+  let arena_center = QuadraticTrajectory::constant(Vector2::new (ARENA_SIZE / 2, ARENA_SIZE / 2));
   
   modify (accessor, & circle_handle.varying, | varying | {
     let difference = varying.position - arena_center;
-    
-    let time = QuadraticTrajectory::approximately_when_distance_passes(
-      ARENA_SIZE - circle_handle.radius,
-      if varying.boundary_induced_acceleration.is_some() { -1 } else { 1 },
-      (varying.last_change, & varying.position),
-      (0, & arena_center));
+    let radius = ARENA_SIZE - circle_handle.radius;
+    let result = if varying.boundary_induced_acceleration.is_some() {
+      difference.next_time_magnitude_significantly_lt([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, radius)
+    } else {
+      difference.next_time_magnitude_significantly_gt([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, radius)
+    };
+    let time = match result {
+      Ok (RootSearchResult::Root (time)) => Some(time),
+      _=> None,
+    };
     
     varying.next_boundary_change = time.and_then (| time | (time >= *accessor.now()).as_some_from(||
       // println!(" planned for {}", &yes);
@@ -341,14 +350,14 @@ define_event!{
     let mut generator = DeterministicRandomId::new (&2u8).to_rng();
     let thingy = ARENA_SIZE / 20;
     for index in 0..HOW_MANY_CIRCLES {
-      let position = QuadraticTrajectory::new(TIME_SHIFT,
-                              MAX_DISTANCE_TRAVELED_AT_ONCE,
-                              [generator.gen_range(0, ARENA_SIZE),
-                               generator.gen_range(0, ARENA_SIZE),
-                               generator.gen_range(-thingy, thingy),
-                               generator.gen_range(-thingy, thingy),
-                               0,
-                               0]);
+      let mut position = QuadraticTrajectory::constant (Vector2::new (
+        generator.gen_range(0, ARENA_SIZE),
+        generator.gen_range(0, ARENA_SIZE),
+      ));
+      position.set_velocity (*accessor.now(), STATIC_TIME_SHIFT, Vector2::new (
+        generator.gen_range(-thingy, thingy),
+        generator.gen_range(-thingy, thingy),
+      ));
       varying.push (CircleVarying {
         position: position,
         relationships: Vec::new(),
