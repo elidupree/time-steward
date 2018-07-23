@@ -191,7 +191,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
       settle (&mut stew, time);
       for handle in accessor.globals().circles.iter() {
         let circle = query (& accessor, &handle.varying);
-        let position = circle.position.updated_by(accessor.now() - circle.last_change).unwrap().evaluate();
+        let position = circle.position.value (*accessor.now(), STATIC_TIME_SHIFT).unwrap();
         let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,
                       position[1] as f32 / ARENA_SIZE as f32 - 0.5];
         let radius = handle.radius as f32 / ARENA_SIZE as f32;
