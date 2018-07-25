@@ -183,10 +183,13 @@ impl collisions::Space for Space {
   }
   fn when_escapes<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, bounds: BoundingBox <Self>)->Option<<<Self::Steward as TimeSteward>::Basics as BasicsTrait>::Time> {
     let varying = tracking_query (accessor, & object.varying);
-    unimplemented!()/*varying.position.next_time_possibly_outside_bounds ([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, [
+    match varying.position.next_time_possibly_outside_bounds ([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, [
       Vector2::new (from_collision_space (bounds.bounds [0] [0]) + object.radius, from_collision_space (bounds.bounds [1] [0]) + object.radius),
       Vector2::new (from_collision_space (bounds.bounds [0] [1]) - object.radius, from_collision_space (bounds.bounds [1] [1]) - object.radius),
-    ])*/
+    ]) {
+      RootSearchResult::Root (value)=>Some (value),
+      _=> None,
+    }
   }
   
   fn become_neighbors<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, objects: [&DataHandle<Self::Object>; 2]) {
