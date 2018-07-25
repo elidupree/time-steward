@@ -1,5 +1,5 @@
 //use nalgebra::Vector2;
-//use std::cmp::max;
+use std::cmp::min;
 use num::{FromPrimitive, Zero, One};
 use num::traits::{Signed, Bounded};
 use super::integer_math::*;
@@ -247,6 +247,17 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate> {
   pub fn add_velocity (&mut self, time_numerator: Time, time_shift: u32, value: T)->Result <(), polynomial::OverflowError> {self.add_nth_coefficient (1, time_numerator, time_shift, value)}
   pub fn add_acceleration (&mut self, time_numerator: Time, time_shift: u32, value: T)->Result <(), polynomial::OverflowError> {self.add_nth_coefficient (2, time_numerator, time_shift, value.map_coordinates (| coordinate | shr_round_to_even (coordinate, 1)))}
   
+  pub fn next_time_possibly_outside_bounds (&self, range: [Time; 2], input_shift: u32, bounds: [T; 2])->RootSearchResult<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
+    (0..T::DIMENSIONS).map (| dimension | {
+      let trajectory = self.coordinate_trajectory (dimension);
+      let four = (T::Coordinate::one() + T::Coordinate::one()) + (T::Coordinate::one() + T::Coordinate::one());
+      min(
+        trajectory.next_time_significantly_le (range, input_shift, bounds [0].coordinate (dimension) + four),
+        trajectory.next_time_significantly_ge (range, input_shift, bounds [1].coordinate (dimension) - four),
+      )
+    }).min().unwrap()
+  }
+  
   #[cfg $multiplication]
   pub fn magnitude_squared_trajectory (&self)->Result <$ProductTrajectory <T::Coordinate>, polynomial::OverflowError> {
     let mut coefficients = [T::Coordinate::zero(); $degree + $degree + 1];
@@ -259,11 +270,11 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate> {
     })
   }
   #[cfg $multiplication]
-  pub fn next_time_magnitude_significantly_gt (&self, range: [Time; 2], input_shift: u32, target: T::Coordinate)->Result <RootSearchResult <Time>, polynomial::OverflowError> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate>, Time: From <T::Coordinate> {
+  pub fn next_time_magnitude_significantly_gt (&self, range: [Time; 2], input_shift: u32, target: T::Coordinate)->Result <RootSearchResult <Time>, polynomial::OverflowError> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
     Ok(self.magnitude_squared_trajectory()?.next_time_significantly_gt (range, input_shift, target*target))
   }
   #[cfg $multiplication]
-  pub fn next_time_magnitude_significantly_lt (&self, range: [Time; 2], input_shift: u32, target: T::Coordinate)->Result <RootSearchResult <Time>, polynomial::OverflowError> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate>, Time: From <T::Coordinate> {
+  pub fn next_time_magnitude_significantly_lt (&self, range: [Time; 2], input_shift: u32, target: T::Coordinate)->Result <RootSearchResult <Time>, polynomial::OverflowError> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
     Ok(self.magnitude_squared_trajectory()?.next_time_significantly_lt (range, input_shift, target*target))
   }
 }
@@ -390,8 +401,9 @@ impl <'a, T: Vector> Neg for & 'a $Trajectory <T> where & 'a T: Neg <Output = T>
 impl <T: Vector + Integer + Signed + HasCoordinates <Coordinate = T>> ScalarTrajectory for $Trajectory <T> where for <'a> & 'a T: Neg <Output = T>, Time: From <T> {
   fn next_time_significantly_ge (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->RootSearchResult<Time> {
     let relative = self - (target + T::one() + T::one());
-    match polynomial::root_search (& relative.coefficients, range, input_shift) {
-      RootSearchResult::Root (input) => RootSearchResult::Root (self.origin + if relative.value (self.origin + input, input_shift).unwrap() >= T::zero() {input} else {input + 1}),
+    let origin = self.origin << input_shift;
+    match polynomial::root_search (& relative.coefficients, [range [0] - origin, range [1] - origin], input_shift) {
+      RootSearchResult::Root (input) => RootSearchResult::Root (origin + if relative.value (origin + input, input_shift).unwrap() >= T::zero() {input} else {input + 1}),
       RootSearchResult::Overflow (input) => RootSearchResult::Overflow (self.origin + input),
       RootSearchResult::Finished => RootSearchResult::Finished,
     }

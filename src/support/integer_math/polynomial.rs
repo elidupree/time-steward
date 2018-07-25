@@ -362,6 +362,36 @@ pub enum RootSearchResult <T> {
   Finished,
 }
 
+use std::cmp::Ordering;
+impl<T: Ord> Ord for RootSearchResult<T> {
+  fn cmp(&self, other: &Self) -> Ordering {
+    match (self, other) {
+      (&RootSearchResult::Finished, &RootSearchResult::Finished) => Ordering::Equal,
+      (&RootSearchResult::Finished, _) => Ordering::Greater,
+      (_, &RootSearchResult::Finished) => Ordering::Less,
+      _=> {
+        let first = match self {
+          & RootSearchResult::Root (ref value) => (value, false),
+          & RootSearchResult::Overflow (ref value) => (value, true),
+          _=> unreachable!(),
+        };
+        let second = match other {
+          & RootSearchResult::Root (ref value) => (value, false),
+          & RootSearchResult::Overflow (ref value) => (value, true),
+          _=> unreachable!(),
+        };
+        first.cmp (&second)
+      }
+    }
+  }
+}
+
+impl<T: Ord> PartialOrd for RootSearchResult<T> {
+  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+    Some(self.cmp(other))
+  }
+}
+
 
 pub fn root_search <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], range: [T; 2], input_shift: u32)->RootSearchResult <T> {
   assert!(range [1] >range [0]);
