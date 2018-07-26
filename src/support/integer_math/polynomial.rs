@@ -83,6 +83,7 @@ pub fn translate <T: Integer + Signed> (coefficients: &mut [T], input: T)->Resul
 /// Useful in performance-critical code when you already know there won't be overflow,
 /// such as in the range returned by conservative_safe_translation_range.
 pub fn translate_unchecked <T: Integer + Signed> (coefficients: &mut [T], input: T) {
+  if input == T::zero() {return}
   coefficients.reverse();
   for index in 0..coefficients.len() {
     let coefficient = mem::replace (&mut coefficients [index], T::zero());
@@ -121,6 +122,12 @@ pub fn evaluate_at_fractional_input <Coefficient: Integer, T: Integer + Signed +
   }
   let integer_input = shr_nicely_rounded (input_numerator, input_shift);
   let small_input = input_numerator.wrapping_sub (& (integer_input << input_shift));
+  translate_check (coefficients, integer_input, coefficient_bounds_for_evaluate_at_small_input (input_shift))?;
+  let mut translated: SmallVec<[T; 8]> = coefficients.iter().map(| coefficient |(*coefficient).into()).collect();
+  translate_unchecked (&mut translated, integer_input);
+  Ok(evaluate_at_small_input (&translated, small_input, input_shift))
+  
+  /*
   let precision_shift_increment = evaluate_at_fractional_input_impls::precision_shift_increment (input_numerator, input_shift);
   /*debug_assert! (precision_shift_increment < bits, "{:?}", (input, input_shift, precision_shift_increment));
   debug_assert! ((T::one() << precision_shift_increment) >= (integer_input.abs() << 1u32), "{:?}", (input, input_shift, precision_shift_increment));
@@ -146,12 +153,15 @@ pub fn evaluate_at_fractional_input <Coefficient: Integer, T: Integer + Signed +
   }
   debug_assert! (precision_shift == evaluate_at_fractional_input_impls::MIN_PRECISION_SHIFT );
   let constant_coefficient: T = coefficients [0].into();
-  Ok(shr_nicely_rounded (result, evaluate_at_fractional_input_impls::MIN_PRECISION_SHIFT) + constant_coefficient)
+  Ok(shr_nicely_rounded (result, evaluate_at_fractional_input_impls::MIN_PRECISION_SHIFT) + constant_coefficient)*/
 }
 
 
 pub fn evaluate_at_fractional_input_check <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_numerator: T, input_shift: u32)->Result <(), OverflowError> {
   if coefficients.len() <= 1 || input_numerator == T::zero() {return Ok (());}
+  let integer_input = shr_nicely_rounded (input_numerator, input_shift);
+  translate_check (coefficients, integer_input, coefficient_bounds_for_evaluate_at_small_input (input_shift))?;
+  /*
   let constant_coefficient: T = coefficients [0].into();
   if constant_coefficient > (T::max_value() >> 1u32) || constant_coefficient < -(T::max_value() >> 1u32) {return Err (OverflowError) ;}
   let precision_shift_increment = evaluate_at_fractional_input_impls::precision_shift_increment (input_numerator, input_shift);
@@ -160,13 +170,19 @@ pub fn evaluate_at_fractional_input_check <Coefficient: Integer, T: Integer + Si
     let coefficient: T = (*coefficient).into();
     overflow_checked_shl (coefficient, precision_shift)?;
     precision_shift -= precision_shift_increment;
-  }
+  }*/
 
   Ok (())
 }
 
 pub fn evaluate_at_fractional_input_range <Coefficient: Integer, T: Integer + Signed + From <Coefficient>> (coefficients: & [Coefficient], input_shift: u32)->T {
   if coefficients.len() <= 1 {return T::max_value();}
+  let translated: SmallVec<[T; 8]> = coefficients.iter().map(| coefficient |(*coefficient).into()).collect();
+  let max_integer_input = exact_safe_translation_range (& translated, coefficient_bounds_for_evaluate_at_small_input (input_shift));
+  if max_integer_input < T::zero() {return -T::one()}
+  let extended_integer_input = match overflow_checked_shl (max_integer_input, input_shift) {Some (value) => value, None => return T::max_value()};
+  extended_integer_input + if input_shift == 0 {T::zero()} else {(T::one() << (input_shift - 1)) + if max_integer_input.is_even() {T::one()} else {T::zero()}}
+  /*
   let constant_coefficient: T = coefficients [0].into();
   if constant_coefficient > (T::max_value() >> 1u32) || constant_coefficient < -(T::max_value() >> 1u32) {return T::zero()}
   let bits = mem::size_of::<T>() as u32*8;
@@ -185,7 +201,7 @@ pub fn evaluate_at_fractional_input_range <Coefficient: Integer, T: Integer + Si
   
   let verified_precision_shift_increment = evaluate_at_fractional_input_impls::precision_shift_increment (input_numerator, input_shift);
   assert_eq! (precision_shift_increment, verified_precision_shift_increment);
-  input_numerator
+  input_numerator*/
 }
 
 pub fn coefficient_bounds_for_evaluate_at_small_input <T: Integer + Signed> (shift: u32)->impl Fn (usize)->T {
@@ -206,7 +222,7 @@ pub fn within_bounds_check <Coefficient: Integer, T: Integer + Signed + From <Co
 
 pub fn translate_check <Coefficient: Integer, T: Integer + Signed + From <Coefficient>, MaximumFn: Fn (usize)->T> (coefficients: & [Coefficient], input: T, maximum: MaximumFn)->Result <(), Error <T>> {
   if coefficients.len() == 0 {return Ok (());}
-  if input == T::zero() {within_bounds_check (coefficients, maximum)?; return Ok (());}
+  if input == T::zero() {return Ok (());}
   let mut factor = T::one();
   let input = input.abs();
   let sum_safety_shift = coefficients.len() as u32 - 1;
@@ -239,7 +255,7 @@ pub fn translate_check <Coefficient: Integer, T: Integer + Signed + From <Coeffi
 ///
 /// The third argument can impose a stricter maximum on the resulting coefficients.
 pub fn exact_safe_translation_range <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: & [T], maximum: MaximumFn)->T {
-  if within_bounds_check (coefficients, & maximum).is_err() {return -T::one();}
+  //if within_bounds_check (coefficients, & maximum).is_err() {return -T::one();}
   // pick a min that's definitely legal and a max where max + 1 is definitely illegal
   let mut min = T::zero();
   let mut max = T::max_value();
@@ -265,7 +281,7 @@ pub fn exact_safe_translation_range <T: Integer + Signed, MaximumFn: Fn (usize)-
 /// This function is much faster than exact_safe_translation_range, at the cost of being less precise.
 pub fn conservative_safe_translation_range <T: Integer + Signed, MaximumFn: Fn (usize)->T> (coefficients: &[T], maximum: MaximumFn)->T {
   if coefficients.len() == 0 {return T::max_value()}
-  if within_bounds_check (coefficients, & maximum).is_err() {return -T::one();}
+  //if within_bounds_check (coefficients, & maximum).is_err() {return -T::one();}
   let sum_safety_shift = coefficients.len() as u32 - 1;
   let mut running_maximum = T::max_value();
   let mut result_shift = mem::size_of::<T>()*8 - 2;
