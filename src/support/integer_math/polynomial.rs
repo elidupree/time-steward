@@ -83,13 +83,10 @@ pub fn translate <T: Integer + Signed> (coefficients: &mut [T], input: T)->Resul
 /// Useful in performance-critical code when you already know there won't be overflow,
 /// such as in the range returned by conservative_safe_translation_range.
 pub fn translate_unchecked <T: Integer + Signed> (coefficients: &mut [T], input: T) {
-  coefficients.reverse();
-  for index in 0..coefficients.len() {
-    let coefficient = mem::replace (&mut coefficients [index], T::zero());
-    for derivative in (1..(index + 1)).rev() {
-      coefficients [derivative] = coefficients [derivative]*input + coefficients [derivative - 1]
+  for first_source in (1..coefficients.len()).rev() {
+    for source in first_source..coefficients.len() {
+      coefficients [source-1] += coefficients [source]*input;
     }
-    coefficients [0] = coefficients [0]*input + coefficient
   }
 }
 
