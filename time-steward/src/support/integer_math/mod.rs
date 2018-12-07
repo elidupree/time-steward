@@ -3,7 +3,7 @@ use num::traits::{Zero, WrappingAdd, WrappingSub, WrappingMul, CheckedShl, Check
 use std::mem;
 use std::cmp::{min};
 use std::ops::{Add, Sub, Mul, AddAssign, SubAssign, MulAssign, Shl, Shr, Neg, Index};
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 pub trait Integer:
   'static + num::PrimInt + num::Integer + num::FromPrimitive +
@@ -11,8 +11,8 @@ pub trait Integer:
   WrappingAdd + WrappingSub + WrappingMul +
   for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> +
   CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> +
-  Debug {}
-impl <T: 'static + num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug> Integer for T {}
+  Debug + Display + Send + Sync {}
+impl <T: 'static + num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug + Display + Send + Sync> Integer for T {}
 
 
 pub trait HasCoordinates
