@@ -91,11 +91,21 @@ pub mod impls {
 ///
 /// This minimizes error, and avoids a directional bias.
 pub fn shr_nicely_rounded <T: Integer> (input: T, shift: u32)->T {
-  let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
-  let mask = divisor.wrapping_sub (&T::one());
-  let shifted = input >> shift;
-  let half = divisor >> 1u32;
-  shifted + if (input & mask)+(shifted & if shift != 0 {T::one()} else {T::zero()}) > half {T::one()} else {T::zero()}
+  let (mask, shifted) = match T::one().checked_shl ( shift ) {
+    Some (divisor) => (divisor.wrapping_sub (&T::one()), input >> shift),
+    None => (T::max_value(), T::zero()),
+  };
+  // there's gotta be a better way to handle all situations...
+  // This doesn't work because divisor may have wrapped around to negative
+  //let half = divisor >> 1u32;
+  let round_up = match shift.checked_sub(1) {
+    None => return input,
+    Some(half_shift) => match T::one().checked_shl(half_shift) {
+      None => false,
+      Some(half) => half >= T::zero() && (input & mask)+(shifted & T::one()) > half
+    }
+  };
+  shifted + if round_up {T::one()} else {T::zero()}
 }
 
 /// Right-shift an integer, but round to even.
