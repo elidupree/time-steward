@@ -2,6 +2,7 @@
 
 members = [
   "time-steward",
+  "integer-math",
 ]
 
 [profile.bench]

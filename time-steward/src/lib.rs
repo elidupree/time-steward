@@ -50,6 +50,8 @@ extern crate failure;
 #[macro_use]
 extern crate smallvec;
 
+pub extern crate time_steward_integer_math;
+
 macro_rules! printlnerr(
     ($($arg:tt)*) => { {use std::io::Write;
         let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
@@ -91,7 +93,7 @@ pub mod api_impls;
 pub mod support {
   pub mod rounding_error_tolerant_math;
   pub mod time_functions;
-  pub mod integer_math;
+  pub use time_steward_integer_math as integer_math;
   pub mod trajectories;
   #[macro_use] pub mod simple_timeline;
   #[macro_use] pub mod bbox_collision_detection;

@@ -1,0 +1,20 @@
+[package]
+name = "time_steward_integer_math"
+version = "0.1.0"
+authors = ["Eli Dupree <vcs@elidupree.com>"]
+repository = "https://github.com/elidupree/time-steward"
+readme = "README.md"
+license = "MIT"
+
+[dependencies]
+rand = "0.5"
+quickcheck = "0.6.2"
+proptest = "0.7.1"
+array_ext = "0.2"
+num = "0.1.42"
+failure = "0.1.1"
+smallvec = "0.6.1"
+
+[dependencies.nalgebra]
+version = "0.12"
+features = ["serde-serialize"]

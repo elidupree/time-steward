@@ -1,4 +1,21 @@
-use num::{self};
+#![feature(try_trait)]
+
+#[macro_use]
+extern crate failure;
+extern crate num;
+extern crate nalgebra;
+#[cfg(test)]
+#[macro_use]
+extern crate proptest;
+#[cfg(test)]
+#[macro_use]
+extern crate quickcheck;
+#[macro_use]
+extern crate smallvec;
+#[cfg(test)]
+extern crate rand;
+extern crate array_ext;
+
 use num::traits::{Zero, WrappingAdd, WrappingSub, WrappingMul, CheckedShl, CheckedShr, Signed};
 use std::mem;
 use std::cmp::{min};
