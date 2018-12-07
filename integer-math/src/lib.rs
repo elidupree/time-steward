@@ -153,6 +153,7 @@ mod tests {
   use num::bigint::BigInt;
   use num::rational::{Ratio};
   use std::cmp::Ordering;
+  use proptest::prelude::*;
     
   fn perfect_shr_nicely_rounded <T: Integer> (input: T, shift: u32)->BigInt where BigInt: From <T> {
     let perfect_result = Ratio::new (BigInt::from (input), BigInt::one() << shift as usize);
@@ -204,39 +205,44 @@ mod tests {
     }
   }
   
-  quickcheck! {
-    fn quickcheck_shr_nicely_rounded_signed (input: i32, shift: u8)->bool {
-      let result = shr_nicely_rounded (input, shift as u32);
-      let perfect_result = perfect_shr_nicely_rounded (input, shift as u32);
+  proptest! {
+    #[test]
+    fn randomly_test_shr_nicely_rounded_signed (input in any::<i32>(), shift in 0u32..40) {
+      let result = shr_nicely_rounded (input, shift);
+      let perfect_result = perfect_shr_nicely_rounded (input, shift);
       println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
-      perfect_result == BigInt::from (result)
+      prop_assert_eq!(perfect_result, BigInt::from (result))
     }
     
-    fn quickcheck_shr_nicely_rounded_unsigned (input: u32, shift: u8)->bool {
-      let result = shr_nicely_rounded (input, shift as u32);
-      let perfect_result = perfect_shr_nicely_rounded (input, shift as u32);
+    #[test]
+    fn randomly_test_shr_nicely_rounded_unsigned (input in any::<u32>(), shift in 0u32..40) {
+      let result = shr_nicely_rounded (input, shift);
+      let perfect_result = perfect_shr_nicely_rounded (input, shift);
       println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
-      perfect_result == BigInt::from (result)
+      prop_assert_eq!(perfect_result, BigInt::from (result))
     }
     
-    fn quickcheck_shr_round_to_even_signed (input: i32, shift: u8)->bool {
-      let result = shr_round_to_even (input, shift as u32);
-      let perfect_result = perfect_shr_round_to_even (input, shift as u32);
+    #[test]
+    fn randomly_test_shr_round_to_even_signed (input in any::<i32>(), shift in 0u32..40) {
+      let result = shr_round_to_even (input, shift);
+      let perfect_result = perfect_shr_round_to_even (input, shift);
       println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
-      perfect_result == BigInt::from (result)
+      prop_assert_eq!(perfect_result, BigInt::from (result))
     }
     
-    fn quickcheck_shr_round_to_even_unsigned (input: u32, shift: u8)->bool {
-      let result = shr_round_to_even (input, shift as u32);
-      let perfect_result = perfect_shr_round_to_even (input, shift as u32);
+    #[test]
+    fn randomly_test_shr_round_to_even_unsigned (input in any::<u32>(), shift in 0u32..40) {
+      let result = shr_round_to_even (input, shift);
+      let perfect_result = perfect_shr_round_to_even (input, shift);
       println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
-      perfect_result == BigInt::from (result)
+      prop_assert_eq!(perfect_result, BigInt::from (result))
     }
     
-    fn quickcheck_overflow_checked_shl (input: i32, shift: u8)->bool {
-      let result = overflow_checked_shl (input, shift as u32);
+    #[test]
+    fn randomly_test_overflow_checked_shl (input in any::<i32>(), shift in 0u32..40) {
+      let result = overflow_checked_shl (input, shift);
       let perfect_result = BigInt::from (input) << shift as usize;
-      result == perfect_result.to_i32()
+      prop_assert_eq!(result, perfect_result.to_i32())
     }
   }
 }
