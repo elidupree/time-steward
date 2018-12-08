@@ -1,4 +1,4 @@
-#![feature(try_trait)]
+#![feature(try_trait, try_from)]
 
 #[macro_use]
 extern crate failure;
@@ -21,6 +21,7 @@ use std::mem;
 use std::cmp::{min};
 use std::ops::{Add, Sub, Mul, AddAssign, SubAssign, MulAssign, Shl, Shr, Neg, Index};
 use std::fmt::{Debug, Display};
+use std::convert::TryInto;
 
 pub trait Integer:
   'static + num::PrimInt + num::Integer + num::FromPrimitive +
@@ -56,6 +57,11 @@ pub trait Vector:
   }
 }
 
+
+pub trait DoubleSizedInteger: Integer {
+  type Type: Integer + From<Self> + TryInto<Self>;
+}
+
 pub mod impls {
   use super::*;
   use nalgebra::*;
@@ -83,8 +89,21 @@ pub mod impls {
       )*
     }
   }
+  macro_rules! impl_double_sized_integer {
+    ($(($Integer: ident, $Double: ident),)*) => {
+      $(
+        impl DoubleSizedInteger for $Integer {
+          type Type = $Double;
+        }
+      )*
+    }
+  }
   impl_vector! ([1, Vector1], [2, Vector2], [3, Vector3], [4, Vector4], [5, Vector5], [6, Vector6],);
   impl_integer! (i8, i16, i32, i64, isize,);
+  impl_double_sized_integer! (
+    (i8, i16), (i16, i32), (i32, i64),
+    (u8, u16), (u16, u32), (u32, u64),
+  );
 }
 
 /// Right-shift an integer, but round to nearest, with ties rounding to even.
@@ -155,6 +174,7 @@ pub fn mean_ceil <T: Integer> (first: T, second: T)->T {
 
 
 pub mod polynomial;
+pub mod polynomial2;
 
 #[cfg (test)]
 mod tests {
