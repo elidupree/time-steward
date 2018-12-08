@@ -45,7 +45,7 @@ mod tests {
 
 use super::*;
 //use proptest::prelude::*;
-use num::BigInt;
+use num::{BigInt, One};
 
 
 fn naive_perfect_evaluate <Coefficient: Integer> (coefficients: & [Coefficient], input: Coefficient)->BigInt where BigInt: From<Coefficient> {
@@ -58,6 +58,30 @@ fn naive_perfect_evaluate <Coefficient: Integer> (coefficients: & [Coefficient],
   }
   result
 }
+
+fn naive_factorial (value: usize)->BigInt {
+  let mut result = BigInt::one();
+  for factor in 2..=value {
+    result = result * BigInt::from(factor);
+  }
+  result
+}
+
+fn naive_binomial_coefficient(n:usize,k:usize)->BigInt {
+  naive_factorial (n)/(naive_factorial (k)*naive_factorial (n-k))
+}
+
+fn naive_perfect_nth_taylor_coefficient <Coefficient: Integer> (coefficients: & [Coefficient], input: Coefficient, n: usize)->BigInt where BigInt: From<Coefficient> {
+  let input = BigInt::from (input) ;
+  let mut result = BigInt::zero();
+  for (exponent, coefficient) in coefficients.iter().enumerate().skip(n) {
+    let mut term = BigInt::from(*coefficient);
+    for _ in n..exponent { term = term * &input; }
+    result = result + term * naive_binomial_coefficient (exponent, n);
+  }
+  result
+}
+
 
 
 macro_rules! test_polynomials {
@@ -86,7 +110,9 @@ $(
         let translated = translated.unwrap();
         let evaluated = naive_perfect_evaluate (&coefficients, input);
         prop_assert_eq! (BigInt::from(translated[0]), evaluated);
-        
+        for which in 0..$coefficients {
+          prop_assert_eq! (BigInt::from(translated[which]), naive_perfect_nth_taylor_coefficient(&coefficients, input, which), "Incorrect {}th taylor coefficient ", which);
+        }
       }
     }
   }
