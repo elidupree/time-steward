@@ -12,6 +12,7 @@ extern crate proptest;
 extern crate quickcheck;
 #[macro_use]
 extern crate smallvec;
+extern crate arrayvec;
 #[cfg(test)]
 extern crate rand;
 extern crate array_ext;
@@ -172,7 +173,7 @@ pub fn mean_ceil <T: Integer> (first: T, second: T)->T {
   (first >> 1u32) + (second >> 1u32) + ((first | second) & T::one())
 }
 
-
+pub mod array;
 pub mod polynomial;
 pub mod polynomial2;
 

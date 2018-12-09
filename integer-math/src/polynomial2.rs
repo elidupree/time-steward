@@ -1,8 +1,12 @@
 use num::{Signed, CheckedAdd, CheckedMul};
 use array_ext::*;
 use std::cmp::{min, max};
+use array::{Array, ReplaceItemType};
+use arrayvec;
 
 use super::*;
+
+pub trait PolynomialBase: Array + ReplaceItemType<[<Self as arrayvec::Array>::Item; 2]> {}
 
 /// Evaluate all Taylor coefficients of a polynomial.
 ///
@@ -39,6 +43,117 @@ impl <Coefficient: DoubleSizedInteger> AllTaylorCoefficients<<Coefficient as Dou
 
 
 impl_polynomials!(1,2,3,4,5);
+
+
+/*
+struct RangeSearchEndpoint {
+
+}
+
+pub fn coefficient_ranges (endpoints: [& RangeSearchEndpoint; 2])-> {
+  let mut result = [[0,0]; $coefficients];
+  // TODO what if overflow
+  let duration = endpoints [1].time - endpoints [2].time;
+  let mut previous = [0, 0];
+  for exponent in (0..$coefficients).rev() {
+    let left_max = endpoints [0] [exponent] + max(0, previous[1]*duration);
+    let left_min = endpoints [0] [exponent] + min(0, previous[0]*duration);
+    let right_max = endpoints [1] [exponent] + max(0, -previous[0]*duration);
+    let right_min = endpoints [1] [exponent] + min(0, -previous[1]*duration);
+    let bounds = [max(left_min, right_min), min(left_max, right_max)];
+    previous = bounds;
+    result [exponent] = bounds;
+  }
+  result
+}
+
+struct RangeSearch {
+  polynomial: 
+  stack: ArrayVec<[RangeSearchEndpoint; 64]>;
+  next_jump: Time,
+}
+
+impl RangeSearch {
+  pub fn latest_interval(&self)->[&RangeSearchEndpoint; 2] {
+    [
+      &self.stack[self.stack.len() - 1],
+      &self.stack[self.stack.len() - 2],
+    ]
+  }
+  pub fn split_latest(&mut self) {
+    let split_time = mean_floor(self.latest_interval().endpoints [0].time, self.latest_interval().endpoints [1].time); 
+    if !self.add_endpoint (split_time) {
+      let earliest = self.stack.pop();
+      self.stack.clear();
+      self.stack.push(earliest);
+      self.add_next_endpoint();
+    }
+  }
+  pub fn skip_latest(&mut self) {
+    self.stack.pop() ;
+    if self.stack.len() < 2 {
+      self.add_next_endpoint();
+    }
+  }
+  pub fn reached_overflow(&self)->bool {
+    self.stack.len() == 2 && self.stack [0].time == self.stack [1].time
+  }
+  fn add_next_endpoint(&mut self) {
+    let last_endpoint_time = self.stack.last().unwrap().time;
+    loop {
+      let endpoint_time = last_endpoint_time.saturating_add (self.next_jump);
+      if self.add_endpoint(endpoint_time) { break; }
+      self.next_jump = self.next_jump >> 1;
+    }
+    self.next_jump = self.next_jump << 1;
+  }
+  fn add_endpoint(&mut self, time)->bool {
+    if let Some(coefficients) = self.polynomial.all_taylor_coefficients (time) {
+      self.stack.insert (self.stack.len() - 1, RangeSearchEndpoint {time, coefficients});
+      true
+    }
+    else {
+      false
+    }
+  }
+}
+
+*/
+
+/*fn next_time_lt <T: Polynomial, Input> (polynomial: T, start_time: Input, threshold: Coefficient)->Option <Time> {
+  let search = RangeSearch::new(polynomial,);
+  
+  loop {
+    if search.latest_interval().coefficient_ranges[0][0] < threshold {
+      if search.latest_interval().endpoints[0].time + 1 == search.latest_interval().endpoints[1].time {
+        if search.latest_interval().endpoints[0].coefficients[0] < threshold {
+          return Some(search.latest_interval().endpoints[0].time);
+        }
+        search.skip_latest();
+      }
+      else {
+        search.split_latest();
+      }
+    }
+    else {
+      search.skip_latest();
+    }
+    if search.reached_overflow() { break; }
+  }
+}*/
+
+/*
+fn next_time_in_bounds_2d <T: Polynomial, Input> (polynomials: [T;2], start_time: Input, min: [Coefficient;2], max: Coefficient)->Option <Time> {
+  let search: ThresholdSearch = ([min, max+1]);
+  while a time when the answer is not yet computed comes before the first time when the answer is known to be within bounds {
+    (search with the earliest time not yet computed when the answer is also not yet computed).refine_first_bracketed_root(range of times where it matters);
+  }
+  search.
+}*/
+
+
+
+
 
 #[cfg(test)]
 mod tests {
@@ -93,7 +208,7 @@ $(
     use proptest::prelude::*;
     proptest! {
       #[test]
-      fn randomly_test_polynomial_translation_inverts (coefficients in prop::array::$uniform(-16 as i32..16), input in -16 as i32..16) {
+      fn randomly_test_polynomial_translation_inverts (coefficients in prop::array::$uniform(-16 as $integer..16), input in -16 as $integer..16) {
         let translated = coefficients.all_taylor_coefficients (input);
         prop_assume! (translated.is_some());
         let translated = translated.unwrap();
@@ -104,7 +219,7 @@ $(
       }
       
       #[test]
-      fn randomly_test_taylor_coefficients_evaluates (coefficients in prop::array::$uniform(-16 as i32..16), input in -16 as i32..16) {
+      fn randomly_test_taylor_coefficients_evaluates (coefficients in prop::array::$uniform(-16 as $integer..16), input in -16 as $integer..16) {
         let translated = coefficients.all_taylor_coefficients (input);
         prop_assume! (translated.is_some());
         let translated = translated.unwrap();
@@ -114,6 +229,29 @@ $(
           prop_assert_eq! (BigInt::from(translated[which]), naive_perfect_nth_taylor_coefficient(&coefficients, input, which), "Incorrect {}th taylor coefficient ", which);
         }
       }
+      
+      
+      /*#[test]
+      fn randomly_test_next_time_lt_is_lt (coefficients in prop::array::$uniform(-16 as $integer..16), input in -16 as $integer..16, threshold in -16 as $integer..16) {
+        let time = next_time_lt (coefficients, input);
+        prop_assume! (time .is_some());
+        let time = time.unwrap();
+        prop_assert!(coefficients.all_taylor_coefficients (time)[0] < threshold);
+      }
+      
+      #[test]
+      fn randomly_test_next_time_lt_is_next (coefficients in prop::array::$uniform(-16 as $integer..16), input in -16 as $integer..16, threshold in -16 as $integer..16, test_frac in 0f64..1f64) {
+        let time = next_time_lt (coefficients, input);
+        let last_not_lt = match time {
+          None => $integer::max_value(),
+          Some(k) => k-1,
+        };
+        prop_assume!(last_not_lt >= input);
+        prop_assert!(coefficients.all_taylor_coefficients (input)[0] >= threshold);
+        prop_assert!(coefficients.all_taylor_coefficients (last_not_lt)[0] >= threshold);
+        let test_time = input + ((input - last_not_lt) as f64 * test_frac).floor() as $integer;
+        prop_assert!(coefficients.all_taylor_coefficients (test_time)[0] >= threshold);
+      }*/
     }
   }
 )*  
