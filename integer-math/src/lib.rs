@@ -1,4 +1,4 @@
-#![feature(try_trait, try_from)]
+#![feature(nll, try_trait, try_from)]
 
 #[macro_use]
 extern crate failure;
@@ -30,8 +30,10 @@ pub trait Integer:
   WrappingAdd + WrappingSub + WrappingMul +
   for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> +
   CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> +
-  Debug + Display + Send + Sync {}
-impl <T: 'static + num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug + Display + Send + Sync> Integer for T {}
+  Debug + Display + Send + Sync {
+  fn saturating_mul (self, other: Self)->Self;
+}
+/*impl <T: 'static + num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug + Display + Send + Sync> Integer for T {}*/
 
 
 pub trait HasCoordinates
@@ -81,6 +83,17 @@ pub mod impls {
   macro_rules! impl_integer {
     ($($Integer: ident,)*) => {
       $(
+        impl Integer for $Integer {
+          fn saturating_mul (self, other: Self)->Self {
+            self.saturating_mul(other)
+          }
+        }
+      )*
+    }
+  }
+  macro_rules! impl_signed_integer {
+    ($($Integer: ident,)*) => {
+      $(
         impl HasCoordinates for $Integer {type Coordinate = $Integer;}
         impl Vector for $Integer {
           const DIMENSIONS: usize = 1;
@@ -100,7 +113,11 @@ pub mod impls {
     }
   }
   impl_vector! ([1, Vector1], [2, Vector2], [3, Vector3], [4, Vector4], [5, Vector5], [6, Vector6],);
-  impl_integer! (i8, i16, i32, i64, isize,);
+  impl_integer! (
+    i8, i16, i32, i64, isize,
+    u8, u16, u32, u64, usize,
+  );
+  impl_signed_integer! (i8, i16, i32, i64, isize,);
   impl_double_sized_integer! (
     (i8, i16), (i16, i32), (i32, i64),
     (u8, u16), (u16, u32), (u32, u64),

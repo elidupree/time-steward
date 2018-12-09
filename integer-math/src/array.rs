@@ -5,7 +5,7 @@ use array_ext;
 pub trait Array: arrayvec::Array + smallvec::Array<Item=<Self as arrayvec::Array>::Item> + array_ext::Array<<Self as arrayvec::Array>::Item> {}
 
 pub trait ReplaceItemType<U>: Array {
-  type Type: Array;
+  type Type: Array + arrayvec::Array<Item=U> + array_ext::Array<U>;
 }
 pub trait SmallerArray: Array {
   type Type: Array;

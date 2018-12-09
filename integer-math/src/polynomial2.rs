@@ -1,12 +1,17 @@
-use num::{CheckedAdd, CheckedMul};
-use array_ext::*;
-//use std::cmp::{min, max};
+use num::{Signed, CheckedAdd, CheckedMul, Saturating, One};
+use array_ext::{Array as ArrayExtArray, *};
+use std::cmp::{min, max};
 use array::{Array, ReplaceItemType};
-use arrayvec;
+use arrayvec::{self, ArrayVec};
 
 use super::*;
 
-pub trait PolynomialBase: Array + ReplaceItemType<[<Self as arrayvec::Array>::Item; 2]> {}
+pub trait PolynomialBase1 {
+  type Coefficient: DoubleSizedInteger + Signed;
+}
+pub trait PolynomialBase2: PolynomialBase1 + Array + arrayvec::Array<Item = <Self as PolynomialBase1>::Coefficient> + ReplaceItemType<[<Self as PolynomialBase1>::Coefficient; 2]> {}
+
+
 
 /// Evaluate all Taylor coefficients of a polynomial.
 ///
@@ -18,6 +23,10 @@ pub trait AllTaylorCoefficients<Input>: Sized {
 macro_rules! impl_polynomials {
   ($($coefficients: expr),*) => {
 $(
+
+impl <Coefficient: DoubleSizedInteger + Signed> PolynomialBase1 for [Coefficient; $coefficients] {type Coefficient = Coefficient; }
+impl <Coefficient: DoubleSizedInteger + Signed> PolynomialBase2 for [Coefficient; $coefficients] {}
+
 impl <Coefficient: DoubleSizedInteger> AllTaylorCoefficients<<Coefficient as DoubleSizedInteger>::Type> for [Coefficient; $coefficients] {
   fn all_taylor_coefficients(&self, input: impl Into<<Coefficient as DoubleSizedInteger>::Type>)->Option <Self> {
     let input = input.into();
@@ -44,46 +53,61 @@ impl <Coefficient: DoubleSizedInteger> AllTaylorCoefficients<<Coefficient as Dou
 
 impl_polynomials!(1,2,3,4,5);
 
+pub trait Polynomial: PolynomialBase1 + PolynomialBase2 + AllTaylorCoefficients<<<Self as PolynomialBase1>::Coefficient as DoubleSizedInteger>::Type> {}
+impl<P: PolynomialBase1 + PolynomialBase2 + AllTaylorCoefficients<<<Self as PolynomialBase1>::Coefficient as DoubleSizedInteger>::Type>> Polynomial for P {}
 
-/*
-struct RangeSearchEndpoint {
 
+
+pub struct RangeSearchEndpoint<P: PolynomialBase2> {
+  time: P::Coefficient,
+  coefficients: P,
 }
 
-pub fn coefficient_ranges (endpoints: [& RangeSearchEndpoint; 2])-> {
-  let mut result = [[0,0]; $coefficients];
+pub fn coefficient_ranges<P: PolynomialBase2> (endpoints: [& RangeSearchEndpoint<P>; 2])-><P as ReplaceItemType<[P::Coefficient; 2]>>::Type {
+  let mut result: <P as ReplaceItemType<[P::Coefficient; 2]>>::Type = array_ext::Array::from_fn(|_| [P::Coefficient::zero(), P::Coefficient::zero()]);
   // TODO what if overflow
-  let duration = endpoints [1].time - endpoints [2].time;
-  let mut previous = [0, 0];
-  for exponent in (0..$coefficients).rev() {
-    let left_max = endpoints [0] [exponent] + max(0, previous[1]*duration);
-    let left_min = endpoints [0] [exponent] + min(0, previous[0]*duration);
-    let right_max = endpoints [1] [exponent] + max(0, -previous[0]*duration);
-    let right_min = endpoints [1] [exponent] + min(0, -previous[1]*duration);
+  let duration = endpoints [1].time - endpoints [0].time;
+  let mut previous = [P::Coefficient::zero(), P::Coefficient::zero()];
+  for exponent in (0..result.len()).rev() {
+    let left_max = endpoints [0].coefficients.as_slice() [exponent].saturating_add(max(P::Coefficient::zero(), previous[1]).saturating_mul(duration));
+    let left_min = endpoints [0].coefficients.as_slice() [exponent].saturating_add(min(P::Coefficient::zero(), previous[0]).saturating_mul(duration));
+    let right_max = endpoints [1].coefficients.as_slice() [exponent].saturating_add(max(P::Coefficient::zero(), -previous[0]).saturating_mul(duration));
+    let right_min = endpoints [1].coefficients.as_slice() [exponent].saturating_add(min(P::Coefficient::zero(), -previous[1]).saturating_mul(duration));
     let bounds = [max(left_min, right_min), min(left_max, right_max)];
     previous = bounds;
-    result [exponent] = bounds;
+    result.as_mut_slice() [exponent] = bounds;
   }
   result
 }
 
-struct RangeSearch {
-  polynomial: 
-  stack: ArrayVec<[RangeSearchEndpoint; 64]>;
-  next_jump: Time,
+pub struct RangeSearch<P: PolynomialBase2> {
+  polynomial: P,
+  stack: ArrayVec<[RangeSearchEndpoint<P>; 64]>,
+  next_jump: P::Coefficient,
 }
 
-impl RangeSearch {
-  pub fn latest_interval(&self)->[&RangeSearchEndpoint; 2] {
+impl<P: Polynomial> RangeSearch<P> {
+  pub fn new(polynomial: P, start_time: P::Coefficient)->Option<Self> {
+    let mut result = RangeSearch {polynomial, stack: ArrayVec::new(), next_jump: P::Coefficient::one()};
+    if let Some(coefficients) = result.polynomial.all_taylor_coefficients (start_time) {
+      result.stack.push(RangeSearchEndpoint {time: start_time, coefficients});
+      result.add_next_endpoint();
+      Some(result)
+    }
+    else {
+      None
+    }
+  }
+  pub fn latest_interval(&self)->[&RangeSearchEndpoint<P>; 2] {
     [
       &self.stack[self.stack.len() - 1],
       &self.stack[self.stack.len() - 2],
     ]
   }
   pub fn split_latest(&mut self) {
-    let split_time = mean_floor(self.latest_interval().endpoints [0].time, self.latest_interval().endpoints [1].time); 
+    let split_time = mean_floor(self.latest_interval()[0].time, self.latest_interval()[1].time); 
     if !self.add_endpoint (split_time) {
-      let earliest = self.stack.pop();
+      let earliest = self.stack.pop().unwrap();
       self.stack.clear();
       self.stack.push(earliest);
       self.add_next_endpoint();
@@ -107,7 +131,7 @@ impl RangeSearch {
     }
     self.next_jump = self.next_jump << 1;
   }
-  fn add_endpoint(&mut self, time)->bool {
+  fn add_endpoint(&mut self, time: P::Coefficient)->bool {
     if let Some(coefficients) = self.polynomial.all_taylor_coefficients (time) {
       self.stack.insert (self.stack.len() - 1, RangeSearchEndpoint {time, coefficients});
       true
@@ -118,16 +142,16 @@ impl RangeSearch {
   }
 }
 
-*/
 
-/*fn next_time_lt <T: Polynomial, Input> (polynomial: T, start_time: Input, threshold: Coefficient)->Option <Time> {
-  let search = RangeSearch::new(polynomial,);
+
+pub fn next_time_lt <P: Polynomial> (polynomial: P, start_time: P::Coefficient, threshold: P::Coefficient)->Option <P::Coefficient> {
+  let mut search = RangeSearch::new(polynomial, start_time)?;
   
   loop {
-    if search.latest_interval().coefficient_ranges[0][0] < threshold {
-      if search.latest_interval().endpoints[0].time + 1 == search.latest_interval().endpoints[1].time {
-        if search.latest_interval().endpoints[0].coefficients[0] < threshold {
-          return Some(search.latest_interval().endpoints[0].time);
+    if coefficient_ranges(search.latest_interval()).as_slice()[0][0] < threshold {
+      if search.latest_interval()[0].time + P::Coefficient::one() == search.latest_interval()[1].time {
+        if search.latest_interval()[0].coefficients.as_slice()[0] < threshold {
+          return Some(search.latest_interval()[0].time);
         }
         search.skip_latest();
       }
@@ -138,9 +162,9 @@ impl RangeSearch {
     else {
       search.skip_latest();
     }
-    if search.reached_overflow() { break; }
+    if search.reached_overflow() { return None; }
   }
-}*/
+}
 
 /*
 fn next_time_in_bounds_2d <T: Polynomial, Input> (polynomials: [T;2], start_time: Input, min: [Coefficient;2], max: Coefficient)->Option <Time> {
@@ -231,27 +255,30 @@ $(
       }
       
       
-      /*#[test]
+      #[test]
       fn randomly_test_next_time_lt_is_lt (coefficients in prop::array::$uniform(-16 as $integer..16), input in -16 as $integer..16, threshold in -16 as $integer..16) {
-        let time = next_time_lt (coefficients, input);
+        let time = next_time_lt (coefficients, input, threshold);
         prop_assume! (time .is_some());
         let time = time.unwrap();
-        prop_assert!(coefficients.all_taylor_coefficients (time)[0] < threshold);
+        if let Some(coefficients) = coefficients.all_taylor_coefficients (time) { prop_assert!(coefficients[0] < threshold); }
       }
       
       #[test]
       fn randomly_test_next_time_lt_is_next (coefficients in prop::array::$uniform(-16 as $integer..16), input in -16 as $integer..16, threshold in -16 as $integer..16, test_frac in 0f64..1f64) {
-        let time = next_time_lt (coefficients, input);
+        let time = next_time_lt (coefficients, input, threshold);
         let last_not_lt = match time {
           None => $integer::max_value(),
-          Some(k) => k-1,
+          Some(k) => {
+            prop_assert!(k >= input);
+            k-1
+          },
         };
         prop_assume!(last_not_lt >= input);
-        prop_assert!(coefficients.all_taylor_coefficients (input)[0] >= threshold);
-        prop_assert!(coefficients.all_taylor_coefficients (last_not_lt)[0] >= threshold);
-        let test_time = input + ((input - last_not_lt) as f64 * test_frac).floor() as $integer;
-        prop_assert!(coefficients.all_taylor_coefficients (test_time)[0] >= threshold);
-      }*/
+        if let Some(first_coefficients) = coefficients.all_taylor_coefficients (input) { prop_assert!(first_coefficients[0] >= threshold); }
+        if let Some(last_coefficients) = coefficients.all_taylor_coefficients (last_not_lt) {prop_assert!(last_coefficients[0] >= threshold); }
+        let test_time = input + ((last_not_lt.saturating_sub(input)) as f64 * test_frac).floor() as $integer;
+        if let Some(test_coefficients) = coefficients.all_taylor_coefficients (test_time) {prop_assert!(test_coefficients[0] >= threshold); }
+      }
     }
   }
 )*  
