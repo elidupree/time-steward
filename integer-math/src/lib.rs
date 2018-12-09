@@ -19,8 +19,8 @@ extern crate array_ext;
 
 use num::traits::{Zero, WrappingAdd, WrappingSub, WrappingMul, CheckedShl, CheckedShr, Signed};
 use std::mem;
-use std::cmp::{min};
-use std::ops::{Add, Sub, Mul, AddAssign, SubAssign, MulAssign, Shl, Shr, Neg, Index};
+//use std::cmp::{min};
+use std::ops::{Add, Sub, Mul, AddAssign, SubAssign, MulAssign, Shl, Shr, Neg};
 use std::fmt::{Debug, Display};
 use std::convert::TryInto;
 
@@ -84,8 +84,8 @@ pub mod impls {
         impl HasCoordinates for $Integer {type Coordinate = $Integer;}
         impl Vector for $Integer {
           const DIMENSIONS: usize = 1;
-          fn coordinate (&self, which: usize)->Self::Coordinate {*self}
-          fn set_coordinate (&mut self, which: usize, value: Self::Coordinate) {*self = value}
+          fn coordinate (&self, _which: usize)->Self::Coordinate {*self}
+          fn set_coordinate (&mut self, _which: usize, value: Self::Coordinate) {*self = value}
         }
       )*
     }

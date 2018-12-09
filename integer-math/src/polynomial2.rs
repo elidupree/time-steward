@@ -1,6 +1,6 @@
-use num::{Signed, CheckedAdd, CheckedMul};
+use num::{CheckedAdd, CheckedMul};
 use array_ext::*;
-use std::cmp::{min, max};
+//use std::cmp::{min, max};
 use array::{Array, ReplaceItemType};
 use arrayvec;
 
@@ -204,7 +204,7 @@ macro_rules! test_polynomials {
 $(
   mod $name {
     use super::*;
-    use super::super::*;
+    //use super::super::*;
     use proptest::prelude::*;
     proptest! {
       #[test]

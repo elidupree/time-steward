@@ -1,6 +1,5 @@
 use num::{Signed};
 use smallvec::SmallVec;
-use array_ext::*;
 use std::cmp::{min, max};
 
 use super::*;
@@ -435,6 +434,7 @@ pub fn root_search <Coefficient: Integer, T: Integer + Signed + From <Coefficien
 
 mod impls {
 use super::*;
+use array_ext::*;
 
 pub (super) struct RootSearchMetadata <'a, T: 'a> {
   pub (super) input_shift: u32,
@@ -659,7 +659,7 @@ mod tests {
       
       let factorial = (1..which_derivative + 1).product::<usize>() as i64;
       let mut taylor = vec![0; coefficients.len() - which_derivative];
-      let result = compute_nth_taylor_coefficient_function (coefficients, &mut taylor, which_derivative);
+      let _result = compute_nth_taylor_coefficient_function (coefficients, &mut taylor, which_derivative);
       for coefficient in taylor.iter_mut() {*coefficient *= factorial}
       prop_assert_eq! (&direct, &taylor);
     }
