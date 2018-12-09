@@ -1,4 +1,4 @@
-use num::{Signed, CheckedAdd, CheckedMul, Saturating, One};
+use num::{Signed, CheckedAdd, CheckedMul, Saturating, One, FromPrimitive};
 use array_ext::{Array as ArrayExtArray, *};
 use std::cmp::{min, max};
 use array::{Array, ReplaceItemType};
@@ -74,7 +74,7 @@ pub fn coefficient_ranges<P: PolynomialBase2> (endpoints: [& RangeSearchEndpoint
     let right_max = endpoints [1].coefficients.as_slice() [exponent].saturating_add(max(P::Coefficient::zero(), -previous[0]).saturating_mul(duration));
     let right_min = endpoints [1].coefficients.as_slice() [exponent].saturating_add(min(P::Coefficient::zero(), -previous[1]).saturating_mul(duration));
     let bounds = [max(left_min, right_min), min(left_max, right_max)];
-    previous = bounds;
+    previous = bounds.map(|a|a.saturating_mul(P::Coefficient::from_usize(exponent).unwrap()));
     result.as_mut_slice() [exponent] = bounds;
   }
   result
