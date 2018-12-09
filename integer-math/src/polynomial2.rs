@@ -67,15 +67,37 @@ pub fn coefficient_ranges<P: PolynomialBase2> (endpoints: [& RangeSearchEndpoint
   let mut result: <P as ReplaceItemType<[P::Coefficient; 2]>>::Type = array_ext::Array::from_fn(|_| [P::Coefficient::zero(), P::Coefficient::zero()]);
   // TODO what if overflow
   let duration = endpoints [1].time - endpoints [0].time;
-  let mut previous = [P::Coefficient::zero(), P::Coefficient::zero()];
+  let mut previous_derivative_range = [P::Coefficient::zero(), P::Coefficient::zero()];
   for exponent in (0..result.len()).rev() {
-    let left_max = endpoints [0].coefficients.as_slice() [exponent].saturating_add(max(P::Coefficient::zero(), previous[1]).saturating_mul(duration));
-    let left_min = endpoints [0].coefficients.as_slice() [exponent].saturating_add(min(P::Coefficient::zero(), previous[0]).saturating_mul(duration));
-    let right_max = endpoints [1].coefficients.as_slice() [exponent].saturating_add(max(P::Coefficient::zero(), -previous[0]).saturating_mul(duration));
-    let right_min = endpoints [1].coefficients.as_slice() [exponent].saturating_add(min(P::Coefficient::zero(), -previous[1]).saturating_mul(duration));
-    let bounds = [max(left_min, right_min), min(left_max, right_max)];
-    previous = bounds.map(|a|a.saturating_mul(P::Coefficient::from_usize(exponent).unwrap()));
+    let endpoint_0 = endpoints [0].coefficients.as_slice() [exponent];
+    let endpoint_1 = endpoints [1].coefficients.as_slice() [exponent];
+    let bounds = if previous_derivative_range[0] >= P::Coefficient::zero() {
+      [endpoint_0, endpoint_1]
+    } else if previous_derivative_range[1] <= P::Coefficient::zero() {
+      [endpoint_1, endpoint_0]
+    } else {
+    
+      // TODO: these bounds can be tightened by analyzing the parallelogram
+      // but it might overflow
+      // did the algebra as (v1*s1 + v0*-s0 + (t1-t0)*s1*-s0)/(s1+ -s0) = max_value
+      // let slope_product = previous_derivative_range[0]*previous_derivative_range[1];
+      
+      let previous_max_movement = previous_derivative_range.map(|a|a.saturating_mul(duration));
+      
+      let left_max = endpoint_0 + previous_max_movement[1];
+      let left_min = endpoint_0 + previous_max_movement[0];
+      
+      let right_max = endpoint_1 - previous_max_movement[0];
+      let right_min = endpoint_1 - previous_max_movement[1];
+      
+      [
+        max(left_min, right_min),
+        min(left_max, right_max)
+      ]
+    };
+
     result.as_mut_slice() [exponent] = bounds;
+    previous_derivative_range = bounds.map(|a|a.saturating_mul(P::Coefficient::from_usize(exponent).unwrap()));
   }
   result
 }
