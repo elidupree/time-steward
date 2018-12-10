@@ -131,7 +131,8 @@ pub struct RangeSearchEndpoint<P: PolynomialBase2> {
   coefficients: <P as ReplaceItemType<[P::Coefficient; 2]>>::Type,
 }
 
-pub fn coefficient_ranges<P: PolynomialBase2, InputShift: Copy+Into<u32>> (endpoints: [& RangeSearchEndpoint<P>; 2], input_shift: InputShift)-><P as ReplaceItemType<[P::Coefficient; 2]>>::Type {
+
+pub fn coefficient_bounds_on_interval<P: PolynomialBase2, InputShift: Copy+Into<u32>> (endpoints: [& RangeSearchEndpoint<P>; 2], input_shift: InputShift)-><P as ReplaceItemType<[P::Coefficient; 2]>>::Type {
   let mut result: <P as ReplaceItemType<[P::Coefficient; 2]>>::Type = array_ext::Array::from_fn(|_| [P::Coefficient::zero(), P::Coefficient::zero()]);
   let input_shift_dynamic = input_shift.into();
   // TODO what if overflow
@@ -249,7 +250,7 @@ pub fn next_time_definitely_lt <P: Polynomial, InputShift: Copy+Into<u32>> (poly
   let mut search = RangeSearch::new(polynomial, start_time, input_shift)?;
   
   loop {
-    if coefficient_ranges(search.latest_interval(), input_shift).as_slice()[0][0] < threshold {
+    if coefficient_bounds_on_interval(search.latest_interval(), input_shift).as_slice()[0][0] < threshold {
       if search.latest_interval()[0].time + One::one() == search.latest_interval()[1].time {
         if search.latest_interval()[0].coefficients.as_slice()[0][1] < threshold {
           return Some(search.latest_interval()[0].time);
