@@ -127,7 +127,8 @@ pub mod impls {
 /// Right-shift an integer, but round to nearest, with ties rounding to even.
 ///
 /// This minimizes error, and avoids a directional bias.
-pub fn shr_nicely_rounded <T: Integer> (input: T, shift: u32)->T {
+pub fn shr_nicely_rounded <T: Integer> (input: T, shift: impl Into<u32>)->T {
+  let shift: u32 = shift.into();
   let (mask, shifted) = match T::one().checked_shl ( shift ) {
     Some (divisor) => (divisor.wrapping_sub (&T::one()), input >> shift),
     None => (T::max_value(), T::zero()),
@@ -148,7 +149,8 @@ pub fn shr_nicely_rounded <T: Integer> (input: T, shift: u32)->T {
 /// Right-shift an integer, but round to even.
 ///
 /// This avoids a directional bias.
-pub fn shr_round_to_even <T: Integer> (input: T, shift: u32)->T {
+pub fn shr_round_to_even <T: Integer> (input: T, shift: impl Into<u32>)->T {
+  let shift: u32 = shift.into();
   let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
   let mask = divisor.wrapping_sub (&T::one());
   let shifted = input >> shift;
@@ -156,19 +158,22 @@ pub fn shr_round_to_even <T: Integer> (input: T, shift: u32)->T {
 }
 
 /// Right-shift an integer, but round towards positive infinity.
-pub fn shr_ceil <T: Integer> (input: T, shift: u32)->T {
+pub fn shr_ceil <T: Integer> (input: T, shift: impl Into<u32>)->T {
+  let shift: u32 = shift.into();
   let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
   let mask = divisor.wrapping_sub (&T::one());
   (input >> shift) + if input & mask != T::zero() {T::one()} else {T::zero()}
 }
 
 /// Right-shift an integer, but round towards 0.
-pub fn shr_round_towards_zero <T: Integer> (input: T, shift: u32)->T {
+pub fn shr_round_towards_zero <T: Integer> (input: T, shift: impl Into<u32>)->T {
+  let shift: u32 = shift.into();
   (input + if input <T::zero() {(T::one() << shift).wrapping_sub (& T::one())} else {T::zero()}) >> shift
 }
 
 /// Left-shift an integer, returning Some(input*(2^shift)) if it fits within the type, None otherwise.
-pub fn overflow_checked_shl <T: Integer> (input: T, shift: u32)->Option <T> {
+pub fn overflow_checked_shl <T: Integer> (input: T, shift: impl Into<u32>)->Option <T> {
+  let shift: u32 = shift.into();
   if input == T::zero() {return Some (T::zero())}
   let maximum = match T::max_value().checked_shr (shift) {
     None => return None,
@@ -188,6 +193,12 @@ pub fn mean_floor <T: Integer> (first: T, second: T)->T {
 /// Compute the arithmetic mean of two integers, rounded towards positive infinity. Never overflows.
 pub fn mean_ceil <T: Integer> (first: T, second: T)->T {
   (first >> 1u32) + (second >> 1u32) + ((first | second) & T::one())
+}
+
+/// Compute the arithmetic mean of two integers, rounded towards even. Never overflows.
+pub fn mean_round_to_even <T: Integer> (first: T, second: T)->T {
+  let floor = mean_floor(first, second);
+  floor + ((first ^ second) & floor & T::one())
 }
 
 pub mod array;
