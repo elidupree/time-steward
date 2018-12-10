@@ -369,6 +369,19 @@ $(
         }
       }
       
+      #[test]
+      fn randomly_test_taylor_coefficients_bounds_close(coefficients in prop::array::$uniform(-16 as $integer..16), (input, input_shift) in arbitrary_fractional_input()) {
+        let bounds = coefficients.all_taylor_coefficients_bounds (input, input_shift);
+        prop_assume! (bounds.is_some());
+        let bounds = bounds.unwrap();
+        let leeway = BigRational::new(BigInt::from(3i32), BigInt::from(2i32));
+        for which in 0..$coefficients {
+          let exact = naive_perfect_nth_taylor_coefficient(&coefficients, BigRational::new(BigInt::from(input), BigInt::from(1i64 << input_shift)), which);
+          prop_assert! (BigRational::from(BigInt::from(bounds[which][0])) > &exact - &leeway, "Too loose {}th taylor coefficient lower bound: {} + 1.5 <= {:?}", which, bounds[which][0], exact);
+          prop_assert! (BigRational::from(BigInt::from(bounds[which][1])) < &exact + &leeway, "Too loose {}th taylor coefficient upper bound: {} - 1.5 >= {:?}", which, bounds[which][1], exact);
+        }
+      }
+      
       
       #[test]
       fn randomly_test_next_time_definitely_lt_is_lt (coefficients in prop::array::$uniform(-16 as $integer..16), (input, input_shift) in arbitrary_fractional_input(), threshold in -16 as $integer..16) {
