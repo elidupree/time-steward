@@ -61,8 +61,8 @@ pub trait Vector:
 }
 
 
-pub trait DoubleSizedInteger: Integer {
-  type Type: Integer + From<Self> + TryInto<Self>;
+pub trait DoubleSizedSignedInteger: Integer + Signed {
+  type Type: Integer + Signed + From<Self> + TryInto<Self>;
 }
 
 pub mod impls {
@@ -106,7 +106,7 @@ pub mod impls {
   macro_rules! impl_double_sized_integer {
     ($(($Integer: ident, $Double: ident),)*) => {
       $(
-        impl DoubleSizedInteger for $Integer {
+        impl DoubleSizedSignedInteger for $Integer {
           type Type = $Double;
         }
       )*
@@ -120,7 +120,7 @@ pub mod impls {
   impl_signed_integer! (i8, i16, i32, i64, isize,);
   impl_double_sized_integer! (
     (i8, i16), (i16, i32), (i32, i64),
-    (u8, u16), (u16, u32), (u32, u64),
+    //(u8, u16), (u16, u32), (u32, u64),
   );
 }
 
@@ -160,9 +160,18 @@ pub fn shr_round_to_even <T: Integer> (input: T, shift: impl Into<u32>)->T {
 /// Right-shift an integer, but round towards positive infinity.
 pub fn shr_ceil <T: Integer> (input: T, shift: impl Into<u32>)->T {
   let shift: u32 = shift.into();
-  let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return T::zero()};
+  let divisor = match T::one().checked_shl ( shift ) {Some (value) => value, None => return if input > T::zero() {T::one()} else {T::zero()}};
   let mask = divisor.wrapping_sub (&T::one());
   (input >> shift) + if input & mask != T::zero() {T::one()} else {T::zero()}
+}
+
+/// Right-shift an integer, but allow shifting by more than the size of the type, with the expected numerical behavior.
+pub fn shr_floor <T: Integer> (input: T, shift: impl Into<u32>)->T {
+  let shift: u32 = shift.into();
+  match input.checked_shr ( shift ) {
+    Some (value) => value,
+    None => if input >= T::zero() {T::zero()} else {T::zero()-T::one()}
+  }
 }
 
 /// Right-shift an integer, but round towards 0.
@@ -201,6 +210,51 @@ pub fn mean_round_to_even <T: Integer> (first: T, second: T)->T {
   floor + ((first ^ second) & floor & T::one())
 }
 
+
+pub fn mul_shr_round_up<T: Integer + Signed>(factor0: T, factor1: T, shift: impl Copy+Into<u32>) -> Option<T> {
+  if let Some(result) = factor0.checked_mul(&factor1) {
+    return Some(shr_ceil(result, shift));
+  }
+  let mut shift = shift.into();
+  let mut factor0 = factor0;
+  let mut factor1 = factor1;
+  while shift > 0 {
+    shift -= 1;
+    if factor0.abs() > factor1.abs() {
+      factor0 = if factor1 > Zero::zero() { shr_ceil(factor0, 1u32) } else { shr_floor(factor0, 1u32) };
+    }
+    else {
+      factor1 = if factor0 > Zero::zero() { shr_ceil(factor1, 1u32) } else { shr_floor(factor1, 1u32) };
+    }
+    if let Some(result) = factor0.checked_mul(&factor1) {
+      return Some(shr_ceil(result, shift));
+    }
+  }
+  if (factor0 > Zero::zero()) == (factor1 > Zero::zero()) {None} else {Some(T::min_value())}
+}
+
+pub fn mul_shr_round_down<T: Integer + Signed>(factor0: T, factor1: T, shift: impl Copy+Into<u32>) -> Option<T> {
+  let mut shift = shift.into();
+  if let Some(result) = factor0.checked_mul(&factor1) {
+    return Some(shr_floor(result, shift));
+  }
+  let mut factor0 = factor0;
+  let mut factor1 = factor1;
+  while shift > 0 {
+    shift -= 1;
+    if factor0.abs() > factor1.abs() {
+      factor0 = if factor1 < Zero::zero() { shr_ceil(factor0, 1u32) } else { shr_floor(factor0, 1u32) };
+    }
+    else {
+      factor1 = if factor0 < Zero::zero() { shr_ceil(factor1, 1u32) } else { shr_floor(factor1, 1u32) };
+    }
+    if let Some(result) = factor0.checked_mul(&factor1) {
+      return Some(shr_floor(result, shift));
+    }
+  }
+  if (factor0 > Zero::zero()) == (factor1 > Zero::zero()) {Some(T::max_value())} else {None}
+}
+
 pub mod array;
 pub mod polynomial;
 pub mod polynomial2;
@@ -208,7 +262,7 @@ pub mod polynomial2;
 #[cfg (test)]
 mod tests {
   use super::*;
-  use num::{One, ToPrimitive, Integer};
+  use num::{One, ToPrimitive, Integer, BigRational};
   use num::bigint::BigInt;
   use num::rational::{Ratio};
   use std::cmp::Ordering;
@@ -236,6 +290,15 @@ mod tests {
       }
       else {rounded_down + 1}
     }
+  }
+  
+  fn perfect_shr_floor <T: Integer> (input: T, shift: u32)->BigInt where BigInt: From <T> {
+    let perfect_result = Ratio::new (BigInt::from (input), BigInt::one() << shift as usize);
+    perfect_result.floor().to_integer()
+  }
+  fn perfect_shr_ceil <T: Integer> (input: T, shift: u32)->BigInt where BigInt: From <T> {
+    let perfect_result = Ratio::new (BigInt::from (input), BigInt::one() << shift as usize);
+    perfect_result.ceil().to_integer()
   }
   
   #[test]
@@ -298,10 +361,73 @@ mod tests {
     }
     
     #[test]
+    fn randomly_test_shr_ceil_signed (input in any::<i32>(), shift in 0u32..40) {
+      let result = shr_ceil (input, shift);
+      let perfect_result = perfect_shr_ceil (input, shift);
+      println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
+      prop_assert_eq!(perfect_result, BigInt::from (result))
+    }
+    
+    #[test]
+    fn randomly_test_shr_ceil_unsigned (input in any::<u32>(), shift in 0u32..40) {
+      let result = shr_ceil (input, shift);
+      let perfect_result = perfect_shr_ceil (input, shift);
+      println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
+      prop_assert_eq!(perfect_result, BigInt::from (result))
+    }
+    
+    #[test]
+    fn randomly_test_shr_floor_signed (input in any::<i32>(), shift in 0u32..40) {
+      let result = shr_floor (input, shift);
+      let perfect_result = perfect_shr_floor (input, shift);
+      println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
+      prop_assert_eq!(perfect_result, BigInt::from (result))
+    }
+    
+    #[test]
+    fn randomly_test_shr_floor_unsigned (input in any::<u32>(), shift in 0u32..40) {
+      let result = shr_floor (input, shift);
+      let perfect_result = perfect_shr_floor (input, shift);
+      println!( "{:?}", (result, & perfect_result.to_str_radix (10)));
+      prop_assert_eq!(perfect_result, BigInt::from (result))
+    }
+    
+    #[test]
     fn randomly_test_overflow_checked_shl (input in any::<i32>(), shift in 0u32..40) {
       let result = overflow_checked_shl (input, shift);
       let perfect_result = BigInt::from (input) << shift as usize;
       prop_assert_eq!(result, perfect_result.to_i32())
     }
+    
+    #[test]
+    fn randomly_test_mul_shr_out_of_bounds (factor0 in any::<i32>(), factor1 in any::<i32>(), shift in 0u32..40) {
+      let perfect_result = BigRational::new (BigInt::from (factor0)*BigInt::from (factor1), BigInt::from (1i64 << shift));
+      let upper_bound = mul_shr_round_up(factor0, factor1, shift);
+      if let Some(upper_bound) = upper_bound {
+        prop_assert!(BigRational::from (BigInt::from (upper_bound)) >= perfect_result, "{:?} < {:?}", upper_bound, perfect_result);
+      }
+      let lower_bound = mul_shr_round_down(factor0, factor1, shift);
+      if let Some(lower_bound) = lower_bound {
+        prop_assert!(BigRational::from (BigInt::from (lower_bound)) <= perfect_result, "{:?} > {:?}", lower_bound, perfect_result);
+        
+      }
+    }
+    
+    #[test]
+    fn randomly_test_mul_shr_in_bounds (factor0 in any::<i16>(), factor1 in any::<i16>(), shift in 0u32..40) {
+      let factor0: i32 = factor0.into();
+      let factor1: i32 = factor1.into();
+      let perfect_result = BigRational::new (BigInt::from (factor0)*BigInt::from (factor1), BigInt::from (1i64 << shift));
+      let upper_bound = mul_shr_round_up(factor0, factor1, shift);
+      if let Some(upper_bound) = upper_bound {
+        prop_assert!(BigRational::from (BigInt::from (upper_bound)) >= perfect_result, "{:?} < {:?}", upper_bound, perfect_result);
+      }
+      let lower_bound = mul_shr_round_down(factor0, factor1, shift);
+      if let Some(lower_bound) = lower_bound {
+        prop_assert!(BigRational::from (BigInt::from (lower_bound)) <= perfect_result, "{:?} > {:?}", lower_bound, perfect_result);
+        
+      }
+    }
+
   }
 }

@@ -7,7 +7,7 @@ use arrayvec::{self, ArrayVec};
 use super::*;
 
 pub trait PolynomialBase1 {
-  type Coefficient: DoubleSizedInteger + Signed;
+  type Coefficient: DoubleSizedSignedInteger;
 }
 pub trait PolynomialBase2: PolynomialBase1 + Array + arrayvec::Array<Item = <Self as PolynomialBase1>::Coefficient> + ReplaceItemType<[<Self as PolynomialBase1>::Coefficient; 2]> {}
 
@@ -28,13 +28,13 @@ macro_rules! impl_polynomials {
   ($($coefficients: expr),*) => {
 $(
 
-impl <Coefficient: DoubleSizedInteger + Signed> PolynomialBase1 for [Coefficient; $coefficients] {type Coefficient = Coefficient; }
-impl <Coefficient: DoubleSizedInteger + Signed> PolynomialBase2 for [Coefficient; $coefficients] {}
+impl <Coefficient: DoubleSizedSignedInteger> PolynomialBase1 for [Coefficient; $coefficients] {type Coefficient = Coefficient; }
+impl <Coefficient: DoubleSizedSignedInteger> PolynomialBase2 for [Coefficient; $coefficients] {}
 
-impl <Coefficient: DoubleSizedInteger> AllTaylorCoefficients<<Coefficient as DoubleSizedInteger>::Type> for [Coefficient; $coefficients] {
-  fn all_taylor_coefficients(&self, input: impl Copy+Into<<Coefficient as DoubleSizedInteger>::Type>)->Option <Self> {
+impl <Coefficient: DoubleSizedSignedInteger> AllTaylorCoefficients<<Coefficient as DoubleSizedSignedInteger>::Type> for [Coefficient; $coefficients] {
+  fn all_taylor_coefficients(&self, input: impl Copy+Into<<Coefficient as DoubleSizedSignedInteger>::Type>)->Option <Self> {
     let input = input.into();
-    let mut intermediates: [<Coefficient as DoubleSizedInteger>::Type; $coefficients] = self.map (| coefficient | coefficient.into());
+    let mut intermediates: [<Coefficient as DoubleSizedSignedInteger>::Type; $coefficients] = self.map (| coefficient | coefficient.into());
     for first_source in (1..intermediates.len()).rev() {
       for source in first_source..intermediates.len() {
         intermediates[source - 1] = intermediates [source - 1].checked_add (&intermediates[source].checked_mul (&input)?)?;
@@ -51,8 +51,8 @@ impl <Coefficient: DoubleSizedInteger> AllTaylorCoefficients<<Coefficient as Dou
 
 
 
-impl <Coefficient: DoubleSizedInteger + Signed> AllTaylorCoefficientsBounds<<Coefficient as DoubleSizedInteger>::Type> for [Coefficient; $coefficients] where <Coefficient as DoubleSizedInteger>::Type: Signed {
-  fn all_taylor_coefficients_bounds(&self, input: impl Into<<Coefficient as DoubleSizedInteger>::Type>, input_shift: impl Copy+Into<u32>)->Option<<Self as ReplaceItemType<[Self::Coefficient; 2]>>::Type> {
+impl <Coefficient: DoubleSizedSignedInteger + Signed> AllTaylorCoefficientsBounds<<Coefficient as DoubleSizedSignedInteger>::Type> for [Coefficient; $coefficients] {
+  fn all_taylor_coefficients_bounds(&self, input: impl Into<<Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: impl Copy+Into<u32>)->Option<<Self as ReplaceItemType<[Self::Coefficient; 2]>>::Type> {
     let input = input.into();
     let input_shift_dynamic: u32 = input_shift.into();
     
@@ -70,7 +70,7 @@ impl <Coefficient: DoubleSizedInteger + Signed> AllTaylorCoefficientsBounds<<Coe
     // in total, in the formula, we left-shift by precision_shift,
     // then multiply by a number that is up to half of 1<<input_shift - 
     // i.e. we need space for precision_shift+inputshift-1 more bits in the type.
-    assert!(overflow_checked_shl(<Coefficient as DoubleSizedInteger>::Type::from(Coefficient::max_value()), precision_shift + input_shift_dynamic.saturating_sub(1)).is_some());
+    assert!(overflow_checked_shl(<Coefficient as DoubleSizedSignedInteger>::Type::from(Coefficient::max_value()), precision_shift + input_shift_dynamic.saturating_sub(1)).is_some());
     let integer_input = shr_nicely_rounded (input, input_shift);
     let small_input = input.wrapping_sub (& (Shl::<u32>::shl(integer_input, input_shift_dynamic)));
     let integer_coefficients = self.all_taylor_coefficients (integer_input)?;
@@ -81,8 +81,8 @@ impl <Coefficient: DoubleSizedInteger + Signed> AllTaylorCoefficientsBounds<<Coe
     let flip_odd = small_input < Zero::zero();
     let small_input = if flip_odd {-small_input} else {small_input};
     
-    let mut intermediates: [[<Coefficient as DoubleSizedInteger>::Type; 2]; $coefficients] = array_ext::Array::from_fn(|index| {
-      let mut raw: <Coefficient as DoubleSizedInteger>::Type = integer_coefficients[index].into();
+    let mut intermediates: [[<Coefficient as DoubleSizedSignedInteger>::Type; 2]; $coefficients] = array_ext::Array::from_fn(|index| {
+      let mut raw: <Coefficient as DoubleSizedSignedInteger>::Type = integer_coefficients[index].into();
       raw <<= precision_shift;
       if flip_odd && index.is_odd() { raw = -raw; }
       [raw,raw]
@@ -121,26 +121,25 @@ impl <Coefficient: DoubleSizedInteger + Signed> AllTaylorCoefficientsBounds<<Coe
 
 impl_polynomials!(1,2,3,4,5);
 
-pub trait Polynomial: PolynomialBase1 + PolynomialBase2 + AllTaylorCoefficients<<<Self as PolynomialBase1>::Coefficient as DoubleSizedInteger>::Type> + AllTaylorCoefficientsBounds<<<Self as PolynomialBase1>::Coefficient as DoubleSizedInteger>::Type> {}
-impl<P: PolynomialBase1 + PolynomialBase2 + AllTaylorCoefficients<<<Self as PolynomialBase1>::Coefficient as DoubleSizedInteger>::Type> + AllTaylorCoefficientsBounds<<<Self as PolynomialBase1>::Coefficient as DoubleSizedInteger>::Type>> Polynomial for P {}
+pub trait Polynomial: PolynomialBase1 + PolynomialBase2 + AllTaylorCoefficients<<<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::Type> + AllTaylorCoefficientsBounds<<<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::Type> {}
+impl<P: PolynomialBase1 + PolynomialBase2 + AllTaylorCoefficients<<<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::Type> + AllTaylorCoefficientsBounds<<<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::Type>> Polynomial for P {}
 
 
 
 pub struct RangeSearchEndpoint<P: PolynomialBase2> {
-  time: <P::Coefficient as DoubleSizedInteger>::Type,
+  time: <P::Coefficient as DoubleSizedSignedInteger>::Type,
   coefficients: <P as ReplaceItemType<[P::Coefficient; 2]>>::Type,
 }
 
 
 pub fn coefficient_bounds_on_interval<P: PolynomialBase2, InputShift: Copy+Into<u32>> (endpoints: [& RangeSearchEndpoint<P>; 2], input_shift: InputShift)-><P as ReplaceItemType<[P::Coefficient; 2]>>::Type {
   let mut result: <P as ReplaceItemType<[P::Coefficient; 2]>>::Type = array_ext::Array::from_fn(|_| [P::Coefficient::zero(), P::Coefficient::zero()]);
-  let input_shift_dynamic = input_shift.into();
   // TODO what if overflow
   let duration = endpoints [1].time - endpoints [0].time;
-  let mut previous_derivative_range: [<P::Coefficient as DoubleSizedInteger>::Type; 2] = [Zero::zero(), Zero::zero()];
+  let mut previous_derivative_range: [<P::Coefficient as DoubleSizedSignedInteger>::Type; 2] = [Zero::zero(), Zero::zero()];
   for exponent in (0..result.len()).rev() {
-    let endpoint_0 = endpoints [0].coefficients.as_slice() [exponent].map(|a| <P::Coefficient as DoubleSizedInteger>::Type::from(a));
-    let endpoint_1 = endpoints [1].coefficients.as_slice() [exponent].map(|a| <P::Coefficient as DoubleSizedInteger>::Type::from(a));
+    let endpoint_0 = endpoints [0].coefficients.as_slice() [exponent].map(|a| <P::Coefficient as DoubleSizedSignedInteger>::Type::from(a));
+    let endpoint_1 = endpoints [1].coefficients.as_slice() [exponent].map(|a| <P::Coefficient as DoubleSizedSignedInteger>::Type::from(a));
     let bounds = if previous_derivative_range[0] >= Zero::zero() {
       [endpoint_0[0], endpoint_1[1]]
     } else if previous_derivative_range[1] <= Zero::zero() {
@@ -152,9 +151,11 @@ pub fn coefficient_bounds_on_interval<P: PolynomialBase2, InputShift: Copy+Into<
       // did the algebra as (v1*s1 + v0*-s0 + (t1-t0)*s1*-s0)/(s1+ -s0) = max_value
       // let slope_product = previous_derivative_range[0]*previous_derivative_range[1];
       
+      // If an earlier derivative overflowed, assume it's arbitrarily high
+      
       let previous_max_movement = [
-        Shr::<u32>::shr(previous_derivative_range[0].saturating_mul(duration), input_shift_dynamic),
-        shr_ceil(previous_derivative_range[1].saturating_mul(duration), input_shift),
+        if previous_derivative_range[0] == Bounded::min_value() { Bounded::min_value() } else { mul_shr_round_down(previous_derivative_range[0], duration, input_shift).unwrap_or(Bounded::min_value()) },
+        if previous_derivative_range[0] == Bounded::max_value() { Bounded::max_value() } else { mul_shr_round_up(previous_derivative_range[1], duration, input_shift).unwrap_or(Bounded::max_value()) },
       ];
       
       let left_max = endpoint_0[1].saturating_add(previous_max_movement[1]);
@@ -170,8 +171,8 @@ pub fn coefficient_bounds_on_interval<P: PolynomialBase2, InputShift: Copy+Into<
     };
 
     result.as_mut_slice() [exponent] = bounds.map(|a| {
-      if a > <P::Coefficient as DoubleSizedInteger>::Type::from(P::Coefficient::max_value()) { P::Coefficient::max_value() }
-      else if a < <P::Coefficient as DoubleSizedInteger>::Type::from(P::Coefficient::min_value()) { P::Coefficient::max_value() }
+      if a > <P::Coefficient as DoubleSizedSignedInteger>::Type::from(P::Coefficient::max_value()) { P::Coefficient::max_value() }
+      else if a < <P::Coefficient as DoubleSizedSignedInteger>::Type::from(P::Coefficient::min_value()) { P::Coefficient::max_value() }
       else {
         a.try_into().ok().unwrap()
       }
@@ -185,11 +186,11 @@ pub struct RangeSearch<P: PolynomialBase2, InputShift> {
   polynomial: P,
   input_shift: InputShift,
   stack: ArrayVec<[RangeSearchEndpoint<P>; 64]>,
-  next_jump: <P::Coefficient as DoubleSizedInteger>::Type,
+  next_jump: <P::Coefficient as DoubleSizedSignedInteger>::Type,
 }
 
 impl<P: Polynomial, InputShift: Copy+Into<u32>> RangeSearch<P, InputShift> {
-  pub fn new(polynomial: P, start_time: <P::Coefficient as DoubleSizedInteger>::Type, input_shift: InputShift)->Option<Self> {
+  pub fn new(polynomial: P, start_time: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: InputShift)->Option<Self> {
     let mut result = RangeSearch {polynomial, input_shift, stack: ArrayVec::new(), next_jump: One::one()};
     if let Some(coefficients) = result.polynomial.all_taylor_coefficients_bounds (start_time, input_shift) {
       result.stack.push(RangeSearchEndpoint {time: start_time, coefficients});
@@ -233,7 +234,7 @@ impl<P: Polynomial, InputShift: Copy+Into<u32>> RangeSearch<P, InputShift> {
     }
     self.next_jump = self.next_jump << 1;
   }
-  fn add_endpoint(&mut self, time: <P::Coefficient as DoubleSizedInteger>::Type)->bool {
+  fn add_endpoint(&mut self, time: <P::Coefficient as DoubleSizedSignedInteger>::Type)->bool {
     if let Some(coefficients) = self.polynomial.all_taylor_coefficients_bounds (time, self.input_shift) {
       self.stack.insert (self.stack.len() - 1, RangeSearchEndpoint {time, coefficients});
       true
@@ -246,7 +247,7 @@ impl<P: Polynomial, InputShift: Copy+Into<u32>> RangeSearch<P, InputShift> {
 
 
 //Note: currently, this function is strict (always find the exact time the max goes below the threshold). With a certain amount of error when the value is very close to the threshold, this could force searching every time unit. TODO: fix this by rigorously limiting the error and allowing that much leeway
-pub fn next_time_definitely_lt <P: Polynomial, InputShift: Copy+Into<u32>> (polynomial: P, start_time: <P::Coefficient as DoubleSizedInteger>::Type, input_shift: InputShift, threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedInteger>::Type> {
+pub fn next_time_definitely_lt <P: Polynomial, InputShift: Copy+Into<u32>> (polynomial: P, start_time: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: InputShift, threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
   let mut search = RangeSearch::new(polynomial, start_time, input_shift)?;
   
   loop {
