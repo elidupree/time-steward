@@ -1,4 +1,4 @@
-use num::{Integer as NumInteger, Signed, CheckedAdd, CheckedMul, Saturating, One, FromPrimitive, Bounded};
+use num::{Integer as NumInteger, Signed, CheckedAdd, CheckedMul, One, FromPrimitive, Bounded};
 use array_ext::{Array as ArrayExtArray, *};
 use std::cmp::{min, max};
 use array::{Array, ReplaceItemType};
@@ -251,15 +251,13 @@ impl<F: Fn(I) -> Option<P>, I: Integer, P> RangeSearch<F, I, P> {
   }
 }
 
-
-//Note: currently, this function is strict (always find the exact time the max goes below the threshold). With a certain amount of error when the value is very close to the threshold, this could force searching every time unit. TODO: fix this by rigorously limiting the error and allowing that much leeway
-pub fn next_time_definitely_lt <P: Polynomial, InputShift: Copy+Into<u32>> (polynomial: P, start_time: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: InputShift, threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
-  let mut search = RangeSearch::new(|time| polynomial.all_taylor_coefficients_bounds (time, input_shift), start_time)?;
+pub fn range_search<F: Fn(I) -> Option<P>, I: Integer, P, G: FnMut([&PolynomialBasedAtInput<P, I>;2])-> bool, H: FnMut(&PolynomialBasedAtInput<P, I>)->bool>(start_time: I, func: F, mut interval_filter: G, mut result_filter: H)->Option<I> {
+  let mut search = RangeSearch::new(func, start_time)?;
   
   loop {
-    if coefficient_bounds_on_interval(search.latest_interval(), input_shift).as_slice()[0][0] < threshold {
-      if search.latest_interval()[0].origin + One::one() == search.latest_interval()[1].origin {
-        if search.latest_interval()[0].coefficients.as_slice()[0][1] < threshold {
+    if (interval_filter)(search.latest_interval()) {
+      if search.latest_interval()[0].origin.saturating_add(One::one()) == search.latest_interval()[1].origin {
+        if (result_filter)(search.latest_interval()[0]) {
           return Some(search.latest_interval()[0].origin);
         }
         search.skip_latest();
@@ -273,6 +271,17 @@ pub fn next_time_definitely_lt <P: Polynomial, InputShift: Copy+Into<u32>> (poly
     }
     if search.reached_overflow() { return None; }
   }
+}
+
+
+//Note: currently, this function is strict (always find the exact time the max goes below the threshold). With a certain amount of error when the value is very close to the threshold, this could force searching every time unit. TODO: fix this by rigorously limiting the error and allowing that much leeway
+pub fn next_time_definitely_lt <P: Polynomial, InputShift: Copy+Into<u32>> (polynomial: P, start_time: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: InputShift, threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+  range_search(
+    start_time,
+    |time| polynomial.all_taylor_coefficients_bounds (time, input_shift),
+    |interval| coefficient_bounds_on_interval(interval, input_shift).as_slice()[0][0] < threshold,
+    |result| result.coefficients.as_slice()[0][1] < threshold,
+  )
 }
 
 /*
