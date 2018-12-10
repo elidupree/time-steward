@@ -159,17 +159,23 @@ pub fn coefficient_bounds_on_interval<P: PolynomialBase2, InputShift: Copy+Into<
       // let slope_product = previous_derivative_range[0]*previous_derivative_range[1];
       
       // If an earlier derivative overflowed, assume it's arbitrarily high
-      
-      let previous_max_movement = [
-        if previous_derivative_range[0] == Bounded::min_value() { Bounded::min_value() } else { mul_shr_round_down(previous_derivative_range[0], duration, input_shift).unwrap_or(Bounded::min_value()) },
-        if previous_derivative_range[0] == Bounded::max_value() { Bounded::max_value() } else { mul_shr_round_up(previous_derivative_range[1], duration, input_shift).unwrap_or(Bounded::max_value()) },
-      ];
-      
-      let left_max = endpoint_0[1].saturating_add(previous_max_movement[1]);
-      let left_min = endpoint_0[0].saturating_add(previous_max_movement[0]);
-      
-      let right_max = endpoint_1[1].saturating_sub(previous_max_movement[0]);
-      let right_min = endpoint_1[0].saturating_sub(previous_max_movement[1]);
+      let unknown = (Bounded::min_value(), Bounded::max_value());
+      let (left_min, right_max) = if previous_derivative_range[0] == Bounded::min_value() {
+        unknown
+      } else if let Some(previous_min_movement) = mul_shr_round_down(previous_derivative_range[0], duration, input_shift) {
+        (
+          endpoint_0[0].saturating_add(previous_min_movement),
+          endpoint_1[1].saturating_sub(previous_min_movement),
+        )
+      } else { unknown };
+      let (right_min, left_max) = if previous_derivative_range[1] == Bounded::max_value() {
+        unknown
+      } else if let Some(previous_max_movement) = mul_shr_round_up(previous_derivative_range[1], duration, input_shift) {
+        (
+          endpoint_1[0].saturating_sub(previous_max_movement),
+          endpoint_0[1].saturating_add(previous_max_movement),
+        )
+      } else { unknown };
       
       [
         max(left_min, right_min),
