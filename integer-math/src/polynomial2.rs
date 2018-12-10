@@ -1,4 +1,4 @@
-use num::{Integer as NumInteger, Signed, CheckedAdd, CheckedSub, CheckedMul, Saturating, One, FromPrimitive, Bounded};
+use num::{Integer as NumInteger, Signed, CheckedAdd, CheckedMul, Saturating, One, FromPrimitive, Bounded};
 use array_ext::{Array as ArrayExtArray, *};
 use std::cmp::{min, max};
 use array::{Array, ReplaceItemType};
@@ -126,27 +126,27 @@ impl<P: PolynomialBase1 + PolynomialBase2 + AllTaylorCoefficients<<<Self as Poly
 
 
 
-pub struct RangeSearchEndpoint<P: PolynomialBase2> {
-  time: <P::Coefficient as DoubleSizedSignedInteger>::Type,
-  coefficients: <P as ReplaceItemType<[P::Coefficient; 2]>>::Type,
+pub struct PolynomialBasedAtInput <P, I> {
+  coefficients: P,
+  origin: I,
 }
 
 
-pub fn coefficient_bounds_on_interval<P: PolynomialBase2, InputShift: Copy+Into<u32>> (endpoints: [& RangeSearchEndpoint<P>; 2], input_shift: InputShift)-><P as ReplaceItemType<[P::Coefficient; 2]>>::Type {
-  let mut result: <P as ReplaceItemType<[P::Coefficient; 2]>>::Type = array_ext::Array::from_fn(|_| [P::Coefficient::zero(), P::Coefficient::zero()]);
+pub fn coefficient_bounds_on_interval<P: Array + arrayvec::Array<Item=[Coefficient; 2]>, Coefficient: Integer+Signed, WorkingType: Integer+Signed + From<Coefficient> + TryInto<Coefficient>, InputShift: Copy+Into<u32>> (endpoints: [& PolynomialBasedAtInput <P, WorkingType>; 2], input_shift: InputShift)-> P{
+  let mut result: P = array_ext::Array::from_fn(|_| [Zero::zero(); 2]);
   // TODO what if overflow
-  let duration = match endpoints [1].time.checked_sub(&endpoints [0].time) {
+  let duration = match endpoints [1].origin.checked_sub(&endpoints [0].origin) {
     Some(a)=>a,
     None => {
       // if the duration overflows, give up on the missing the range at all
-      result = array_ext::Array::from_fn(|_| [P::Coefficient::min_value(), P::Coefficient::max_value()]);
+      result = array_ext::Array::from_fn(|_| [Coefficient::min_value(), Coefficient::max_value()]);
       return result
     }
   };
-  let mut previous_derivative_range: [<P::Coefficient as DoubleSizedSignedInteger>::Type; 2] = [Zero::zero(), Zero::zero()];
+  let mut previous_derivative_range: [WorkingType; 2] = [Zero::zero(), Zero::zero()];
   for exponent in (0..result.len()).rev() {
-    let endpoint_0 = endpoints [0].coefficients.as_slice() [exponent].map(|a| <P::Coefficient as DoubleSizedSignedInteger>::Type::from(a));
-    let endpoint_1 = endpoints [1].coefficients.as_slice() [exponent].map(|a| <P::Coefficient as DoubleSizedSignedInteger>::Type::from(a));
+    let endpoint_0 = endpoints [0].coefficients.as_slice() [exponent].map(|a| <WorkingType as From<Coefficient>>::from(a));
+    let endpoint_1 = endpoints [1].coefficients.as_slice() [exponent].map(|a| <WorkingType as From<Coefficient>>::from(a));
     let bounds = if previous_derivative_range[0] >= Zero::zero() {
       [endpoint_0[0], endpoint_1[1]]
     } else if previous_derivative_range[1] <= Zero::zero() {
@@ -192,7 +192,7 @@ pub fn coefficient_bounds_on_interval<P: PolynomialBase2, InputShift: Copy+Into<
 pub struct RangeSearch<P: PolynomialBase2, InputShift> {
   polynomial: P,
   input_shift: InputShift,
-  stack: ArrayVec<[RangeSearchEndpoint<P>; 64]>,
+  stack: ArrayVec<[PolynomialBasedAtInput<<P as ReplaceItemType<[P::Coefficient; 2]>>::Type, <P::Coefficient as DoubleSizedSignedInteger>::Type>; 64]>,
   next_jump: <P::Coefficient as DoubleSizedSignedInteger>::Type,
 }
 
@@ -200,7 +200,7 @@ impl<P: Polynomial, InputShift: Copy+Into<u32>> RangeSearch<P, InputShift> {
   pub fn new(polynomial: P, start_time: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: InputShift)->Option<Self> {
     let mut result = RangeSearch {polynomial, input_shift, stack: ArrayVec::new(), next_jump: One::one()};
     if let Some(coefficients) = result.polynomial.all_taylor_coefficients_bounds (start_time, input_shift) {
-      result.stack.push(RangeSearchEndpoint {time: start_time, coefficients});
+      result.stack.push(PolynomialBasedAtInput {origin: start_time, coefficients});
       result.add_next_endpoint();
       Some(result)
     }
@@ -208,14 +208,14 @@ impl<P: Polynomial, InputShift: Copy+Into<u32>> RangeSearch<P, InputShift> {
       None
     }
   }
-  pub fn latest_interval(&self)->[&RangeSearchEndpoint<P>; 2] {
+  pub fn latest_interval(&self)->[&PolynomialBasedAtInput<<P as ReplaceItemType<[P::Coefficient; 2]>>::Type, <P::Coefficient as DoubleSizedSignedInteger>::Type>; 2] {
     [
       &self.stack[self.stack.len() - 1],
       &self.stack[self.stack.len() - 2],
     ]
   }
   pub fn split_latest(&mut self) {
-    let split_time = mean_floor(self.latest_interval()[0].time, self.latest_interval()[1].time); 
+    let split_time = mean_floor(self.latest_interval()[0].origin, self.latest_interval()[1].origin); 
     if !self.add_endpoint (split_time) {
       let earliest = self.stack.pop().unwrap();
       self.stack.clear();
@@ -230,10 +230,10 @@ impl<P: Polynomial, InputShift: Copy+Into<u32>> RangeSearch<P, InputShift> {
     }
   }
   pub fn reached_overflow(&self)->bool {
-    self.stack.len() == 2 && self.stack [0].time == self.stack [1].time
+    self.stack.len() == 2 && self.stack [0].origin == self.stack [1].origin
   }
   fn add_next_endpoint(&mut self) {
-    let last_endpoint_time = self.stack.last().unwrap().time;
+    let last_endpoint_time = self.stack.last().unwrap().origin;
     loop {
       let endpoint_time = last_endpoint_time.saturating_add (self.next_jump);
       if self.add_endpoint(endpoint_time) { break; }
@@ -243,7 +243,7 @@ impl<P: Polynomial, InputShift: Copy+Into<u32>> RangeSearch<P, InputShift> {
   }
   fn add_endpoint(&mut self, time: <P::Coefficient as DoubleSizedSignedInteger>::Type)->bool {
     if let Some(coefficients) = self.polynomial.all_taylor_coefficients_bounds (time, self.input_shift) {
-      self.stack.insert (self.stack.len() - 1, RangeSearchEndpoint {time, coefficients});
+      self.stack.insert (self.stack.len() - 1, PolynomialBasedAtInput{origin: time, coefficients});
       true
     }
     else {
@@ -259,9 +259,9 @@ pub fn next_time_definitely_lt <P: Polynomial, InputShift: Copy+Into<u32>> (poly
   
   loop {
     if coefficient_bounds_on_interval(search.latest_interval(), input_shift).as_slice()[0][0] < threshold {
-      if search.latest_interval()[0].time + One::one() == search.latest_interval()[1].time {
+      if search.latest_interval()[0].origin + One::one() == search.latest_interval()[1].origin {
         if search.latest_interval()[0].coefficients.as_slice()[0][1] < threshold {
-          return Some(search.latest_interval()[0].time);
+          return Some(search.latest_interval()[0].origin);
         }
         search.skip_latest();
       }
