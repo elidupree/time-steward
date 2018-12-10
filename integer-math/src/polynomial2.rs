@@ -1,4 +1,4 @@
-use num::{Integer as NumInteger, Signed, CheckedAdd, CheckedMul, Saturating, One, FromPrimitive, Bounded};
+use num::{Integer as NumInteger, Signed, CheckedAdd, CheckedSub, CheckedMul, Saturating, One, FromPrimitive, Bounded};
 use array_ext::{Array as ArrayExtArray, *};
 use std::cmp::{min, max};
 use array::{Array, ReplaceItemType};
@@ -135,7 +135,14 @@ pub struct RangeSearchEndpoint<P: PolynomialBase2> {
 pub fn coefficient_bounds_on_interval<P: PolynomialBase2, InputShift: Copy+Into<u32>> (endpoints: [& RangeSearchEndpoint<P>; 2], input_shift: InputShift)-><P as ReplaceItemType<[P::Coefficient; 2]>>::Type {
   let mut result: <P as ReplaceItemType<[P::Coefficient; 2]>>::Type = array_ext::Array::from_fn(|_| [P::Coefficient::zero(), P::Coefficient::zero()]);
   // TODO what if overflow
-  let duration = endpoints [1].time - endpoints [0].time;
+  let duration = match endpoints [1].time.checked_sub(&endpoints [0].time) {
+    Some(a)=>a,
+    None => {
+      // if the duration overflows, give up on the missing the range at all
+      result = array_ext::Array::from_fn(|_| [P::Coefficient::min_value(), P::Coefficient::max_value()]);
+      return result
+    }
+  };
   let mut previous_derivative_range: [<P::Coefficient as DoubleSizedSignedInteger>::Type; 2] = [Zero::zero(), Zero::zero()];
   for exponent in (0..result.len()).rev() {
     let endpoint_0 = endpoints [0].coefficients.as_slice() [exponent].map(|a| <P::Coefficient as DoubleSizedSignedInteger>::Type::from(a));
