@@ -58,11 +58,28 @@ impl <Coefficient: DoubleSizedInteger + Signed> AllTaylorCoefficientsBounds<<Coe
     let integer_input = shr_nicely_rounded (input, input_shift);
     let small_input = input.wrapping_sub (& (Shl::<u32>::shl(integer_input, input_shift_dynamic)));
     let integer_coefficients = self.all_taylor_coefficients (integer_input)?;
+    
+    // In the loop, we use floor/ceil to make sure we keep getting a lower/upper bound.
+    // But we also multiply by input each time, and if the input was negative, we would keep switching the direction.
+    // Fortunately, negative input is equivalent to having all of the odd terms be negated.
     let flip_odd = small_input < Zero::zero();
     let small_input = if flip_odd {-small_input} else {small_input};
+    
+    // In the loop, error accumulates each term.
+    // Fortunately, the error is strictly bounded above by 2^(degree-1).
+    // We want to scale down the error as far as possible, so we first left-shift by degree,
+    // then right-shift by degree at the end of the calculation.
+    // This reduces the accumulated error to less than half.
+    // It unavoidably adds an error of up to 1 due to the final rounding, so the final error is up to (not including) 1.5.
+    // This means that the final upper and lower bound can be no more than 2 away from each other,
+    // which is the best we can hope for.
+    // TODO: would making this a ZST optimize anything, or is it already inlined?
+    let precision_shift = $coefficients - 1;
     let mut intermediates: [[<Coefficient as DoubleSizedInteger>::Type; 2]; $coefficients] = array_ext::Array::from_fn(|index| {
-      let raw: <Coefficient as DoubleSizedInteger>::Type = integer_coefficients[index].into();
-      if flip_odd && index.is_odd() { [-raw,-raw] } else { [raw,raw] }
+      let mut raw: <Coefficient as DoubleSizedInteger>::Type = integer_coefficients[index].into();
+      raw <<= precision_shift;
+      if flip_odd && index.is_odd() { raw = -raw; }
+      [raw,raw]
     });
     for first_source in (1..intermediates.len()).rev() {
       for source in first_source..intermediates.len() {
@@ -74,14 +91,16 @@ impl <Coefficient: DoubleSizedInteger + Signed> AllTaylorCoefficientsBounds<<Coe
     }
     let mut output = [[Coefficient::zero(); 2]; $coefficients];
     for (index, value) in intermediates.iter().enumerate() {
-      output [index] = if flip_odd && index.is_odd() {[
-        (-value[1]).try_into().ok()?,
-        (-value[0]).try_into().ok()?,
-      ]}
-      else {[
-        value[0].try_into().ok()?,
-        value[1].try_into().ok()?,
-      ]};
+      output [index] = [
+        Shr::<u32>::shr(value[0].try_into().ok()?, precision_shift),
+        shr_ceil(value[1].try_into().ok()?, precision_shift),
+      ];
+      if flip_odd && index.is_odd() {
+        output [index] = [
+          -output [index][1],
+          -output [index][0],
+        ];
+      }
     }
     Some (output)
   }

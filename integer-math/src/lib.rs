@@ -20,7 +20,7 @@ extern crate array_ext;
 use num::traits::{Zero, WrappingAdd, WrappingSub, WrappingMul, CheckedShl, CheckedShr, Signed};
 use std::mem;
 //use std::cmp::{min};
-use std::ops::{Add, Sub, Mul, AddAssign, SubAssign, MulAssign, Shl, Shr, Neg};
+use std::ops::{Add, Sub, Mul, AddAssign, SubAssign, MulAssign, Shl, Shr, ShlAssign, ShrAssign, Neg};
 use std::fmt::{Debug, Display};
 use std::convert::TryInto;
 
@@ -29,11 +29,11 @@ pub trait Integer:
   AddAssign <Self> + SubAssign <Self> + MulAssign <Self> +
   WrappingAdd + WrappingSub + WrappingMul +
   for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> +
-  CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> +
+  CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + ShlAssign <u32> + ShrAssign <u32> +
   Debug + Display + Send + Sync {
   fn saturating_mul (self, other: Self)->Self;
 }
-/*impl <T: 'static + num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + Debug + Display + Send + Sync> Integer for T {}*/
+/*impl <T: 'static + num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + ShlAssign <u32> + ShrAssign <u32> + Debug + Display + Send + Sync> Integer for T {}*/
 
 
 pub trait HasCoordinates
