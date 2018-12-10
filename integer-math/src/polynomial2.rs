@@ -189,18 +189,17 @@ pub fn coefficient_bounds_on_interval<P: Array + arrayvec::Array<Item=[Coefficie
   result
 }
 
-pub struct RangeSearch<P: PolynomialBase2, InputShift> {
-  polynomial: P,
-  input_shift: InputShift,
-  stack: ArrayVec<[PolynomialBasedAtInput<<P as ReplaceItemType<[P::Coefficient; 2]>>::Type, <P::Coefficient as DoubleSizedSignedInteger>::Type>; 64]>,
-  next_jump: <P::Coefficient as DoubleSizedSignedInteger>::Type,
+pub struct RangeSearch<F, I, P> {
+  func: F,
+  stack: ArrayVec<[PolynomialBasedAtInput<P, I>; 64]>,
+  next_jump: I,
 }
 
-impl<P: Polynomial, InputShift: Copy+Into<u32>> RangeSearch<P, InputShift> {
-  pub fn new(polynomial: P, start_time: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: InputShift)->Option<Self> {
-    let mut result = RangeSearch {polynomial, input_shift, stack: ArrayVec::new(), next_jump: One::one()};
-    if let Some(coefficients) = result.polynomial.all_taylor_coefficients_bounds (start_time, input_shift) {
-      result.stack.push(PolynomialBasedAtInput {origin: start_time, coefficients});
+impl<F: Fn(I) -> Option<P>, I: Integer, P> RangeSearch<F, I, P> {
+  pub fn new(func: F, start_input: I)->Option<Self> {
+    let mut result = RangeSearch {func, stack: ArrayVec::new(), next_jump: One::one()};
+    if let Some(coefficients) = (result.func)(start_input) {
+      result.stack.push(PolynomialBasedAtInput {origin: start_input, coefficients});
       result.add_next_endpoint();
       Some(result)
     }
@@ -208,15 +207,15 @@ impl<P: Polynomial, InputShift: Copy+Into<u32>> RangeSearch<P, InputShift> {
       None
     }
   }
-  pub fn latest_interval(&self)->[&PolynomialBasedAtInput<<P as ReplaceItemType<[P::Coefficient; 2]>>::Type, <P::Coefficient as DoubleSizedSignedInteger>::Type>; 2] {
+  pub fn latest_interval(&self)->[&PolynomialBasedAtInput<P, I>; 2] {
     [
       &self.stack[self.stack.len() - 1],
       &self.stack[self.stack.len() - 2],
     ]
   }
   pub fn split_latest(&mut self) {
-    let split_time = mean_floor(self.latest_interval()[0].origin, self.latest_interval()[1].origin); 
-    if !self.add_endpoint (split_time) {
+    let split_input = mean_floor(self.latest_interval()[0].origin, self.latest_interval()[1].origin); 
+    if !self.add_endpoint (split_input) {
       let earliest = self.stack.pop().unwrap();
       self.stack.clear();
       self.stack.push(earliest);
@@ -233,17 +232,17 @@ impl<P: Polynomial, InputShift: Copy+Into<u32>> RangeSearch<P, InputShift> {
     self.stack.len() == 2 && self.stack [0].origin == self.stack [1].origin
   }
   fn add_next_endpoint(&mut self) {
-    let last_endpoint_time = self.stack.last().unwrap().origin;
+    let last_endpoint_input = self.stack.last().unwrap().origin;
     loop {
-      let endpoint_time = last_endpoint_time.saturating_add (self.next_jump);
-      if self.add_endpoint(endpoint_time) { break; }
-      self.next_jump = self.next_jump >> 1;
+      let endpoint_input = last_endpoint_input.saturating_add (self.next_jump);
+      if self.add_endpoint(endpoint_input) { break; }
+      self.next_jump = self.next_jump >> 1u32;
     }
-    self.next_jump = self.next_jump << 1;
+    self.next_jump = self.next_jump << 1u32;
   }
-  fn add_endpoint(&mut self, time: <P::Coefficient as DoubleSizedSignedInteger>::Type)->bool {
-    if let Some(coefficients) = self.polynomial.all_taylor_coefficients_bounds (time, self.input_shift) {
-      self.stack.insert (self.stack.len() - 1, PolynomialBasedAtInput{origin: time, coefficients});
+  fn add_endpoint(&mut self, input: I)->bool {
+    if let Some(coefficients) = (self.func)(input) {
+      self.stack.insert (self.stack.len() - 1, PolynomialBasedAtInput{origin: input, coefficients});
       true
     }
     else {
@@ -255,7 +254,7 @@ impl<P: Polynomial, InputShift: Copy+Into<u32>> RangeSearch<P, InputShift> {
 
 //Note: currently, this function is strict (always find the exact time the max goes below the threshold). With a certain amount of error when the value is very close to the threshold, this could force searching every time unit. TODO: fix this by rigorously limiting the error and allowing that much leeway
 pub fn next_time_definitely_lt <P: Polynomial, InputShift: Copy+Into<u32>> (polynomial: P, start_time: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: InputShift, threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
-  let mut search = RangeSearch::new(polynomial, start_time, input_shift)?;
+  let mut search = RangeSearch::new(|time| polynomial.all_taylor_coefficients_bounds (time, input_shift), start_time)?;
   
   loop {
     if coefficient_bounds_on_interval(search.latest_interval(), input_shift).as_slice()[0][0] < threshold {
