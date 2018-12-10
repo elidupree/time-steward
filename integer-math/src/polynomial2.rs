@@ -55,15 +55,6 @@ impl <Coefficient: DoubleSizedInteger + Signed> AllTaylorCoefficientsBounds<<Coe
   fn all_taylor_coefficients_bounds(&self, input: impl Into<<Coefficient as DoubleSizedInteger>::Type>, input_shift: impl Copy+Into<u32>)->Option<<Self as ReplaceItemType<[Self::Coefficient; 2]>>::Type> {
     let input = input.into();
     let input_shift_dynamic: u32 = input_shift.into();
-    let integer_input = shr_nicely_rounded (input, input_shift);
-    let small_input = input.wrapping_sub (& (Shl::<u32>::shl(integer_input, input_shift_dynamic)));
-    let integer_coefficients = self.all_taylor_coefficients (integer_input)?;
-    
-    // In the loop, we use floor/ceil to make sure we keep getting a lower/upper bound.
-    // But we also multiply by input each time, and if the input was negative, we would keep switching the direction.
-    // Fortunately, negative input is equivalent to having all of the odd terms be negated.
-    let flip_odd = small_input < Zero::zero();
-    let small_input = if flip_odd {-small_input} else {small_input};
     
     // In the loop, error accumulates each term.
     // Fortunately, the error is strictly bounded above by 2^(degree-1).
@@ -75,6 +66,21 @@ impl <Coefficient: DoubleSizedInteger + Signed> AllTaylorCoefficientsBounds<<Coe
     // which is the best we can hope for.
     // TODO: would making this a ZST optimize anything, or is it already inlined?
     let precision_shift = $coefficients - 1;
+    
+    // in total, in the formula, we left-shift by precision_shift,
+    // then multiply by a number that is up to half of 1<<input_shift - 
+    // i.e. we need space for precision_shift+inputshift-1 more bits in the type.
+    assert!(overflow_checked_shl(<Coefficient as DoubleSizedInteger>::Type::from(Coefficient::max_value()), precision_shift + input_shift_dynamic.saturating_sub(1)).is_some());
+    let integer_input = shr_nicely_rounded (input, input_shift);
+    let small_input = input.wrapping_sub (& (Shl::<u32>::shl(integer_input, input_shift_dynamic)));
+    let integer_coefficients = self.all_taylor_coefficients (integer_input)?;
+    
+    // In the loop, we use floor/ceil to make sure we keep getting a lower/upper bound.
+    // But we also multiply by input each time, and if the input was negative, we would keep switching the direction.
+    // Fortunately, negative input is equivalent to having all of the odd terms be negated.
+    let flip_odd = small_input < Zero::zero();
+    let small_input = if flip_odd {-small_input} else {small_input};
+    
     let mut intermediates: [[<Coefficient as DoubleSizedInteger>::Type; 2]; $coefficients] = array_ext::Array::from_fn(|index| {
       let mut raw: <Coefficient as DoubleSizedInteger>::Type = integer_coefficients[index].into();
       raw <<= precision_shift;
