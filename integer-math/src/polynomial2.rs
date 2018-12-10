@@ -274,13 +274,22 @@ pub fn range_search<F: Fn(I) -> Option<P>, I: Integer, P, G: FnMut([&PolynomialB
 }
 
 
-//Note: currently, this function is strict (always find the exact time the max goes below the threshold). With a certain amount of error when the value is very close to the threshold, this could force searching every time unit. TODO: fix this by rigorously limiting the error and allowing that much leeway
-pub fn next_time_definitely_lt <P: Polynomial, InputShift: Copy+Into<u32>> (polynomial: P, start_time: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: InputShift, threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+pub fn polynomial_value_range_search <P: Polynomial, InputShift: Copy+Into<u32>, G: FnMut([P::Coefficient;2])-> bool, H: FnMut([P::Coefficient;2])->bool> (polynomial: P, start_time: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: InputShift, mut interval_filter: G, mut result_filter: H)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
   range_search(
     start_time,
     |time| polynomial.all_taylor_coefficients_bounds (time, input_shift),
-    |interval| coefficient_bounds_on_interval(interval, input_shift).as_slice()[0][0] < threshold,
-    |result| result.coefficients.as_slice()[0][1] < threshold,
+    |interval| interval_filter(coefficient_bounds_on_interval(interval, input_shift).as_slice()[0]),
+    |result| result_filter(result.coefficients.as_slice()[0]),
+  )
+}
+
+
+//Note: currently, this function is strict (always find the exact time the max goes below the threshold). With a certain amount of error when the value is very close to the threshold, this could force searching every time unit. TODO: fix this by rigorously limiting the error and allowing that much leeway
+pub fn next_time_definitely_lt <P: Polynomial, InputShift: Copy+Into<u32>> (polynomial: P, start_time: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: InputShift, threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+  polynomial_value_range_search(
+    polynomial, start_time, input_shift,
+    |interval| interval[0] < threshold,
+    |result| result[1] < threshold,
   )
 }
 
