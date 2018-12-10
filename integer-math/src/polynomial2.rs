@@ -177,13 +177,7 @@ pub fn coefficient_bounds_on_interval<P: PolynomialBase2, InputShift: Copy+Into<
       ]
     };
 
-    result.as_mut_slice() [exponent] = bounds.map(|a| {
-      if a > <P::Coefficient as DoubleSizedSignedInteger>::Type::from(P::Coefficient::max_value()) { P::Coefficient::max_value() }
-      else if a < <P::Coefficient as DoubleSizedSignedInteger>::Type::from(P::Coefficient::min_value()) { P::Coefficient::max_value() }
-      else {
-        a.try_into().ok().unwrap()
-      }
-    });
+    result.as_mut_slice() [exponent] = bounds.map(saturating_downcast);
     previous_derivative_range = bounds.map(|a|a.saturating_mul(FromPrimitive::from_usize(exponent).unwrap()));
   }
   result

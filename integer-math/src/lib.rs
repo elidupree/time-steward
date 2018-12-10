@@ -255,6 +255,14 @@ pub fn mul_shr_round_down<T: Integer + Signed>(factor0: T, factor1: T, shift: im
   if (factor0 > Zero::zero()) == (factor1 > Zero::zero()) {Some(T::max_value())} else {None}
 }
 
+pub fn saturating_downcast<T: Integer + From<U> + TryInto<U>, U: Integer> (a: T)->U {
+  if a > From::from(U::max_value()) { U::max_value() }
+  else if a < From::from(U::min_value()) { U::min_value() }
+  else {
+    a.try_into().ok().unwrap()
+  }
+}
+
 pub mod array;
 pub mod polynomial;
 pub mod polynomial2;
