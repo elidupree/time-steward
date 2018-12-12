@@ -20,8 +20,8 @@ pub trait AllTaylorCoefficients<Input>: Sized {
   fn all_taylor_coefficients(&self, input: impl Copy+Into<Input>)->Option<Self>;
 }
 
-pub trait AllTaylorCoefficientsBounds<Input>: PolynomialBase1 + ReplaceItemType<[<Self as PolynomialBase1>::Coefficient; 2]> {
-  fn all_taylor_coefficients_bounds(&self, input: impl Copy+Into<Input>, input_shift: impl Copy+Into<u32>, precision_shift: impl Copy+Into<u32>)->Option<<Self as ReplaceItemType<[Self::Coefficient; 2]>>::Type>;
+pub trait AllTaylorCoefficientsBounds<Input>: PolynomialBase1 + ReplaceItemType<[<<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::Type; 2]> {
+  fn all_taylor_coefficients_bounds(&self, input: impl Copy+Into<Input>, input_shift: impl Copy+Into<u32>, precision_shift: impl Copy+Into<u32>)->Option<<Self as ReplaceItemType<[<Self::Coefficient as DoubleSizedSignedInteger>::Type; 2]>>::Type>;
 }
 
 macro_rules! impl_polynomials {
@@ -52,7 +52,7 @@ impl <Coefficient: DoubleSizedSignedInteger> AllTaylorCoefficients<<Coefficient 
 
 
 impl <Coefficient: DoubleSizedSignedInteger + Signed> AllTaylorCoefficientsBounds<<Coefficient as DoubleSizedSignedInteger>::Type> for [Coefficient; $coefficients] {
-  fn all_taylor_coefficients_bounds(&self, input: impl Into<<Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: impl Copy+Into<u32>, precision_shift: impl Copy+Into<u32>)->Option<<Self as ReplaceItemType<[Self::Coefficient; 2]>>::Type> {
+  fn all_taylor_coefficients_bounds(&self, input: impl Into<<Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: impl Copy+Into<u32>, precision_shift: impl Copy+Into<u32>)->Option<<Self as ReplaceItemType<[<Coefficient as DoubleSizedSignedInteger>::Type; 2]>>::Type> {
     let input = input.into();
     let input_shift_dynamic: u32 = input_shift.into();
     
@@ -90,25 +90,23 @@ impl <Coefficient: DoubleSizedSignedInteger + Signed> AllTaylorCoefficientsBound
     for first_source in (1..intermediates.len()).rev() {
       for source in first_source..intermediates.len() {
         intermediates[source - 1][0] += 
-          Shr::<u32>::shr(intermediates[source][0] * small_input, input_shift_dynamic);
+          shr_floor(intermediates[source][0] * small_input, input_shift_dynamic);
         intermediates[source - 1][1] += 
           shr_ceil(intermediates[source][1] * small_input, input_shift);
       }
     }
-    let mut output = [[Coefficient::zero(); 2]; $coefficients];
-    for (index, value) in intermediates.iter().enumerate() {
-      output [index] = [
-        Shr::<u32>::shr(value[0].try_into().ok()?, accumulated_error_shift),
-        shr_ceil(value[1].try_into().ok()?, accumulated_error_shift),
-      ];
+    for (index, value) in intermediates.iter_mut().enumerate() {
+      value[0] = shr_floor(value[0], accumulated_error_shift);
+      value[1] = shr_ceil(value[1], accumulated_error_shift);
+
       if flip_odd && index.is_odd() {
-        output [index] = [
-          -output [index][1],
-          -output [index][0],
+        *value = [
+          -value[1],
+          -value[0],
         ];
       }
     }
-    Some (output)
+    Some (intermediates)
   }
   
 }
@@ -129,6 +127,11 @@ impl<P: PolynomialBase1 + PolynomialBase2 + AllTaylorCoefficients<<<Self as Poly
 pub struct PolynomialBasedAtInput <P, I> {
   coefficients: P,
   origin: I,
+}
+
+pub struct FractionalInput<T> {
+  numerator: T,
+  shift: u32,
 }
 
 
@@ -285,7 +288,7 @@ pub fn range_search<F: Fn(I) -> Option<P>, I: Integer, P, G: FnMut([&PolynomialB
 }
 
 
-pub fn polynomial_value_range_search <P: Polynomial, InputShift: Copy+Into<u32>, G: FnMut([P::Coefficient;2])-> bool, H: FnMut([P::Coefficient;2])->bool> (polynomial: P, start_time: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: InputShift, mut interval_filter: G, mut result_filter: H)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+pub fn polynomial_value_range_search <P: Polynomial, InputShift: Copy+Into<u32>, G: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])-> bool, H: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])->bool> (polynomial: P, start_time: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: InputShift, mut interval_filter: G, mut result_filter: H)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
   range_search(
     start_time,
     |time| polynomial.all_taylor_coefficients_bounds (time, input_shift, 0u32),
@@ -300,8 +303,8 @@ pub fn polynomial_value_range_search <P: Polynomial, InputShift: Copy+Into<u32>,
 pub fn next_time_definitely_lt <P: Polynomial, InputShift: Copy+Into<u32>> (polynomial: P, start_time: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: InputShift, threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
   polynomial_value_range_search(
     polynomial, start_time, input_shift,
-    |interval| interval[0] < threshold,
-    |result| result[1] < threshold,
+    |interval| interval[0] < <P::Coefficient as DoubleSizedSignedInteger>::Type::from(threshold),
+    |result| result[1] < <P::Coefficient as DoubleSizedSignedInteger>::Type::from(threshold),
   )
 }
 
@@ -428,7 +431,7 @@ $(
         let time = next_time_definitely_lt (coefficients, input, input_shift, threshold);
         prop_assume! (time .is_some());
         let time = time.unwrap();
-        if let Some(coefficients) = coefficients.all_taylor_coefficients_bounds (time, input_shift, 0u32) { prop_assert!(coefficients[0][1] < threshold); }
+        if let Some(coefficients) = coefficients.all_taylor_coefficients_bounds (time, input_shift, 0u32) { prop_assert!(coefficients[0][1] < threshold as $double); }
       }
       
       #[test]
@@ -442,10 +445,10 @@ $(
           },
         };
         prop_assume!(last_not_lt >= input);
-        if let Some(first_coefficients) = coefficients.all_taylor_coefficients_bounds (input, input_shift, 0u32) { prop_assert!(first_coefficients[0][1] >= threshold); }
-        if let Some(last_coefficients) = coefficients.all_taylor_coefficients_bounds (last_not_lt, input_shift, 0u32) {prop_assert!(last_coefficients[0][1] >= threshold); }
+        if let Some(first_coefficients) = coefficients.all_taylor_coefficients_bounds (input, input_shift, 0u32) { prop_assert!(first_coefficients[0][1] >= threshold as $double); }
+        if let Some(last_coefficients) = coefficients.all_taylor_coefficients_bounds (last_not_lt, input_shift, 0u32) {prop_assert!(last_coefficients[0][1] >= threshold as $double); }
         let test_time = input + ((last_not_lt.saturating_sub(input)) as f64 * test_frac).floor() as $double;
-        if let Some(test_coefficients) = coefficients.all_taylor_coefficients_bounds (test_time, input_shift, 0u32) {prop_assert!(test_coefficients[0][1] >= threshold); }
+        if let Some(test_coefficients) = coefficients.all_taylor_coefficients_bounds (test_time, input_shift, 0u32) {prop_assert!(test_coefficients[0][1] >= threshold as $double); }
       }
     }
   }
