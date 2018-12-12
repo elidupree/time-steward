@@ -158,11 +158,22 @@ pub fn coefficient_bounds_on_interval<P: Array + arrayvec::Array<Item=[Coefficie
       // did the algebra as (v1*s1 + v0*-s0 + (t1-t0)*s1*-s0)/(s1+ -s0) = max_value
       // let slope_product = previous_derivative_range[0]*previous_derivative_range[1];
       
+      // If we're looking at the final value, round inwards because fractional movement can't reach the next integer.
+      // But for the derivatives, fractional movement could stack up.
+      let (previous_min_movement, previous_max_movement) = if exponent == 0 {(
+        mul_shr_ceil_round_down(previous_derivative_range[0], duration, input_shift),
+        mul_shr_floor_round_up(previous_derivative_range[1], duration, input_shift),
+      )}
+      else {(
+        mul_shr_round_down(previous_derivative_range[0], duration, input_shift),
+        mul_shr_round_up(previous_derivative_range[1], duration, input_shift),
+      )};
+      
       // If an earlier derivative overflowed, assume it's arbitrarily high
       let unknown = (Bounded::min_value(), Bounded::max_value());
       let (left_min, right_max) = if previous_derivative_range[0] == Bounded::min_value() {
         unknown
-      } else if let Some(previous_min_movement) = mul_shr_round_down(previous_derivative_range[0], duration, input_shift) {
+      } else if let Some(previous_min_movement) = previous_min_movement {
         (
           endpoint_0[0].saturating_add(previous_min_movement),
           endpoint_1[1].saturating_sub(previous_min_movement),
@@ -170,7 +181,7 @@ pub fn coefficient_bounds_on_interval<P: Array + arrayvec::Array<Item=[Coefficie
       } else { unknown };
       let (right_min, left_max) = if previous_derivative_range[1] == Bounded::max_value() {
         unknown
-      } else if let Some(previous_max_movement) = mul_shr_round_up(previous_derivative_range[1], duration, input_shift) {
+      } else if let Some(previous_max_movement) = previous_max_movement {
         (
           endpoint_1[0].saturating_sub(previous_max_movement),
           endpoint_0[1].saturating_add(previous_max_movement),

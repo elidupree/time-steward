@@ -241,6 +241,14 @@ pub fn mul_shr_round_down<T: Integer + Signed>(factor0: T, factor1: T, shift: im
   mul_shr_round(factor0, factor1, shift, shr_floor, shr_ceil, shr_floor, Some(T::max_value()), None)
 }
 
+pub fn mul_shr_floor_round_up<T: Integer + Signed>(factor0: T, factor1: T, shift: impl Copy+Into<u32>) -> Option<T> {
+  mul_shr_round(factor0, factor1, shift, shr_ceil, shr_floor, shr_floor, None, Some(T::min_value()))
+}
+
+pub fn mul_shr_ceil_round_down<T: Integer + Signed>(factor0: T, factor1: T, shift: impl Copy+Into<u32>) -> Option<T> {
+  mul_shr_round(factor0, factor1, shift, shr_floor, shr_ceil, shr_ceil, Some(T::max_value()), None)
+}
+
 pub fn saturating_downcast<T: Integer + From<U> + TryInto<U>, U: Integer> (a: T)->U {
   if a > From::from(U::max_value()) { U::max_value() }
   else if a < From::from(U::min_value()) { U::min_value() }
