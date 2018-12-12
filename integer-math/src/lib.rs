@@ -32,6 +32,8 @@ pub trait Integer:
   CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + ShlAssign <u32> + ShrAssign <u32> +
   Debug + Display + Send + Sync {
   fn saturating_mul (self, other: Self)->Self;
+  fn total_bits ()->u32 {mem::size_of::<Self>() as u32 * 8}
+  fn nonsign_bits ()->u32;
 }
 /*impl <T: 'static + num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + ShlAssign <u32> + ShrAssign <u32> + Debug + Display + Send + Sync> Integer for T {}*/
 
@@ -81,11 +83,14 @@ pub mod impls {
     }
   }
   macro_rules! impl_integer {
-    ($($Integer: ident,)*) => {
+    ($($Integer: ident $sign_bits: expr,)*) => {
       $(
         impl Integer for $Integer {
           fn saturating_mul (self, other: Self)->Self {
             self.saturating_mul(other)
+          }
+          fn nonsign_bits ()->u32 {
+            Self::total_bits() - $sign_bits
           }
         }
       )*
@@ -114,8 +119,8 @@ pub mod impls {
   }
   impl_vector! ([1, Vector1], [2, Vector2], [3, Vector3], [4, Vector4], [5, Vector5], [6, Vector6],);
   impl_integer! (
-    i8, i16, i32, i64, isize,
-    u8, u16, u32, u64, usize,
+    i8 1, i16 1, i32 1, i64 1, isize 1,
+    u8 0, u16 0, u32 0, u64 0, usize 0,
   );
   impl_signed_integer! (i8, i16, i32, i64, isize,);
   impl_double_sized_integer! (
