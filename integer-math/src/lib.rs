@@ -211,9 +211,9 @@ pub fn mean_round_to_even <T: Integer> (first: T, second: T)->T {
 }
 
 
-pub fn mul_shr_round_up<T: Integer + Signed>(factor0: T, factor1: T, shift: impl Copy+Into<u32>) -> Option<T> {
+fn mul_shr_round<T: Integer + Signed, ShiftAmount: Copy+Into<u32>, ShiftRoundPos: Fn(T, u32)->T, ShiftRoundNeg: Fn(T, u32)->T, FinalShift: Fn(T, u32)->T>(factor0: T, factor1: T, shift: ShiftAmount, shift_round_pos: ShiftRoundPos, shift_round_neg: ShiftRoundNeg, final_shift: FinalShift, overflow_pos: Option<T>, overflow_neg: Option<T>)->Option<T> {
   if let Some(result) = factor0.checked_mul(&factor1) {
-    return Some(shr_ceil(result, shift));
+    return Some((final_shift)(result, shift.into()));
   }
   let mut shift = shift.into();
   let mut factor0 = factor0;
@@ -221,38 +221,24 @@ pub fn mul_shr_round_up<T: Integer + Signed>(factor0: T, factor1: T, shift: impl
   while shift > 0 {
     shift -= 1;
     if factor0.abs() > factor1.abs() {
-      factor0 = if factor1 > Zero::zero() { shr_ceil(factor0, 1u32) } else { shr_floor(factor0, 1u32) };
+      factor0 = if factor1 > Zero::zero() { (shift_round_pos)(factor0, 1u32) } else { (shift_round_neg)(factor0, 1u32) };
     }
     else {
-      factor1 = if factor0 > Zero::zero() { shr_ceil(factor1, 1u32) } else { shr_floor(factor1, 1u32) };
+      factor1 = if factor0 > Zero::zero() { (shift_round_pos)(factor1, 1u32) } else { (shift_round_neg)(factor1, 1u32) };
     }
     if let Some(result) = factor0.checked_mul(&factor1) {
-      return Some(shr_ceil(result, shift));
+      return Some((final_shift)(result, shift.into()));
     }
   }
-  if (factor0 > Zero::zero()) == (factor1 > Zero::zero()) {None} else {Some(T::min_value())}
+  if (factor0 > Zero::zero()) == (factor1 > Zero::zero()) {overflow_pos} else {overflow_neg}
+}
+
+pub fn mul_shr_round_up<T: Integer + Signed>(factor0: T, factor1: T, shift: impl Copy+Into<u32>) -> Option<T> {
+  mul_shr_round(factor0, factor1, shift, shr_ceil, shr_floor, shr_ceil, None, Some(T::min_value()))
 }
 
 pub fn mul_shr_round_down<T: Integer + Signed>(factor0: T, factor1: T, shift: impl Copy+Into<u32>) -> Option<T> {
-  let mut shift = shift.into();
-  if let Some(result) = factor0.checked_mul(&factor1) {
-    return Some(shr_floor(result, shift));
-  }
-  let mut factor0 = factor0;
-  let mut factor1 = factor1;
-  while shift > 0 {
-    shift -= 1;
-    if factor0.abs() > factor1.abs() {
-      factor0 = if factor1 < Zero::zero() { shr_ceil(factor0, 1u32) } else { shr_floor(factor0, 1u32) };
-    }
-    else {
-      factor1 = if factor0 < Zero::zero() { shr_ceil(factor1, 1u32) } else { shr_floor(factor1, 1u32) };
-    }
-    if let Some(result) = factor0.checked_mul(&factor1) {
-      return Some(shr_floor(result, shift));
-    }
-  }
-  if (factor0 > Zero::zero()) == (factor1 > Zero::zero()) {Some(T::max_value())} else {None}
+  mul_shr_round(factor0, factor1, shift, shr_floor, shr_ceil, shr_floor, Some(T::max_value()), None)
 }
 
 pub fn saturating_downcast<T: Integer + From<U> + TryInto<U>, U: Integer> (a: T)->U {
