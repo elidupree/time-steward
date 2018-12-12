@@ -242,10 +242,10 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate> {
   //pub fn acceleration (&self, time_numerator: Time, time_shift: u32)->Result <T, polynomial::OverflowError> {Ok (self.nth_coefficient (1, time_numerator, time_shift)?<<1)}
   pub fn set_value (&mut self, time_numerator: Time, time_shift: u32, value: T)->Result <(), polynomial::OverflowError> {self.set_nth_coefficient (0, time_numerator, time_shift, value)}
   pub fn set_velocity (&mut self, time_numerator: Time, time_shift: u32, value: T)->Result <(), polynomial::OverflowError> {self.set_nth_coefficient (1, time_numerator, time_shift, value)}
-  pub fn set_acceleration (&mut self, time_numerator: Time, time_shift: u32, value: T)->Result <(), polynomial::OverflowError> {self.set_nth_coefficient (2, time_numerator, time_shift, value.map_coordinates (| coordinate | shr_round_to_even (coordinate, 1)))}
+  pub fn set_acceleration (&mut self, time_numerator: Time, time_shift: u32, value: T)->Result <(), polynomial::OverflowError> {self.set_nth_coefficient (2, time_numerator, time_shift, value.map_coordinates (| coordinate | shr_round_to_even (coordinate, 1u32)))}
   pub fn add_value (&mut self, value: T) {*self += value}
   pub fn add_velocity (&mut self, time_numerator: Time, time_shift: u32, value: T)->Result <(), polynomial::OverflowError> {self.add_nth_coefficient (1, time_numerator, time_shift, value)}
-  pub fn add_acceleration (&mut self, time_numerator: Time, time_shift: u32, value: T)->Result <(), polynomial::OverflowError> {self.add_nth_coefficient (2, time_numerator, time_shift, value.map_coordinates (| coordinate | shr_round_to_even (coordinate, 1)))}
+  pub fn add_acceleration (&mut self, time_numerator: Time, time_shift: u32, value: T)->Result <(), polynomial::OverflowError> {self.add_nth_coefficient (2, time_numerator, time_shift, value.map_coordinates (| coordinate | shr_round_to_even (coordinate, 1u32)))}
   
   pub fn next_time_possibly_outside_bounds (&self, range: [Time; 2], input_shift: u32, bounds: [T; 2])->RootSearchResult<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
     (0..T::DIMENSIONS).map (| dimension | {
