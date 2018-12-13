@@ -424,6 +424,15 @@ pub fn next_time_definitely_lt <P: Polynomial> (polynomial: P, start_time: Fract
   )
 }
 
+pub fn next_time_definitely_ge <P: Polynomial> (polynomial: P, start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: u32, permit_threshold: P::Coefficient, require_threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+  assert!(require_threshold.saturating_sub (permit_threshold) >= P::Coefficient::one() + P::Coefficient::one() + P::Coefficient::one());
+  polynomial_value_range_search(
+    polynomial, start_time, input_shift,
+    |interval| interval[0] >= <P::Coefficient as DoubleSizedSignedInteger>::Type::from(require_threshold),
+    |result| result[1] >= <P::Coefficient as DoubleSizedSignedInteger>::Type::from(permit_threshold),
+  )
+}
+
 /*
 fn next_time_in_bounds_2d <T: Polynomial, Input> (polynomials: [T;2], start_time: Input, min: [Coefficient;2], max: Coefficient)->Option <Time> {
   let search: ThresholdSearch = ([min, max+1]);

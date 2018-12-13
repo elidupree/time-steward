@@ -20,7 +20,7 @@
 //
 //
 
-#![feature(unboxed_closures, specialization, never_type, raw, get_type_id, try_trait)]
+#![feature(unboxed_closures, specialization, never_type, raw, get_type_id, try_trait, try_from)]
 // #![feature (shared)]
 // #![feature (plugin, custom_derive)]
 // #![plugin (serde_macros)]
