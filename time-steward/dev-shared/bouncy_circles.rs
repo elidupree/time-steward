@@ -2,7 +2,7 @@
 use time_steward::support::trajectories;
 use nalgebra::Vector2;
 //use time_steward::support::rounding_error_tolerant_math::right_shift_round_up;
-use time_steward::support::integer_math::polynomial::RootSearchResult;
+//use time_steward::support::integer_math::polynomial::RootSearchResult;
 use std::marker::PhantomData;
 
 use time_steward::{DeterministicRandomId};
@@ -17,7 +17,7 @@ use rand::Rng;
 use boolinator::Boolinator;
 
 pub type Time = i64;
-pub type SpaceCoordinate = i64;
+pub type SpaceCoordinate = i32;
 pub type QuadraticTrajectory = trajectories::QuadraticTrajectory <Vector2 <SpaceCoordinate>>;
 
 
@@ -183,13 +183,10 @@ impl collisions::Space for Space {
   }
   fn when_escapes<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, bounds: BoundingBox <Self>)->Option<<<Self::Steward as TimeSteward>::Basics as BasicsTrait>::Time> {
     let varying = tracking_query (accessor, & object.varying);
-    match varying.position.next_time_possibly_outside_bounds ([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, [
+    varying.position.next_time_possibly_outside_bounds ([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, [
       Vector2::new (from_collision_space (bounds.bounds [0] [0]) + object.radius, from_collision_space (bounds.bounds [1] [0]) + object.radius),
       Vector2::new (from_collision_space (bounds.bounds [0] [1]) - object.radius, from_collision_space (bounds.bounds [1] [1]) - object.radius),
-    ]) {
-      RootSearchResult::Root (value)=>Some (value),
-      _=> None,
-    }
+    ])
   }
   
   fn become_neighbors<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, objects: [&DataHandle<Self::Object>; 2]) {
@@ -242,10 +239,7 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
     } else {
       difference.next_time_magnitude_significantly_gt([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, radius)
     };
-    let time = match result {
-      Ok (RootSearchResult::Root (time)) => Some(time),
-      _=> None,
-    };
+    let time = result;
     
     // println!("Planning for {} At {}, {}", id, (us.0).1, (us.1).1);
     if time.is_none() && relationship_varying.induced_acceleration.is_some() {
@@ -301,10 +295,7 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
     } else {
       difference.next_time_magnitude_significantly_gt([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, radius)
     };
-    let time = match result {
-      Ok (RootSearchResult::Root (time)) => Some(time),
-      _=> None,
-    };
+    let time = result;
     
     varying.next_boundary_change = time.and_then (| time | (time >= *accessor.now()).as_some_from(||
       // println!(" planned for {}", &yes);
@@ -382,7 +373,7 @@ define_event!{
       for circle in circles.iter() {
         let varying = tracking_query_ref (accessor, &circle.varying);
         let position = varying.position.value (*accessor.now(), STATIC_TIME_SHIFT).unwrap();
-        let distance_squared = (self.coordinates [0] - position [0]) * (self.coordinates [0] - position [0]) + (self.coordinates [1] - position [1]) * (self.coordinates [1] - position [1]);
+        let distance_squared = (self.coordinates [0] as i64 - position [0] as i64) * (self.coordinates [0] as i64 - position [0] as i64) + (self.coordinates [1] as i64 - position [1] as i64) * (self.coordinates [1] as i64 - position [1] as i64);
         if distance_squared <best_distance_squared {
           best_distance_squared = distance_squared;
           best_handle = Some (circle.clone());
