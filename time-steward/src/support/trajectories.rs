@@ -417,7 +417,7 @@ impl ScalarTrajectory for $Trajectory <Coordinate> {
   fn next_time_significantly_ge (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->Option<Time> {
     let relative = self - (target + 2);
     let origin = self.origin << input_shift;
-    polynomial2::next_time_definitely_ge(relative.coefficients, FractionalInput::new(range [0] - origin, input_shift), input_shift, target, target + 3)
+    polynomial2::next_time_definitely_ge(relative.coefficients, FractionalInput::new(range [0] - origin, input_shift), input_shift, target, target + 3).map(|a| a + self.origin)
   }
 }
 
