@@ -59,7 +59,8 @@ impl <Coefficient: DoubleSizedSignedInteger + Signed> AllTaylorCoefficientsBound
   }
   fn max_total_shift()->u32 {
     let spare = <Coefficient as DoubleSizedSignedInteger>::Type::nonsign_bits() - Coefficient::nonsign_bits();
-    spare + 1 - Self::accumulated_error_shift()
+    // we need to take out coefficients - 1 twice: once to do higher calculations at higher magnitude to remove the error, and once to make sure the calculations don't overflow due to accumulated value.
+    spare + 1 - Self::accumulated_error_shift() - ($coefficients-1)
   }
   fn all_taylor_coefficients_bounds(&self, input: impl Into<<Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: impl Copy+Into<u32>, precision_shift: impl Copy+Into<u32>)->Option<<Self as ReplaceItemType<[<Coefficient as DoubleSizedSignedInteger>::Type; 2]>>::Type> {
     let input = input.into();
@@ -99,7 +100,7 @@ impl <Coefficient: DoubleSizedSignedInteger + Signed> AllTaylorCoefficientsBound
     for first_source in (1..intermediates.len()).rev() {
       for source in first_source..intermediates.len() {
         intermediates[source - 1][0] += 
-          shr_floor(intermediates[source][0] * small_input, input_shift_dynamic);
+          shr_floor(intermediates[source][0] * small_input, input_shift);
         intermediates[source - 1][1] += 
           shr_ceil(intermediates[source][1] * small_input, input_shift);
       }
@@ -264,8 +265,8 @@ pub fn coefficient_bounds_on_interval<P: Array + arrayvec::Array<Item=[Coefficie
       // let slope_product = previous_derivative_range[0]*previous_derivative_range[1];
       
       let (previous_min_movement, previous_max_movement) = (
-        mul_shr_round_down(previous_derivative_range[0], duration, max_input_shift + worse_precision),
-        mul_shr_round_up(previous_derivative_range[1], duration, max_input_shift + worse_precision),
+        mul_shr_round_down(previous_derivative_range[0], duration, max_input_shift),
+        mul_shr_round_up(previous_derivative_range[1], duration, max_input_shift),
       );
       
       // If an earlier derivative overflowed, assume it's arbitrarily high
@@ -293,7 +294,9 @@ pub fn coefficient_bounds_on_interval<P: Array + arrayvec::Array<Item=[Coefficie
       ]
     };
 
-    result.as_mut_slice() [exponent] = bounds.map(saturating_downcast);
+    let r = &mut result.as_mut_slice() [exponent];
+    r[0] = saturating_downcast(shr_floor(bounds[0], worse_precision));
+    r[1] = saturating_downcast(shr_ceil(bounds[1], worse_precision));
     previous_derivative_range = bounds.map(|a|a.saturating_mul(FromPrimitive::from_usize(exponent).unwrap()));
   }
   result
@@ -397,9 +400,15 @@ pub fn range_search<F: Fn(FractionalInput<I>) -> Option<P>, I: Integer, P, G: Fn
 pub fn polynomial_value_range_search <P: Polynomial, G: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])-> bool, H: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])->bool> (polynomial: P, start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: u32, mut interval_filter: G, mut result_filter: H)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
   range_search(
     start_time, input_shift,
-    |time| polynomial.all_taylor_coefficients_bounds (time.numerator, time.shift, 0u32).map(|foo| CoefficientsWithPrecision { coefficients: foo, precision: 0u32 }),
+    |time| {
+      let precision = P::max_total_shift() - time.shift;
+      polynomial.all_taylor_coefficients_bounds (time.numerator, time.shift, precision).map(|foo| CoefficientsWithPrecision { coefficients: foo, precision })
+    },
     |interval| interval_filter(coefficient_bounds_on_interval(interval).as_slice()[0]),
-    |result| result_filter(result.coefficients.coefficients.as_slice()[0]),
+    |result| result_filter([
+      shr_floor(result.coefficients.coefficients.as_slice()[0][0], result.coefficients.precision),
+      shr_ceil(result.coefficients.coefficients.as_slice()[0][1], result.coefficients.precision),
+    ]),
   )
 }
 
@@ -502,14 +511,14 @@ $(
     fn test_max_total_shift_works() {
       let max_total_shift = <[$integer; $coefficients]>::max_total_shift();
       let accumulated_error_shift = <[$integer; $coefficients]>::accumulated_error_shift();
-      assert!(overflow_checked_shl($double::from($integer::max_value()), max_total_shift + accumulated_error_shift - 1).is_some());
+      assert!(overflow_checked_shl($double::from($integer::max_value()), max_total_shift + accumulated_error_shift + ($coefficients-1) - 1).is_some());
     }
     
     #[test]
     fn test_max_total_shift_tight() {
       let max_total_shift = <[$integer; $coefficients]>::max_total_shift();
       let accumulated_error_shift = <[$integer; $coefficients]>::accumulated_error_shift();
-      assert!(overflow_checked_shl($double::from($integer::max_value()), max_total_shift + accumulated_error_shift).is_none());
+      assert!(overflow_checked_shl($double::from($integer::max_value()), max_total_shift + accumulated_error_shift + ($coefficients-1)).is_none());
     }
     
     proptest! {
@@ -569,7 +578,10 @@ $(
         let time = next_time_definitely_lt (coefficients, input, input.shift, threshold);
         prop_assume! (time .is_some());
         let time = time.unwrap();
-        if let Some(coefficients) = coefficients.all_taylor_coefficients_bounds (time, input.shift, 0u32) { prop_assert!(coefficients[0][1] < threshold as $double); }
+        
+        let exact = naive_perfect_nth_taylor_coefficient(&coefficients, BigRational::new(BigInt::from(time), BigInt::from(1i64 << input.shift)), 0);
+        //if let Some(coefficients) = coefficients.all_taylor_coefficients_bounds (time, input.shift, 0u32) { 
+        prop_assert!(exact < BigRational::from(BigInt::from(threshold)));
       }
       
       #[test]
