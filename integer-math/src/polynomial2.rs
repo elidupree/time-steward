@@ -1,4 +1,4 @@
-use num::{Integer as NumInteger, Signed, CheckedAdd, CheckedMul, One, FromPrimitive, Bounded};
+use num::{Integer as NumInteger, Signed, CheckedAdd, CheckedSub, CheckedMul, One, FromPrimitive, Bounded};
 use array_ext::{Array as ArrayExtArray, *};
 use std::cmp::{min, max, Ordering};
 use array::{Array, ReplaceItemType};
@@ -422,6 +422,23 @@ fn next_time_in_bounds_2d <T: Polynomial, Input> (polynomials: [T;2], start_time
   }
   search.
 }*/
+
+
+pub fn set_nth_taylor_coefficient_at_fractional_input <P: Polynomial> (polynomial: &mut P, which_derivative: usize, input: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: u32, target_value: P::Coefficient)->Result <(),::std::option::NoneError> {
+  let mut target_values: ::smallvec::SmallVec<[<P::Coefficient as DoubleSizedSignedInteger>::Type; 8]> = ::smallvec::SmallVec::with_capacity (which_derivative + 1);
+  let bounds = polynomial.all_taylor_coefficients_bounds (input, input_shift, 0u32)?;
+  for index in 0..which_derivative {
+    target_values.push (mean_round_to_even (bounds.as_slice() [index] [0], bounds.as_slice() [index] [1]));
+  }
+  target_values.push (target_value.into());
+  for (index, target_value) in target_values.iter().enumerate().rev() {
+    let current_bounds = polynomial.all_taylor_coefficients_bounds (input, input_shift, 0u32)?.as_slice()[index];
+    let current_value = mean_round_to_even (current_bounds [0], current_bounds [1]);
+    let change_size = target_value.checked_sub (&current_value)?;
+    polynomial.as_mut_slice()[index] = polynomial.as_slice()[index].checked_add (&change_size.try_into().ok()?)?;
+  }
+  Ok (())
+}
 
 
 
