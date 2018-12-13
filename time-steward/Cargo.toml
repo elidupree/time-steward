@@ -1,0 +1,42 @@
+[package]
+name = "time_steward"
+version = "0.1.0"
+authors = ["Eli Dupree <vcs@elidupree.com>"]
+repository = "https://github.com/elidupree/time-steward"
+readme = "README.md"
+license = "MIT"
+
+[dependencies]
+rand = "0.5"
+rand_core = "0.2"
+serde = "1.0"
+serde_derive = "1.0"
+quickcheck = "0.6.2"
+proptest = "0.7.1"
+bincode = "0.8"
+#crossbeam = "0.2"
+siphasher = "0.2.2"
+derivative = "1.0"
+dimensioned = "0.6"
+array_ext = "0.2"
+num = "0.1.42"
+failure = "0.1.1"
+smallvec = "0.6.1"
+time_steward_integer_math = {path="../integer-math"}
+
+[dependencies.nalgebra]
+version = "0.12"
+features = ["serde-serialize"]
+
+[dependencies.rpds]
+version = "0.3"
+features = ["serde"]
+
+[dev-dependencies]
+glium = "0.15"
+docopt = "0.8"
+fnv = "1.0"
+boolinator = "2.4"
+
+[replace]
+#"backtrace:0.2.3" = { git = "https://github.com/elidupree/backtrace-rs", branch = "emscripten-fix" }

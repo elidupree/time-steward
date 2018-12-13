@@ -1,6 +1,5 @@
 use num::{Signed};
 use smallvec::SmallVec;
-use array_ext::*;
 use std::cmp::{min, max};
 
 use super::*;
@@ -83,13 +82,10 @@ pub fn translate <T: Integer + Signed> (coefficients: &mut [T], input: T)->Resul
 /// Useful in performance-critical code when you already know there won't be overflow,
 /// such as in the range returned by conservative_safe_translation_range.
 pub fn translate_unchecked <T: Integer + Signed> (coefficients: &mut [T], input: T) {
-  coefficients.reverse();
-  for index in 0..coefficients.len() {
-    let coefficient = mem::replace (&mut coefficients [index], T::zero());
-    for derivative in (1..(index + 1)).rev() {
-      coefficients [derivative] = coefficients [derivative]*input + coefficients [derivative - 1]
+  for first_source in (1..coefficients.len()).rev() {
+    for source in first_source..coefficients.len() {
+      coefficients [source-1] += coefficients [source]*input;
     }
-    coefficients [0] = coefficients [0]*input + coefficient
   }
 }
 
@@ -438,6 +434,7 @@ pub fn root_search <Coefficient: Integer, T: Integer + Signed + From <Coefficien
 
 mod impls {
 use super::*;
+use array_ext::*;
 
 pub (super) struct RootSearchMetadata <'a, T: 'a> {
   pub (super) input_shift: u32,
@@ -662,7 +659,7 @@ mod tests {
       
       let factorial = (1..which_derivative + 1).product::<usize>() as i64;
       let mut taylor = vec![0; coefficients.len() - which_derivative];
-      let result = compute_nth_taylor_coefficient_function (coefficients, &mut taylor, which_derivative);
+      let _result = compute_nth_taylor_coefficient_function (coefficients, &mut taylor, which_derivative);
       for coefficient in taylor.iter_mut() {*coefficient *= factorial}
       prop_assert_eq! (&direct, &taylor);
     }
