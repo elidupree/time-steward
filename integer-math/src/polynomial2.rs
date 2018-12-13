@@ -1,4 +1,4 @@
-use num::{Integer as NumInteger, Signed, CheckedAdd, CheckedSub, CheckedMul, One, FromPrimitive, Bounded};
+use num::{Integer as NumInteger, Signed, CheckedAdd, CheckedSub, CheckedMul, One, FromPrimitive, Bounded, Saturating};
 use array_ext::{Array as ArrayExtArray, *};
 use std::cmp::{min, max, Ordering};
 use array::{Array, ReplaceItemType};
@@ -415,11 +415,12 @@ pub fn polynomial_value_range_search <P: Polynomial, G: FnMut([<P::Coefficient a
 
 //Note: currently, this function is strict (always find the exact time the max goes below the threshold). With a certain amount of error when the value is very close to the threshold, this could force searching every time unit. TODO: fix this by rigorously limiting the error and allowing that much leeway
 /// Returns a time where the polynomial output is definitely less than permit_threshold, such that there is no EARLIER output less than require_threshold. (Or returns None if it encounters overflow before any output less than require_threshold.) With only approximate polynomial evaluation, for these conditions to be theoretically meetable, we must have permit_threshold >= require_threshold + 2. (Imagine that we have permit_threshold = 5, require_threshold = 4. The polynomial may output the range [3, 5]. We wouldn't be permitted to return that time because the true value may be 5, which is not less than permit_threshold and therefore not permitted. But we wouldn't be able to pass by that time because the true value could be 3, which is less than require_threshold.) For EFFICIENCY, we need permit_threshold >= require_threshold + 3, because there's an extra 1 of error in computing bounds on an interval. (Imagine that we have permit_threshold = 5, require_threshold = 3. The polynomial may output the range [3, 5] for a long interval. But the interval might report a lower bound of 2, meaning the algorithm doesn't know it can skip that interval. Theoretically, this might lead the algorithm to explore every individual time within a long interval.)
-pub fn next_time_definitely_lt <P: Polynomial> (polynomial: P, start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: u32, threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+pub fn next_time_definitely_lt <P: Polynomial> (polynomial: P, start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: u32, permit_threshold: P::Coefficient, require_threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+  assert!(permit_threshold.saturating_sub (require_threshold) >= P::Coefficient::one() + P::Coefficient::one() + P::Coefficient::one());
   polynomial_value_range_search(
     polynomial, start_time, input_shift,
-    |interval| interval[0] < <P::Coefficient as DoubleSizedSignedInteger>::Type::from(threshold),
-    |result| result[1] < <P::Coefficient as DoubleSizedSignedInteger>::Type::from(threshold),
+    |interval| interval[0] < <P::Coefficient as DoubleSizedSignedInteger>::Type::from(require_threshold),
+    |result| result[1] < <P::Coefficient as DoubleSizedSignedInteger>::Type::from(permit_threshold),
   )
 }
 
@@ -493,6 +494,10 @@ fn naive_perfect_nth_taylor_coefficient <Coefficient: Integer> (coefficients: & 
   result
 }
 
+fn rational_input<T>(input: FractionalInput<T>)->BigRational where BigInt: From<T> {
+  BigRational::new(BigInt::from(input.numerator), BigInt::from_i64(1i64 << input.shift).unwrap())
+}
+
 fn arbitrary_fractional_input()->BoxedStrategy <FractionalInput<i64>> {
   (0u32..16).prop_flat_map (| shift | {
     ((-16i64 << shift..16i64 << shift), Just (shift))
@@ -551,7 +556,7 @@ $(
         prop_assume! (bounds.is_some());
         let bounds = bounds.unwrap();
         for which in 0..$coefficients {
-          let exact = naive_perfect_nth_taylor_coefficient(&coefficients, BigRational::new(BigInt::from(input.numerator), BigInt::from(1i64 << input.shift)), which) * BigInt::from(1u32 << precision_shift);
+          let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(input), which) * BigInt::from(1u32 << precision_shift);
           
           prop_assert! (BigRational::from(BigInt::from(bounds[which][0])) <= exact, "Incorrect {}th taylor coefficient lower bound: {} > {:?}", which, bounds[which][0], exact);
           prop_assert! (BigRational::from(BigInt::from(bounds[which][1])) >= exact, "Incorrect {}th taylor coefficient upper bound: {} < {:?}", which, bounds[which][1], exact);
@@ -565,7 +570,7 @@ $(
         let bounds = bounds.unwrap();
         let leeway = BigRational::new(BigInt::from(3i32), BigInt::from(2i32));
         for which in 0..$coefficients {
-          let exact = naive_perfect_nth_taylor_coefficient(&coefficients, BigRational::new(BigInt::from(input.numerator), BigInt::from(1i64 << input.shift)), which) * BigInt::from(1u32 << precision_shift);
+          let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(input), which) * BigInt::from(1u32 << precision_shift);
           prop_assert! (BigRational::from(BigInt::from(bounds[which][0])) > &exact - &leeway, "Too loose {}th taylor coefficient lower bound: {} + 1.5 <= {:?}", which, bounds[which][0], exact);
           prop_assert! (BigRational::from(BigInt::from(bounds[which][1])) < &exact + &leeway, "Too loose {}th taylor coefficient upper bound: {} - 1.5 >= {:?}", which, bounds[which][1], exact);
           prop_assert! (bounds[which][1] <= bounds[which][0].saturating_add(2), "{}th taylor coefficient bounds are too far from each other (note: this should be impossible if the other conditions are met): {} > {} + 2", which, bounds[which][1], bounds[which][0]);
@@ -574,19 +579,21 @@ $(
       
       
       #[test]
-      fn randomly_test_next_time_definitely_lt_is_lt (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), threshold in -16 as $integer..16) {
-        let time = next_time_definitely_lt (coefficients, input, input.shift, threshold);
+      fn randomly_test_next_time_definitely_lt_is_lt (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16) {
+        let require_threshold = permit_threshold - threshold_difference;
+        let time = next_time_definitely_lt (coefficients, input, input.shift, permit_threshold, require_threshold);
         prop_assume! (time .is_some());
         let time = time.unwrap();
         
-        let exact = naive_perfect_nth_taylor_coefficient(&coefficients, BigRational::new(BigInt::from(time), BigInt::from(1i64 << input.shift)), 0);
+        let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(FractionalInput::new(time, input.shift)), 0);
         //if let Some(coefficients) = coefficients.all_taylor_coefficients_bounds (time, input.shift, 0u32) { 
-        prop_assert!(exact < BigRational::from(BigInt::from(threshold)));
+        prop_assert!(exact < BigRational::from(BigInt::from(permit_threshold)));
       }
       
       #[test]
-      fn randomly_test_next_time_definitely_lt_is_next (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), threshold in -16 as $integer..16, test_frac in 0f64..1f64) {
-        let time = next_time_definitely_lt (coefficients, input, input.shift, threshold);
+      fn randomly_test_next_time_definitely_lt_is_next (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16, test_frac in 0f64..1f64) {
+        let require_threshold = permit_threshold - threshold_difference;
+        let time = next_time_definitely_lt (coefficients, input, input.shift, permit_threshold, require_threshold);
         let last_not_lt = match time {
           None => $double::max_value(),
           Some(k) => {
@@ -595,10 +602,15 @@ $(
           },
         };
         prop_assume!(last_not_lt >= input.numerator);
-        if let Some(first_coefficients) = coefficients.all_taylor_coefficients_bounds (input.numerator, input.shift, 0u32) { prop_assert!(first_coefficients[0][1] >= threshold as $double); }
-        if let Some(last_coefficients) = coefficients.all_taylor_coefficients_bounds (last_not_lt, input.shift, 0u32) {prop_assert!(last_coefficients[0][1] >= threshold as $double); }
         let test_time = input.numerator + ((last_not_lt.saturating_sub(input.numerator)) as f64 * test_frac).floor() as $double;
-        if let Some(test_coefficients) = coefficients.all_taylor_coefficients_bounds (test_time, input.shift, 0u32) {prop_assert!(test_coefficients[0][1] >= threshold as $double); }
+        
+        let exact_require_threshold = BigRational::from(BigInt::from(require_threshold));
+        let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(input), 0);
+        prop_assert!(exact >= exact_require_threshold);
+        let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(FractionalInput::new(last_not_lt, input.shift)), 0);
+        prop_assert!(exact >= exact_require_threshold);
+        let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(FractionalInput::new(test_time, input.shift)), 0);
+        prop_assert!(exact >= exact_require_threshold);
       }
     }
   }
