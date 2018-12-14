@@ -43,7 +43,7 @@ pub trait HasCoordinates
   type Coordinate: Integer + Signed + Vector + HasCoordinates <Coordinate = Self::Coordinate>;}
 
 pub trait Vector:
-  'static + Sized + Copy + Clone + HasCoordinates +
+  'static + Sized + Copy + Clone + Eq + HasCoordinates +
   Add <Self, Output = Self> + Sub <Self, Output = Self> + Mul <<Self as HasCoordinates>::Coordinate, Output = Self> +
   for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + //for<'a> Mul <&'a <Self as HasCoordinates>::Coordinate, Output = Self> +
   AddAssign <Self> + SubAssign <Self> + MulAssign <<Self as HasCoordinates>::Coordinate> +
