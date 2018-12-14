@@ -559,4 +559,49 @@ test_trajectory! (quar, QuarticTrajectory, 4, uniform5, (any()), Unused) ;
 
 
 
+fn arbitrary_fractional_input()->BoxedStrategy <FractionalInput<i64>> {
+  (0u32..16).prop_flat_map (| shift | {
+    ((-16i64 << shift..16i64 << shift), Just (shift))
+  }).prop_map(|(numerator, shift)| FractionalInput::new(numerator, shift)).boxed()
+}
+
+
+macro_rules! test_trajectory {
+  ($mod: ident, $Trajectory: ident, $degree: expr, $uniform: ident, $multiplication: tt, $ProductTrajectory: ident) => {mod $mod { use super::*;
+
+impl $Trajectory<i32> {
+  fn arbitrary_trajectory() -> BoxedStrategy <$Trajectory<i32>> {
+    (prop::array::$uniform(-16i32..16), -16i64..16).prop_map(|(coefficients, origin)| $Trajectory { coefficients, origin}).boxed()
+  }
+}
+
+proptest! {
+  #[test]
+  fn randomly_test_add_commutative(ref first in $Trajectory::<i32>::arbitrary_trajectory(), ref second in $Trajectory::<i32>::arbitrary_trajectory()) {
+    prop_assert_eq!(first + second, second + first);
+  }
+  #[test]
+  fn randomly_test_sub_anticommutative(ref first in $Trajectory::<i32>::arbitrary_trajectory(), ref second in $Trajectory::<i32>::arbitrary_trajectory()) {
+    prop_assert_eq!(first- second, -(second - first));
+  }
+  /*#[cfg $multiplication]
+  #[test]
+  fn randomly_test_mul_commutative(ref first in $Trajectory::<i32>::arbitrary_trajectory(), ref second in $Trajectory::<i32>::arbitrary_trajectory()) {
+    prop_assert_eq!(first * second, second * first);
+  }*/
+  #[test]
+  fn randomly_test_add_associative(ref first in $Trajectory::<i32>::arbitrary_trajectory(), ref second in $Trajectory::<i32>::arbitrary_trajectory(), ref third in $Trajectory::<i32>::arbitrary_trajectory()) {
+    prop_assert_eq!(first + (second + third), (first + second) + third);
+  }
+}
+  
+  }}
+}
+
+test_trajectory! (lin, LinearTrajectory, 1, uniform2, (all()), QuadraticTrajectory) ;
+test_trajectory! (quad, QuadraticTrajectory, 2, uniform3, (all()), QuarticTrajectory) ;
+test_trajectory! (quar, QuarticTrajectory, 4, uniform5, (any()), Unused) ;
+
+
+
 }
