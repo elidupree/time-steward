@@ -464,6 +464,33 @@ pub fn polynomial_value_range_search <P: Polynomial, G: FnMut([<P::Coefficient a
   )
 }
 
+pub fn magnitude_squared_range_search <P: Polynomial,
+  Q: Array +
+     arrayvec::Array<Item=<P::Coefficient as DoubleSizedSignedInteger>::Type> +
+     AllTaylorCoefficientsBoundsWithinHalf<<P::Coefficient as DoubleSizedSignedInteger>::Type> +
+     Default,
+  G: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])-> bool, H: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])->bool> (coordinates: &[P], start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: u32, mut interval_filter: G, mut result_filter: H)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+  range_search(
+    start_time, input_shift,
+    |time| {
+      let precision = P::max_total_shift() - time.shift as i32;
+      let mut magsq = Q::default();
+      let integer_input = shr_nicely_rounded (time.numerator, time.shift);
+      let small_input = time.numerator.wrapping_sub (& (Shl::<u32>::shl(integer_input, time.shift)));
+      
+      for coordinate in coordinates {
+        let integer_coefficients = coordinate.all_taylor_coefficients (integer_input)?;
+             
+        super::polynomial::add_product_into(&integer_coefficients.as_slice(), integer_coefficients.as_slice(), magsq.as_mut_slice()).ok()?;
+      }
+      
+      magsq.all_taylor_coefficients_bounds_within_half(small_input, time.shift, precision).map(|foo| ValueWithPrecision { value: foo, precision })
+    },
+    |interval| interval_filter(coefficient_bounds_on_interval(interval).as_slice()[0]),
+    |result| result_filter(ValueWithPrecision { value: result.coefficients.value.as_slice()[0], precision: result.coefficients.precision}.without_precision()),
+  )
+}
+
 
 //Note: currently, this function is strict (always find the exact time the max goes below the threshold). With a certain amount of error when the value is very close to the threshold, this could force searching every time unit. TODO: fix this by rigorously limiting the error and allowing that much leeway
 /// Returns a time where the polynomial output is definitely less than permit_threshold, such that there is no EARLIER output less than require_threshold. (Or returns None if it encounters overflow before any output less than require_threshold.) With only approximate polynomial evaluation, for these conditions to be theoretically meetable, we must have permit_threshold >= require_threshold + 2. (Imagine that we have permit_threshold = 5, require_threshold = 4. The polynomial may output the range [3, 5]. We wouldn't be permitted to return that time because the true value may be 5, which is not less than permit_threshold and therefore not permitted. But we wouldn't be able to pass by that time because the true value could be 3, which is less than require_threshold.) For EFFICIENCY, we need permit_threshold >= require_threshold + 3, because there's an extra 1 of error in computing bounds on an interval. (Imagine that we have permit_threshold = 5, require_threshold = 3. The polynomial may output the range [3, 5] for a long interval. But the interval might report a lower bound of 2, meaning the algorithm doesn't know it can skip that interval. Theoretically, this might lead the algorithm to explore every individual time within a long interval.)
@@ -482,6 +509,42 @@ pub fn next_time_definitely_ge <P: Polynomial> (polynomial: P, start_time: Fract
     polynomial, start_time, input_shift,
     |interval| interval[1] >= <P::Coefficient as DoubleSizedSignedInteger>::Type::from(require_threshold),
     |result| result[0] >= <P::Coefficient as DoubleSizedSignedInteger>::Type::from(permit_threshold),
+  )
+}
+
+pub fn next_time_magnitude_definitely_lt <P: Polynomial,
+  Q: Array +
+     arrayvec::Array<Item=<P::Coefficient as DoubleSizedSignedInteger>::Type> +
+     AllTaylorCoefficientsBoundsWithinHalf<<P::Coefficient as DoubleSizedSignedInteger>::Type> +
+     Default> (coordinates: &[P], start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: u32, permit_threshold: P::Coefficient, require_threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+  let permit_threshold: <P::Coefficient as DoubleSizedSignedInteger>::Type = permit_threshold.into();
+  let require_threshold: <P::Coefficient as DoubleSizedSignedInteger>::Type = require_threshold.into();
+  let permit_threshold = permit_threshold*permit_threshold;
+  let require_threshold = require_threshold*require_threshold;
+  
+  assert!(require_threshold.saturating_sub (permit_threshold) >= <P::Coefficient as DoubleSizedSignedInteger>::Type::from_i64(200).unwrap());
+  magnitude_squared_range_search::<_, Q, _, _>(
+    coordinates, start_time, input_shift,
+    |interval| interval[0] < require_threshold,
+    |result| result[1] < permit_threshold,
+  )
+}
+
+pub fn next_time_magnitude_definitely_gt <P: Polynomial,
+  Q: Array +
+     arrayvec::Array<Item=<P::Coefficient as DoubleSizedSignedInteger>::Type> +
+     AllTaylorCoefficientsBoundsWithinHalf<<P::Coefficient as DoubleSizedSignedInteger>::Type> +
+     Default> (coordinates: &[P], start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: u32, permit_threshold: P::Coefficient, require_threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+  let permit_threshold: <P::Coefficient as DoubleSizedSignedInteger>::Type = permit_threshold.into();
+  let require_threshold: <P::Coefficient as DoubleSizedSignedInteger>::Type = require_threshold.into();
+  let permit_threshold = permit_threshold*permit_threshold;
+  let require_threshold = require_threshold*require_threshold;
+  
+  assert!(permit_threshold.saturating_sub (require_threshold) >= <P::Coefficient as DoubleSizedSignedInteger>::Type::from_i64(200).unwrap());
+  magnitude_squared_range_search::<_, Q, _, _>(
+    coordinates, start_time, input_shift,
+    |interval| interval[1] > require_threshold,
+    |result| result[0] > permit_threshold,
   )
 }
 
