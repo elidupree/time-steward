@@ -20,11 +20,20 @@ pub trait AllTaylorCoefficients<Input>: Sized {
   fn all_taylor_coefficients(&self, input: impl Copy+Into<Input>)->Option<Self>;
 }
 
-pub trait AllTaylorCoefficientsBounds<Input>: PolynomialBase1 + ReplaceItemType<[<<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::Type; 2]> {
+pub trait AllTaylorCoefficientsBoundsWithinHalf<WorkingType>: ReplaceItemType<[WorkingType; 2]> {
   fn accumulated_error_shift()->u32;
-  fn max_total_shift()->u32;
-  fn all_taylor_coefficients_bounds(&self, input: impl Copy+Into<Input>, input_shift: impl Copy+Into<u32>, precision_shift: impl Copy+Into<u32>)->Option<<Self as ReplaceItemType<[<Self::Coefficient as DoubleSizedSignedInteger>::Type; 2]>>::Type>;
+  fn max_total_shift()->i32;
+  fn all_taylor_coefficients_bounds_within_half(&self, input: WorkingType, input_shift: u32, precision_shift: i32)->Option<<Self as ReplaceItemType<[WorkingType; 2]>>::Type>;
 }
+pub trait AllTaylorCoefficientsBounds<Input: Integer>: AllTaylorCoefficients<Input> + AllTaylorCoefficientsBoundsWithinHalf<Input> {
+  fn all_taylor_coefficients_bounds(&self, input: Input, input_shift: u32, precision_shift: i32)->Option<<Self as ReplaceItemType<[Input; 2]>>::Type> {
+    let integer_input = shr_nicely_rounded (input, input_shift);
+    let small_input = input.wrapping_sub (& (Shl::<u32>::shl(integer_input, input_shift)));
+    let integer_coefficients = self.all_taylor_coefficients (integer_input)?;
+    integer_coefficients.all_taylor_coefficients_bounds_within_half(small_input, input_shift, precision_shift)
+  }
+}
+impl<T: AllTaylorCoefficients<Input> + AllTaylorCoefficientsBoundsWithinHalf<Input>, Input: Integer> AllTaylorCoefficientsBounds<Input> for T {}
 
 macro_rules! impl_polynomials {
   ($($coefficients: expr),*) => {
@@ -53,19 +62,32 @@ impl <Coefficient: DoubleSizedSignedInteger> AllTaylorCoefficients<<Coefficient 
 
 
 
-impl <Coefficient: DoubleSizedSignedInteger + Signed> AllTaylorCoefficientsBounds<<Coefficient as DoubleSizedSignedInteger>::Type> for [Coefficient; $coefficients] {
+impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient>> AllTaylorCoefficientsBoundsWithinHalf<WorkingType> for [Coefficient; $coefficients] {
   fn accumulated_error_shift()->u32 {
     $coefficients - 1
   }
-  fn max_total_shift()->u32 {
-    let spare = <Coefficient as DoubleSizedSignedInteger>::Type::nonsign_bits() - Coefficient::nonsign_bits();
+  fn max_total_shift()->i32 {
+    let spare = WorkingType::nonsign_bits() - Coefficient::nonsign_bits();
     // we need to take out coefficients - 1 twice: once to do higher calculations at higher magnitude to remove the error, and once to make sure the calculations don't overflow due to accumulated value.
-    spare + 1 - Self::accumulated_error_shift() - ($coefficients-1)
+    spare as i32 + 1 - <Self as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::accumulated_error_shift() as i32 - ($coefficients-1)
   }
-  fn all_taylor_coefficients_bounds(&self, input: impl Into<<Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: impl Copy+Into<u32>, precision_shift: impl Copy+Into<u32>)->Option<<Self as ReplaceItemType<[<Coefficient as DoubleSizedSignedInteger>::Type; 2]>>::Type> {
-    let input = input.into();
-    let input_shift_dynamic: u32 = input_shift.into();
-    
+  fn all_taylor_coefficients_bounds_within_half(&self, input: WorkingType, input_shift: u32, precision_shift: i32)->Option<<Self as ReplaceItemType<[WorkingType; 2]>>::Type> {
+    assert!(input_shift as i32 + precision_shift <= <Self as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::max_total_shift());
+    if input_shift == 0 {
+      return Some(self.map(|raw| {
+        let mut raw = raw.into();
+        if precision_shift > 0 {
+          raw <<= precision_shift as u32;
+        }
+        let mut raw = [raw,raw];
+        if precision_shift < 0 {
+          raw[0] = shr_floor(raw[0], (-precision_shift) as u32);
+          raw[1] = shr_ceil(raw[1], (-precision_shift) as u32);
+        }
+        raw
+      }))
+    }
+    assert!(input.abs() <= WorkingType::one() << (input_shift - 1));
     // In the loop, error accumulates each term.
     // Fortunately, the error is strictly bounded above by 2^(degree-1).
     // We want to scale down the error as far as possible, so we first left-shift by degree,
@@ -75,34 +97,38 @@ impl <Coefficient: DoubleSizedSignedInteger + Signed> AllTaylorCoefficientsBound
     // This means that the final upper and lower bound can be no more than 2 away from each other,
     // which is the best we can hope for.
     // TODO: would making this a ZST optimize anything, or is it already inlined?
-    let accumulated_error_shift = Self::accumulated_error_shift();
+    let accumulated_error_shift = <Self as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::accumulated_error_shift();
     
     // in total, in the formula, we left-shift by precision_shift,
     // then multiply by a number that is up to half of 1<<input_shift - 
     // i.e. we need space for precision_shift+inputshift-1 more bits in the type.
-    assert!(input_shift_dynamic + precision_shift.into() <= Self::max_total_shift());
-    let integer_input = shr_nicely_rounded (input, input_shift);
-    let small_input = input.wrapping_sub (& (Shl::<u32>::shl(integer_input, input_shift_dynamic)));
-    let integer_coefficients = self.all_taylor_coefficients (integer_input)?;
     
     // In the loop, we use floor/ceil to make sure we keep getting a lower/upper bound.
     // But we also multiply by input each time, and if the input was negative, we would keep switching the direction.
     // Fortunately, negative input is equivalent to having all of the odd terms be negated.
-    let flip_odd = small_input < Zero::zero();
-    let small_input = if flip_odd {-small_input} else {small_input};
+    let flip_odd = input < Zero::zero();
+    let input = if flip_odd {-input} else {input};
     
-    let mut intermediates: [[<Coefficient as DoubleSizedSignedInteger>::Type; 2]; $coefficients] = array_ext::Array::from_fn(|index| {
-      let mut raw: <Coefficient as DoubleSizedSignedInteger>::Type = integer_coefficients[index].into();
-      raw <<= precision_shift.into() + accumulated_error_shift;
+    let total_initial_shift = precision_shift + accumulated_error_shift as i32;
+    let mut intermediates: [[WorkingType; 2]; $coefficients] = array_ext::Array::from_fn(|index| {
+      let mut raw: WorkingType = self[index].into();
+      if total_initial_shift > 0 {
+        raw <<= total_initial_shift as u32;
+      }
       if flip_odd && index.is_odd() { raw = -raw; }
-      [raw,raw]
+      let mut raw = [raw,raw];
+      if total_initial_shift < 0 {
+        raw[0] = shr_floor(raw[0], (-total_initial_shift) as u32);
+        raw[1] = shr_ceil(raw[1], (-total_initial_shift) as u32);
+      }
+      raw
     });
     for first_source in (1..intermediates.len()).rev() {
       for source in first_source..intermediates.len() {
         intermediates[source - 1][0] += 
-          shr_floor(intermediates[source][0] * small_input, input_shift);
+          shr_floor(intermediates[source][0] * input, input_shift);
         intermediates[source - 1][1] += 
-          shr_ceil(intermediates[source][1] * small_input, input_shift);
+          shr_ceil(intermediates[source][1] * input, input_shift);
       }
     }
     for (index, value) in intermediates.iter_mut().enumerate() {
@@ -129,14 +155,18 @@ impl <Coefficient: DoubleSizedSignedInteger + Signed> AllTaylorCoefficientsBound
 
 impl_polynomials!(1,2,3,4,5);
 
-pub trait Polynomial: PolynomialBase1 + PolynomialBase2 + AllTaylorCoefficients<<<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::Type> + AllTaylorCoefficientsBounds<<<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::Type> {}
-impl<P: PolynomialBase1 + PolynomialBase2 + AllTaylorCoefficients<<<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::Type> + AllTaylorCoefficientsBounds<<<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::Type>> Polynomial for P {}
+pub trait Polynomial: PolynomialBase1 + PolynomialBase2 +
+  AllTaylorCoefficients<<<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::Type> +
+  AllTaylorCoefficientsBounds<<<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::Type> {}
+impl<P: PolynomialBase1 + PolynomialBase2 +
+  AllTaylorCoefficients<<<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::Type> +
+  AllTaylorCoefficientsBounds<<<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::Type>> Polynomial for P {}
 
 
 
-pub struct CoefficientsWithPrecision <P> {
-  coefficients: P,
-  precision: u32,
+pub struct ValueWithPrecision <P> {
+  value: P,
+  precision: i32,
 }
 
 pub struct PolynomialBasedAtInput <P, I> {
@@ -149,6 +179,32 @@ pub struct FractionalInput<T> {
   numerator: T,
   shift: u32,
 }
+
+impl<T: Integer> ValueWithPrecision <T> {
+  pub fn bounds_without_precision<WorkingType: Integer + From<T>>(&self)->[WorkingType;2] {
+    if self.precision > 0 {
+      [shr_floor (self.value.into(), self.precision as u32), shr_ceil (self.value.into(), self.precision as u32)]
+    }
+    else {
+      let t: WorkingType = self.value.into();
+      [t << (- self.precision) as u32; 2]
+    }
+  }
+}
+
+impl<T: Integer> ValueWithPrecision <[T;2]> {
+  pub fn without_precision<WorkingType: Integer + From<T>>(&self)->[WorkingType;2] {
+    if self.precision > 0 {
+      [shr_floor (self.value[0].into(), self.precision as u32), shr_ceil (self.value[1].into(), self.precision as u32)]
+    }
+    else {
+      self.value.map(|a| {let a: WorkingType = a.into(); a << (- self.precision) as u32})
+    }
+  }
+}
+
+
+
 
 impl<T: Integer> PartialEq<FractionalInput<T>> for FractionalInput<T> {
   fn eq(&self, other: &Self) -> bool {
@@ -229,7 +285,7 @@ impl<T: Integer> FractionalInput<T> {
 }
 
 
-pub fn coefficient_bounds_on_interval<P: Array + arrayvec::Array<Item=[Coefficient; 2]>, Coefficient: Integer+Signed, WorkingType: Integer+Signed + From<Coefficient> + TryInto<Coefficient>> (endpoints: [& PolynomialBasedAtInput <CoefficientsWithPrecision <P>, FractionalInput<WorkingType>>; 2])-> P{
+pub fn coefficient_bounds_on_interval<P: Array + arrayvec::Array<Item=[Coefficient; 2]>, Coefficient: Integer+Signed, WorkingType: Integer+Signed + From<Coefficient> + TryInto<Coefficient>> (endpoints: [& PolynomialBasedAtInput <ValueWithPrecision <P>, FractionalInput<WorkingType>>; 2])-> P{
   let mut result: P = array_ext::Array::from_fn(|_| [Zero::zero(); 2]);
   // TODO what if overflow
   let max_input_shift = max(endpoints [0].origin.shift, endpoints [1].origin.shift);
@@ -246,14 +302,14 @@ pub fn coefficient_bounds_on_interval<P: Array + arrayvec::Array<Item=[Coefficie
   let worse_precision = min(endpoints[0].coefficients.precision, endpoints[1].coefficients.precision);
   for exponent in (0..result.len()).rev() {
     let end_bounds = endpoints.map(|endpoint| {
-      let mut b = endpoint.coefficients.coefficients.as_slice() [exponent].map(<WorkingType as From<Coefficient>>::from);
+      let mut b = endpoint.coefficients.value.as_slice() [exponent].map(<WorkingType as From<Coefficient>>::from);
       let excess_precision = endpoint.coefficients.precision-worse_precision;
-      b[0] = shr_floor(b[0], excess_precision);
-      b[1] = shr_ceil(b[1], excess_precision);
+      b[0] = shr_floor(b[0], excess_precision as u32);
+      b[1] = shr_ceil(b[1], excess_precision as u32);
       b
     });
     
-    let bounds = if previous_derivative_range[0] >= Zero::zero() {
+    let bounds: [WorkingType; 2] = if previous_derivative_range[0] >= Zero::zero() {
       [end_bounds[0][0], end_bounds[1][1]]
     } else if previous_derivative_range[1] <= Zero::zero() {
       [end_bounds[1][0], end_bounds[0][1]]
@@ -293,10 +349,9 @@ pub fn coefficient_bounds_on_interval<P: Array + arrayvec::Array<Item=[Coefficie
         min(left_max, right_max)
       ]
     };
-
-    let r = &mut result.as_mut_slice() [exponent];
-    r[0] = saturating_downcast(shr_floor(bounds[0], worse_precision));
-    r[1] = saturating_downcast(shr_ceil(bounds[1], worse_precision));
+    
+    let bounds_without_precision: [WorkingType; 2] = ValueWithPrecision { value: bounds, precision: worse_precision}.without_precision();
+    result.as_mut_slice() [exponent] = bounds_without_precision.map(saturating_downcast);
     previous_derivative_range = bounds.map(|a|a.saturating_mul(FromPrimitive::from_usize(exponent).unwrap()));
   }
   result
@@ -401,14 +456,38 @@ pub fn polynomial_value_range_search <P: Polynomial, G: FnMut([<P::Coefficient a
   range_search(
     start_time, input_shift,
     |time| {
-      let precision = P::max_total_shift() - time.shift;
-      polynomial.all_taylor_coefficients_bounds (time.numerator, time.shift, precision).map(|foo| CoefficientsWithPrecision { coefficients: foo, precision })
+      let precision = P::max_total_shift() - time.shift as i32;
+      polynomial.all_taylor_coefficients_bounds (time.numerator, time.shift, precision).map(|foo| ValueWithPrecision { value: foo, precision })
     },
     |interval| interval_filter(coefficient_bounds_on_interval(interval).as_slice()[0]),
-    |result| result_filter([
-      shr_floor(result.coefficients.coefficients.as_slice()[0][0], result.coefficients.precision),
-      shr_ceil(result.coefficients.coefficients.as_slice()[0][1], result.coefficients.precision),
-    ]),
+    |result| result_filter(ValueWithPrecision { value: result.coefficients.value.as_slice()[0], precision: result.coefficients.precision}.without_precision()),
+  )
+}
+
+pub fn magnitude_squared_range_search <P: Polynomial,
+  Q: Array +
+     arrayvec::Array<Item=<P::Coefficient as DoubleSizedSignedInteger>::Type> +
+     AllTaylorCoefficientsBoundsWithinHalf<<P::Coefficient as DoubleSizedSignedInteger>::Type> +
+     Default,
+  G: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])-> bool, H: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])->bool> (coordinates: &[P], start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: u32, mut interval_filter: G, mut result_filter: H)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+  range_search(
+    start_time, input_shift,
+    |time| {
+      let precision = P::max_total_shift() - time.shift as i32;
+      let mut magsq = Q::default();
+      let integer_input = shr_nicely_rounded (time.numerator, time.shift);
+      let small_input = time.numerator.wrapping_sub (& (Shl::<u32>::shl(integer_input, time.shift)));
+      
+      for coordinate in coordinates {
+        let integer_coefficients = coordinate.all_taylor_coefficients (integer_input)?;
+             
+        super::polynomial::add_product_into(&integer_coefficients.as_slice(), integer_coefficients.as_slice(), magsq.as_mut_slice()).ok()?;
+      }
+      
+      magsq.all_taylor_coefficients_bounds_within_half(small_input, time.shift, precision).map(|foo| ValueWithPrecision { value: foo, precision })
+    },
+    |interval| interval_filter(coefficient_bounds_on_interval(interval).as_slice()[0]),
+    |result| result_filter(ValueWithPrecision { value: result.coefficients.value.as_slice()[0], precision: result.coefficients.precision}.without_precision()),
   )
 }
 
@@ -433,6 +512,42 @@ pub fn next_time_definitely_ge <P: Polynomial> (polynomial: P, start_time: Fract
   )
 }
 
+pub fn next_time_magnitude_definitely_lt <P: Polynomial,
+  Q: Array +
+     arrayvec::Array<Item=<P::Coefficient as DoubleSizedSignedInteger>::Type> +
+     AllTaylorCoefficientsBoundsWithinHalf<<P::Coefficient as DoubleSizedSignedInteger>::Type> +
+     Default> (coordinates: &[P], start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: u32, permit_threshold: P::Coefficient, require_threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+  let permit_threshold: <P::Coefficient as DoubleSizedSignedInteger>::Type = permit_threshold.into();
+  let require_threshold: <P::Coefficient as DoubleSizedSignedInteger>::Type = require_threshold.into();
+  let permit_threshold = permit_threshold*permit_threshold;
+  let require_threshold = require_threshold*require_threshold;
+  
+  assert!(require_threshold.saturating_sub (permit_threshold) >= <P::Coefficient as DoubleSizedSignedInteger>::Type::from_i64(200).unwrap());
+  magnitude_squared_range_search::<_, Q, _, _>(
+    coordinates, start_time, input_shift,
+    |interval| interval[0] < require_threshold,
+    |result| result[1] < permit_threshold,
+  )
+}
+
+pub fn next_time_magnitude_definitely_gt <P: Polynomial,
+  Q: Array +
+     arrayvec::Array<Item=<P::Coefficient as DoubleSizedSignedInteger>::Type> +
+     AllTaylorCoefficientsBoundsWithinHalf<<P::Coefficient as DoubleSizedSignedInteger>::Type> +
+     Default> (coordinates: &[P], start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: u32, permit_threshold: P::Coefficient, require_threshold: P::Coefficient)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+  let permit_threshold: <P::Coefficient as DoubleSizedSignedInteger>::Type = permit_threshold.into();
+  let require_threshold: <P::Coefficient as DoubleSizedSignedInteger>::Type = require_threshold.into();
+  let permit_threshold = permit_threshold*permit_threshold;
+  let require_threshold = require_threshold*require_threshold;
+  
+  assert!(permit_threshold.saturating_sub (require_threshold) >= <P::Coefficient as DoubleSizedSignedInteger>::Type::from_i64(200).unwrap());
+  magnitude_squared_range_search::<_, Q, _, _>(
+    coordinates, start_time, input_shift,
+    |interval| interval[1] > require_threshold,
+    |result| result[0] > permit_threshold,
+  )
+}
+
 /*
 fn next_time_in_bounds_2d <T: Polynomial, Input> (polynomials: [T;2], start_time: Input, min: [Coefficient;2], max: Coefficient)->Option <Time> {
   let search: ThresholdSearch = ([min, max+1]);
@@ -445,13 +560,13 @@ fn next_time_in_bounds_2d <T: Polynomial, Input> (polynomials: [T;2], start_time
 
 pub fn set_nth_taylor_coefficient_at_fractional_input <P: Polynomial> (polynomial: &mut P, which_derivative: usize, input: <P::Coefficient as DoubleSizedSignedInteger>::Type, input_shift: u32, target_value: P::Coefficient)->Result <(),::std::option::NoneError> {
   let mut target_values: ::smallvec::SmallVec<[<P::Coefficient as DoubleSizedSignedInteger>::Type; 8]> = ::smallvec::SmallVec::with_capacity (which_derivative + 1);
-  let bounds = polynomial.all_taylor_coefficients_bounds (input, input_shift, 0u32)?;
+  let bounds = polynomial.all_taylor_coefficients_bounds (input, input_shift, 0i32)?;
   for index in 0..which_derivative {
     target_values.push (mean_round_to_even (bounds.as_slice() [index] [0], bounds.as_slice() [index] [1]));
   }
   target_values.push (target_value.into());
   for (index, target_value) in target_values.iter().enumerate().rev() {
-    let current_bounds = polynomial.all_taylor_coefficients_bounds (input, input_shift, 0u32)?.as_slice()[index];
+    let current_bounds = polynomial.all_taylor_coefficients_bounds (input, input_shift, 0i32)?.as_slice()[index];
     let current_value = mean_round_to_even (current_bounds [0], current_bounds [1]);
     let change_size = target_value.checked_sub (&current_value)?;
     polynomial.as_mut_slice()[index] = polynomial.as_slice()[index].checked_add (&change_size.try_into().ok()?)?;
@@ -503,6 +618,14 @@ fn naive_perfect_nth_taylor_coefficient <Coefficient: Integer> (coefficients: & 
   result
 }
 
+fn precision_scale(precision_shift: i32)->BigRational {
+  if precision_shift > 0 {
+    BigRational::new(BigInt::from_i64(1i64 << precision_shift).unwrap(), BigInt::one())
+  } else {
+    BigRational::new(BigInt::one(), BigInt::from_i64(1i64 << (-precision_shift)).unwrap())
+  }
+}
+
 fn rational_input<T>(input: FractionalInput<T>)->BigRational where BigInt: From<T> {
   BigRational::new(BigInt::from(input.numerator), BigInt::from_i64(1i64 << input.shift).unwrap())
 }
@@ -521,18 +644,29 @@ $(
     //use super::super::*;
     //use proptest::prelude::*;
     
-    #[test]
-    fn test_max_total_shift_works() {
-      let max_total_shift = <[$integer; $coefficients]>::max_total_shift();
-      let accumulated_error_shift = <[$integer; $coefficients]>::accumulated_error_shift();
-      assert!(overflow_checked_shl($double::from($integer::max_value()), max_total_shift + accumulated_error_shift + ($coefficients-1) - 1).is_some());
+    fn test_max_total_shift_generic<WorkingType: Integer+Signed+From<$integer>+TryInto<$integer>>() {
+      let accumulated_error_shift = <[$integer; $coefficients] as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::accumulated_error_shift();
+      let max_total_shift = <[$integer; $coefficients] as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::max_total_shift();
+      for input_shift in 1..$integer::total_bits() {
+        for precision_shift in -16..max_total_shift -input_shift as i32 {
+          let initial_shift = precision_shift + accumulated_error_shift as i32;
+          let max_initial_intermediate = if initial_shift >= 0 {
+            <WorkingType as From<$integer>>::from($integer::max_value()) << initial_shift as u32
+          } else {
+            shr_ceil (<WorkingType as From<$integer>>::from($integer::max_value()), (- initial_shift) as u32)
+          };
+          let max_input = WorkingType::one() << (input_shift - 1) as u32;
+          assert!((max_initial_intermediate * <WorkingType as From<$integer>>::from($coefficients - 1)).checked_mul (&max_input).is_some());
+        }
+      }
+      
+      
     }
     
     #[test]
-    fn test_max_total_shift_tight() {
-      let max_total_shift = <[$integer; $coefficients]>::max_total_shift();
-      let accumulated_error_shift = <[$integer; $coefficients]>::accumulated_error_shift();
-      assert!(overflow_checked_shl($double::from($integer::max_value()), max_total_shift + accumulated_error_shift + ($coefficients-1)).is_none());
+    fn test_max_total_shift() {
+      test_max_total_shift_generic::<$integer>();
+      test_max_total_shift_generic::<$double>();
     }
     
     proptest! {
@@ -560,12 +694,12 @@ $(
       }
       
       #[test]
-      fn randomly_test_taylor_coefficients_bounds_correct (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), precision_shift in 0u32..10) {
+      fn randomly_test_taylor_coefficients_bounds_correct (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), precision_shift in -10i32..10) {
         let bounds = coefficients.all_taylor_coefficients_bounds (input.numerator, input.shift, precision_shift);
         prop_assume! (bounds.is_some());
         let bounds = bounds.unwrap();
         for which in 0..$coefficients {
-          let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(input), which) * BigInt::from(1u32 << precision_shift);
+          let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(input), which) * precision_scale(precision_shift);
           
           prop_assert! (BigRational::from(BigInt::from(bounds[which][0])) <= exact, "Incorrect {}th taylor coefficient lower bound: {} > {:?}", which, bounds[which][0], exact);
           prop_assert! (BigRational::from(BigInt::from(bounds[which][1])) >= exact, "Incorrect {}th taylor coefficient upper bound: {} < {:?}", which, bounds[which][1], exact);
@@ -573,13 +707,13 @@ $(
       }
       
       #[test]
-      fn randomly_test_taylor_coefficients_bounds_close(coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), precision_shift in 0u32..10) {
+      fn randomly_test_taylor_coefficients_bounds_close(coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), precision_shift in -10i32..10) {
         let bounds = coefficients.all_taylor_coefficients_bounds (input.numerator, input.shift, precision_shift);
         prop_assume! (bounds.is_some());
         let bounds = bounds.unwrap();
         let leeway = BigRational::new(BigInt::from(3i32), BigInt::from(2i32));
         for which in 0..$coefficients {
-          let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(input), which) * BigInt::from(1u32 << precision_shift);
+          let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(input), which) * precision_scale(precision_shift);
           prop_assert! (BigRational::from(BigInt::from(bounds[which][0])) > &exact - &leeway, "Too loose {}th taylor coefficient lower bound: {} + 1.5 <= {:?}", which, bounds[which][0], exact);
           prop_assert! (BigRational::from(BigInt::from(bounds[which][1])) < &exact + &leeway, "Too loose {}th taylor coefficient upper bound: {} - 1.5 >= {:?}", which, bounds[which][1], exact);
           prop_assert! (bounds[which][1] <= bounds[which][0].saturating_add(2), "{}th taylor coefficient bounds are too far from each other (note: this should be impossible if the other conditions are met): {} > {} + 2", which, bounds[which][1], bounds[which][0]);
