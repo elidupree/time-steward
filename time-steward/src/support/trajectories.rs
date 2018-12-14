@@ -415,9 +415,8 @@ impl <'a, T: Vector> Neg for & 'a $Trajectory <T> where & 'a T: Neg <Output = T>
 
 impl ScalarTrajectory for $Trajectory <Coordinate> {
   fn next_time_significantly_ge (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->Option<Time> {
-    let relative = self - (target + 2);
     let origin = self.origin << input_shift;
-    polynomial2::next_time_definitely_ge(relative.coefficients, FractionalInput::new(range [0] - origin, input_shift), input_shift, target, target + 3).map(|a| a + self.origin)
+    polynomial2::next_time_definitely_ge(self.coefficients, FractionalInput::new(range [0] - origin, input_shift), input_shift, target, target + 3).map(|a| a + origin)
   }
 }
 
@@ -429,4 +428,44 @@ impl_trajectory! (LinearTrajectory, 1, (all()), QuadraticTrajectory) ;
 impl_trajectory! (QuadraticTrajectory, 2, (all()), QuarticTrajectory) ;
 impl_trajectory! (QuarticTrajectory, 4, (any()), Unused) ;
 
+#[cfg(test)]
+mod tests {
+use super::*;
+use nalgebra::Vector2;
 
+fn assert_close(first: Vector2<i32>, second: Vector2<i32>) {
+  let difference = first - second;
+  assert!(difference [0].abs() <= 2 && difference [1].abs() <= 2, "vectors are too far apart: {:?}, {:?}", first, second);
+}
+fn assert_close_magsq(first: i32, second: i32) {
+  let difference = (first as f64).sqrt() - (second as f64).sqrt();
+  assert!(difference.abs() <= 2f64, "ints are too far apart: {:?}, {:?}", first, second);
+}
+
+fn assert_close_time (first: i64, second: i64) {
+  let difference = first - second;
+  assert!(difference.abs() <= 2, "ints are too far apart: {:?}, {:?}", first, second);
+}
+
+#[test]
+fn trajectory_unit_tests() {
+  
+  let mut foo = QuadraticTrajectory::constant(Vector2::new(30,40));
+  assert_close (foo. value (77, 5).unwrap(), Vector2::new(30,40));
+  foo.set_velocity(77, 5, Vector2::new(10,20));
+  assert_close (foo. value (77, 5).unwrap(), Vector2::new(30,40));
+  assert_close (foo. velocity (77, 5).unwrap(), Vector2::new(10,20));
+  assert_close (foo. velocity (0, 5).unwrap(), Vector2::new(10,20));
+  assert_close (foo. value (77+32, 5).unwrap(), Vector2::new(40,60));
+  
+  let magsq = foo.magnitude_squared_trajectory ().unwrap();
+  
+  assert_close_magsq (magsq . value (77, 5).unwrap(), 30*30+40*40);  
+  assert_close_magsq (magsq . value (77+32, 5).unwrap(), 40*40+60*60);
+  
+  
+  assert_close_time (magsq . next_time_significantly_ge([0,99999], 5, 40*40+60*60).unwrap(), 77+32);
+}
+
+
+}
