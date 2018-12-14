@@ -117,11 +117,11 @@ impl_binop_and_assign! {
   self
 },
 {
-  other.$method (self)
+  self.clone().$method (other)
 },
 {
   if self.origin < other.origin {self.clone().$method (other)}
-  else {other.clone().$method (self)}
+  else {self.$method (other.clone())}
 },
 {
   let mut other = other;
@@ -183,7 +183,7 @@ impl_binop_and_assign! {
 macro_rules! impl_trajectory {
   ($Trajectory: ident, $degree: expr, $multiplication: tt, $ProductTrajectory: ident) => {
 
-#[derive (Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug, Default)]
+#[derive (Clone, Serialize, Deserialize, Debug, Default)]
 pub struct $Trajectory <T> {
   origin: Time,
   coefficients: [T; $degree + 1],
@@ -347,6 +347,19 @@ impl<T: Vector, Coordinate: Copy> MulAssign <Coordinate> for $Trajectory<T> wher
   }
 }
 
+impl<T: Vector> PartialEq<$Trajectory<T>> for $Trajectory<T> {
+  fn eq(&self, other: &$Trajectory<T>) -> bool {
+    if self.origin < other.origin {other.eq(self)}
+    else {
+      let mut other = other.clone();
+      other.set_origin(self.origin);
+      self.coefficients == other.coefficients
+    }
+  }
+}
+
+impl<T: Vector> Eq for $Trajectory<T> {}
+
 /*impl_binop_and_assign! {
 [T: Vector], $Trajectory <T>, T::Coordinate, $Trajectory <T>, Mul, mul, MulAssign, mul_assign, self, other,
 {
@@ -432,6 +445,7 @@ impl_trajectory! (QuarticTrajectory, 4, (any()), Unused) ;
 mod tests {
 use super::*;
 use nalgebra::Vector2;
+use proptest::prelude::*;
 
 fn assert_close(first: Vector2<i32>, second: Vector2<i32>) {
   let difference = first - second;
@@ -465,7 +479,54 @@ fn trajectory_unit_tests() {
   
   
   assert_close_time (magsq . next_time_significantly_ge([0,99999], 5, 40*40+60*60).unwrap(), 77+32);
+  
+  
 }
+
+
+fn arbitrary_fractional_input()->BoxedStrategy <FractionalInput<i64>> {
+  (0u32..16).prop_flat_map (| shift | {
+    ((-16i64 << shift..16i64 << shift), Just (shift))
+  }).prop_map(|(numerator, shift)| FractionalInput::new(numerator, shift)).boxed()
+}
+
+
+macro_rules! test_trajectory {
+  ($mod: ident, $Trajectory: ident, $degree: expr, $uniform: ident, $multiplication: tt, $ProductTrajectory: ident) => {mod $mod { use super::*;
+
+impl $Trajectory<i32> {
+  fn arbitrary_trajectory() -> BoxedStrategy <$Trajectory<i32>> {
+    (prop::array::$uniform(-16i32..16), -16i64..16).prop_map(|(coefficients, origin)| $Trajectory { coefficients, origin}).boxed()
+  }
+}
+
+proptest! {
+  #[test]
+  fn randomly_test_add_commutative(ref first in $Trajectory::<i32>::arbitrary_trajectory(), ref second in $Trajectory::<i32>::arbitrary_trajectory()) {
+    prop_assert_eq!(first + second, second + first);
+  }
+  #[test]
+  fn randomly_test_sub_anticommutative(ref first in $Trajectory::<i32>::arbitrary_trajectory(), ref second in $Trajectory::<i32>::arbitrary_trajectory()) {
+    prop_assert_eq!(first- second, -(second - first));
+  }
+  /*#[cfg $multiplication]
+  #[test]
+  fn randomly_test_mul_commutative(ref first in $Trajectory::<i32>::arbitrary_trajectory(), ref second in $Trajectory::<i32>::arbitrary_trajectory()) {
+    prop_assert_eq!(first * second, second * first);
+  }*/
+  #[test]
+  fn randomly_test_add_associative(ref first in $Trajectory::<i32>::arbitrary_trajectory(), ref second in $Trajectory::<i32>::arbitrary_trajectory(), ref third in $Trajectory::<i32>::arbitrary_trajectory()) {
+    prop_assert_eq!(first + (second + third), (first + second) + third);
+  }
+}
+  
+  }}
+}
+
+test_trajectory! (lin, LinearTrajectory, 1, uniform2, (all()), QuadraticTrajectory) ;
+test_trajectory! (quad, QuadraticTrajectory, 2, uniform3, (all()), QuarticTrajectory) ;
+test_trajectory! (quar, QuarticTrajectory, 4, uniform5, (any()), Unused) ;
+
 
 
 }
