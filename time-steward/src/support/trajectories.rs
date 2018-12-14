@@ -262,7 +262,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
   pub fn add_acceleration (&mut self, time_numerator: Time, time_shift: u32, value: T)->Option<()> {self.add_nth_coefficient (2, time_numerator, time_shift, value.map_coordinates (| coordinate | shr_round_to_even (coordinate, 1u32)))}
   
   pub fn next_time_possibly_outside_bounds (&self, range: [Time; 2], input_shift: u32, bounds: [T; 2])->Option<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
-    (0..T::DIMENSIONS).map (| dimension | {
+    (0..T::DIMENSIONS).filter_map (| dimension | {
       let trajectory = self.coordinate_trajectory (dimension);
       let four = (T::Coordinate::one() + T::Coordinate::one()) + (T::Coordinate::one() + T::Coordinate::one());
       combine_options(
@@ -270,7 +270,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
         trajectory.next_time_significantly_ge (range, input_shift, bounds [1].coordinate (dimension) - four),
         |a,b| min(a,b)
       )
-    }).min().unwrap()
+    }).min()
   }
   
   #[cfg $multiplication]
@@ -483,11 +483,19 @@ fn trajectory_unit_tests() {
   
 }
 
+macro_rules! prop_assert_close {
+  ($a:expr, $b:expr) => {
+    {let a = $a; let b = $b;
+      prop_assert!((a-b).abs() <= 2, "not close enough: {:?}, {:?}", a, b);
+      }
+  }
+}
 
-fn arbitrary_fractional_input()->BoxedStrategy <FractionalInput<i64>> {
+
+fn arbitrary_fractional_input()->BoxedStrategy <(i64, u32)> {
   (0u32..16).prop_flat_map (| shift | {
     ((-16i64 << shift..16i64 << shift), Just (shift))
-  }).prop_map(|(numerator, shift)| FractionalInput::new(numerator, shift)).boxed()
+  }).boxed()
 }
 
 
@@ -501,6 +509,12 @@ impl $Trajectory<i32> {
 }
 
 proptest! {
+  #[test]
+  fn randomly_test_set_origin_equal(ref first in $Trajectory::<i32>::arbitrary_trajectory(), new_origin in -16i64..16) {
+    let mut second = first.clone();
+    second.set_origin(new_origin);
+    prop_assert_eq!(first, &second);
+  }
   #[test]
   fn randomly_test_add_commutative(ref first in $Trajectory::<i32>::arbitrary_trajectory(), ref second in $Trajectory::<i32>::arbitrary_trajectory()) {
     prop_assert_eq!(first + second, second + first);
@@ -517,6 +531,22 @@ proptest! {
   #[test]
   fn randomly_test_add_associative(ref first in $Trajectory::<i32>::arbitrary_trajectory(), ref second in $Trajectory::<i32>::arbitrary_trajectory(), ref third in $Trajectory::<i32>::arbitrary_trajectory()) {
     prop_assert_eq!(first + (second + third), (first + second) + third);
+  }
+  #[test]
+  fn randomly_test_nth_coefficient(ref first in $Trajectory::<i32>::arbitrary_trajectory(), (input, shift) in arbitrary_fractional_input(), which in 0usize..$degree+1, value in -16i32..16) {
+    let mut second = first.clone();
+    second.set_nth_coefficient(which, input, shift, value);
+    prop_assert_close!(second.nth_coefficient(which, input, shift).unwrap(), value);
+    for i in 0..$degree+1 { if i != which {
+      prop_assert_close!(first.nth_coefficient(i, input, shift).unwrap(), second.nth_coefficient(i, input, shift).unwrap());
+    }}
+    
+    let mut third = first.clone();
+    third.add_nth_coefficient(which, input, shift, value);
+    prop_assert_close!(third.nth_coefficient(which, input, shift).unwrap(), first.nth_coefficient(which, input, shift).unwrap() + value);
+    for i in 0..$degree+1 { if i != which {
+      prop_assert_close!(first.nth_coefficient(i, input, shift).unwrap(), third.nth_coefficient(i, input, shift).unwrap());
+    }}
   }
 }
   
