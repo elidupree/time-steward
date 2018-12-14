@@ -173,10 +173,11 @@ impl collisions::Space for Space {
   fn current_bounding_box<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>)->BoundingBox <Self> {
     let varying = tracking_query (accessor, & object.varying);
     let center = varying.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap();
+    let effective_radius = object.radius + 16; // just correcting for leeway in next_time_possibly_outside_bounds 
     BoundingBox {
       bounds: [
-        [to_collision_space (center [0] - object.radius), to_collision_space (center [0] + object.radius)],
-        [to_collision_space (center [1] - object.radius), to_collision_space (center [1] + object.radius)],
+        [to_collision_space (center [0] - effective_radius), to_collision_space (center [0] + effective_radius)],
+        [to_collision_space (center [1] - effective_radius), to_collision_space (center [1] + effective_radius)],
       ],
       _marker: PhantomData
     }
