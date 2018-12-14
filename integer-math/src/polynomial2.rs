@@ -473,7 +473,7 @@ pub fn magnitude_squared_range_search <P: Polynomial,
   range_search(
     start_time, input_shift,
     |time| {
-      let precision = P::max_total_shift() - time.shift as i32;
+      let precision = Q::max_total_shift() - time.shift as i32;
       let mut magsq = Q::default();
       let integer_input = shr_nicely_rounded (time.numerator, time.shift);
       let small_input = time.numerator.wrapping_sub (& (Shl::<u32>::shl(integer_input, time.shift)));
@@ -522,7 +522,7 @@ pub fn next_time_magnitude_definitely_lt <P: Polynomial,
   let permit_threshold = permit_threshold*permit_threshold;
   let require_threshold = require_threshold*require_threshold;
   
-  assert!(require_threshold.saturating_sub (permit_threshold) >= <P::Coefficient as DoubleSizedSignedInteger>::Type::from_i64(200).unwrap());
+  assert!(permit_threshold.saturating_sub (require_threshold) >= <P::Coefficient as DoubleSizedSignedInteger>::Type::from_i64(200).unwrap());
   magnitude_squared_range_search::<_, Q, _, _>(
     coordinates, start_time, input_shift,
     |interval| interval[0] < require_threshold,
@@ -540,7 +540,7 @@ pub fn next_time_magnitude_definitely_gt <P: Polynomial,
   let permit_threshold = permit_threshold*permit_threshold;
   let require_threshold = require_threshold*require_threshold;
   
-  assert!(permit_threshold.saturating_sub (require_threshold) >= <P::Coefficient as DoubleSizedSignedInteger>::Type::from_i64(200).unwrap());
+  assert!(require_threshold.saturating_sub (permit_threshold) >= <P::Coefficient as DoubleSizedSignedInteger>::Type::from_i64(200).unwrap());
   magnitude_squared_range_search::<_, Q, _, _>(
     coordinates, start_time, input_shift,
     |interval| interval[1] > require_threshold,
