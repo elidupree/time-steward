@@ -227,7 +227,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     let mut result = T::zero();
     for dimension in 0..T::DIMENSIONS {
       let bounds = self.coordinate_coefficients (dimension)
-        .all_taylor_coefficients_bounds(time_numerator - (self.origin << time_shift), time_shift, 0u32)?[which];
+        .all_taylor_coefficients_bounds(time_numerator - (self.origin << time_shift), time_shift, 0i32)?[which];
       result.set_coordinate(dimension, mean_round_to_even(bounds[0], bounds[1]).try_into().ok()?);
     }
     Some(result)
