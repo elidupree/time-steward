@@ -1,8 +1,8 @@
-use std::ops::{Add, Sub, Mul, Div, Neg, Shr, Shl};
-use std::cmp::{max, min, Ordering};
-use std::iter::Sum;
-use std::fmt;
 use quickcheck::{Arbitrary, Gen};
+use std::cmp::{max, min, Ordering};
+use std::fmt;
+use std::iter::Sum;
+use std::ops::{Add, Div, Mul, Neg, Shl, Shr, Sub};
 
 /**
 
@@ -15,7 +15,7 @@ A Range represents an inclusive range of real-number values.
 Range is also a partially floating-point type: it handles overflow by increasing an exponent value and rounding off. This rounding never removes elements from the Range, but sometimes adds new ones.
 
 */
-#[derive (Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Range {
   min: i64,
   max: i64,
@@ -42,15 +42,13 @@ impl fmt::Debug for Range {
   }
 }
 
-
-
 pub fn right_shift_round_up(value: i64, shift: u32) -> i64 {
-  (value >> shift) +
-  if value & ((1i64 << shift) - 1) != 0 {
-    1
-  } else {
-    0
-  }
+  (value >> shift)
+    + if value & ((1i64 << shift) - 1) != 0 {
+      1
+    } else {
+      0
+    }
 }
 pub fn average_round_towards_neginf(input_1: i64, input_2: i64) -> i64 {
   (input_1 >> 1) + (input_2 >> 1) + (input_1 & input_2 & 1)
@@ -68,9 +66,6 @@ pub fn overflow_checked_shift_left(value: i64, shift: u32) -> Option<i64> {
   }
   Some(value << shift)
 }
-
-
-
 
 impl Range {
   pub fn new(min: i64, max: i64) -> Range {
@@ -120,7 +115,9 @@ impl Range {
   fn increase_exponent_to(&mut self, new: u32) {
     assert!(new >= self.exponent);
     let increase = new - self.exponent;
-    if increase == 0 {return;}
+    if increase == 0 {
+      return;
+    }
     self.increase_exponent_by(increase);
   }
   fn increase_exponent_by(&mut self, increase: u32) {
@@ -141,29 +138,45 @@ impl Range {
   }
   fn minimize_exponent(&mut self) {
     let mut confirm = Range::zero();
-    if cfg! (debug_assertions) {confirm = self.clone();}
-    if self.exponent == 0 {return;}
+    if cfg!(debug_assertions) {
+      confirm = self.clone();
+    }
+    if self.exponent == 0 {
+      return;
+    }
     if self.min == 0 && self.max == 0 {
       self.exponent = 0;
       return;
     }
-    let leeway = min(self.min.abs().leading_zeros(),
-                     self.max.abs().leading_zeros()) - 1;
+    let leeway = min(
+      self.min.abs().leading_zeros(),
+      self.max.abs().leading_zeros(),
+    ) - 1;
     let change = min(leeway, self.exponent);
     self.min <<= change;
     self.max <<= change;
     self.exponent -= change;
-    if cfg! (debug_assertions) {
+    if cfg!(debug_assertions) {
       if self.min <= self.max {
-        assert! (self.exponent_is_minimized());
+        assert!(self.exponent_is_minimized());
       }
-      assert! (self.exponent == 0 || self.min.checked_mul(2).map_or(true, | result | result == i64::min_value()) || self.max.checked_mul(2).map_or(true, | result | result == i64::min_value()));
+      assert!(
+        self.exponent == 0
+          || self
+            .min
+            .checked_mul(2)
+            .map_or(true, |result| result == i64::min_value())
+          || self
+            .max
+            .checked_mul(2)
+            .map_or(true, |result| result == i64::min_value())
+      );
       let mut confirm_2 = self.clone();
       confirm_2.increase_exponent_to(confirm.exponent);
       assert!(confirm == confirm_2);
     }
   }
-  fn exponent_is_minimized(&self)->bool {
+  fn exponent_is_minimized(&self) -> bool {
     debug_assert!(self.min <= self.max);
     self.exponent == 0 || self.min <= (-1i64 << 62) || self.max >= (1i64 << 62)
   }
@@ -254,34 +267,28 @@ impl Range {
 }
 
 macro_rules! binary_operation_fill {
-($implementor: ident, $joiner: ident, $operation: ident, $method:ident) => {
+  ($implementor: ident, $joiner: ident, $operation: ident, $method:ident) => {
+    impl<'a> $operation<&'a $joiner> for $implementor {
+      type Output = $implementor;
+      fn $method(self, other: &'a $joiner) -> $implementor {
+        (&self).$method(other)
+      }
+    }
 
+    impl<'a> $operation<$joiner> for &'a $implementor {
+      type Output = $implementor;
+      fn $method(self, other: $joiner) -> $implementor {
+        self.$method(&other)
+      }
+    }
 
-impl<'a> $operation <& 'a $joiner> for $implementor{
-type Output = $implementor;
-fn $method (self, other: & 'a $joiner)->$implementor{
-(& self).$method (other)
-}
-}
-
-impl<'a> $operation <$joiner> for & 'a $implementor{
-type Output = $implementor;
-fn $method (self, other: $joiner)->$implementor{
-self.$method (& other)
-}
-}
-
-
-impl $operation <$joiner> for $implementor{
-type Output = $implementor;
-fn $method (self, other: $joiner)->$implementor{
-(& self).$method (& other)
-}
-}
-
-
-}
-
+    impl $operation<$joiner> for $implementor {
+      type Output = $implementor;
+      fn $method(self, other: $joiner) -> $implementor {
+        (&self).$method(&other)
+      }
+    }
+  };
 }
 
 impl<'a> Neg for &'a Range {
@@ -305,8 +312,6 @@ impl Neg for Range {
   }
 }
 
-
-
 impl<'a> Add for &'a Range {
   type Output = Range;
   fn add(self, other: Self) -> Range {
@@ -315,8 +320,12 @@ impl<'a> Add for &'a Range {
     let mut other = other.clone();
     result.increase_exponent_to(possibly_needed);
     other.increase_exponent_to(possibly_needed);
-    if result.min.checked_add(other.min).map_or(true, |result| result == i64::min_value()) ||
-       result.max.checked_add(other.max).is_none() {
+    if result
+      .min
+      .checked_add(other.min)
+      .map_or(true, |result| result == i64::min_value())
+      || result.max.checked_add(other.max).is_none()
+    {
       result.increase_exponent_by(1);
       other.increase_exponent_by(1);
     }
@@ -327,7 +336,7 @@ impl<'a> Add for &'a Range {
   }
 }
 
-binary_operation_fill! (Range, Range, Add, add);
+binary_operation_fill!(Range, Range, Add, add);
 
 impl<'a> Sub for &'a Range {
   type Output = Range;
@@ -336,20 +345,23 @@ impl<'a> Sub for &'a Range {
   }
 }
 
-binary_operation_fill! (Range, Range, Sub, sub);
-
+binary_operation_fill!(Range, Range, Sub, sub);
 
 impl<'a> Mul for &'a Range {
   type Output = Range;
   fn mul(self, other: Self) -> Range {
     let mut result = self.clone();
     let mut other = other.clone();
-    let result_high_bit = 63 -
-                          min(result.min.abs().leading_zeros(),
-                              result.max.abs().leading_zeros()) as i32;
-    let other_high_bit = 63 -
-                         min(other.min.abs().leading_zeros(),
-                             other.max.abs().leading_zeros()) as i32;
+    let result_high_bit = 63
+      - min(
+        result.min.abs().leading_zeros(),
+        result.max.abs().leading_zeros(),
+      ) as i32;
+    let other_high_bit = 63
+      - min(
+        other.min.abs().leading_zeros(),
+        other.max.abs().leading_zeros(),
+      ) as i32;
     // for each value, it could be anything strictly less than (1 << high_bit+1). So when you multiply them together, it can be just below (1 << high_bit + high_bit + 2). Because increase_exponent_by can round towards a higher magnitude, we have to increase the leeway by one, eliminating "just below". The result must not exceed the 62nd bit.
     let overflow = result_high_bit + other_high_bit + 2 - 62;
     if overflow > 0 {
@@ -372,10 +384,12 @@ impl<'a> Mul for &'a Range {
         smaller.increase_exponent_by(((overflow + 1 - difference) / 2) as u32);
       }
     }
-    let extremes = [result.min * other.min,
-                    result.max * other.max,
-                    result.min * other.max,
-                    result.max * other.min];
+    let extremes = [
+      result.min * other.min,
+      result.max * other.max,
+      result.min * other.max,
+      result.max * other.min,
+    ];
     result = Range {
       min: extremes[0],
       max: extremes[0],
@@ -399,9 +413,11 @@ impl<'a> Mul<&'a i64> for &'a Range {
   type Output = Range;
   fn mul(self, other: &'a i64) -> Range {
     let mut result = self.clone();
-    let result_high_bit = 63 -
-                          min(result.min.abs().leading_zeros(),
-                              result.max.abs().leading_zeros()) as i32;
+    let result_high_bit = 63
+      - min(
+        result.min.abs().leading_zeros(),
+        result.max.abs().leading_zeros(),
+      ) as i32;
     let other_high_bit = 63 - other.abs().leading_zeros() as i32;
     // for each value, it could be anything strictly less than (1 << high_bit+1). So when you multiply them together, it can be just below (1 << high_bit + high_bit + 2). Because increase_exponent_by can round towards a higher magnitude, we have to increase the leeway by one, eliminating "just below". The result must not exceed the 62nd bit.
     let overflow = result_high_bit + other_high_bit + 2 - 62;
@@ -427,12 +443,8 @@ impl<'a> Mul<&'a i64> for &'a Range {
   }
 }
 
-
-binary_operation_fill! (Range, Range, Mul, mul);
-binary_operation_fill! (Range, i64, Mul, mul);
-
-
-
+binary_operation_fill!(Range, Range, Mul, mul);
+binary_operation_fill!(Range, i64, Mul, mul);
 
 impl<'a> Div for &'a Range {
   type Output = Range;
@@ -487,8 +499,7 @@ impl<'a> Div for &'a Range {
   }
 }
 
-binary_operation_fill! (Range, Range, Div, div);
-
+binary_operation_fill!(Range, Range, Div, div);
 
 impl<'a> Shr<&'a u32> for &'a Range {
   type Output = Range;
@@ -503,7 +514,7 @@ impl<'a> Shr<&'a u32> for &'a Range {
     result
   }
 }
-binary_operation_fill! (Range, u32, Shr, shr);
+binary_operation_fill!(Range, u32, Shr, shr);
 
 impl<'a> Shl<&'a u32> for &'a Range {
   type Output = Range;
@@ -514,14 +525,12 @@ impl<'a> Shl<&'a u32> for &'a Range {
     result
   }
 }
-binary_operation_fill! (Range, u32, Shl, shl);
-
-
-
+binary_operation_fill!(Range, u32, Shl, shl);
 
 impl Sum for Range {
   fn sum<I>(iter: I) -> Self
-    where I: Iterator<Item = Range>
+  where
+    I: Iterator<Item = Range>,
   {
     let mut result = Range::exactly(0);
     for value in iter {
@@ -530,8 +539,6 @@ impl Sum for Range {
     result
   }
 }
-
-
 
 impl Range {
   pub fn abs(&self) -> Range {
@@ -550,8 +557,10 @@ impl Range {
   /// Squaring is a slightly narrower operation than self*self, because it never invokes (for instance) self.min*self.max.
   pub fn squared(&self) -> Range {
     let mut result = self.clone();
-    let leeway = min(self.min.abs().leading_zeros(),
-                     self.max.abs().leading_zeros());
+    let leeway = min(
+      self.min.abs().leading_zeros(),
+      self.max.abs().leading_zeros(),
+    );
     if leeway < 33 {
       result.increase_exponent_by(33 - leeway);
     }
@@ -589,12 +598,14 @@ impl Range {
     let mut upper_bound = 3037000500i64;
     let mut move_size = 1i64 << 31;
     while move_size > 0 {
-      if lower_bound + move_size <= upper_bound &&
-         (lower_bound + move_size) * (lower_bound + move_size) <= result.min {
+      if lower_bound + move_size <= upper_bound
+        && (lower_bound + move_size) * (lower_bound + move_size) <= result.min
+      {
         lower_bound += move_size;
       }
-      if upper_bound - move_size >= lower_bound &&
-         (upper_bound - move_size) * (upper_bound - move_size) >= result.max {
+      if upper_bound - move_size >= lower_bound
+        && (upper_bound - move_size) * (upper_bound - move_size) >= result.max
+      {
         upper_bound -= move_size;
       }
       move_size >>= 1;
@@ -602,7 +613,7 @@ impl Range {
     result.min = lower_bound;
     result.max = upper_bound;
     result.minimize_exponent();
-    if cfg! (debug_assertions) {
+    if cfg!(debug_assertions) {
       let confirm = result.squared();
       let mut confirmation = self.clone();
       if confirmation.min < 0 {
@@ -614,7 +625,6 @@ impl Range {
     Some(result)
   }
 }
-
 
 impl PartialOrd for Range {
   fn partial_cmp(&self, other: &Range) -> Option<Ordering> {
@@ -660,7 +670,6 @@ impl PartialOrd<i64> for Range {
   }
   // TODO: implement the others for efficiency
 }
-
 
 impl PartialOrd<Range> for i64 {
   fn partial_cmp(&self, other: &Range) -> Option<Ordering> {
@@ -709,15 +718,13 @@ impl Arbitrary for Range {
         }
       }
     }
-    Box::new(Shrinker { value: self.clone() })
+    Box::new(Shrinker {
+      value: self.clone(),
+    })
   }
 }
 
-
-
-
-
-#[cfg (test)]
+#[cfg(test)]
 mod tests {
   use super::*;
   use quickcheck::TestResult;
@@ -794,9 +801,14 @@ mod tests {
   #[test]
   fn tests() {
     assert_eq!(Range::exactly(-47).squared(), Range::exactly(2209));
-    assert_eq!(Range::exactly(-440) * Range::exactly(1), Range::exactly(-440));
-    assert_eq!(Range::exactly(-440) * Range::exactly(1) * 4, Range::exactly(-1760));
-
+    assert_eq!(
+      Range::exactly(-440) * Range::exactly(1),
+      Range::exactly(-440)
+    );
+    assert_eq!(
+      Range::exactly(-440) * Range::exactly(1) * 4,
+      Range::exactly(-1760)
+    );
 
     assert_eq!(Range::exactly(99) / Range::exactly(2), Range::new(49, 50));
     assert_eq!(Range::exactly(3) / Range::exactly(2), Range::new(1, 2));

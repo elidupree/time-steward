@@ -1,13 +1,13 @@
-use std::boxed::Box;
-use std::collections::HashMap as Interior;
-use std::hash::{Hash, BuildHasher};
-use std::cmp::Eq;
 use std::borrow::Borrow;
+use std::boxed::Box;
 use std::cell::{Cell, UnsafeCell};
+use std::cmp::Eq;
 use std::collections::hash_map::{self, Entry};
+use std::collections::HashMap as Interior;
+use std::hash::{BuildHasher, Hash};
 
-#[derive (Debug)]
-pub struct HashMap<K: Eq + Hash, V, S: BuildHasher =::std::collections::hash_map::RandomState> {
+#[derive(Debug)]
+pub struct HashMap<K: Eq + Hash, V, S: BuildHasher = ::std::collections::hash_map::RandomState> {
   data: UnsafeCell<Interior<K, Box<V>, S>>,
   inserting: Cell<bool>,
 }
@@ -27,26 +27,27 @@ impl<K: Eq + Hash, V, S: BuildHasher> HashMap<K, V, S> {
       inserting: Cell::new(false),
     }
   }
-  pub fn with_capacity_and_hasher (capacity: usize, hash_builder: S) -> HashMap<K, V, S> {
+  pub fn with_capacity_and_hasher(capacity: usize, hash_builder: S) -> HashMap<K, V, S> {
     HashMap {
-      data: UnsafeCell::new(Interior::with_capacity_and_hasher (capacity, hash_builder)),
+      data: UnsafeCell::new(Interior::with_capacity_and_hasher(capacity, hash_builder)),
       inserting: Cell::new(false),
     }
   }
   pub fn get_default<F>(&self, key: K, default_function: F) -> Option<&V>
-    where F: FnOnce() -> Option<V>
+  where
+    F: FnOnce() -> Option<V>,
   {
-    assert!(!self.inserting.get(),
-            "Attempt to call get_default() on a insert_only::HashMap within the default_function \
-             callback for another get_default() on the same map");
+    assert!(
+      !self.inserting.get(),
+      "Attempt to call get_default() on a insert_only::HashMap within the default_function \
+       callback for another get_default() on the same map"
+    );
     self.inserting.set(true);
     let result = match unsafe { (*self.data.get()).entry(key) } {
-      Entry::Vacant(entry) => {
-        match default_function() {
-          None => None,
-          Some(value) => Some((*entry.insert(Box::new(value))).borrow()),
-        }
-      }
+      Entry::Vacant(entry) => match default_function() {
+        None => None,
+        Some(value) => Some((*entry.insert(Box::new(value))).borrow()),
+      },
       Entry::Occupied(entry) => Some((*entry.into_mut()).borrow()),
     };
     self.inserting.set(false);
@@ -59,15 +60,19 @@ impl<K: Eq + Hash, V, S: BuildHasher> HashMap<K, V, S> {
   }
 
   pub fn len(&self) -> usize {
-    assert!(!self.inserting.get(),
-                "Attempt to call len() on a insert_only::HashMap within the default_function \
-                 callback for a get_default() on the same map");
+    assert!(
+      !self.inserting.get(),
+      "Attempt to call len() on a insert_only::HashMap within the default_function \
+       callback for a get_default() on the same map"
+    );
     unsafe { (*self.data.get()).len() }
   }
 }
 
 impl<K: Eq + Hash, V, S: BuildHasher + Default> Default for HashMap<K, V, S> {
-  fn default()->HashMap <K, V, S> {HashMap::with_hasher (Default::default())}
+  fn default() -> HashMap<K, V, S> {
+    HashMap::with_hasher(Default::default())
+  }
 }
 
 pub struct IntoIter<K, V> {
@@ -87,6 +92,8 @@ impl<K: Eq + Hash, V, S: BuildHasher> IntoIterator for HashMap<K, V, S> {
   type Item = (K, V);
   type IntoIter = IntoIter<K, V>;
   fn into_iter(self) -> Self::IntoIter {
-    IntoIter { data: self.data.into_inner().into_iter() }
+    IntoIter {
+      data: self.data.into_inner().into_iter(),
+    }
   }
 }

@@ -1,4 +1,4 @@
-mod range;
 mod polynomials;
-pub use self::range::*;
+mod range;
 pub use self::polynomials::*;
+pub use self::range::*;

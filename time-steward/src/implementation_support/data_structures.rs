@@ -1,28 +1,33 @@
-use std::hash::{Hasher, BuildHasherDefault};
+use std::hash::{BuildHasherDefault, Hasher};
 
-#[derive (Clone, Default)]
+#[derive(Clone, Default)]
 pub struct TrivialU64Hasher {
   state: u64,
 }
 impl Hasher for TrivialU64Hasher {
-  fn finish (&self)->u64 {self.state}
-  fn write (&mut self, _: & [u8]) {panic! ("TrivialU64Hasher can only hash u64!");}
-  fn write_u64 (&mut self, value: u64) {self.state ^= value;}
+  fn finish(&self) -> u64 {
+    self.state
+  }
+  fn write(&mut self, _: &[u8]) {
+    panic!("TrivialU64Hasher can only hash u64!");
+  }
+  fn write_u64(&mut self, value: u64) {
+    self.state ^= value;
+  }
 }
 
 pub type BuildTrivialU64Hasher = BuildHasherDefault<TrivialU64Hasher>;
 
-
 pub mod partially_persistent_nonindexed_set {
-  use std::sync::Arc;
+  use std::cell::UnsafeCell;
   use std::cmp::min;
   use std::collections::HashSet;
-  use std::hash::{Hash, BuildHasher};
-  use std::mem;
-  use std::cell::UnsafeCell;
   use std::fmt::Debug;
+  use std::hash::{BuildHasher, Hash};
+  use std::mem;
+  use std::sync::Arc;
 
-  #[derive (Clone, Debug)]
+  #[derive(Clone, Debug)]
   struct Entry<K: Clone + Eq> {
     key: K,
     insertion: bool,
@@ -31,29 +36,29 @@ pub mod partially_persistent_nonindexed_set {
   // a library that does the job safely without it.
   // Compare Arc<[Entry<K>]>, which could behave unsafely if I
   // didn't initialize it, but would waste time if I did.
-  #[derive (Debug)]
+  #[derive(Debug)]
   struct BufferInner<K: Clone + Eq> {
     data: Vec<Entry<K>>,
   }
-  #[derive (Clone, Debug)]
+  #[derive(Clone, Debug)]
   struct Buffer<K: Clone + Eq> {
     data: Arc<UnsafeCell<BufferInner<K>>>,
     deletions: usize,
   }
 
-  #[derive (Debug)]
+  #[derive(Debug)]
   pub struct Snapshot<K: Clone + Eq> {
     buffer: Buffer<K>,
     used_length: usize,
   }
-  #[derive (Debug)]
+  #[derive(Debug)]
   pub struct SnapshotIter<'a, K: Clone + Eq + Hash + 'a> {
     snapshot: &'a Snapshot<K>,
     position: usize,
     ignore: HashSet<K>,
   }
 
-  #[derive (Debug)]
+  #[derive(Debug)]
   pub struct Set<K: Clone + Eq + Hash, S: BuildHasher + Clone> {
     live_buffer: Buffer<K>,
     next_buffer: Buffer<K>,
@@ -101,26 +106,30 @@ pub mod partially_persistent_nonindexed_set {
       }
     }
   }
-  impl<K: Clone + Eq + Hash + Debug, S: BuildHasher + Clone + Default> Default for Set <K, S> {
-    fn default()->Set <K, S> {Set::with_hasher (Default::default())}
+  impl<K: Clone + Eq + Hash + Debug, S: BuildHasher + Clone + Default> Default for Set<K, S> {
+    fn default() -> Set<K, S> {
+      Set::with_hasher(Default::default())
+    }
   }
   impl<K: Clone + Eq + Hash + Debug, S: BuildHasher + Clone> Set<K, S> {
-    pub fn with_hasher (hash_builder: S) -> Set<K, S> {
+    pub fn with_hasher(hash_builder: S) -> Set<K, S> {
       Set {
         live_buffer: Buffer {
           data: Arc::new(UnsafeCell::new(BufferInner { data: Vec::new() })),
           deletions: 0,
         },
         next_buffer: Buffer {
-          data: Arc::new(UnsafeCell::new(BufferInner { data: Vec::with_capacity(2) })),
+          data: Arc::new(UnsafeCell::new(BufferInner {
+            data: Vec::with_capacity(2),
+          })),
           deletions: 0,
         },
         live_members: HashSet::with_hasher(hash_builder.clone()),
-        next_members: HashSet::with_capacity_and_hasher (2, hash_builder.clone()),
+        next_members: HashSet::with_capacity_and_hasher(2, hash_builder.clone()),
 
         next_transfer_index: 0,
         potential_next_buffer_usage: 0,
-        hash_builder: hash_builder
+        hash_builder: hash_builder,
       }
     }
 
@@ -207,7 +216,6 @@ pub mod partially_persistent_nonindexed_set {
     // X >= (Z*(51) - 49)/(5*Z)
     // X >= 51/5 >10
     fn make_room(&mut self) {
-
       // MAX_TRANSFER_SPEED could safely be 11 as per the above calculation,
       // but cache efficiency is probably better with a higher value.
       const MAX_TRANSFER_SPEED: usize = 32;
@@ -228,16 +236,19 @@ pub mod partially_persistent_nonindexed_set {
       // live_data.data.len(),
       // self.next_buffer.deletions,
       // next_data.data.len());
-      let buffer_pushes_before_reset_needed = min(live_data.data.capacity() - live_data.data.len(),
-                                                  next_data.data.capacity() / 2 -
-                                                  self.potential_next_buffer_usage);
+      let buffer_pushes_before_reset_needed = min(
+        live_data.data.capacity() - live_data.data.len(),
+        next_data.data.capacity() / 2 - self.potential_next_buffer_usage,
+      );
       let current_insertions = live_data.data.len() - self.live_buffer.deletions;
       // let tolerable_deletions = (current_insertions*5)/12;
       // let deletions_before_reset_needed = tolerable_deletions - self.live_buffer.deletions;
       let deletions_before_reset_needed =
         (current_insertions + 7 - self.live_buffer.deletions - 6 * self.next_buffer.deletions) / 7;
-      let operations_before_reset_possibly_needed = min(buffer_pushes_before_reset_needed,
-                                                        deletions_before_reset_needed);
+      let operations_before_reset_possibly_needed = min(
+        buffer_pushes_before_reset_needed,
+        deletions_before_reset_needed,
+      );
       assert!(self.next_transfer_index <= live_data.data.len());
       let transfer_steps_needed_before_reset_possible =
         live_data.data.len() + operations_before_reset_possibly_needed - self.next_transfer_index;
@@ -247,10 +258,13 @@ pub mod partially_persistent_nonindexed_set {
       // buffer_pushes_before_reset_needed,
       // deletions_before_reset_needed,
       // "something");
-      assert!(transfer_steps_needed_before_reset_possible <=
-              (operations_before_reset_possibly_needed + 1) * MAX_TRANSFER_SPEED);
-      if transfer_steps_needed_before_reset_possible >
-         operations_before_reset_possibly_needed * MAX_TRANSFER_SPEED {
+      assert!(
+        transfer_steps_needed_before_reset_possible
+          <= (operations_before_reset_possibly_needed + 1) * MAX_TRANSFER_SPEED
+      );
+      if transfer_steps_needed_before_reset_possible
+        > operations_before_reset_possibly_needed * MAX_TRANSFER_SPEED
+      {
         for _ in 0..MAX_TRANSFER_SPEED {
           if let Some(entry) = live_data.data.get(self.next_transfer_index) {
             if entry.insertion && self.live_members.contains(&entry.key) {
@@ -278,32 +292,39 @@ pub mod partially_persistent_nonindexed_set {
         // danger: after we overwrite self.next_buffer, we may have deallocated
         // the memory for live_data
         self.next_buffer = Buffer {
-          data: Arc::new(UnsafeCell::new(BufferInner { data: Vec::with_capacity(next_capacity) })),
+          data: Arc::new(UnsafeCell::new(BufferInner {
+            data: Vec::with_capacity(next_capacity),
+          })),
           deletions: 0,
         };
-        self.next_members = HashSet::with_capacity_and_hasher (next_capacity, self.hash_builder.clone());
+        self.next_members =
+          HashSet::with_capacity_and_hasher(next_capacity, self.hash_builder.clone());
       }
 
       unsafe {
-        assert!((*self.live_buffer.data.get()).data.len() <
-                (*self.live_buffer.data.get()).data.capacity());
+        assert!(
+          (*self.live_buffer.data.get()).data.len()
+            < (*self.live_buffer.data.get()).data.capacity()
+        );
         assert!((*self.next_buffer.data.get()).data.len() <= self.potential_next_buffer_usage);
-        assert!(self.potential_next_buffer_usage <
-                (*self.next_buffer.data.get()).data.capacity() / 2);
+        assert!(
+          self.potential_next_buffer_usage < (*self.next_buffer.data.get()).data.capacity() / 2
+        );
       }
     }
   }
-  #[cfg (test)]
+  #[cfg(test)]
   mod tests {
     use super::*;
     use std::collections::HashSet;
-    use std::thread;
     use std::sync::mpsc::channel;
+    use std::thread;
 
     type Key = u8;
     fn test_operation_sequence(operations: Vec<(Key, bool)>) -> bool {
       let mut existences: HashSet<Key> = HashSet::new();
-      let mut set: Set<Key, ::std::collections::hash_map::RandomState> = Set::with_hasher(Default::default());
+      let mut set: Set<Key, ::std::collections::hash_map::RandomState> =
+        Set::with_hasher(Default::default());
 
       let (send_snapshot, receive_snapshot) = channel::<Option<(Snapshot<Key>, HashSet<Key>)>>();
       let (send_results, receive_results) = channel();
@@ -349,12 +370,14 @@ pub mod partially_persistent_nonindexed_set {
 
     #[test]
     fn many_insertions_and_deletions() {
-      test_operation_sequence((0..100)
-        .map(|number| (number, true))
-        .chain((0..100).map(|number| (number, false)))
-        .chain((0..100).map(|number| (number, true)))
-        .chain((0..100).map(|number| (99 - number, false)))
-        .collect());
+      test_operation_sequence(
+        (0..100)
+          .map(|number| (number, true))
+          .chain((0..100).map(|number| (number, false)))
+          .chain((0..100).map(|number| (number, true)))
+          .chain((0..100).map(|number| (99 - number, false)))
+          .collect(),
+      );
     }
   }
 }

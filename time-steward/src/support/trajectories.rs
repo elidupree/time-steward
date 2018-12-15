@@ -1,51 +1,76 @@
 //use nalgebra::Vector2;
-use std::cmp::min;
-use num::{FromPrimitive, Zero, One};
-use num::traits::{Signed, Bounded};
 use super::integer_math::{Vector as GenericVector, *};
+use num::traits::{Bounded, Signed};
+use num::{FromPrimitive, One, Zero};
+use std::cmp::min;
 //use self::polynomial::RootSearchResult;
-use self::polynomial2::{Polynomial, FractionalInput, AllTaylorCoefficients, AllTaylorCoefficientsBounds};
-use std::ops::{Add, Sub, Mul, Neg, AddAssign, SubAssign, MulAssign};
-use std::convert::TryInto;
+use self::polynomial2::{
+  AllTaylorCoefficients, AllTaylorCoefficientsBounds, FractionalInput, Polynomial,
+};
 use array_ext::*;
 use smallvec::SmallVec;
-
+use std::convert::TryInto;
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 pub type Time = i64;
 pub type Coordinate = i32;
-pub trait Vector: GenericVector<Coordinate=Coordinate> {}
-impl<T: GenericVector<Coordinate=Coordinate>> Vector for T {}
+pub trait Vector: GenericVector<Coordinate = Coordinate> {}
+impl<T: GenericVector<Coordinate = Coordinate>> Vector for T {}
 
 fn combine_options<T, F>(a: Option<T>, b: Option<T>, f: F) -> Option<T>
-    where F: FnOnce(T, T) -> T
+where
+  F: FnOnce(T, T) -> T,
 {
-    match (a, b) {
-        (Some(x), None) | (None, Some(x)) => Some(x),
-        (Some(x), Some(y)) => Some(f(x, y)),
-        (None, None) => None
-    }
+  match (a, b) {
+    (Some(x), None) | (None, Some(x)) => Some(x),
+    (Some(x), Some(y)) => Some(f(x, y)),
+    (None, None) => None,
+  }
 }
-
 
 pub trait Trajectory: Sized {
-  type Coefficient: Vector<Coordinate=Coordinate>;
+  type Coefficient: Vector<Coordinate = Coordinate>;
 }
 
-pub trait ScalarTrajectory: Trajectory where Self::Coefficient: Integer, for <'a> & 'a Self: Neg <Output = Self> {
+pub trait ScalarTrajectory: Trajectory
+where
+  Self::Coefficient: Integer,
+  for<'a> &'a Self: Neg<Output = Self>,
+{
   /// Find the first time within a range when the trajectory value is "significantly" >= target.
   ///
   /// To be "significant", the output time will obey this condition: The value at the output time is >= target, and it will not dip back to < target due to rounding error (it will only dip back if the ideal slope actually becomes negative).
   ///
   /// In order to guarantee this, we have to be slightly permissive, skipping over some inputs where the value is observed to be >= target. However, it still obeys this guarantee: The output time will always be <= the first time when the value is >= output + 4.
-  fn next_time_significantly_ge (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->Option<Time>;
-  fn next_time_significantly_gt (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->Option<Time> {
-    self.next_time_significantly_ge (range, input_shift, target + Self::Coefficient::one())
+  fn next_time_significantly_ge(
+    &self,
+    range: [Time; 2],
+    input_shift: u32,
+    target: Self::Coefficient,
+  ) -> Option<Time>;
+  fn next_time_significantly_gt(
+    &self,
+    range: [Time; 2],
+    input_shift: u32,
+    target: Self::Coefficient,
+  ) -> Option<Time> {
+    self.next_time_significantly_ge(range, input_shift, target + Self::Coefficient::one())
   }
-  fn next_time_significantly_le (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->Option<Time> {
-    (-self).next_time_significantly_ge (range, input_shift, -target)
+  fn next_time_significantly_le(
+    &self,
+    range: [Time; 2],
+    input_shift: u32,
+    target: Self::Coefficient,
+  ) -> Option<Time> {
+    (-self).next_time_significantly_ge(range, input_shift, -target)
   }
-  fn next_time_significantly_lt (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->Option<Time> {
-    self.next_time_significantly_le (range, input_shift, target - Self::Coefficient::one())
+  fn next_time_significantly_lt(
+    &self,
+    range: [Time; 2],
+    input_shift: u32,
+    target: Self::Coefficient,
+  ) -> Option<Time> {
+    self.next_time_significantly_le(range, input_shift, target - Self::Coefficient::one())
   }
 }
 
@@ -175,11 +200,6 @@ impl_binop_and_assign! {
   }
 }
 
-
-
-
-
-
 macro_rules! impl_trajectory {
   ($Trajectory: ident, $degree: expr, $multiplication: tt, $ProductTrajectory: ident) => {
 
@@ -211,7 +231,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     self.origin = new_origin;
     Some(())
   }
-  
+
   pub fn coordinate_coefficients (&self, dimension: usize)->[T::Coordinate; $degree + 1] {
     Array::from_fn (| which | self.coefficients [which].coordinate (dimension))
   }
@@ -221,8 +241,8 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
       coefficients: self.coordinate_coefficients (dimension),
     }
   }
-  
-  
+
+
   pub fn nth_coefficient (&self, which: usize, time_numerator: Time, time_shift: u32)->Option<T> {
     let mut result = T::zero();
     for dimension in 0..T::DIMENSIONS {
@@ -260,7 +280,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
   pub fn add_value (&mut self, value: T) {*self += value}
   pub fn add_velocity (&mut self, time_numerator: Time, time_shift: u32, value: T)->Option<()> {self.add_nth_coefficient (1, time_numerator, time_shift, value)}
   pub fn add_acceleration (&mut self, time_numerator: Time, time_shift: u32, value: T)->Option<()> {self.add_nth_coefficient (2, time_numerator, time_shift, value.map_coordinates (| coordinate | shr_round_to_even (coordinate, 1u32)))}
-  
+
   pub fn next_time_possibly_outside_bounds (&self, range: [Time; 2], input_shift: u32, bounds: [T; 2])->Option<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
     (0..T::DIMENSIONS).filter_map (| dimension | {
       let trajectory = self.coordinate_trajectory (dimension);
@@ -272,7 +292,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
       )
     }).min()
   }
-  
+
   #[cfg $multiplication]
   pub fn magnitude_squared_trajectory (&self)->Option<$ProductTrajectory <T::Coordinate>> {
     let mut coefficients = [T::Coordinate::zero(); $degree + $degree + 1];
@@ -449,69 +469,83 @@ impl ScalarTrajectory for $Trajectory <Coordinate> {
   };
 }
 
-impl_trajectory! (LinearTrajectory, 1, (all()), QuadraticTrajectory) ;
-impl_trajectory! (QuadraticTrajectory, 2, (all()), QuarticTrajectory) ;
-impl_trajectory! (QuarticTrajectory, 4, (any()), Unused) ;
+impl_trajectory!(LinearTrajectory, 1, (all()), QuadraticTrajectory);
+impl_trajectory!(QuadraticTrajectory, 2, (all()), QuarticTrajectory);
+impl_trajectory!(QuarticTrajectory, 4, (any()), Unused);
 
 #[cfg(test)]
 mod tests {
-use super::*;
-use nalgebra::Vector2;
-use proptest::prelude::*;
+  use super::*;
+  use nalgebra::Vector2;
+  use proptest::prelude::*;
 
-fn assert_close(first: Vector2<i32>, second: Vector2<i32>) {
-  let difference = first - second;
-  assert!(difference [0].abs() <= 2 && difference [1].abs() <= 2, "vectors are too far apart: {:?}, {:?}", first, second);
-}
-fn assert_close_magsq(first: i32, second: i32) {
-  let difference = (first as f64).sqrt() - (second as f64).sqrt();
-  assert!(difference.abs() <= 2f64, "ints are too far apart: {:?}, {:?}", first, second);
-}
-
-fn assert_close_time (first: i64, second: i64) {
-  let difference = first - second;
-  assert!(difference.abs() <= 2, "ints are too far apart: {:?}, {:?}", first, second);
-}
-
-#[test]
-fn trajectory_unit_tests() {
-  
-  let mut foo = QuadraticTrajectory::constant(Vector2::new(30,40));
-  assert_close (foo. value (77, 5).unwrap(), Vector2::new(30,40));
-  foo.set_velocity(77, 5, Vector2::new(10,20));
-  assert_close (foo. value (77, 5).unwrap(), Vector2::new(30,40));
-  assert_close (foo. velocity (77, 5).unwrap(), Vector2::new(10,20));
-  assert_close (foo. velocity (0, 5).unwrap(), Vector2::new(10,20));
-  assert_close (foo. value (77+32, 5).unwrap(), Vector2::new(40,60));
-  
-  let magsq = foo.magnitude_squared_trajectory ().unwrap();
-  
-  assert_close_magsq (magsq . value (77, 5).unwrap(), 30*30+40*40);  
-  assert_close_magsq (magsq . value (77+32, 5).unwrap(), 40*40+60*60);
-  
-  
-  assert_close_time (magsq . next_time_significantly_ge([0,99999], 5, 40*40+60*60).unwrap(), 77+32);
-  
-  
-}
-
-macro_rules! prop_assert_close {
-  ($a:expr, $b:expr) => {
-    {let a = $a; let b = $b;
-      prop_assert!((a-b).abs() <= 2, "not close enough: {:?}, {:?}", a, b);
-      }
+  fn assert_close(first: Vector2<i32>, second: Vector2<i32>) {
+    let difference = first - second;
+    assert!(
+      difference[0].abs() <= 2 && difference[1].abs() <= 2,
+      "vectors are too far apart: {:?}, {:?}",
+      first,
+      second
+    );
   }
-}
+  fn assert_close_magsq(first: i32, second: i32) {
+    let difference = (first as f64).sqrt() - (second as f64).sqrt();
+    assert!(
+      difference.abs() <= 2f64,
+      "ints are too far apart: {:?}, {:?}",
+      first,
+      second
+    );
+  }
 
+  fn assert_close_time(first: i64, second: i64) {
+    let difference = first - second;
+    assert!(
+      difference.abs() <= 2,
+      "ints are too far apart: {:?}, {:?}",
+      first,
+      second
+    );
+  }
 
-fn arbitrary_fractional_input()->BoxedStrategy <(i64, u32)> {
-  (0u32..16).prop_flat_map (| shift | {
-    ((-16i64 << shift..16i64 << shift), Just (shift))
-  }).boxed()
-}
+  #[test]
+  fn trajectory_unit_tests() {
+    let mut foo = QuadraticTrajectory::constant(Vector2::new(30, 40));
+    assert_close(foo.value(77, 5).unwrap(), Vector2::new(30, 40));
+    foo.set_velocity(77, 5, Vector2::new(10, 20));
+    assert_close(foo.value(77, 5).unwrap(), Vector2::new(30, 40));
+    assert_close(foo.velocity(77, 5).unwrap(), Vector2::new(10, 20));
+    assert_close(foo.velocity(0, 5).unwrap(), Vector2::new(10, 20));
+    assert_close(foo.value(77 + 32, 5).unwrap(), Vector2::new(40, 60));
 
+    let magsq = foo.magnitude_squared_trajectory().unwrap();
 
-macro_rules! test_trajectory {
+    assert_close_magsq(magsq.value(77, 5).unwrap(), 30 * 30 + 40 * 40);
+    assert_close_magsq(magsq.value(77 + 32, 5).unwrap(), 40 * 40 + 60 * 60);
+
+    assert_close_time(
+      magsq
+        .next_time_significantly_ge([0, 99999], 5, 40 * 40 + 60 * 60)
+        .unwrap(),
+      77 + 32,
+    );
+  }
+
+  macro_rules! prop_assert_close {
+    ($a:expr, $b:expr) => {{
+      let a = $a;
+      let b = $b;
+      prop_assert!((a - b).abs() <= 2, "not close enough: {:?}, {:?}", a, b);
+    }};
+  }
+
+  fn arbitrary_fractional_input() -> BoxedStrategy<(i64, u32)> {
+    (0u32..16)
+      .prop_flat_map(|shift| ((-16i64 << shift..16i64 << shift), Just(shift)))
+      .boxed()
+  }
+
+  macro_rules! test_trajectory {
   ($mod: ident, $Trajectory: ident, $degree: expr, $uniform: ident, $multiplication: tt, $ProductTrajectory: ident) => {mod $mod { use super::*;
 
 impl $Trajectory<i32> {
@@ -552,7 +586,7 @@ proptest! {
     for i in 0..$degree+1 { if i != which {
       prop_assert_close!(first.nth_coefficient(i, input, shift).unwrap(), second.nth_coefficient(i, input, shift).unwrap());
     }}
-    
+
     let mut third = first.clone();
     third.add_nth_coefficient(which, input, shift, value);
     prop_assert_close!(third.nth_coefficient(which, input, shift).unwrap(), first.nth_coefficient(which, input, shift).unwrap() + value);
@@ -561,13 +595,26 @@ proptest! {
     }}
   }
 }
-  
+
   }}
 }
 
-test_trajectory! (lin, LinearTrajectory, 1, uniform2, (all()), QuadraticTrajectory) ;
-test_trajectory! (quad, QuadraticTrajectory, 2, uniform3, (all()), QuarticTrajectory) ;
-test_trajectory! (quar, QuarticTrajectory, 4, uniform5, (any()), Unused) ;
-
+  test_trajectory!(
+    lin,
+    LinearTrajectory,
+    1,
+    uniform2,
+    (all()),
+    QuadraticTrajectory
+  );
+  test_trajectory!(
+    quad,
+    QuadraticTrajectory,
+    2,
+    uniform3,
+    (all()),
+    QuarticTrajectory
+  );
+  test_trajectory!(quar, QuarticTrajectory, 4, uniform5, (any()), Unused);
 
 }

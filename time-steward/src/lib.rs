@@ -20,29 +20,37 @@
 //
 //
 
-#![feature(unboxed_closures, specialization, never_type, raw, get_type_id, try_trait, try_from)]
+#![feature(
+  unboxed_closures,
+  specialization,
+  never_type,
+  raw,
+  get_type_id,
+  try_trait,
+  try_from
+)]
 // #![feature (shared)]
 // #![feature (plugin, custom_derive)]
 // #![plugin (serde_macros)]
 // #![plugin (quickcheck_macros)]
 //#![cfg_attr(test,feature(core_intrinsics))]
 
+extern crate array_ext;
+extern crate nalgebra;
+extern crate num;
 extern crate rand;
 extern crate rand_core;
-extern crate num;
-extern crate nalgebra;
-extern crate siphasher;
-extern crate array_ext;
 extern crate rpds;
 extern crate serde;
+extern crate siphasher;
 #[macro_use]
 extern crate serde_derive;
 extern crate bincode;
 //extern crate crossbeam;
 #[cfg_attr(test, macro_use)]
-extern crate quickcheck;
-#[cfg_attr(test, macro_use)]
 extern crate proptest;
+#[cfg_attr(test, macro_use)]
+extern crate quickcheck;
 #[macro_use]
 extern crate derivative;
 #[macro_use]
@@ -67,8 +75,8 @@ macro_rules! printlnerr(
 /// considered very unstable at present.
 #[macro_use]
 pub mod implementation_support {
-  pub mod insert_only;
   pub mod data_structures;
+  pub mod insert_only;
   #[macro_use]
   pub mod common;
 }
@@ -95,8 +103,10 @@ pub mod support {
   pub mod time_functions;
   pub use time_steward_integer_math as integer_math;
   pub mod trajectories;
-  #[macro_use] pub mod simple_timeline;
-  #[macro_use] pub mod bbox_collision_detection;
+  #[macro_use]
+  pub mod simple_timeline;
+  #[macro_use]
+  pub mod bbox_collision_detection;
 }
 
 #[macro_use]
@@ -108,7 +118,3 @@ pub mod stewards {
   pub mod simple_full;
   pub mod auditing;
 }
-
-
-
-

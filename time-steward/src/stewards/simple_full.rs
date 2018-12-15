@@ -90,7 +90,7 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
       steward: RefCell::new (steward),
     };
     let result = <T as Event>::re_execute (self, &mut accessor, *self_handle.data.execution_state.borrow_mut().take().unwrap().execution_data.downcast().unwrap());
-    
+
     mem::replace (&mut*self_handle.data.execution_state.borrow_mut(), Some (ExecutionState {
       valid: true,
       execution_data: Box::new (result),
@@ -238,11 +238,11 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
   fn this_event (&self)->& EventHandle <B> {
     &self.handle
   }
-    
+
   fn new_handle<T: SimulationStateData + PersistentlyIdentifiedType> (&self, data: T)->DataHandle <T> {
     DataHandle {data: Rc::new(data)}
   }
-  
+
   fn modify <T: DataTimeline<Basics = <Self::Steward as TimeSteward>::Basics>, F: FnOnce(&mut T)> (&self, timeline: &DataTimelineCell <T>, modification: F) {
     {
       let index = timeline.first_snapshot_not_updated.get ();
@@ -254,7 +254,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
       }
       timeline.first_snapshot_not_updated.set (steward.next_snapshot_index);
     }
-    
+
     let mut modify_guard = timeline.data.borrow_mut();
     modification (&mut*modify_guard);
     match &self.steward.borrow().invalid_before {
@@ -263,7 +263,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
       &ValidSince::TheBeginning => (),
     }
   }
-  
+
   fn create_prediction <E: Event <Steward = Self::Steward>> (&self, time: <<Self::Steward as TimeSteward>::Basics as Basics>::Time, id: DeterministicRandomId, event: E)->EventHandle <B> {
     let time = extended_time_of_predicted_event::<<Self::Steward as TimeSteward>::Basics> (time, id, self.extended_now()).expect("You can't create a prediction in the past.");
     let handle = EventHandle {
@@ -297,7 +297,7 @@ impl <'a, B: Basics> EventAccessor for EventAccessorStruct <'a, B> {
     }
     prediction.data.links.set(previous - 1);
   }
-  
+
   type FutureCleanupAccessor = Self;
   fn future_cleanup(&self)->Option<&Self::FutureCleanupAccessor> {
     // We're always ALLOWED to return Some, even if it would be more optimal not to.
@@ -351,7 +351,7 @@ impl<B: Basics> Steward<B> {
   fn next_event_needing_attention (&self) -> Option<&EventNeedingAttention<B>> {
     self.events_needing_attention.iter().next()
   }
-  
+
   fn do_event (&mut self, event: & EventNeedingAttention<B>) {
     self.events_needing_attention.remove (event);
     assert_eq!(event.handle.data.links.get() > 0, event.should_be_executed);
@@ -376,9 +376,9 @@ impl<B: Basics> Steward<B> {
       event.data.data.undo (event, &mut*self);
     }
   }
-  
-  
-  
+
+
+
   fn invalidate_event_execution (&mut self, handle: & EventHandle<B>) {
     if let Some(state) = handle.data.execution_state.borrow_mut().as_mut() {
       if handle.data.links.get() > 0 && state.valid {
@@ -420,7 +420,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
   fn valid_since(&self) -> ValidSince<B::Time> {
     self.invalid_before.clone()
   }
-  
+
   fn insert_fiat_event<E: Event<Steward = Self>>(&mut self,
                                                time: B::Time,
                                                id: DeterministicRandomId,
@@ -462,7 +462,7 @@ impl<B: Basics> TimeSteward for Steward<B> {
       },
     }
   }
-  
+
   fn snapshot_before (&mut self, time: & B::Time)->Option <Self::SnapshotAccessor> {
     // NOT self.valid_since(); this Steward can continue recording snapshots from earlier than the earliest time it can accept fiat event input
     if self.invalid_before > *time { return None; }
@@ -483,10 +483,10 @@ impl<B: Basics> TimeSteward for Steward<B> {
     self.next_snapshot_index += 1;
     Some (handle)
   }
-  
+
   fn forget_before (&mut self, time: & B::Time) {
     self.invalid_before = max (self.invalid_before.clone(), ValidSince::Before(time.clone()));
-    
+
   }
 }
 
@@ -502,7 +502,7 @@ impl <B: Basics> ConstructibleTimeSteward for Steward <B> {
       next_snapshot_index: 0,
     }
   }
-  
+
   fn deserialize_from <R: Read> (data: &mut R)->::bincode::Result <Self> {
     deserialize_something (data)
   }
@@ -529,16 +529,16 @@ time_steward_define_bbox_collision_detection!();
 #[cfg($($auditing)*)]
 mod audits {
   use super::*;
-  
+
   impl<B: Basics> Steward <B> {
     pub fn audit_timeline<T: DataTimeline> (&self, timeline: & DataTimelineCell <T>) {
       for _query in timeline.queries.borrow() {
-        
+
       }
     }
     pub fn audit_after_event (&self, _event: & EventHandle <B>) {
       /*for timeline_id in event.modified.iter() {
-        
+
       }*/
     }
   }

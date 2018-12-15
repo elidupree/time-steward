@@ -2,13 +2,11 @@ use std::fmt;
 
 use super::api::*;
 
-
-impl<T> ListOfTypes for ListedType <T> {
-  fn visit_all <Visitor: ListOfTypesVisitor>(visitor: &mut Visitor) {
+impl<T> ListOfTypes for ListedType<T> {
+  fn visit_all<Visitor: ListOfTypesVisitor>(visitor: &mut Visitor) {
     visitor.visit::<T>();
   }
 }
-
 
 // macro for implementing n-ary tuple functions and operations, adapted from libcore
 macro_rules! tuple_impls {
@@ -132,7 +130,6 @@ tuple_impls! {
     }
 }
 
-
 use std::cmp::Ordering;
 
 impl<B: fmt::Display> fmt::Display for ValidSince<B> {
@@ -211,5 +208,3 @@ impl<T: Ord> PartialOrd for ValidSince<T> {
 //    Some (other.partial_cmp (self).unwrap().reverse());
 //  }
 // }
-
-
