@@ -48,6 +48,7 @@ pub trait Integer:
   + ShrAssign<u32>
   + Debug
   + Display
+  + Default
   + Send
   + Sync
 {

@@ -9,15 +9,24 @@ use std::cmp::{max, min, Ordering};
 
 use super::*;
 
-pub type Coefficient<T> = <T as PolynomialBase1>::Coefficient;
-pub trait PolynomialBase1 {
-  type Coefficient: DoubleSizedSignedInteger;
+pub type Coefficient<T> = <T as PolynomialBaseTraitCoefficientOnlyNotDouble>::Coefficient;
+pub trait PolynomialBaseTraitCoefficientOnlyNotDouble {
+  type Coefficient: Integer + Signed;
 }
-pub trait PolynomialBase2:
-  PolynomialBase1
+pub trait PolynomialBaseTraitCoefficientOnlyDouble {
+  type CoefficientThatCanDouble: DoubleSizedSignedInteger;
+}
+pub trait PolynomialBaseTraitNotDouble:
+  PolynomialBaseTraitCoefficientOnlyNotDouble
   + Array
-  + arrayvec::Array<Item = <Self as PolynomialBase1>::Coefficient>
-  + ReplaceItemType<[<Self as PolynomialBase1>::Coefficient; 2]>
+  + arrayvec::Array<Item = <Self as PolynomialBaseTraitCoefficientOnlyNotDouble>::Coefficient>
+  + ReplaceItemType<[<Self as PolynomialBaseTraitCoefficientOnlyNotDouble>::Coefficient; 2]>
+  + Default
+{
+}
+pub trait PolynomialBaseTraitDouble:
+  PolynomialBaseTraitCoefficientOnlyDouble + 
+  PolynomialBaseTraitNotDouble<Coefficient=<Self as PolynomialBaseTraitCoefficientOnlyDouble>::CoefficientThatCanDouble>
 {
 }
 
@@ -70,8 +79,10 @@ macro_rules! impl_polynomials {
   ($($coefficients: expr),*) => {
 $(
 
-impl <Coefficient: DoubleSizedSignedInteger> PolynomialBase1 for [Coefficient; $coefficients] {type Coefficient = Coefficient; }
-impl <Coefficient: DoubleSizedSignedInteger> PolynomialBase2 for [Coefficient; $coefficients] {}
+impl <Coefficient: Integer + Signed> PolynomialBaseTraitCoefficientOnlyNotDouble for [Coefficient; $coefficients] {type Coefficient = Coefficient; }
+impl <Coefficient: Integer + Signed> PolynomialBaseTraitNotDouble for [Coefficient; $coefficients] {}
+impl <Coefficient: DoubleSizedSignedInteger> PolynomialBaseTraitCoefficientOnlyDouble for [Coefficient; $coefficients] {type CoefficientThatCanDouble = Coefficient; }
+impl <Coefficient: DoubleSizedSignedInteger> PolynomialBaseTraitDouble for [Coefficient; $coefficients] {}
 
 impl <Coefficient: DoubleSizedSignedInteger> AllTaylorCoefficients<DoubleSized<Coefficient>> for [Coefficient; $coefficients] {
   fn all_taylor_coefficients(&self, input: impl Copy+Into<DoubleSized<Coefficient>>)->Option <Self> {
@@ -185,21 +196,35 @@ impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coeffi
 
 impl_polynomials!(1, 2, 3, 4, 5);
 
+
+pub trait PolynomialNotDouble:
+  PolynomialBaseTraitNotDouble
+  + AllTaylorCoefficientsBoundsWithinHalf<Coefficient<Self>>
+{
+}
+impl<
+    P: PolynomialBaseTraitNotDouble
+      + AllTaylorCoefficientsBoundsWithinHalf<Coefficient<Self>>,
+  > PolynomialNotDouble for P
+{
+}
+
 pub trait Polynomial:
-  PolynomialBase1
-  + PolynomialBase2
+  PolynomialNotDouble
+  + PolynomialBaseTraitDouble
   + AllTaylorCoefficients<DoubleSized<Coefficient<Self>>>
   + AllTaylorCoefficientsBounds<DoubleSized<Coefficient<Self>>>
 {
 }
 impl<
-    P: PolynomialBase1
-      + PolynomialBase2
+    P: PolynomialNotDouble
+      + PolynomialBaseTraitDouble
       + AllTaylorCoefficients<DoubleSized<Coefficient<Self>>>
       + AllTaylorCoefficientsBounds<DoubleSized<Coefficient<Self>>>,
   > Polynomial for P
 {
 }
+
 
 pub struct ValueWithPrecision<P> {
   value: P,
@@ -627,7 +652,7 @@ pub fn polynomial_value_range_search<
     start_time,
     input_shift,
     |time| {
-      let precision = P::max_total_shift() - time.shift as i32;
+      let precision = <P as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<P::Coefficient>>>::max_total_shift() - time.shift as i32;
       polynomial
         .all_taylor_coefficients_bounds(time.numerator, time.shift, precision)
         .map(|foo| ValueWithPrecision {
@@ -653,10 +678,7 @@ pub fn polynomial_value_range_search<
 
 pub fn magnitude_squared_range_search<
   P: Polynomial,
-  Q: Array
-    + arrayvec::Array<Item = DoubleSized<P::Coefficient>>
-    + AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<P::Coefficient>>
-    + Default,
+  Q: PolynomialNotDouble<Coefficient = DoubleSized<P::Coefficient>>,
   G: Fn([DoubleSized<P::Coefficient>; 2]) -> bool,
   H: FnMut([DoubleSized<P::Coefficient>; 2]) -> bool,
 >(
@@ -755,10 +777,7 @@ pub fn next_time_definitely_ge<P: Polynomial>(
 
 pub fn next_time_magnitude_definitely_lt<
   P: Polynomial,
-  Q: Array
-    + arrayvec::Array<Item = DoubleSized<P::Coefficient>>
-    + AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<P::Coefficient>>
-    + Default,
+  Q: PolynomialNotDouble<Coefficient = DoubleSized<P::Coefficient>>,
 >(
   coordinates: &[P],
   start_time: FractionalInput<DoubleSized<P::Coefficient>>,
@@ -786,10 +805,7 @@ pub fn next_time_magnitude_definitely_lt<
 
 pub fn next_time_magnitude_definitely_gt<
   P: Polynomial,
-  Q: Array
-    + arrayvec::Array<Item = DoubleSized<P::Coefficient>>
-    + AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<P::Coefficient>>
-    + Default,
+  Q: PolynomialNotDouble<Coefficient = DoubleSized<P::Coefficient>>,
 >(
   coordinates: &[P],
   start_time: FractionalInput<DoubleSized<P::Coefficient>>,
