@@ -287,7 +287,6 @@ impl<T: Integer> FractionalInput<T> {
 
 pub fn coefficient_bounds_on_interval<P: Array + arrayvec::Array<Item=[Coefficient; 2]>, Coefficient: Integer+Signed, WorkingType: Integer+Signed + From<Coefficient> + TryInto<Coefficient>> (endpoints: [& PolynomialBasedAtInput <ValueWithPrecision <P>, FractionalInput<WorkingType>>; 2])-> P{
   let mut result: P = array_ext::Array::from_fn(|_| [Zero::zero(); 2]);
-  // TODO what if overflow
   let max_input_shift = max(endpoints [0].origin.shift, endpoints [1].origin.shift);
   let adjusted_times = endpoints.map(|a| a.origin.numerator << (max_input_shift - a.origin.shift));
   let duration = match adjusted_times[1].checked_sub(&adjusted_times[0]) {
@@ -353,6 +352,26 @@ pub fn coefficient_bounds_on_interval<P: Array + arrayvec::Array<Item=[Coefficie
     let bounds_without_precision: [WorkingType; 2] = ValueWithPrecision { value: bounds, precision: worse_precision}.without_precision();
     result.as_mut_slice() [exponent] = bounds_without_precision.map(saturating_downcast);
     previous_derivative_range = bounds.map(|a|a.saturating_mul(FromPrimitive::from_usize(exponent).unwrap()));
+  }
+  result
+}
+
+pub fn coefficient_bounds_on_tail<P: Array + arrayvec::Array<Item=[Coefficient; 2]>, Coefficient: Integer+Signed> (endpoint: & ValueWithPrecision <P>)-> P {
+  let mut result: P = array_ext::Array::from_fn(|_| [Zero::zero(); 2]);
+  let mut previous_derivative_range: [Coefficient; 2] = [Zero::zero(), Zero::zero()];
+  for exponent in (0..result.len()).rev() {
+    let mut bounds = endpoint.value.as_slice() [exponent];
+    let mut bounds_without_precision: [Coefficient; 2] = ValueWithPrecision { value: bounds, precision: endpoint.precision}.without_precision();
+    if previous_derivative_range[0] < Zero::zero() {
+      bounds[0] = Coefficient::min_value();
+      bounds_without_precision[0] = Coefficient::min_value();
+    }
+    if previous_derivative_range[1] > Zero::zero() {
+      bounds[1] = Coefficient::max_value();
+      bounds_without_precision[1] = Coefficient::max_value();
+    }
+    result.as_mut_slice() [exponent] = bounds_without_precision;
+    previous_derivative_range = bounds;
   }
   result
 }
@@ -428,7 +447,7 @@ impl<F: Fn(FractionalInput<I>) -> Option<P>, I: Integer, P> RangeSearch<F, I, P>
   }
 }
 
-pub fn range_search<F: Fn(FractionalInput<I>) -> Option<P>, I: Integer, P, G: FnMut([&PolynomialBasedAtInput<P, FractionalInput<I>>;2])-> bool, H: FnMut(&PolynomialBasedAtInput<P, FractionalInput<I>>)->bool>(start_time: FractionalInput<I>, max_input_shift: u32, func: F, mut interval_filter: G, mut result_filter: H)->Option<I> {
+pub fn range_search<F: Fn(FractionalInput<I>) -> Option<P>, I: Integer, P, G: FnMut([&PolynomialBasedAtInput<P, FractionalInput<I>>;2])-> bool, H: FnMut(&PolynomialBasedAtInput<P, FractionalInput<I>>)->bool, J: FnMut(&PolynomialBasedAtInput<P, FractionalInput<I>>)-> bool>(start_time: FractionalInput<I>, max_input_shift: u32, func: F, mut interval_filter: G, mut tail_filter: J, mut result_filter: H)->Option<I> {
   let mut search = RangeSearch::new(func, start_time, max_input_shift)?;
   
   loop {
@@ -445,6 +464,9 @@ pub fn range_search<F: Fn(FractionalInput<I>) -> Option<P>, I: Integer, P, G: Fn
       }
     }
     else {
+      if search.stack.len() == 2 && !(tail_filter)(&search.latest_interval()[1]) {
+        return None;
+      }
       search.skip_latest();
     }
     if search.reached_overflow() { return None; }
@@ -452,7 +474,7 @@ pub fn range_search<F: Fn(FractionalInput<I>) -> Option<P>, I: Integer, P, G: Fn
 }
 
 
-pub fn polynomial_value_range_search <P: Polynomial, G: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])-> bool, H: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])->bool> (polynomial: P, start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: u32, mut interval_filter: G, mut result_filter: H)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+pub fn polynomial_value_range_search <P: Polynomial, G: Fn([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])-> bool, H: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])->bool> (polynomial: P, start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: u32, interval_filter: G, mut result_filter: H)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
   range_search(
     start_time, input_shift,
     |time| {
@@ -460,6 +482,7 @@ pub fn polynomial_value_range_search <P: Polynomial, G: FnMut([<P::Coefficient a
       polynomial.all_taylor_coefficients_bounds (time.numerator, time.shift, precision).map(|foo| ValueWithPrecision { value: foo, precision })
     },
     |interval| interval_filter(coefficient_bounds_on_interval(interval).as_slice()[0]),
+    |tail_endpoint| interval_filter(coefficient_bounds_on_tail(&tail_endpoint.coefficients).as_slice()[0]),
     |result| result_filter(ValueWithPrecision { value: result.coefficients.value.as_slice()[0], precision: result.coefficients.precision}.without_precision()),
   )
 }
@@ -469,7 +492,7 @@ pub fn magnitude_squared_range_search <P: Polynomial,
      arrayvec::Array<Item=<P::Coefficient as DoubleSizedSignedInteger>::Type> +
      AllTaylorCoefficientsBoundsWithinHalf<<P::Coefficient as DoubleSizedSignedInteger>::Type> +
      Default,
-  G: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])-> bool, H: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])->bool> (coordinates: &[P], start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: u32, mut interval_filter: G, mut result_filter: H)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
+  G: Fn([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])-> bool, H: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::Type;2])->bool> (coordinates: &[P], start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::Type>, input_shift: u32, interval_filter: G, mut result_filter: H)->Option <<P::Coefficient as DoubleSizedSignedInteger>::Type> {
   range_search(
     start_time, input_shift,
     |time| {
@@ -487,6 +510,7 @@ pub fn magnitude_squared_range_search <P: Polynomial,
       magsq.all_taylor_coefficients_bounds_within_half(small_input, time.shift, precision).map(|foo| ValueWithPrecision { value: foo, precision })
     },
     |interval| interval_filter(coefficient_bounds_on_interval(interval).as_slice()[0]),
+    |tail_endpoint| interval_filter(coefficient_bounds_on_tail(&tail_endpoint.coefficients).as_slice()[0]),
     |result| result_filter(ValueWithPrecision { value: result.coefficients.value.as_slice()[0], precision: result.coefficients.precision}.without_precision()),
   )
 }
