@@ -338,15 +338,16 @@ define_event!{
     let circles = &accessor.globals().circles;
     let mut varying = Vec::new();
     let mut generator = DeterministicRandomId::new (&2u8).to_rng();
-    let thingy = ARENA_SIZE / 20;
+    let thingy = ARENA_SIZE as i64 / 20;
     for index in 0..HOW_MANY_CIRCLES {
+      // starting with i64 and converting to i32 only matters so that the starting state will generate the same random values as the old system where SpaceCoordinate was i64
       let mut position = QuadraticTrajectory::constant (Vector2::new (
-        generator.gen_range(0, ARENA_SIZE),
-        generator.gen_range(0, ARENA_SIZE),
+        generator.gen_range(0, ARENA_SIZE as i64) as SpaceCoordinate,
+        generator.gen_range(0, ARENA_SIZE as i64) as SpaceCoordinate,
       ));
       position.set_velocity (*accessor.now(), STATIC_TIME_SHIFT, Vector2::new (
-        generator.gen_range(-thingy, thingy),
-        generator.gen_range(-thingy, thingy),
+        generator.gen_range(-thingy, thingy) as SpaceCoordinate,
+        generator.gen_range(-thingy, thingy) as SpaceCoordinate,
       )).unwrap();
       varying.push (CircleVarying {
         position: position,
