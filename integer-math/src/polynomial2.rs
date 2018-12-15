@@ -9,6 +9,7 @@ use std::cmp::{max, min, Ordering};
 
 use super::*;
 
+pub type Coefficient<T> = <T as PolynomialBase1>::Coefficient;
 pub trait PolynomialBase1 {
   type Coefficient: DoubleSizedSignedInteger;
 }
@@ -72,10 +73,10 @@ $(
 impl <Coefficient: DoubleSizedSignedInteger> PolynomialBase1 for [Coefficient; $coefficients] {type Coefficient = Coefficient; }
 impl <Coefficient: DoubleSizedSignedInteger> PolynomialBase2 for [Coefficient; $coefficients] {}
 
-impl <Coefficient: DoubleSizedSignedInteger> AllTaylorCoefficients<<Coefficient as DoubleSizedSignedInteger>::DoubleSized> for [Coefficient; $coefficients] {
-  fn all_taylor_coefficients(&self, input: impl Copy+Into<<Coefficient as DoubleSizedSignedInteger>::DoubleSized>)->Option <Self> {
+impl <Coefficient: DoubleSizedSignedInteger> AllTaylorCoefficients<DoubleSized<Coefficient>> for [Coefficient; $coefficients] {
+  fn all_taylor_coefficients(&self, input: impl Copy+Into<DoubleSized<Coefficient>>)->Option <Self> {
     let input = input.into();
-    let mut intermediates: [<Coefficient as DoubleSizedSignedInteger>::DoubleSized; $coefficients] = self.map (| coefficient | coefficient.into());
+    let mut intermediates: [DoubleSized<Coefficient>; $coefficients] = self.map (| coefficient | coefficient.into());
     for first_source in (1..intermediates.len()).rev() {
       for source in first_source..intermediates.len() {
         intermediates[source - 1] = intermediates [source - 1].checked_add (&intermediates[source].checked_mul (&input)?)?;
@@ -187,9 +188,9 @@ impl_polynomials!(1, 2, 3, 4, 5);
 pub trait Polynomial: PolynomialBase1
   + PolynomialBase2
   + AllTaylorCoefficients<
-    <<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::DoubleSized,
+    DoubleSized<Coefficient<Self>>,
   > + AllTaylorCoefficientsBounds<
-    <<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::DoubleSized,
+    DoubleSized<Coefficient<Self>>,
   >
 {
 }
@@ -197,9 +198,9 @@ impl<
     P: PolynomialBase1
       + PolynomialBase2
       + AllTaylorCoefficients<
-        <<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::DoubleSized,
+        DoubleSized<Coefficient<Self>>,
       > + AllTaylorCoefficientsBounds<
-        <<Self as PolynomialBase1>::Coefficient as DoubleSizedSignedInteger>::DoubleSized,
+        DoubleSized<Coefficient<Self>>,
       >,
   > Polynomial for P
 {
@@ -618,15 +619,15 @@ pub fn range_search<
 
 pub fn polynomial_value_range_search<
   P: Polynomial,
-  G: Fn([<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized; 2]) -> bool,
-  H: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized; 2]) -> bool,
+  G: Fn([DoubleSized<P::Coefficient>; 2]) -> bool,
+  H: FnMut([DoubleSized<P::Coefficient>; 2]) -> bool,
 >(
   polynomial: P,
-  start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized>,
+  start_time: FractionalInput<DoubleSized<P::Coefficient>>,
   input_shift: u32,
   interval_filter: G,
   mut result_filter: H,
-) -> Option<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized> {
+) -> Option<DoubleSized<P::Coefficient>> {
   range_search(
     start_time,
     input_shift,
@@ -658,18 +659,18 @@ pub fn polynomial_value_range_search<
 pub fn magnitude_squared_range_search<
   P: Polynomial,
   Q: Array
-    + arrayvec::Array<Item = <P::Coefficient as DoubleSizedSignedInteger>::DoubleSized>
-    + AllTaylorCoefficientsBoundsWithinHalf<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized>
+    + arrayvec::Array<Item = DoubleSized<P::Coefficient>>
+    + AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<P::Coefficient>>
     + Default,
-  G: Fn([<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized; 2]) -> bool,
-  H: FnMut([<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized; 2]) -> bool,
+  G: Fn([DoubleSized<P::Coefficient>; 2]) -> bool,
+  H: FnMut([DoubleSized<P::Coefficient>; 2]) -> bool,
 >(
   coordinates: &[P],
-  start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized>,
+  start_time: FractionalInput<DoubleSized<P::Coefficient>>,
   input_shift: u32,
   interval_filter: G,
   mut result_filter: H,
-) -> Option<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized> {
+) -> Option<DoubleSized<P::Coefficient>> {
   range_search(
     start_time,
     input_shift,
@@ -719,11 +720,11 @@ pub fn magnitude_squared_range_search<
 /// Returns a time where the polynomial output is definitely less than permit_threshold, such that there is no EARLIER output less than require_threshold. (Or returns None if it encounters overflow before any output less than require_threshold.) With only approximate polynomial evaluation, for these conditions to be theoretically meetable, we must have permit_threshold >= require_threshold + 2. (Imagine that we have permit_threshold = 5, require_threshold = 4. The polynomial may output the range [3, 5]. We wouldn't be permitted to return that time because the true value may be 5, which is not less than permit_threshold and therefore not permitted. But we wouldn't be able to pass by that time because the true value could be 3, which is less than require_threshold.) For EFFICIENCY, we need permit_threshold >= require_threshold + 3, because there's an extra 1 of error in computing bounds on an interval. (Imagine that we have permit_threshold = 5, require_threshold = 3. The polynomial may output the range [3, 5] for a long interval. But the interval might report a lower bound of 2, meaning the algorithm doesn't know it can skip that interval. Theoretically, this might lead the algorithm to explore every individual time within a long interval.)
 pub fn next_time_definitely_lt<P: Polynomial>(
   polynomial: P,
-  start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized>,
+  start_time: FractionalInput<DoubleSized<P::Coefficient>>,
   input_shift: u32,
   permit_threshold: P::Coefficient,
   require_threshold: P::Coefficient,
-) -> Option<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized> {
+) -> Option<DoubleSized<P::Coefficient>> {
   assert!(
     permit_threshold.saturating_sub(require_threshold)
       >= P::Coefficient::one() + P::Coefficient::one() + P::Coefficient::one()
@@ -733,19 +734,19 @@ pub fn next_time_definitely_lt<P: Polynomial>(
     start_time,
     input_shift,
     |interval| {
-      interval[0] < <P::Coefficient as DoubleSizedSignedInteger>::DoubleSized::from(require_threshold)
+      interval[0] < DoubleSized::<P::Coefficient>::from(require_threshold)
     },
-    |result| result[1] < <P::Coefficient as DoubleSizedSignedInteger>::DoubleSized::from(permit_threshold),
+    |result| result[1] < DoubleSized::<P::Coefficient>::from(permit_threshold),
   )
 }
 
 pub fn next_time_definitely_ge<P: Polynomial>(
   polynomial: P,
-  start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized>,
+  start_time: FractionalInput<DoubleSized<P::Coefficient>>,
   input_shift: u32,
   permit_threshold: P::Coefficient,
   require_threshold: P::Coefficient,
-) -> Option<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized> {
+) -> Option<DoubleSized<P::Coefficient>> {
   assert!(
     require_threshold.saturating_sub(permit_threshold)
       >= P::Coefficient::one() + P::Coefficient::one() + P::Coefficient::one()
@@ -755,10 +756,10 @@ pub fn next_time_definitely_ge<P: Polynomial>(
     start_time,
     input_shift,
     |interval| {
-      interval[1] >= <P::Coefficient as DoubleSizedSignedInteger>::DoubleSized::from(require_threshold)
+      interval[1] >= DoubleSized::<P::Coefficient>::from(require_threshold)
     },
     |result| {
-      result[0] >= <P::Coefficient as DoubleSizedSignedInteger>::DoubleSized::from(permit_threshold)
+      result[0] >= DoubleSized::<P::Coefficient>::from(permit_threshold)
     },
   )
 }
@@ -766,26 +767,26 @@ pub fn next_time_definitely_ge<P: Polynomial>(
 pub fn next_time_magnitude_definitely_lt<
   P: Polynomial,
   Q: Array
-    + arrayvec::Array<Item = <P::Coefficient as DoubleSizedSignedInteger>::DoubleSized>
-    + AllTaylorCoefficientsBoundsWithinHalf<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized>
+    + arrayvec::Array<Item = DoubleSized<P::Coefficient>>
+    + AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<P::Coefficient>>
     + Default,
 >(
   coordinates: &[P],
-  start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized>,
+  start_time: FractionalInput<DoubleSized<P::Coefficient>>,
   input_shift: u32,
   permit_threshold: P::Coefficient,
   require_threshold: P::Coefficient,
-) -> Option<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized> {
-  let permit_threshold: <P::Coefficient as DoubleSizedSignedInteger>::DoubleSized =
+) -> Option<DoubleSized<P::Coefficient>> {
+  let permit_threshold: DoubleSized<P::Coefficient> =
     permit_threshold.into();
-  let require_threshold: <P::Coefficient as DoubleSizedSignedInteger>::DoubleSized =
+  let require_threshold: DoubleSized<P::Coefficient> =
     require_threshold.into();
   let permit_threshold = permit_threshold * permit_threshold;
   let require_threshold = require_threshold * require_threshold;
 
   assert!(
     permit_threshold.saturating_sub(require_threshold)
-      >= <P::Coefficient as DoubleSizedSignedInteger>::DoubleSized::from_i64(200).unwrap()
+      >= DoubleSized::<P::Coefficient>::from_i64(200).unwrap()
   );
   magnitude_squared_range_search::<_, Q, _, _>(
     coordinates,
@@ -799,26 +800,26 @@ pub fn next_time_magnitude_definitely_lt<
 pub fn next_time_magnitude_definitely_gt<
   P: Polynomial,
   Q: Array
-    + arrayvec::Array<Item = <P::Coefficient as DoubleSizedSignedInteger>::DoubleSized>
-    + AllTaylorCoefficientsBoundsWithinHalf<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized>
+    + arrayvec::Array<Item = DoubleSized<P::Coefficient>>
+    + AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<P::Coefficient>>
     + Default,
 >(
   coordinates: &[P],
-  start_time: FractionalInput<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized>,
+  start_time: FractionalInput<DoubleSized<P::Coefficient>>,
   input_shift: u32,
   permit_threshold: P::Coefficient,
   require_threshold: P::Coefficient,
-) -> Option<<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized> {
-  let permit_threshold: <P::Coefficient as DoubleSizedSignedInteger>::DoubleSized =
+) -> Option<DoubleSized<P::Coefficient>> {
+  let permit_threshold: DoubleSized<P::Coefficient> =
     permit_threshold.into();
-  let require_threshold: <P::Coefficient as DoubleSizedSignedInteger>::DoubleSized =
+  let require_threshold: DoubleSized<P::Coefficient> =
     require_threshold.into();
   let permit_threshold = permit_threshold * permit_threshold;
   let require_threshold = require_threshold * require_threshold;
 
   assert!(
     require_threshold.saturating_sub(permit_threshold)
-      >= <P::Coefficient as DoubleSizedSignedInteger>::DoubleSized::from_i64(200).unwrap()
+      >= DoubleSized::<P::Coefficient>::from_i64(200).unwrap()
   );
   magnitude_squared_range_search::<_, Q, _, _>(
     coordinates,
@@ -841,12 +842,12 @@ fn next_time_in_bounds_2d <T: Polynomial, Input> (polynomials: [T;2], start_time
 pub fn set_nth_taylor_coefficient_at_fractional_input<P: Polynomial>(
   polynomial: &mut P,
   which_derivative: usize,
-  input: <P::Coefficient as DoubleSizedSignedInteger>::DoubleSized,
+  input: DoubleSized<P::Coefficient>,
   input_shift: u32,
   target_value: P::Coefficient,
 ) -> Result<(), ::std::option::NoneError> {
   let mut target_values: ::smallvec::SmallVec<
-    [<P::Coefficient as DoubleSizedSignedInteger>::DoubleSized; 8],
+    [DoubleSized<P::Coefficient>; 8],
   > = ::smallvec::SmallVec::with_capacity(which_derivative + 1);
   let bounds = polynomial.all_taylor_coefficients_bounds(input, input_shift, 0i32)?;
   for index in 0..which_derivative {

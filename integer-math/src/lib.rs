@@ -87,6 +87,7 @@ pub trait Vector:
 pub trait DoubleSizedSignedInteger: Integer + Signed {
   type DoubleSized: Integer + Signed + From<Self> + TryInto<Self>;
 }
+pub type DoubleSized<T> = <T as DoubleSizedSignedInteger>::DoubleSized;
 
 pub mod impls {
   use super::*;
