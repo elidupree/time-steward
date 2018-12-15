@@ -185,23 +185,18 @@ impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coeffi
 
 impl_polynomials!(1, 2, 3, 4, 5);
 
-pub trait Polynomial: PolynomialBase1
+pub trait Polynomial:
+  PolynomialBase1
   + PolynomialBase2
-  + AllTaylorCoefficients<
-    DoubleSized<Coefficient<Self>>,
-  > + AllTaylorCoefficientsBounds<
-    DoubleSized<Coefficient<Self>>,
-  >
+  + AllTaylorCoefficients<DoubleSized<Coefficient<Self>>>
+  + AllTaylorCoefficientsBounds<DoubleSized<Coefficient<Self>>>
 {
 }
 impl<
     P: PolynomialBase1
       + PolynomialBase2
-      + AllTaylorCoefficients<
-        DoubleSized<Coefficient<Self>>,
-      > + AllTaylorCoefficientsBounds<
-        DoubleSized<Coefficient<Self>>,
-      >,
+      + AllTaylorCoefficients<DoubleSized<Coefficient<Self>>>
+      + AllTaylorCoefficientsBounds<DoubleSized<Coefficient<Self>>>,
   > Polynomial for P
 {
 }
@@ -733,9 +728,7 @@ pub fn next_time_definitely_lt<P: Polynomial>(
     polynomial,
     start_time,
     input_shift,
-    |interval| {
-      interval[0] < DoubleSized::<P::Coefficient>::from(require_threshold)
-    },
+    |interval| interval[0] < DoubleSized::<P::Coefficient>::from(require_threshold),
     |result| result[1] < DoubleSized::<P::Coefficient>::from(permit_threshold),
   )
 }
@@ -755,12 +748,8 @@ pub fn next_time_definitely_ge<P: Polynomial>(
     polynomial,
     start_time,
     input_shift,
-    |interval| {
-      interval[1] >= DoubleSized::<P::Coefficient>::from(require_threshold)
-    },
-    |result| {
-      result[0] >= DoubleSized::<P::Coefficient>::from(permit_threshold)
-    },
+    |interval| interval[1] >= DoubleSized::<P::Coefficient>::from(require_threshold),
+    |result| result[0] >= DoubleSized::<P::Coefficient>::from(permit_threshold),
   )
 }
 
@@ -777,10 +766,8 @@ pub fn next_time_magnitude_definitely_lt<
   permit_threshold: P::Coefficient,
   require_threshold: P::Coefficient,
 ) -> Option<DoubleSized<P::Coefficient>> {
-  let permit_threshold: DoubleSized<P::Coefficient> =
-    permit_threshold.into();
-  let require_threshold: DoubleSized<P::Coefficient> =
-    require_threshold.into();
+  let permit_threshold: DoubleSized<P::Coefficient> = permit_threshold.into();
+  let require_threshold: DoubleSized<P::Coefficient> = require_threshold.into();
   let permit_threshold = permit_threshold * permit_threshold;
   let require_threshold = require_threshold * require_threshold;
 
@@ -810,10 +797,8 @@ pub fn next_time_magnitude_definitely_gt<
   permit_threshold: P::Coefficient,
   require_threshold: P::Coefficient,
 ) -> Option<DoubleSized<P::Coefficient>> {
-  let permit_threshold: DoubleSized<P::Coefficient> =
-    permit_threshold.into();
-  let require_threshold: DoubleSized<P::Coefficient> =
-    require_threshold.into();
+  let permit_threshold: DoubleSized<P::Coefficient> = permit_threshold.into();
+  let require_threshold: DoubleSized<P::Coefficient> = require_threshold.into();
   let permit_threshold = permit_threshold * permit_threshold;
   let require_threshold = require_threshold * require_threshold;
 
@@ -846,9 +831,8 @@ pub fn set_nth_taylor_coefficient_at_fractional_input<P: Polynomial>(
   input_shift: u32,
   target_value: P::Coefficient,
 ) -> Result<(), ::std::option::NoneError> {
-  let mut target_values: ::smallvec::SmallVec<
-    [DoubleSized<P::Coefficient>; 8],
-  > = ::smallvec::SmallVec::with_capacity(which_derivative + 1);
+  let mut target_values: ::smallvec::SmallVec<[DoubleSized<P::Coefficient>; 8]> =
+    ::smallvec::SmallVec::with_capacity(which_derivative + 1);
   let bounds = polynomial.all_taylor_coefficients_bounds(input, input_shift, 0i32)?;
   for index in 0..which_derivative {
     target_values.push(mean_round_to_even(
