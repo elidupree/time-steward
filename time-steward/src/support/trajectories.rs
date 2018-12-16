@@ -6,6 +6,7 @@ use std::cmp::min;
 //use self::polynomial::RootSearchResult;
 use self::polynomial2::{
   AllTaylorCoefficients, AllTaylorCoefficientsBounds, FractionalInput, Polynomial,
+  GreaterThanEqualToFilter, GreaterThanFilter, LessThanFilter, PolynomialRangeSearch, PolynomialMagnitudeSquaredRangeSearch, SetNthTaylorCoefficientAtFractionalInput,
 };
 use array_ext::*;
 use smallvec::SmallVec;
@@ -213,7 +214,7 @@ impl <T: Vector> Trajectory for $Trajectory <T> {
   type Coefficient = T;
 }
 
-impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordinate; $degree+1]: Polynomial {
+impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordinate; $degree+1]: Polynomial<T::Coordinate> {
   pub fn constant (value: T)->Self {
     let mut coefficients = [T::zero(); $degree + 1];
     coefficients [0] = value;
@@ -257,7 +258,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     let mut transformed_coefficients: SmallVec<[[T::Coordinate; $degree + 1]; 4]> = SmallVec::with_capacity (T::DIMENSIONS);
     for dimension in 0..T::DIMENSIONS {
       let mut coefficients = self.coordinate_coefficients (dimension);
-      polynomial2::set_nth_taylor_coefficient_at_fractional_input (&mut coefficients, which, time_numerator - (self.origin << time_shift), time_shift, target_value.coordinate (dimension).into())?;
+      coefficients.set_nth_taylor_coefficient_at_fractional_input (which, time_numerator - (self.origin << time_shift), time_shift, target_value.coordinate (dimension).into())?;
       transformed_coefficients.push (coefficients);
     }
     for (dimension, coefficients) in transformed_coefficients.into_iter().enumerate() {
@@ -312,7 +313,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     for dimension in 0..T::DIMENSIONS {
       coordinate_polynomials.push(self.coordinate_coefficients (dimension));
     }
-    polynomial2::next_time_magnitude_definitely_gt::<_, [i64; $degree*2 + 1]>(&coordinate_polynomials, FractionalInput::new(range [0] - origin, input_shift), input_shift, target, target + 3).map(|a| a + origin)
+    <[T::Coordinate; $degree + 1]>::next_time_magnitude_squared_passes(&coordinate_polynomials, FractionalInput::new(range [0] - origin, input_shift), input_shift, GreaterThanFilter::new(target as i64, (target as i64+3)*(target as i64+3))).map(|a| a + origin)
   }
   #[cfg $multiplication]
   pub fn next_time_magnitude_significantly_lt (&self, range: [Time; 2], input_shift: u32, target: T::Coordinate)->Option<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
@@ -322,7 +323,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     for dimension in 0..T::DIMENSIONS {
       coordinate_polynomials.push(self.coordinate_coefficients (dimension));
     }
-    polynomial2::next_time_magnitude_definitely_lt::<_, [i64; $degree*2 + 1]>(&coordinate_polynomials, FractionalInput::new(range [0] - origin, input_shift), input_shift, target, target - 3).map(|a| a + origin)
+    <[T::Coordinate; $degree + 1]>::next_time_magnitude_squared_passes(&coordinate_polynomials, FractionalInput::new(range [0] - origin, input_shift), input_shift, LessThanFilter::new(target as i64*target as i64, (target as i64-3)*(target as i64-3))).map(|a| a + origin)
   }
 }
 
@@ -461,7 +462,7 @@ impl <'a, T: Vector> Neg for & 'a $Trajectory <T> where & 'a T: Neg <Output = T>
 impl ScalarTrajectory for $Trajectory <Coordinate> {
   fn next_time_significantly_ge (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->Option<Time> {
     let origin = self.origin << input_shift;
-    polynomial2::next_time_definitely_ge(self.coefficients, FractionalInput::new(range [0] - origin, input_shift), input_shift, target, target + 3).map(|a| a + origin)
+    self.coefficients.next_time_value_passes(FractionalInput::new(range [0] - origin, input_shift), input_shift, GreaterThanEqualToFilter::new(target, target + 3)).map(|a| a + origin)
   }
 }
 
