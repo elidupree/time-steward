@@ -1,4 +1,4 @@
-#![feature(nll, try_trait, try_from)]
+#![feature(nll, try_trait, try_from, specialization)]
 
 #[macro_use]
 extern crate failure;
@@ -16,6 +16,9 @@ extern crate array_ext;
 extern crate arrayvec;
 #[cfg(test)]
 extern crate rand;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 
 use num::traits::{CheckedShl, CheckedShr, Signed, WrappingAdd, WrappingMul, WrappingSub, Zero};
 use std::mem;

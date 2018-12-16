@@ -6,6 +6,7 @@ use num::{
   Saturating, Signed,
 };
 use std::cmp::{max, min, Ordering};
+use serde::Serialize;
 
 use super::*;
 
@@ -225,18 +226,19 @@ impl<
 {
 }
 
-
+#[derive(Copy, Clone, Serialize, Deserialize, Debug, Default)]
 pub struct ValueWithPrecision<P> {
   value: P,
   precision: i32,
 }
 
+#[derive(Copy, Clone, Serialize, Deserialize, Debug, Default)]
 pub struct PolynomialBasedAtInput<P, I> {
   coefficients: P,
   origin: I,
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Serialize, Deserialize, Debug, Default)]
 pub struct FractionalInput<T> {
   numerator: T,
   shift: u32,
@@ -491,6 +493,44 @@ pub fn coefficient_bounds_on_tail<
   result
 }
 
+
+/*pub trait PolynomialBoundsGenerator<Input, Output> {
+  fn generate_bounds(&self, input: FractionalInput<Input>) -> Option<Output>;
+}
+pub trait PolynomialBoundsFilter<Coefficient> {
+  fn value_filter(&self, bounds: [Coefficient; 2]) -> bool;
+  fn result_filter(&self, bounds: [Coefficient; 2]) -> bool;
+}*/
+
+//pub struct
+
+type HackP = ValueWithPrecision<[[i64; 2]; 5]>;
+
+#[derive(Copy, Clone, Serialize, Deserialize, Debug)]
+pub enum RangeSearchRecordHack {
+  Interval { endpoints: [PolynomialBasedAtInput<HackP, FractionalInput<i64>>; 2], bounds: [[i64;2];5] },
+  ToEnd { endpoint: PolynomialBasedAtInput<HackP, FractionalInput<i64>>, bounds: [[i64;2];5] },
+}
+
+fn hackhackhack(_:FractionalInput<i64>)->Option<ValueWithPrecision<HackP>> {None}
+trait RangeSearchRecorderHack<I,P> {
+  type Func: Fn(FractionalInput<i64>) -> Option<HackP>;
+  fn range_search_record_hack<G: FnOnce(&RangeSearch<Self::Func, i64, HackP>)> (&self, g:G);
+}
+
+impl<F: Fn(FractionalInput<I>) -> Option<P>, I, P> RangeSearchRecorderHack<I,P> for RangeSearch<F,I,P> {
+  default type Func = F;
+  default fn range_search_record_hack<G: FnOnce(&RangeSearch<Self::Func, i64, HackP>)> (&self, _g:G) {}
+}
+
+impl<F: Fn(FractionalInput<i64>) -> Option<HackP>> RangeSearchRecorderHack<i64, HackP> for RangeSearch<F, i64, HackP> {
+  type Func = F;
+  fn range_search_record_hack<G: FnOnce(&RangeSearch<Self::Func, i64, HackP>)> (&self, g:G) {
+    //(g)(self);
+  }
+}
+
+
 pub struct RangeSearch<F, I, P> {
   func: F,
   max_input_shift: u32,
@@ -581,6 +621,7 @@ impl<F: Fn(FractionalInput<I>) -> Option<P>, I: Integer, P> RangeSearch<F, I, P>
   }
 }
 
+
 pub fn range_search<
   F: Fn(FractionalInput<I>) -> Option<P>,
   I: Integer,
@@ -597,8 +638,21 @@ pub fn range_search<
   mut result_filter: H,
 ) -> Option<I> {
   let mut search = RangeSearch::new(func, start_time, max_input_shift)?;
+  let mut records = Vec::new();
+  
+  fn print_records<T: RangeSearchRecorderHack<I, P>, I, P> (search: &T, records: &Vec<RangeSearchRecordHack>) {
+    search.range_search_record_hack(|search| {
+      serde_json::to_writer_pretty(::std::io::stderr(), records);
+      use std::io::Write;
+      write!(::std::io::stderr(), ",");
+    });
+  }
 
   loop {
+    search.range_search_record_hack(|search| {
+      records.push(RangeSearchRecordHack::Interval { endpoints: [search.latest_interval()[0].clone(), search.latest_interval()[1].clone()], bounds: coefficient_bounds_on_interval(search.latest_interval()) });
+
+    });
     if (interval_filter)(search.latest_interval()) {
       if search.latest_interval()[0]
         .origin
@@ -613,6 +667,7 @@ pub fn range_search<
           .numerator
       {
         if (result_filter)(search.latest_interval()[0]) {
+          print_records(&search, &records);
           return Some(
             search.latest_interval()[0]
               .origin
@@ -626,12 +681,17 @@ pub fn range_search<
         search.split_latest();
       }
     } else {
+      search.range_search_record_hack(|search| {
+        records.push(RangeSearchRecordHack::ToEnd { endpoint: search.latest_interval()[1].clone(), bounds: coefficient_bounds_on_tail(&search.latest_interval()[1].coefficients) });
+      });
       if search.stack.len() == 2 && !(tail_filter)(&search.latest_interval()[1]) {
+        print_records(&search, &records);
         return None;
       }
       search.skip_latest();
     }
     if search.reached_overflow() {
+      print_records(&search, &records);
       return None;
     }
   }
@@ -1145,4 +1205,14 @@ $(
     polynomial_tests_5,
   );
 
+  /*#[test]
+  fn print_record_data() {
+     use std::io::Write;
+     let mut data: Vec<Vec<RangeSearchRecordHack>> = serde_json::from_reader (::std::fs::File::open("/n/pfft/range_search_data.json").unwrap()).unwrap();
+     data.sort_by_key(|datum|datum.len());
+     let percentiles:Vec<usize> = (0..=100).map(|percent| data[percent*(data.len()-1)/100].len()).collect();
+     write!(::std::io::stderr(), "Number of searches: {:?}", data.len());
+     write!(::std::io::stderr(), "Sizes: {:?}", percentiles);
+     write!(::std::io::stderr(), "Worst: {}", serde_json::to_string_pretty(data.last().unwrap()).unwrap());
+  }*/
 }
