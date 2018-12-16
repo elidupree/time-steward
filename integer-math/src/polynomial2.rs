@@ -648,7 +648,7 @@ pub fn range_search<
     });
   }
 
-  loop {
+  let result_endpoint = 'a: loop {
     search.range_search_record_hack(|search| {
       records.push(RangeSearchRecordHack::Interval { endpoints: [search.latest_interval()[0].clone(), search.latest_interval()[1].clone()], bounds: coefficient_bounds_on_interval(search.latest_interval()) });
 
@@ -667,34 +667,38 @@ pub fn range_search<
           .numerator
       {
         if (result_filter)(search.latest_interval()[0]) {
-          print_records(&search, &records);
-          return Some(
-            search.latest_interval()[0]
-              .origin
-              .raised_to_precision(max_input_shift)
-              .unwrap()
-              .numerator,
-          );
+          break 'a Some(search.latest_interval()[0]);
         }
         search.skip_latest();
       } else {
         search.split_latest();
       }
     } else {
-      search.range_search_record_hack(|search| {
-        records.push(RangeSearchRecordHack::ToEnd { endpoint: search.latest_interval()[1].clone(), bounds: coefficient_bounds_on_tail(&search.latest_interval()[1].coefficients) });
-      });
-      if search.stack.len() == 2 && !(tail_filter)(&search.latest_interval()[1]) {
-        print_records(&search, &records);
-        return None;
+      if (result_filter)(search.latest_interval()[0]) {
+        break 'a Some(search.latest_interval()[0]);
+      }
+      if search.stack.len() == 2 {
+        search.range_search_record_hack(|search| {
+          records.push(RangeSearchRecordHack::ToEnd { endpoint: search.latest_interval()[1].clone(), bounds: coefficient_bounds_on_tail(&search.latest_interval()[1].coefficients) });
+        });
+        if !(tail_filter)(&search.latest_interval()[1]) {
+          break 'a None;
+        }
       }
       search.skip_latest();
     }
     if search.reached_overflow() {
-      print_records(&search, &records);
-      return None;
+      break 'a None;
     }
-  }
+  };
+  
+  print_records(&search, &records);
+  return result_endpoint.map(|endpoint| endpoint
+              .origin
+              .raised_to_precision(max_input_shift)
+              .unwrap()
+              .numerator
+          );
 }
 
 pub fn polynomial_value_range_search<
