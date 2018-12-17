@@ -399,7 +399,7 @@ pub fn make_globals()-> <Basics as BasicsTrait>::Globals {
   let mut generator = DeterministicRandomId::new (&0u8).to_rng();
   
   for index in 0..HOW_MANY_CIRCLES {
-    let radius = generator.gen_range(ARENA_SIZE / 30, ARENA_SIZE / 15);
+    let radius = generator.gen_range(ARENA_SIZE as i64 / 30, ARENA_SIZE as i64 / 15) as SpaceCoordinate;
 
     circles.push (DataHandle::new_for_globals (Circle {
       index: index,
