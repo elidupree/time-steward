@@ -3,9 +3,10 @@ use array_ext::{Array as ArrayExtArray, *};
 use arrayvec::{self, ArrayVec};
 use num::{
   Bounded, CheckedAdd, CheckedMul, CheckedSub, FromPrimitive, Integer as NumInteger, One,
-  Saturating, Signed,
+  Signed,
 };
 use std::cmp::{max, min, Ordering};
+#[allow(unused_imports)]
 use serde::Serialize;
 
 use super::*;
@@ -692,7 +693,6 @@ pub enum RangeSearchRecordHack {
   ToEnd { endpoint: PolynomialBasedAtInput<HackP, FractionalInput<i64>>, bounds: [[i64;2];5] },
 }
 
-fn hackhackhack(_:FractionalInput<i64>)->Option<ValueWithPrecision<HackP>> {None}
 trait RangeSearchRecorderHack<I,P> {
   type Func: Fn(FractionalInput<i64>) -> Option<HackP>;
   fn range_search_record_hack<G: FnOnce(&RangeSearch<Self::Func, i64, HackP>)> (&self, g:G);
@@ -705,6 +705,7 @@ impl<F: Fn(FractionalInput<I>) -> Option<P>, I, P> RangeSearchRecorderHack<I,P> 
 
 impl<F: Fn(FractionalInput<i64>) -> Option<HackP>> RangeSearchRecorderHack<i64, HackP> for RangeSearch<F, i64, HackP> {
   type Func = F;
+  #[allow (unused_variables)]
   fn range_search_record_hack<G: FnOnce(&RangeSearch<Self::Func, i64, HackP>)> (&self, g:G) {
     //(g)(self);
   }
@@ -821,10 +822,10 @@ pub fn range_search<
   let mut records = Vec::new();
   
   fn print_records<T: RangeSearchRecorderHack<I, P>, I, P> (search: &T, records: &Vec<RangeSearchRecordHack>) {
-    search.range_search_record_hack(|search| {
-      serde_json::to_writer_pretty(::std::io::stderr(), records);
+    search.range_search_record_hack(|_search| {
+      serde_json::to_writer_pretty(::std::io::stderr(), records).unwrap();
       use std::io::Write;
-      write!(::std::io::stderr(), ",");
+      write!(::std::io::stderr(), ",").unwrap();
     });
   }
 

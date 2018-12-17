@@ -1,7 +1,7 @@
 //use nalgebra::Vector2;
 use super::integer_math::{Vector as GenericVector, *};
-use num::traits::{Bounded, Signed};
-use num::{FromPrimitive, One, Zero};
+use num::traits::{Signed};
+use num::{One, Zero};
 use std::cmp::min;
 //use self::polynomial::RootSearchResult;
 use self::polynomial2::{
