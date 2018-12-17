@@ -19,7 +19,7 @@ siphasher = "0.2.2"
 derivative = "1.0"
 dimensioned = "0.6"
 array_ext = "0.2"
-num = "0.1.42"
+num = "0.2"
 failure = "0.1.1"
 smallvec = "0.6.1"
 time_steward_integer_math = {path="../integer-math"}

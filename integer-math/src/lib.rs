@@ -152,14 +152,15 @@ pub mod impls {
     [6, Vector6],
   );
   impl_integer! (
-    i8 1, i16 1, i32 1, i64 1, isize 1,
-    u8 0, u16 0, u32 0, u64 0, usize 0,
+    i8 1, i16 1, i32 1, i64 1, i128 1, isize 1,
+    u8 0, u16 0, u32 0, u64 0, u128 0, usize 0,
   );
-  impl_signed_integer!(i8, i16, i32, i64, isize,);
+  impl_signed_integer!(i8, i16, i32, i64, i128, isize,);
   impl_double_sized_integer!(
     (i8, i16),
     (i16, i32),
     (i32, i64),
+    (i64, i128),
     //(u8, u16), (u16, u32), (u32, u64),
   );
 }
