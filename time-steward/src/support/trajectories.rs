@@ -313,7 +313,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     for dimension in 0..T::DIMENSIONS {
       coordinate_polynomials.push(self.coordinate_coefficients (dimension));
     }
-    <[T::Coordinate; $degree + 1]>::next_time_magnitude_squared_passes(&coordinate_polynomials, FractionalInput::new(range [0] - origin, input_shift), input_shift, GreaterThanFilter::new(target as i64, (target as i64+3)*(target as i64+3))).map(|a| a + origin)
+    <[T::Coordinate; $degree + 1]>::next_time_magnitude_squared_passes(&coordinate_polynomials, FractionalInput::new(range [0] - origin, input_shift), input_shift, GreaterThanFilter::new(target as i64*target as i64, (target as i64+3)*(target as i64+3))).map(|a| a + origin)
   }
   #[cfg $multiplication]
   pub fn next_time_magnitude_significantly_lt (&self, range: [Time; 2], input_shift: u32, target: T::Coordinate)->Option<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
