@@ -1,4 +1,4 @@
-use array::{Array, ReplaceItemType};
+use array::{Array};
 use array_ext::{Array as ArrayExtArray, *};
 use arrayvec::{self, ArrayVec};
 use num::{
@@ -163,14 +163,14 @@ impl <Coefficient: DoubleSizedSignedInteger> AllTaylorCoefficients<DoubleSized<C
 impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient>> AllTaylorCoefficientsBoundsWithinHalf<WorkingType> for [Coefficient; $coefficients] {
   type Output = [[WorkingType; 2]; $coefficients];
   fn accumulated_error_shift()->u32 {
-    $coefficients - 1
+    $coefficients
   }
   fn max_total_shift()->i32 {
     let spare = WorkingType::nonsign_bits() - Coefficient::nonsign_bits();
     // we need to take out coefficients - 1 twice: once to do higher calculations at higher magnitude to remove the error, and once to make sure the calculations don't overflow due to accumulated value.
     spare as i32 + 1 - <Self as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::accumulated_error_shift() as i32 - ($coefficients-1)
   }
-  fn all_taylor_coefficients_bounds_within_half(&self, input: WorkingType, input_shift: u32, precision_shift: i32)->Option<<Self as ReplaceItemType<[WorkingType; 2]>>::Type> {
+  fn all_taylor_coefficients_bounds_within_half(&self, input: WorkingType, input_shift: u32, precision_shift: i32)->Option<Self::Output> {
     assert!(input_shift as i32 + precision_shift <= <Self as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::max_total_shift());
     if input_shift == 0 {
       return Some(self.map(|raw| {
@@ -192,6 +192,7 @@ impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coeffi
     // We want to scale down the error as far as possible, so we first left-shift by degree,
     // then right-shift by degree at the end of the calculation.
     // This reduces the accumulated error to less than half.
+    // (Actually we shift back and forth by degree+1 because negative precision can add a bit of extra error.)
     // It unavoidably adds an error of up to 1 due to the final rounding, so the final error is up to (not including) 1.5.
     // This means that the final upper and lower bound can be no more than 2 away from each other,
     // which is the best we can hope for.
@@ -287,7 +288,7 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialRangeSearch<DoubleSized<C
           precision,
         })
     },
-    |interval| filter.interval_filter(coefficient_bounds_on_interval(interval).as_slice()[0]),
+    |interval| filter.interval_filter(coefficient_bounds_on_interval::<_,DoubleSized<Coefficient>,DoubleSized<Coefficient>,DoubleSized<Coefficient>>(interval).as_slice()[0]),
     |tail_endpoint| {
       filter.interval_filter(coefficient_bounds_on_tail(&tail_endpoint.coefficients).as_slice()[0])
     },
@@ -346,7 +347,7 @@ impl <Coefficient: DoubleSizedSignedInteger> SetNthTaylorCoefficientAtFractional
 macro_rules! impl_squarable_polynomials {
   ($($coefficients: expr),*) => {
 $(
-impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSearch<DoubleSized<Coefficient>> for [Coefficient; $coefficients] //where DoubleSized<Coefficient>: DoubleSizedSignedInteger
+impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSearch<DoubleSized<Coefficient>> for [Coefficient; $coefficients] where DoubleSized<Coefficient>: DoubleSizedSignedInteger
  {
   fn next_time_magnitude_squared_passes<
     Filter: PolynomialBoundsFilter<DoubleSized<Coefficient>>,
@@ -361,7 +362,7 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSear
     start_time,
     input_shift,
     |time| {
-      let precision = <[DoubleSized<Coefficient>; $coefficients*2 -1] as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<Coefficient>>>::max_total_shift() - time.shift as i32;
+      let precision = <[DoubleSized<Coefficient>; $coefficients*2 -1] as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<DoubleSized<Coefficient>>>>::max_total_shift() - time.shift as i32;
       let mut magsq: [DoubleSized<Coefficient>; $coefficients*2 -1] = [Zero::zero(); $coefficients*2 -1];
       let integer_input = shr_nicely_rounded(time.numerator, time.shift);
       let small_input = time
@@ -379,16 +380,19 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSear
         .ok()?;
       }
 
-      <[DoubleSized<Coefficient>; $coefficients*2 -1] as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<Coefficient>>>::all_taylor_coefficients_bounds_within_half(&magsq,
-        small_input, time.shift, precision)
+      <[DoubleSized<Coefficient>; $coefficients*2 -1] as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<DoubleSized<Coefficient>>>>::all_taylor_coefficients_bounds_within_half(&magsq,
+        From::from(small_input), time.shift, precision)
         .map(|foo| ValueWithPrecision {
           value: foo,
           precision,
         })
     },
-    |interval| filter.interval_filter(coefficient_bounds_on_interval(interval).as_slice()[0]),
+    |interval| {
+      //if $coefficients < 2 { println!("{:?}", coefficient_bounds_on_interval::<_, DoubleSized<DoubleSized<Coefficient>>, DoubleSized<Coefficient>, DoubleSized<DoubleSized<Coefficient>>>(interval)); }
+      filter.interval_filter(coefficient_bounds_on_interval::<_, DoubleSized<DoubleSized<Coefficient>>, DoubleSized<Coefficient>, DoubleSized<DoubleSized<Coefficient>>>(interval).as_slice()[0].map(saturating_downcast))
+    },
     |tail_endpoint| {
-      filter.interval_filter(coefficient_bounds_on_tail(&tail_endpoint.coefficients).as_slice()[0])
+      filter.interval_filter(coefficient_bounds_on_tail(&tail_endpoint.coefficients).as_slice()[0].map(saturating_downcast))
     },
     |result| {
       filter.result_filter(
@@ -396,7 +400,7 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSear
           value: result.coefficients.value.as_slice()[0],
           precision: result.coefficients.precision,
         }
-        .without_precision(),
+        .without_precision::<DoubleSized<DoubleSized<Coefficient>>>().map(saturating_downcast),
       )
     },
   )
@@ -569,15 +573,16 @@ impl<T: Integer> FractionalInput<T> {
 pub fn coefficient_bounds_on_interval<
   P: Array + arrayvec::Array<Item = [Coefficient; 2]>,
   Coefficient: Integer + Signed,
-  WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient>,
+  Input: Integer + Signed,
+  WorkingType: Integer + Signed + From<Input> + From<Coefficient> + TryInto<Coefficient>,
 >(
-  endpoints: [&PolynomialBasedAtInput<ValueWithPrecision<P>, FractionalInput<WorkingType>>; 2],
+  endpoints: [&PolynomialBasedAtInput<ValueWithPrecision<P>, FractionalInput<Input>>; 2],
 ) -> P {
   let mut result: P = array_ext::Array::from_fn(|_| [Zero::zero(); 2]);
   let max_input_shift = max(endpoints[0].origin.shift, endpoints[1].origin.shift);
   let adjusted_times = endpoints.map(|a| a.origin.numerator << (max_input_shift - a.origin.shift));
   let duration = match adjusted_times[1].checked_sub(&adjusted_times[0]) {
-    Some(a) => a,
+    Some(a) => <WorkingType as From<Input>>::from(a),
     None => {
       // if the duration overflows, give up on the missing the range at all
       result = array_ext::Array::from_fn(|_| [Coefficient::min_value(), Coefficient::max_value()]);
@@ -831,7 +836,7 @@ pub fn range_search<
 
   let result_endpoint = 'a: loop {
     search.range_search_record_hack(|search| {
-      records.push(RangeSearchRecordHack::Interval { endpoints: [search.latest_interval()[0].clone(), search.latest_interval()[1].clone()], bounds: coefficient_bounds_on_interval(search.latest_interval()) });
+      records.push(RangeSearchRecordHack::Interval { endpoints: [search.latest_interval()[0].clone(), search.latest_interval()[1].clone()], bounds: coefficient_bounds_on_interval::<_,_,_,i64>(search.latest_interval()) });
 
     });
     if (interval_filter)(search.latest_interval()) {
@@ -1065,8 +1070,8 @@ $(
         for which in 0..$coefficients {
           let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(input), which) * precision_scale(precision_shift);
 
-          prop_assert! (BigRational::from(BigInt::from(bounds[which][0])) <= exact, "Incorrect {}th taylor coefficient lower bound: {} > {:?}", which, bounds[which][0], exact);
-          prop_assert! (BigRational::from(BigInt::from(bounds[which][1])) >= exact, "Incorrect {}th taylor coefficient upper bound: {} < {:?}", which, bounds[which][1], exact);
+          prop_assert! (BigRational::from(BigInt::from(bounds[which][0])) <= exact, "Incorrect {}th taylor coefficient lower bound: {} > {}", which, bounds[which][0], exact);
+          prop_assert! (BigRational::from(BigInt::from(bounds[which][1])) >= exact, "Incorrect {}th taylor coefficient upper bound: {} < {}", which, bounds[which][1], exact);
         }
       }
 
@@ -1078,8 +1083,8 @@ $(
         let leeway = BigRational::new(BigInt::from(3i32), BigInt::from(2i32));
         for which in 0..$coefficients {
           let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(input), which) * precision_scale(precision_shift);
-          prop_assert! (BigRational::from(BigInt::from(bounds[which][0])) > &exact - &leeway, "Too loose {}th taylor coefficient lower bound: {} + 1.5 <= {:?}", which, bounds[which][0], exact);
-          prop_assert! (BigRational::from(BigInt::from(bounds[which][1])) < &exact + &leeway, "Too loose {}th taylor coefficient upper bound: {} - 1.5 >= {:?}", which, bounds[which][1], exact);
+          prop_assert! (BigRational::from(BigInt::from(bounds[which][0])) > &exact - &leeway, "Too loose {}th taylor coefficient lower bound: {} + 1.5 <= {}", which, bounds[which][0], exact);
+          prop_assert! (BigRational::from(BigInt::from(bounds[which][1])) < &exact + &leeway, "Too loose {}th taylor coefficient upper bound: {} - 1.5 >= {}", which, bounds[which][1], exact);
           prop_assert! (bounds[which][1] <= bounds[which][0].saturating_add(2), "{}th taylor coefficient bounds are too far from each other (note: this should be impossible if the other conditions are met): {} > {} + 2", which, bounds[which][1], bounds[which][0]);
         }
       }
@@ -1167,7 +1172,7 @@ $(
   proptest! {
 
       #[test]
-      fn randomly_test_next_time_magnitude_squared_definitely_gt_is_gt(coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..32, threshold_difference in 3..16) {
+      fn randomly_test_next_time_magnitude_squared_definitely_gt_is_gt(coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..1024, threshold_difference in 3..16) {
         let require_threshold = permit_threshold + threshold_difference;
         let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
         let time = <[$integer; $coefficients] as PolynomialMagnitudeSquaredRangeSearch<$double>>::next_time_magnitude_squared_passes (coefficients.as_slice(), input, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
@@ -1176,11 +1181,11 @@ $(
 
         let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(FractionalInput::new(time, input.shift)));
         //if let Some(coefficients) = coefficients.all_taylor_coefficients_bounds (time, input.shift, 0u32) {
-        prop_assert!(exact > BigRational::from(BigInt::from(permit_threshold)), "expected above {} but was {:?}", permit_threshold, exact);
+        prop_assert!(exact > BigRational::from(BigInt::from(permit_threshold)), "expected above {} but was {}", permit_threshold, exact);
       }
 
       #[test]
-      fn randomly_test_next_time_magnitude_squared_definitely_gt_is_next (coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..32, threshold_difference in 3..16, test_frac in 0f64..1f64) {
+      fn randomly_test_next_time_magnitude_squared_definitely_gt_is_next (coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..100024, threshold_difference in 3..16, test_frac in 0f64..1f64) {
         let require_threshold = permit_threshold + threshold_difference;
         let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
         let time = <[$integer; $coefficients] as PolynomialMagnitudeSquaredRangeSearch<$double>>::next_time_magnitude_squared_passes (coefficients.as_slice(), input, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
@@ -1240,11 +1245,11 @@ $(
   );
   
   test_squarable_polynomials!(
-    1,
+    /*1,
     i32,
     i64,
     uniform1,
-    polynomial_tests_12,
+    polynomial_tests_12,*/
     2,
     i32,
     i64,
