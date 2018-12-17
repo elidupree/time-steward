@@ -236,9 +236,9 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
     let difference = &(us.1).position - &(us.0).position;
     let radius = circles.0.radius + circles.1.radius;
     let result = if relationship_varying.induced_acceleration.is_none() {
-      difference.next_time_magnitude_significantly_lt([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, radius)
+      difference.next_time_magnitude_significantly_lt([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, radius-2)
     } else {
-      difference.next_time_magnitude_significantly_gt([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, radius)
+      difference.next_time_magnitude_significantly_gt([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, radius+2)
     };
     let time = result;
     
@@ -292,9 +292,9 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
     let difference = &varying.position - arena_center;
     let radius = ARENA_SIZE - circle_handle.radius;
     let result = if varying.boundary_induced_acceleration.is_some() {
-      difference.next_time_magnitude_significantly_lt([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, radius)
+      difference.next_time_magnitude_significantly_lt([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, radius-2)
     } else {
-      difference.next_time_magnitude_significantly_gt([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, radius)
+      difference.next_time_magnitude_significantly_gt([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, radius+2)
     };
     let time = result;
     
