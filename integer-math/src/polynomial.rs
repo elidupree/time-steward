@@ -549,7 +549,7 @@ pub fn add_product_into<Coefficient: Integer, T: Integer + Signed + From<Coeffic
     let first_coefficient: T = (*first_coefficient).into();
     for (second_power, second_coefficient) in second.iter().enumerate() {
       let second_coefficient: T = (*second_coefficient).into();
-      let mut destination = &mut destination[first_power + second_power];
+      let destination = &mut destination[first_power + second_power];
       *destination =
         destination.checked_add(&first_coefficient.checked_mul(&second_coefficient)?)?;
     }

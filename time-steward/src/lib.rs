@@ -53,9 +53,9 @@ extern crate proptest;
 extern crate quickcheck;
 #[macro_use]
 extern crate derivative;
-#[macro_use]
+//#[macro_use]
 extern crate failure;
-#[macro_use]
+//#[macro_use]
 extern crate smallvec;
 
 pub extern crate time_steward_integer_math;
