@@ -2,7 +2,7 @@ use array::{Array, ReplaceItemType};
 use array_ext::{Array as ArrayExtArray, *};
 use arrayvec::{self, ArrayVec};
 use num::{
-  Bounded, CheckedAdd, CheckedSub, FromPrimitive, One,
+  CheckedAdd, FromPrimitive, One,
   Signed,
 };
 use std::cmp::{max, min};
@@ -10,31 +10,23 @@ use std::cmp::{max, min};
 use serde::Serialize;
 
 use super::*;
-use polynomial2::{PolynomialBasedAtInput,ValueWithPrecision,FractionalInput,};
+use polynomial2::{PolynomialBasedAtInput};
 
 
 pub fn coefficient_bounds_on_integer_interval<
   P: Array + arrayvec::Array<Item = Coefficient> + ReplaceItemType<[Coefficient; 2]>,
   Coefficient: DoubleSizedSignedInteger,
-  Input: Integer + Signed + TryInto<Coefficient> + Into<DoubleSized<Coefficient>>,
 >(
-  endpoints: [&PolynomialBasedAtInput<P, Input>; 2],
+  endpoints: [&P; 2],
+  duration: DoubleSized<Coefficient>,
 ) -> <P as ReplaceItemType<[Coefficient; 2]>>::Type {
   let mut result: <P as ReplaceItemType<[Coefficient; 2]>>::Type = array_ext::Array::from_fn(|_| [Zero::zero(); 2]);
-  let duration: DoubleSized<Coefficient> = match endpoints[1].origin.checked_sub(&endpoints[0].origin).map(Into::into).filter(|a| *a * <DoubleSized<Coefficient>>::from_u32(result.len()as u32-1).unwrap() < <DoubleSized<Coefficient>>::from(Coefficient::max_value())) {
-    Some(a) => a,
-    None => {
-      // if the duration overflows, give up on the missing the range at all
-      result = array_ext::Array::from_fn(|_| [Coefficient::min_value(), Coefficient::max_value()]);
-      return result;
-    }
-  };
   assert!(duration >= Zero::zero());
   let double_sized_max_bounds = [<DoubleSized<Coefficient>>::from(Coefficient::min_value()), <DoubleSized<Coefficient>>::from(Coefficient::max_value())];
   let mut movement_range_from_previous: [DoubleSized<Coefficient>; 2] = [Zero::zero(), Zero::zero()];
   for exponent in (0..result.len() as u32).rev() {
     let end_values = endpoints.map(|endpoint|
-      <DoubleSized<Coefficient> as From<Coefficient>>::from(endpoint.coefficients.as_slice()[exponent as usize])
+      <DoubleSized<Coefficient> as From<Coefficient>>::from(endpoint.as_slice()[exponent as usize])
     );
 
     let bounds: [DoubleSized<Coefficient>; 2] = if movement_range_from_previous[0] >= Zero::zero() {
@@ -75,12 +67,11 @@ pub fn coefficient_bounds_on_integer_interval<
   result
 }
 
-const STANDARD_PRECISION_SHIFT: u32 = 2;
+pub const STANDARD_PRECISION_SHIFT: u32 = 2;
 
 pub fn coefficient_bounds_on_negative_power_of_2_interval<
   P: Array + arrayvec::Array<Item = [DoubleSized<Coefficient>; 2]> + ReplaceItemType<[Coefficient; 2]>,
   Coefficient: DoubleSizedSignedInteger,
-  Input: Integer + Signed + TryInto<Coefficient>,
 >(
   endpoints: [&P; 2], duration_shift: u32
 ) -> <P as ReplaceItemType<[Coefficient; 2]>>::Type {
@@ -125,7 +116,7 @@ pub fn coefficient_bounds_on_negative_power_of_2_interval<
     };
 
     result.as_mut_slice()[exponent as usize][0] = saturating_downcast(shr_floor(bounds[0], STANDARD_PRECISION_SHIFT));
-    result.as_mut_slice()[exponent as usize][1] = saturating_downcast(shr_floor(bounds[1], STANDARD_PRECISION_SHIFT));
+    result.as_mut_slice()[exponent as usize][1] = saturating_downcast(shr_ceil(bounds[1], STANDARD_PRECISION_SHIFT));
     let factor = <DoubleSized<Coefficient>>::from_u32(exponent).unwrap();
     movement_range_from_previous = bounds.map(|a| a * factor);
     movement_range_from_previous[0] = if bounds[0] <= double_sized_max_bounds[0] { double_sized_max_bounds[0] } else {shr_floor(bounds[0] * factor, duration_shift)};
@@ -189,8 +180,8 @@ impl<F: Fn(FractionalInput<i64>) -> Option<HackP>> RangeSearchRecorderHack<i64, 
 
 pub trait RangeSearch {
   type Input: Integer;
-  type IntegerValue;
-  type FractionalValue;
+  type IntegerValue: Debug;
+  type FractionalValue: Debug;
   fn value_at_integer (&self, input: Self::Input)->Option<Self::IntegerValue>;
   fn value_at_fractional (&self, nearest_integer_value: &Self::IntegerValue, relative_input: Self::Input)->Self::FractionalValue;
   fn integer_to_fractional (&self, value: &Self::IntegerValue)->Self::FractionalValue {
@@ -209,6 +200,7 @@ pub trait RangeSearch {
 pub struct RangeSearchRunner<S: RangeSearch> {
   search: S,
   max_input_shift: u32,
+  start_input: S::Input,
   integer_stack: ArrayVec<[PolynomialBasedAtInput<S::IntegerValue, S::Input>; 64]>,
   fractional_stack: ArrayVec<[PolynomialBasedAtInput<S::FractionalValue, S::Input>; 64]>,
   next_jump: S::Input,
@@ -218,9 +210,9 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
   pub fn run(search: S, start_input: S::Input, input_shift: u32) -> Option<S::Input> {
     let start_integer = shr_floor(start_input, input_shift);
     let start_value = PolynomialBasedAtInput::new(search.value_at_integer(start_integer)?, start_integer);
-    if !search.tail_filter (start_value) { return None; }
+    if !search.tail_filter (&start_value.coefficients) { return None; }
     let next_integer = start_integer + S::Input::one();
-    let next_value = PolynomialBasedAtInput::new(search.value_at_integer(start_integer)?, start_integer + One::one())?;
+    let next_value = PolynomialBasedAtInput::new(search.value_at_integer(next_integer)?, start_integer + One::one());
     
     /*let start_diff = start_input - (start_integer<<input_shift);
     let next_diff = start_input - (next_integer<<input_shift);
@@ -234,7 +226,7 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
     
     let mut runner = RangeSearchRunner {
       search,
-      max_input_shift: input_shift,
+      max_input_shift: input_shift, start_input,
       integer_stack: ArrayVec::new(),
       fractional_stack: ArrayVec::new(),
       next_jump: One::one(),
@@ -260,9 +252,16 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
   }
   pub fn search_integers(&mut self) -> Option<S::Input> {
     loop {
-      'searching_subintervals: while self.search.integer_interval_filter (self.latest_integer_interval().map(|a| &a.coefficients), duration) {
-        if self.search.integer_result_filter (&self.latest_integer_interval()[0].coefficients) {
-          return Some(self.latest_integer_interval()[0].origin);
+      // note: can use plain subtraction because the duration is never overflowing
+      'searching_subintervals: while
+        self.search.integer_interval_filter (
+          self.latest_integer_interval().map(|a| &a.coefficients),
+          self.latest_integer_interval()[1].origin - self.latest_integer_interval()[0].origin
+        ) {
+        let scaled_start_origin = Shl::<u32>::shl(self.latest_integer_interval()[0].origin, self.max_input_shift);
+        if scaled_start_origin > self.start_input && self.search.integer_result_filter (&self.latest_integer_interval()[0].coefficients) {
+          eprintln!("int {:?}", (&self.latest_integer_interval()[0]));
+          return Some(scaled_start_origin);
         }
         let mut end_inputs = self.latest_integer_interval().map(|a|a.origin); 
         
@@ -285,11 +284,11 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
           end_inputs[1] = new_endpoint;
         }
       }
-      if self.integer_stack.len() == 2 && !self.search.tail_filter(&self.latest_integer_interval()[1].coefficients) {
-        return None;
-      }
       self.integer_stack.pop();
       if self.integer_stack.len() < 2 {
+        if !self.search.tail_filter(&self.integer_stack.last().unwrap().coefficients) {
+          return None;
+        }
         let last_endpoint_input = self.integer_stack.last().unwrap().origin;
         'finding_next: loop {
           if let Some(new_endpoint) = last_endpoint_input.checked_add(&self.next_jump) {
@@ -301,7 +300,7 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
                   coefficients: new_value,
                 },
               );
-              self.next_jump <<= 1u32;
+              self.next_jump = overflow_checked_shl(self.next_jump, 1u32).unwrap_or(self.next_jump);
               break 'finding_next;
             }
           }
@@ -314,8 +313,12 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
   
   
   pub fn search_fractional(&mut self) -> Option<S::Input> {
+    if self.max_input_shift < 1 { return None; }
     let one = Shl::<u32>::shl(S::Input::one(), self.max_input_shift);
+    let beginning_of_this_unit_interval = Shl::<u32>::shl(self.latest_integer_interval()[0].origin, self.max_input_shift);
+    let relative_start_input = self.start_input - beginning_of_this_unit_interval;
     let half = Shr::<u32>::shr(one, 1);
+    self.fractional_stack.clear();
     self.fractional_stack.push(
       PolynomialBasedAtInput {
         origin: half,
@@ -329,11 +332,14 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
       },
     );
     let mut closer = 0;
-    let current_input_shift = 1;
+    let mut current_input_shift = 1;
     loop {
-      'searching_subintervals: while self.search.fractional_interval_filter (self.latest_fractional_interval().map(|a|&a.coefficients), current_input_shift) {
-        if self.search.fractional_result_filter (&self.latest_fractional_interval()[0].coefficients) {
-          return Some(self.latest_fractional_interval()[0].origin);
+      eprintln!("top {:?}", (current_input_shift, self.fractional_stack.len()));
+      'searching_subintervals: while self.latest_fractional_interval()[1].origin > relative_start_input && self.search.fractional_interval_filter (self.latest_fractional_interval().map(|a|&a.coefficients), current_input_shift) {
+        //println!("sub {:?}", self.fractional_stack);
+        if self.latest_fractional_interval()[0].origin >= relative_start_input && self.search.fractional_result_filter (&self.latest_fractional_interval()[0].coefficients) {
+          eprintln!("frac {:?}", (&self.latest_fractional_interval()[0].coefficients));
+          return Some(beginning_of_this_unit_interval + self.latest_fractional_interval()[0].origin);
         }
         let end_inputs = self.latest_fractional_interval().map(|a|a.origin); 
         if end_inputs[0] + One::one() == end_inputs[1] {
@@ -341,7 +347,13 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
         }
         current_input_shift += 1;
         let new_endpoint = end_inputs[0] + Shr::<u32>::shr(one, current_input_shift);
-        let new_value = self.search.value_at_fractional(&self.latest_integer_interval()[closer].coefficients, new_endpoint);
+        assert_eq!(new_endpoint - end_inputs[0], end_inputs[1] - new_endpoint);
+        eprintln!("sub {:?}", (end_inputs, new_endpoint, current_input_shift, self.fractional_stack.len()));
+        let new_value = if closer == 1 {
+          self.search.value_at_fractional(&self.latest_integer_interval()[1].coefficients, new_endpoint - one)
+        } else {
+          self.search.value_at_fractional(&self.latest_integer_interval()[0].coefficients, new_endpoint)
+        };
         self.fractional_stack.insert(
           self.fractional_stack.len() - 1,
           PolynomialBasedAtInput {
@@ -352,10 +364,17 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
       }
 
       self.fractional_stack.pop();
-      current_input_shift -= 1;
-      if self.fractional_stack.len() < 2 {
+      
+      if self.fractional_stack.len() >= 2 {
+        let end_inputs = self.latest_fractional_interval().map(|a|a.origin);
+        while end_inputs[1] - end_inputs[0] > Shr::<u32>::shr(one, current_input_shift) {
+          current_input_shift -= 1;
+        }
+      }
+      else {
         if self.fractional_stack.last().unwrap().origin < one {
-          self.fractional_stack.insert(1,
+          current_input_shift = 1;
+          self.fractional_stack.insert(0,
             PolynomialBasedAtInput {
               origin: one,
               coefficients: self.search.integer_to_fractional (&self.latest_integer_interval()[1].coefficients),

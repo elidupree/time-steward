@@ -199,19 +199,19 @@ $(
       #[test]
       fn randomly_test_next_time_definitely_lt_is_lt (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16) {
         let require_threshold = permit_threshold - threshold_difference;
-        let time = coefficients.next_time_value_passes (input, input.shift, LessThanFilter::new(permit_threshold, require_threshold));
+        let time = coefficients.next_time_value_passes (input.numerator, input.shift, LessThanFilter::new(permit_threshold, require_threshold));
         prop_assume! (time .is_some());
         let time = time.unwrap();
 
         let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(FractionalInput::new(time, input.shift)), 0);
         //if let Some(coefficients) = coefficients.all_taylor_coefficients_bounds (time, input.shift, 0u32) {
-        prop_assert!(exact < BigRational::from(BigInt::from(permit_threshold)));
+        prop_assert!(exact < BigRational::from(BigInt::from(permit_threshold)), "value {} at time {} was not less than permit_threshold {}", exact, time, permit_threshold);
       }
 
       #[test]
       fn randomly_test_next_time_definitely_lt_is_next (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16, test_frac in 0f64..1f64) {
         let require_threshold = permit_threshold - threshold_difference;
-        let time = coefficients.next_time_value_passes (input, input.shift, LessThanFilter::new(permit_threshold, require_threshold));
+        let time = coefficients.next_time_value_passes (input.numerator, input.shift, LessThanFilter::new(permit_threshold, require_threshold));
         let last_not_lt = match time {
           None => $double::max_value(),
           Some(k) => {
@@ -234,7 +234,7 @@ $(
       #[test]
       fn randomly_test_next_time_definitely_ge_is_ge(coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16) {
         let require_threshold = permit_threshold + threshold_difference;
-        let time = coefficients.next_time_value_passes (input, input.shift, GreaterThanEqualToFilter::new(permit_threshold, require_threshold));
+        let time = coefficients.next_time_value_passes (input.numerator, input.shift, GreaterThanEqualToFilter::new(permit_threshold, require_threshold));
         prop_assume! (time .is_some());
         let time = time.unwrap();
 
@@ -246,7 +246,7 @@ $(
       #[test]
       fn randomly_test_next_time_definitely_ge_is_next (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16, test_frac in 0f64..1f64) {
         let require_threshold = permit_threshold + threshold_difference;
-        let time = coefficients.next_time_value_passes (input, input.shift, GreaterThanEqualToFilter::new(permit_threshold, require_threshold));
+        let time = coefficients.next_time_value_passes (input.numerator, input.shift, GreaterThanEqualToFilter::new(permit_threshold, require_threshold));
         let last_not_ge = match time {
           None => $double::max_value(),
           Some(k) => {
@@ -281,7 +281,7 @@ $(
       fn randomly_test_next_time_magnitude_squared_definitely_gt_is_gt(coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..1024, threshold_difference in 3..16) {
         let require_threshold = permit_threshold + threshold_difference;
         let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
-        let time = <[$integer; $coefficients] as PolynomialMagnitudeSquaredRangeSearch<$double>>::next_time_magnitude_squared_passes (coefficients.as_slice(), input, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
+        let time = <[$integer; $coefficients] as PolynomialMagnitudeSquaredRangeSearch<$integer, $double>>::next_time_magnitude_squared_passes (coefficients.as_slice(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
         prop_assume! (time .is_some());
         let time = time.unwrap();
 
@@ -294,7 +294,7 @@ $(
       fn randomly_test_next_time_magnitude_squared_definitely_gt_is_next (coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..100024, threshold_difference in 3..16, test_frac in 0f64..1f64) {
         let require_threshold = permit_threshold + threshold_difference;
         let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
-        let time = <[$integer; $coefficients] as PolynomialMagnitudeSquaredRangeSearch<$double>>::next_time_magnitude_squared_passes (coefficients.as_slice(), input, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
+        let time = <[$integer; $coefficients] as PolynomialMagnitudeSquaredRangeSearch<$integer, $double>>::next_time_magnitude_squared_passes (coefficients.as_slice(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
 
         let last_not_lt = match time {
           None => $double::max_value(),

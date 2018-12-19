@@ -173,7 +173,7 @@ impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coeffi
   fn all_taylor_coefficients_bounds_within_half(&self, input: WorkingType, input_shift: u32, precision_shift: i32)->Self::Output {
     assert!(input_shift as i32 + precision_shift <= <Self as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::max_total_shift());
     if input_shift == 0 {
-      return Some(self.map(|raw| {
+      return self.map(|raw| {
         let mut raw = raw.into();
         if precision_shift > 0 {
           raw <<= precision_shift as u32;
@@ -184,9 +184,10 @@ impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coeffi
           raw[1] = shr_ceil(raw[1], (-precision_shift) as u32);
         }
         raw
-      }))
+      })
     }
-    assert!(input.abs() <= WorkingType::one() << (input_shift - 1));
+    let half = WorkingType::one() << (input_shift - 1);
+    assert!(input.abs() <= half, "all_taylor_coefficients_bounds_within_half called with an input({}) that is not within half (shift: {}, half: {})", input, input_shift, half);
     // In the loop, error accumulates each term.
     // Fortunately, the error is strictly bounded above by 2^(degree-1).
     // We want to scale down the error as far as possible, so we first left-shift by degree,
@@ -257,12 +258,12 @@ impl <Coefficient: DoubleSizedSignedInteger> AllTaylorCoefficientsBounds<DoubleS
     let integer_input = shr_nicely_rounded(input, input_shift);
     let small_input = input.wrapping_sub(&(Shl::<u32>::shl(integer_input, input_shift)));
     let integer_coefficients = self.all_taylor_coefficients(integer_input)?;
-    <Self as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<Coefficient>>>::all_taylor_coefficients_bounds_within_half(
+    Some(<Self as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<Coefficient>>>::all_taylor_coefficients_bounds_within_half(
       &integer_coefficients,
       small_input,
       input_shift,
       precision_shift,
-    )
+    ))
   }
 }
 
@@ -281,7 +282,7 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialRangeSearch<Coefficient, 
       input_shift: u32,
       _marker: PhantomData <Coefficient>,
     }
-    impl<Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <DoubleSized <Coefficient>>> RangeSearch for Search<Coefficient, Filter> {
+    impl<Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <Coefficient>> RangeSearch for Search<Coefficient, Filter> {
       type Input = DoubleSized<Coefficient>;
       type IntegerValue = [Coefficient; $coefficients];
       type FractionalValue = [[DoubleSized <Coefficient>; 2]; $coefficients];
@@ -289,23 +290,26 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialRangeSearch<Coefficient, 
         self.polynomial.all_taylor_coefficients (input)
       }
       fn value_at_fractional (&self, nearest_integer_value: &Self::IntegerValue, relative_input: Self::Input)->Self::FractionalValue {
-        nearest_integer_value.all_taylor_coefficients_bounds_within_half (relative_input, self.input_shift, STANDARD_PRECISION_SHIFT)
+        nearest_integer_value.all_taylor_coefficients_bounds_within_half (relative_input, self.input_shift, STANDARD_PRECISION_SHIFT as i32)
       }
       fn integer_interval_filter (&self, endpoints: [&Self::IntegerValue; 2], duration: Self::Input)->bool {
         self.filter.interval_filter (range_search::coefficient_bounds_on_integer_interval (endpoints, duration) [0])
       }
       fn fractional_interval_filter (&self, endpoints: [&Self::FractionalValue; 2], duration_shift: u32)->bool {
-        self.filter.interval_filter (range_search::coefficient_bounds_on_negative_power_of_2_interval (endpoints, duration_shift) [0])
+        self.filter.interval_filter (range_search::coefficient_bounds_on_negative_power_of_2_interval::<_, Coefficient> (endpoints, duration_shift) [0])
       }
       fn tail_filter (&self, endpoint: &Self::IntegerValue)->bool {
         self.filter.interval_filter (range_search::coefficient_bounds_on_tail (endpoint) [0])
       }
       fn fractional_result_filter (&self, value: &Self::FractionalValue)->bool {
-        self.filter.result_filter (value [0])
+        self.filter.result_filter ([
+          saturating_downcast(shr_floor(value[0][0], STANDARD_PRECISION_SHIFT)),
+          saturating_downcast(shr_ceil(value[0][1], STANDARD_PRECISION_SHIFT)),
+        ])
       }
     }
     RangeSearchRunner::run (Search {
-      polynomial: self,
+      polynomial: *self,
       filter, input_shift,
       _marker: PhantomData
     }, start_input, input_shift)
@@ -369,10 +373,10 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSear
       input_shift: u32,
       _marker: PhantomData <Coefficient>,
     }
-    impl<'a, Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <DoubleSized <Coefficient>>> RangeSearch for Search<'a, Coefficient, Filter> where DoubleSized<Coefficient>: DoubleSizedSignedInteger {
+    impl<'a, Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <Coefficient>> RangeSearch for Search<'a, Coefficient, Filter> where DoubleSized<Coefficient>: DoubleSizedSignedInteger {
       type Input = DoubleSized<Coefficient>;
-      type IntegerValue = [DoubleSized<Coefficient>; $coefficients];
-      type FractionalValue = [[DoubleSized<DoubleSized <Coefficient>>; 2]; $coefficients];
+      type IntegerValue = [DoubleSized<Coefficient>; $coefficients*2-1];
+      type FractionalValue = [[DoubleSized<DoubleSized <Coefficient>>; 2]; $coefficients*2-1];
       fn value_at_integer (&self, input: Self::Input)->Option<Self::IntegerValue> {
         let mut magsq: [DoubleSized<Coefficient>; $coefficients*2 -1] = [Zero::zero(); $coefficients*2 -1];
         for coordinate in self.coordinates {
@@ -385,22 +389,25 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSear
           )
           .ok()?;
         }
-        magsq
+        Some(magsq)
       }
       fn value_at_fractional (&self, nearest_integer_value: &Self::IntegerValue, relative_input: Self::Input)->Self::FractionalValue {
-        <[DoubleSized<Coefficient>; $coefficients*2 -1] as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<DoubleSized<Coefficient>>>>::all_taylor_coefficients_bounds_within_half(nearest_integer_value, From::from(relative_input), self.input_shift, STANDARD_PRECISION_SHIFT)
+        <[DoubleSized<Coefficient>; $coefficients*2 -1] as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<DoubleSized<Coefficient>>>>::all_taylor_coefficients_bounds_within_half(nearest_integer_value, From::from(relative_input), self.input_shift, STANDARD_PRECISION_SHIFT as i32)
       }
      fn integer_interval_filter (&self, endpoints: [&Self::IntegerValue; 2], duration: Self::Input)->bool {
-        self.filter.interval_filter (range_search::coefficient_bounds_on_integer_interval (endpoints, duration) [0])
+        self.filter.interval_filter (range_search::coefficient_bounds_on_integer_interval (endpoints, duration.into()) [0].map(saturating_downcast))
       }
       fn fractional_interval_filter (&self, endpoints: [&Self::FractionalValue; 2], duration_shift: u32)->bool {
-        self.filter.interval_filter (range_search::coefficient_bounds_on_negative_power_of_2_interval (endpoints, duration_shift) [0])
+        self.filter.interval_filter (range_search::coefficient_bounds_on_negative_power_of_2_interval::<_, DoubleSized<Coefficient>> (endpoints, duration_shift) [0].map(saturating_downcast).map(saturating_downcast))
       }
       fn tail_filter (&self, endpoint: &Self::IntegerValue)->bool {
-        self.filter.interval_filter (range_search::coefficient_bounds_on_tail (endpoint) [0])
+        self.filter.interval_filter (range_search::coefficient_bounds_on_tail (endpoint) [0].map(saturating_downcast))
       }
       fn fractional_result_filter (&self, value: &Self::FractionalValue)->bool {
-        self.filter.result_filter (value [0])
+        self.filter.result_filter ([
+          saturating_downcast(saturating_downcast(shr_floor(value[0][0], STANDARD_PRECISION_SHIFT))),
+          saturating_downcast(saturating_downcast(shr_ceil(value[0][1], STANDARD_PRECISION_SHIFT))),
+        ])
       }
     }
     RangeSearchRunner::run (Search {
@@ -439,6 +446,11 @@ pub struct FractionalInput<T> {
   pub shift: u32,
 }
 
+impl<P, I> PolynomialBasedAtInput<P, I> {
+  pub fn new(coefficients: P, origin: I) -> Self {
+    PolynomialBasedAtInput { coefficients, origin }
+  }
+}
 impl<T: Integer> ValueWithPrecision<T> {
   pub fn bounds_without_precision<WorkingType: Integer + From<T>>(&self) -> [WorkingType; 2] {
     if self.precision > 0 {
