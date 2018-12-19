@@ -335,7 +335,7 @@ $(
       fn randomly_test_next_time_magnitude_squared_definitely_gt_is_gt(coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..1024, threshold_difference in 3..16) {
         let require_threshold = permit_threshold + threshold_difference;
         let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
-        let time = <[$integer; $coefficients] as PolynomialMagnitudeSquaredRangeSearch<$integer, $double>>::next_time_magnitude_squared_passes (coefficients.as_slice(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
+        let time = <[$integer; $coefficients] as PolynomialMagnitudeSquaredRangeSearch<$double>>::next_time_magnitude_squared_passes (coefficients.as_slice(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
         prop_assume! (time .is_some());
         let time = time.unwrap();
 
@@ -348,7 +348,7 @@ $(
       fn randomly_test_next_time_magnitude_squared_definitely_gt_is_next (coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..100024, threshold_difference in 3..16, test_frac in 0f64..1f64) {
         let require_threshold = permit_threshold + threshold_difference;
         let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
-        let time = <[$integer; $coefficients] as PolynomialMagnitudeSquaredRangeSearch<$integer, $double>>::next_time_magnitude_squared_passes (coefficients.as_slice(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
+        let time = <[$integer; $coefficients] as PolynomialMagnitudeSquaredRangeSearch<$double>>::next_time_magnitude_squared_passes (coefficients.as_slice(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
 
         let last_not_lt = match time {
           None => $double::max_value(),

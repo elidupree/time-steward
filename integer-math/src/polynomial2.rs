@@ -93,9 +93,9 @@ pub trait PolynomialRangeSearch<Coefficient, WorkingType>: PolynomialBase {
     filter: Filter,
   ) -> Option<WorkingType>;
 }
-pub trait PolynomialMagnitudeSquaredRangeSearch<Coefficient, WorkingType>: PolynomialBase + Sized {
+pub trait PolynomialMagnitudeSquaredRangeSearch<WorkingType>: PolynomialBase + Sized {
   fn next_time_magnitude_squared_passes<
-    Filter: PolynomialBoundsFilter<Coefficient>,
+    Filter: PolynomialBoundsFilter<WorkingType>,
   >(
     coordinates: &[Self],
     start_input: WorkingType,
@@ -357,10 +357,10 @@ impl <Coefficient: DoubleSizedSignedInteger> SetNthTaylorCoefficientAtFractional
 macro_rules! impl_squarable_polynomials {
   ($($coefficients: expr),*) => {
 $(
-impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSearch<Coefficient, DoubleSized<Coefficient>> for [Coefficient; $coefficients] where DoubleSized<Coefficient>: DoubleSizedSignedInteger
+impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSearch<DoubleSized<Coefficient>> for [Coefficient; $coefficients] where DoubleSized<Coefficient>: DoubleSizedSignedInteger
  {
   fn next_time_magnitude_squared_passes<
-    Filter: PolynomialBoundsFilter<Coefficient>,
+    Filter: PolynomialBoundsFilter<DoubleSized<Coefficient>>,
   >(
     coordinates: &[Self],
     start_input: DoubleSized<Coefficient>,
@@ -373,7 +373,7 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSear
       input_shift: u32,
       _marker: PhantomData <Coefficient>,
     }
-    impl<'a, Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <Coefficient>> RangeSearch for Search<'a, Coefficient, Filter> where DoubleSized<Coefficient>: DoubleSizedSignedInteger {
+    impl<'a, Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <DoubleSized<Coefficient>>> RangeSearch for Search<'a, Coefficient, Filter> where DoubleSized<Coefficient>: DoubleSizedSignedInteger {
       type Input = DoubleSized<Coefficient>;
       type IntegerValue = [DoubleSized<Coefficient>; $coefficients*2-1];
       type FractionalValue = [[DoubleSized<DoubleSized <Coefficient>>; 2]; $coefficients*2-1];
@@ -395,18 +395,18 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSear
         <[DoubleSized<Coefficient>; $coefficients*2 -1] as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<DoubleSized<Coefficient>>>>::all_taylor_coefficients_bounds_within_half(nearest_integer_value, From::from(relative_input), self.input_shift, STANDARD_PRECISION_SHIFT as i32)
       }
      fn integer_interval_filter (&self, endpoints: [&Self::IntegerValue; 2], duration: Self::Input)->bool {
-        self.filter.interval_filter (range_search::coefficient_bounds_on_integer_interval (endpoints, duration.into()) [0].map(saturating_downcast))
+        self.filter.interval_filter (range_search::coefficient_bounds_on_integer_interval (endpoints, duration.into()) [0])
       }
       fn fractional_interval_filter (&self, endpoints: [&Self::FractionalValue; 2], duration_shift: u32)->bool {
-        self.filter.interval_filter (range_search::coefficient_bounds_on_negative_power_of_2_interval::<_, DoubleSized<Coefficient>> (endpoints, duration_shift) [0].map(saturating_downcast).map(saturating_downcast))
+        self.filter.interval_filter (range_search::coefficient_bounds_on_negative_power_of_2_interval::<_, DoubleSized<Coefficient>> (endpoints, duration_shift) [0])
       }
       fn tail_filter (&self, endpoint: &Self::IntegerValue)->bool {
-        self.filter.interval_filter (range_search::coefficient_bounds_on_tail (endpoint) [0].map(saturating_downcast))
+        self.filter.interval_filter (range_search::coefficient_bounds_on_tail (endpoint) [0])
       }
       fn fractional_result_filter (&self, value: &Self::FractionalValue)->bool {
         self.filter.result_filter ([
-          saturating_downcast(saturating_downcast(shr_floor(value[0][0], STANDARD_PRECISION_SHIFT))),
-          saturating_downcast(saturating_downcast(shr_ceil(value[0][1], STANDARD_PRECISION_SHIFT))),
+          saturating_downcast(shr_floor(value[0][0], STANDARD_PRECISION_SHIFT)),
+          saturating_downcast(shr_ceil(value[0][1], STANDARD_PRECISION_SHIFT)),
         ])
       }
     }

@@ -5,7 +5,7 @@ use num::{One, Zero};
 use std::cmp::min;
 //use self::polynomial::RootSearchResult;
 use self::polynomial2::{
-  AllTaylorCoefficients, AllTaylorCoefficientsBounds, FractionalInput, Polynomial,
+  AllTaylorCoefficients, AllTaylorCoefficientsBounds, Polynomial,
   GreaterThanEqualToFilter, GreaterThanFilter, LessThanFilter, PolynomialRangeSearch, PolynomialMagnitudeSquaredRangeSearch, SetNthTaylorCoefficientAtFractionalInput,
 };
 use array_ext::*;
@@ -313,7 +313,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     for dimension in 0..T::DIMENSIONS {
       coordinate_polynomials.push(self.coordinate_coefficients (dimension));
     }
-    <[T::Coordinate; $degree + 1]>::next_time_magnitude_squared_passes(&coordinate_polynomials, FractionalInput::new(range [0] - origin, input_shift), input_shift, GreaterThanFilter::new(target as i64*target as i64, (target as i64+3)*(target as i64+3))).map(|a| a + origin)
+    <[T::Coordinate; $degree + 1]>::next_time_magnitude_squared_passes(&coordinate_polynomials, range [0] - origin, input_shift, GreaterThanFilter::new(target as i64*target as i64, (target as i64+3)*(target as i64+3))).map(|a| a + origin)
   }
   #[cfg $multiplication]
   pub fn next_time_magnitude_significantly_lt (&self, range: [Time; 2], input_shift: u32, target: T::Coordinate)->Option<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
@@ -323,7 +323,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     for dimension in 0..T::DIMENSIONS {
       coordinate_polynomials.push(self.coordinate_coefficients (dimension));
     }
-    <[T::Coordinate; $degree + 1]>::next_time_magnitude_squared_passes(&coordinate_polynomials, FractionalInput::new(range [0] - origin, input_shift), input_shift, LessThanFilter::new(target as i64*target as i64, (target as i64-3)*(target as i64-3))).map(|a| a + origin)
+    <[T::Coordinate; $degree + 1]>::next_time_magnitude_squared_passes(&coordinate_polynomials, range [0] - origin, input_shift, LessThanFilter::new(target as i64*target as i64, (target as i64-3)*(target as i64-3))).map(|a| a + origin)
   }
 }
 
@@ -462,7 +462,7 @@ impl <'a, T: Vector> Neg for & 'a $Trajectory <T> where & 'a T: Neg <Output = T>
 impl ScalarTrajectory for $Trajectory <Coordinate> {
   fn next_time_significantly_ge (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->Option<Time> {
     let origin = self.origin << input_shift;
-    self.coefficients.next_time_value_passes(FractionalInput::new(range [0] - origin, input_shift), input_shift, GreaterThanEqualToFilter::new(target, target + 3)).map(|a| a + origin)
+    self.coefficients.next_time_value_passes(range [0] - origin, input_shift, GreaterThanEqualToFilter::new(target, target + 3)).map(|a| a + origin)
   }
 }
 
