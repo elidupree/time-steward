@@ -259,8 +259,8 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
           self.latest_integer_interval()[1].origin - self.latest_integer_interval()[0].origin
         ) {
         let scaled_start_origin = Shl::<u32>::shl(self.latest_integer_interval()[0].origin, self.max_input_shift);
-        if scaled_start_origin > self.start_input && self.search.integer_result_filter (&self.latest_integer_interval()[0].coefficients) {
-          eprintln!("int {:?}", (&self.latest_integer_interval()[0]));
+        if scaled_start_origin >= self.start_input && self.search.integer_result_filter (&self.latest_integer_interval()[0].coefficients) {
+          //eprintln!("int {:?}", (&self.latest_integer_interval()[0]));
           return Some(scaled_start_origin);
         }
         let mut end_inputs = self.latest_integer_interval().map(|a|a.origin); 
@@ -334,11 +334,11 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
     let mut closer = 0;
     let mut current_input_shift = 1;
     loop {
-      eprintln!("top {:?}", (current_input_shift, self.fractional_stack.len()));
+      //eprintln!("top {:?}", (current_input_shift, self.fractional_stack.len()));
       'searching_subintervals: while self.latest_fractional_interval()[1].origin > relative_start_input && self.search.fractional_interval_filter (self.latest_fractional_interval().map(|a|&a.coefficients), current_input_shift) {
         //println!("sub {:?}", self.fractional_stack);
         if self.latest_fractional_interval()[0].origin >= relative_start_input && self.search.fractional_result_filter (&self.latest_fractional_interval()[0].coefficients) {
-          eprintln!("frac {:?}", (&self.latest_fractional_interval()[0].coefficients));
+          //eprintln!("frac {:?}", (&self.latest_fractional_interval()[0].coefficients));
           return Some(beginning_of_this_unit_interval + self.latest_fractional_interval()[0].origin);
         }
         let end_inputs = self.latest_fractional_interval().map(|a|a.origin); 
@@ -348,7 +348,7 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
         current_input_shift += 1;
         let new_endpoint = end_inputs[0] + Shr::<u32>::shr(one, current_input_shift);
         assert_eq!(new_endpoint - end_inputs[0], end_inputs[1] - new_endpoint);
-        eprintln!("sub {:?}", (end_inputs, new_endpoint, current_input_shift, self.fractional_stack.len()));
+        //eprintln!("sub {:?}", (end_inputs, new_endpoint, current_input_shift, self.fractional_stack.len()));
         let new_value = if closer == 1 {
           self.search.value_at_fractional(&self.latest_integer_interval()[1].coefficients, new_endpoint - one)
         } else {

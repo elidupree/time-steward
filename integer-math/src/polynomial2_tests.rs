@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use array::{Array, ReplaceItemType};
 use array_ext::{Array as ArrayExtArray, *};
 use arrayvec::{self, ArrayVec};
@@ -264,6 +265,59 @@ $(
         prop_assert!(exact < exact_require_threshold);
         let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(FractionalInput::new(test_time, input.shift)), 0);
         prop_assert!(exact < exact_require_threshold);
+      }
+      
+      #[test]
+      fn randomly_test_coefficient_bounds_on_integer_interval (coefficients in prop::array::$uniform(-16 as $integer..16), start in -16 as $double..16, duration in 0 as $double..16, test_frac in 0f64..1f64) {
+        let first = coefficients.all_taylor_coefficients (start);
+        prop_assume! (first.is_some());
+        let first = first.unwrap();
+        let second = coefficients.all_taylor_coefficients (start+duration);
+        prop_assume! (second.is_some());
+        let second = second.unwrap();
+        
+        let computed = coefficient_bounds_on_integer_interval([&first, &second], duration);
+        let test_time = start + ((duration as f64+0.999) * test_frac).floor() as $double;
+        for (exponent, bounds) in computed.iter().enumerate() {
+          let exact = naive_perfect_nth_taylor_coefficient(&coefficients, BigRational::from(BigInt::from(test_time)), exponent);
+          prop_assert!(bounds [0] == Bounded::min_value() || BigRational::from(BigInt::from(bounds [0])) <= exact);
+          prop_assert!(bounds [1] == Bounded::max_value() || BigRational::from(BigInt::from(bounds [1])) >= exact);
+        }
+      }
+      
+      #[test]
+      fn randomly_test_coefficient_bounds_on_tail (coefficients in prop::array::$uniform(-16 as $integer..16), start in -16 as $double..16, test_frac in 0f64..1f64) {
+        let first = coefficients.all_taylor_coefficients (start);
+        prop_assume! (first.is_some());
+        let first = first.unwrap();
+        
+        let computed = coefficient_bounds_on_tail (&first);
+        let test_time = start + max(0, (1.0/test_frac).floor() as $double);
+        for (exponent, bounds) in computed.iter().enumerate() {
+          let exact = naive_perfect_nth_taylor_coefficient(&coefficients, BigRational::from(BigInt::from(test_time)), exponent);
+          prop_assert!(bounds [0] == Bounded::min_value() || BigRational::from(BigInt::from(bounds [0])) <= exact);
+          prop_assert!(bounds [1] == Bounded::max_value() || BigRational::from(BigInt::from(bounds [1])) >= exact);
+        }
+      }
+      
+      #[test]
+      fn randomly_test_coefficient_bounds_on_negative_power_of_2_interval (coefficients in prop::array::$uniform(-16 as $integer..16), (start, duration_shift) in arbitrary_fractional_input().prop_flat_map(|input| (Just(input), 0..input.shift+1)), test_frac in 0f64..1f64) {
+        let first = coefficients.all_taylor_coefficients_bounds (start.numerator, start.shift, STANDARD_PRECISION_SHIFT as i32);
+        prop_assume! (first.is_some());
+        let first = first.unwrap();
+        let duration = 1<<(start.shift - duration_shift);
+        let second = coefficients.all_taylor_coefficients_bounds (start.numerator+duration, start.shift, STANDARD_PRECISION_SHIFT as i32);
+        prop_assume! (second.is_some());
+        let second = second.unwrap();
+        
+        let computed = coefficient_bounds_on_negative_power_of_2_interval::<_,$integer>([&first, &second], duration_shift);
+        let test_time = start.numerator + ((duration as f64+0.999) * test_frac).floor() as $double;
+        let test_time = rational_input(FractionalInput::new(test_time, start.shift));
+        for (exponent, bounds) in computed.iter().enumerate() {
+          let exact = naive_perfect_nth_taylor_coefficient(&coefficients, test_time.clone(), exponent);
+          prop_assert!(BigRational::from(BigInt::from(bounds [0])) <= exact);
+          prop_assert!(BigRational::from(BigInt::from(bounds [1])) >= exact);
+        }
       }
   }
   }
