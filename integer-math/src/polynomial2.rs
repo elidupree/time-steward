@@ -163,7 +163,7 @@ impl <Coefficient: DoubleSizedSignedInteger> AllTaylorCoefficients<DoubleSized<C
 impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient>> AllTaylorCoefficientsBoundsWithinHalf<WorkingType> for [Coefficient; $coefficients] {
   type Output = [[WorkingType; 2]; $coefficients];
   fn accumulated_error_shift()->u32 {
-    $coefficients - 1
+    $coefficients
   }
   fn max_total_shift()->u32 {
     let spare = WorkingType::nonsign_bits() - Coefficient::nonsign_bits();
@@ -172,21 +172,20 @@ impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coeffi
   }
   fn all_taylor_coefficients_bounds_within_half(&self, input: WorkingType, input_shift: u32, precision_shift: u32)->Self::Output {
     assert!(input_shift + precision_shift <= <Self as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::max_total_shift());
-    if input_shift == 0 {
+    if input_shift == 0 || $coefficients <= 1 {
       return self.map(|raw| {
         let mut raw = raw.into();
         raw <<= precision_shift as u32;
-        let mut raw = [raw,raw];
-        raw
+        [raw,raw]
       })
     }
     let half = WorkingType::one() << (input_shift - 1);
     assert!(input.abs() <= half, "all_taylor_coefficients_bounds_within_half called with an input({}) that is not within half (shift: {}, half: {})", input, input_shift, half);
     // In the loop, error accumulates each term.
     // Fortunately, the error is strictly bounded above by 2^(degree-1).
-    // We want to scale down the error as far as possible, so we first left-shift by degree,
-    // then right-shift by degree at the end of the calculation.
-    // This reduces the accumulated error to less than half.
+    // We want to scale down the error as far as possible, so we first left-shift by degree+1,
+    // then right-shift by the same amount at the end of the calculation.
+    // This reduces the accumulated error range (which is twice the max error magnitude) to less than half.
     // It unavoidably adds an error of up to 1 due to the final rounding, so the final error is up to (not including) 1.5.
     // This means that the final upper and lower bound can be no more than 2 away from each other,
     // which is the best we can hope for.
@@ -197,39 +196,27 @@ impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coeffi
     // then multiply by a number that is up to half of 1<<input_shift -
     // i.e. we need space for precision_shift+inputshift-1 more bits in the type.
 
-    // In the loop, we use floor/ceil to make sure we keep getting a lower/upper bound.
-    // But we also multiply by input each time, and if the input was negative, we would keep switching the direction.
-    // Fortunately, negative input is equivalent to having all of the odd terms be negated.
-    let flip_odd = input < Zero::zero();
-    let input = if flip_odd {-input} else {input};
-
     let total_initial_shift = precision_shift + accumulated_error_shift;
-    let mut intermediates: [[WorkingType; 2]; $coefficients] = array_ext::Array::from_fn(|index| {
-      let mut raw: WorkingType = self[index].into();
+    let mut intermediates: [WorkingType; $coefficients] = self.map(|raw| {
+      let mut raw: WorkingType = raw.into();
       raw <<= total_initial_shift as u32;
-      if flip_odd && index.is_odd() { raw = -raw; }
-      [raw,raw]
+      raw
     });
     for first_source in (1..intermediates.len()).rev() {
       for source in first_source..intermediates.len() {
-        intermediates[source - 1][0] +=
-          shr_floor(intermediates[source][0] * input, input_shift);
-        intermediates[source - 1][1] +=
-          shr_ceil(intermediates[source][1] * input, input_shift);
+        intermediates[source - 1] +=
+          shr_round_to_even(intermediates[source] * input, input_shift);
       }
     }
-    for (index, value) in intermediates.iter_mut().enumerate() {
-      value[0] = shr_floor(value[0], accumulated_error_shift);
-      value[1] = shr_ceil(value[1], accumulated_error_shift);
-
-      if flip_odd && index.is_odd() {
-        *value = [
-          -value[1],
-          -value[0],
-        ];
-      }
-    }
-    intermediates
+    intermediates.map(|a| {
+      [
+        Shr::<u32>::shr(a - (WorkingType::one() << (accumulated_error_shift-2)),
+          accumulated_error_shift),
+        Shr::<u32>::shr(a + (WorkingType::one() << (accumulated_error_shift-2))
+          + (WorkingType::one() << (accumulated_error_shift)) - WorkingType::one(),
+          accumulated_error_shift),
+      ]
+    })
   }
 
 }
