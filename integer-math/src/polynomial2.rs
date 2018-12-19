@@ -172,15 +172,23 @@ impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coeffi
   }
   fn all_taylor_coefficients_bounds_within_half(&self, input: WorkingType, input_shift: u32, precision_shift: u32)->Self::Output {
     assert!(input_shift + precision_shift <= <Self as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::max_total_shift());
-    if input_shift == 0 || $coefficients <= 1 {
+    if input == Zero::zero() || $coefficients <= 1 {
       return self.map(|raw| {
         let mut raw = raw.into();
         raw <<= precision_shift as u32;
         [raw,raw]
       })
     }
-    let half = WorkingType::one() << (input_shift - 1);
-    assert!(input.abs() <= half, "all_taylor_coefficients_bounds_within_half called with an input({}) that is not within half (shift: {}, half: {})", input, input_shift, half);
+    match input_shift.checked_sub(1) {
+      Some(half_shift) => {
+        let half = WorkingType::one() << half_shift;
+        assert!(input.abs() <= half, "all_taylor_coefficients_bounds_within_half called with an input({}) that is not within half (shift: {}, half: {})", input, input_shift, half);
+      },
+      None => {
+        panic!("all_taylor_coefficients_bounds_within_half called with an input({}) that is not within half (shift: {})", input, input_shift);
+      },
+    }
+    
     // In the loop, error accumulates each term.
     // Fortunately, the error is strictly bounded above by 2^(degree-1).
     // We want to scale down the error as far as possible, so we first left-shift by degree+1,

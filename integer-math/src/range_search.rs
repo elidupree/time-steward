@@ -181,7 +181,7 @@ impl<F: Fn(FractionalInput<i64>) -> Option<HackP>> RangeSearchRecorderHack<i64, 
 pub trait RangeSearch {
   type Input: Integer;
   type IntegerValue: Debug;
-  type FractionalValue: Debug;
+  type FractionalValue: Debug + Default;
   fn value_at_integer (&self, input: Self::Input)->Option<Self::IntegerValue>;
   fn value_at_fractional (&self, nearest_integer_value: &Self::IntegerValue, relative_input: Self::Input)->Self::FractionalValue;
   fn integer_to_fractional (&self, value: &Self::IntegerValue)->Self::FractionalValue {
@@ -202,7 +202,6 @@ pub struct RangeSearchRunner<S: RangeSearch> {
   max_input_shift: u32,
   start_input: S::Input,
   integer_stack: ArrayVec<[PolynomialBasedAtInput<S::IntegerValue, S::Input>; 64]>,
-  fractional_stack: ArrayVec<[PolynomialBasedAtInput<S::FractionalValue, S::Input>; 64]>,
   next_jump: S::Input,
 }
 
@@ -228,7 +227,6 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
       search,
       max_input_shift: input_shift, start_input,
       integer_stack: ArrayVec::new(),
-      fractional_stack: ArrayVec::new(),
       next_jump: One::one(),
     };
     runner.integer_stack.push(next_value);
@@ -241,13 +239,6 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
     [
       &self.integer_stack[self.integer_stack.len() - 1],
       &self.integer_stack[self.integer_stack.len() - 2],
-    ]
-  }
-  #[inline]
-  pub fn latest_fractional_interval(&self) -> [&PolynomialBasedAtInput<S::FractionalValue, S::Input>; 2] {
-    [
-      &self.fractional_stack[self.fractional_stack.len() - 1],
-      &self.fractional_stack[self.fractional_stack.len() - 2],
     ]
   }
   pub fn search_integers(&mut self) -> Option<S::Input> {
@@ -318,73 +309,74 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
     let beginning_of_this_unit_interval = Shl::<u32>::shl(self.latest_integer_interval()[0].origin, self.max_input_shift);
     let relative_start_input = self.start_input - beginning_of_this_unit_interval;
     let half = Shr::<u32>::shr(one, 1);
-    self.fractional_stack.clear();
-    self.fractional_stack.push(
-      PolynomialBasedAtInput {
-        origin: half,
-        coefficients: self.search.value_at_fractional(&self.latest_integer_interval()[0].coefficients, half),
-      },
-    );
-    self.fractional_stack.push(
-      PolynomialBasedAtInput {
-        origin: S::Input::zero(),
-        coefficients: self.search.integer_to_fractional (&self.latest_integer_interval()[0].coefficients),
-      },
-    );
-    let mut closer = 0;
+    
     let mut current_input_shift = 1;
+    let mut data: [PolynomialBasedAtInput<S::FractionalValue, S::Input>; 3] = Default::default();
+    
+    data[0] = PolynomialBasedAtInput {
+      origin: S::Input::zero(),
+      coefficients: self.search.integer_to_fractional (&self.latest_integer_interval()[0].coefficients),
+    };
+    data[1] = PolynomialBasedAtInput {
+      origin: half,
+      coefficients: self.search.value_at_fractional(&self.latest_integer_interval()[0].coefficients, half),
+    };
+    
+    let mut left_end = 0;
+    let mut right_end = 1;
+    let mut next_right_end = 2;
+    let mut which_half_bits: u64 = 0;
+    
     loop {
-      //eprintln!("top {:?}", (current_input_shift, self.fractional_stack.len()));
-      'searching_subintervals: while self.latest_fractional_interval()[1].origin > relative_start_input && self.search.fractional_interval_filter (self.latest_fractional_interval().map(|a|&a.coefficients), current_input_shift) {
-        //println!("sub {:?}", self.fractional_stack);
-        if self.latest_fractional_interval()[0].origin >= relative_start_input && self.search.fractional_result_filter (&self.latest_fractional_interval()[0].coefficients) {
-          //eprintln!("frac {:?}", (&self.latest_fractional_interval()[0].coefficients));
-          return Some(beginning_of_this_unit_interval + self.latest_fractional_interval()[0].origin);
+      //eprintln!("top {:?}", (current_input_shift));
+      'searching_subintervals: while data[right_end].origin > relative_start_input && self.search.fractional_interval_filter ([&data[left_end].coefficients, &data[right_end].coefficients], current_input_shift) {
+        //eprintln!("sub {:?}", (current_input_shift, &data[left_end].origin, &data[right_end].origin, &data[next_right_end].origin));
+        if data[left_end].origin >= relative_start_input && self.search.fractional_result_filter (&data[left_end].coefficients) {
+          //eprintln!("frac {:?}", (&data[left_end].origin));
+          return Some(beginning_of_this_unit_interval + data[left_end].origin);
         }
-        let end_inputs = self.latest_fractional_interval().map(|a|a.origin); 
-        if end_inputs[0] + One::one() == end_inputs[1] {
+        if data[left_end].origin + One::one() == data[right_end].origin {
           break 'searching_subintervals;
         }
         current_input_shift += 1;
-        let new_endpoint = end_inputs[0] + Shr::<u32>::shr(one, current_input_shift);
-        assert_eq!(new_endpoint - end_inputs[0], end_inputs[1] - new_endpoint);
+        let new_endpoint = data[left_end].origin + Shr::<u32>::shr(one, current_input_shift);
+        debug_assert_eq!(new_endpoint - data[left_end].origin, data[right_end].origin - new_endpoint);
         //eprintln!("sub {:?}", (end_inputs, new_endpoint, current_input_shift, self.fractional_stack.len()));
-        let new_value = if closer == 1 {
+        let new_value = if new_endpoint > half {
           self.search.value_at_fractional(&self.latest_integer_interval()[1].coefficients, new_endpoint - one)
         } else {
           self.search.value_at_fractional(&self.latest_integer_interval()[0].coefficients, new_endpoint)
         };
-        self.fractional_stack.insert(
-          self.fractional_stack.len() - 1,
-          PolynomialBasedAtInput {
-            origin: new_endpoint,
-            coefficients: new_value,
-          },
-        );
+        mem::swap(&mut right_end, &mut next_right_end);
+        data[right_end] = PolynomialBasedAtInput {
+          origin: new_endpoint,
+          coefficients: new_value,
+        };
       }
-
-      self.fractional_stack.pop();
       
-      if self.fractional_stack.len() >= 2 {
-        let end_inputs = self.latest_fractional_interval().map(|a|a.origin);
-        while end_inputs[1] - end_inputs[0] > Shr::<u32>::shr(one, current_input_shift) {
-          current_input_shift -= 1;
-        }
+      let mut next_valid = current_input_shift > 1;
+      while which_half_bits & (1<<current_input_shift) != 0 {
+        which_half_bits &= !(1<<current_input_shift);
+        current_input_shift -= 1;
+        next_valid = false;
       }
-      else {
-        if self.fractional_stack.last().unwrap().origin < one {
-          current_input_shift = 1;
-          self.fractional_stack.insert(0,
-            PolynomialBasedAtInput {
-              origin: one,
-              coefficients: self.search.integer_to_fractional (&self.latest_integer_interval()[1].coefficients),
-            },
-          );
-          closer = 1;
-        }
-        else {
-          return None;
-        }
+      if current_input_shift < 1 {
+        return None;
+      }
+      which_half_bits |= 1<<current_input_shift;
+      mem::swap(&mut left_end, &mut right_end);
+      mem::swap(&mut right_end, &mut next_right_end);
+      if !next_valid {
+        let new_endpoint = data[left_end].origin + Shr::<u32>::shr(one, current_input_shift);
+        let new_value = if new_endpoint > half {
+          self.search.value_at_fractional(&self.latest_integer_interval()[1].coefficients, new_endpoint - one)
+        } else {
+          self.search.value_at_fractional(&self.latest_integer_interval()[0].coefficients, new_endpoint)
+        };
+        data[right_end] = PolynomialBasedAtInput {
+          origin: new_endpoint,
+          coefficients: new_value,
+        };
       }
     }
   }
