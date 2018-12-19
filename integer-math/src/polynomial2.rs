@@ -22,12 +22,12 @@ pub trait AllTaylorCoefficientsBoundsWithinHalf<WorkingType>
 {
   type Output;
   fn accumulated_error_shift() -> u32;
-  fn max_total_shift() -> i32;
+  fn max_total_shift() -> u32;
   fn all_taylor_coefficients_bounds_within_half(
     &self,
     input: WorkingType,
     input_shift: u32,
-    precision_shift: i32,
+    precision_shift: u32,
   ) -> Self::Output;
 }
 pub trait AllTaylorCoefficientsBounds<WorkingType>: AllTaylorCoefficientsBoundsWithinHalf<WorkingType>
@@ -36,7 +36,7 @@ pub trait AllTaylorCoefficientsBounds<WorkingType>: AllTaylorCoefficientsBoundsW
     &self,
     input: WorkingType,
     input_shift: u32,
-    precision_shift: i32,
+    precision_shift: u32,
   ) -> Option<Self::Output>;
 }
 
@@ -165,24 +165,18 @@ impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coeffi
   fn accumulated_error_shift()->u32 {
     $coefficients
   }
-  fn max_total_shift()->i32 {
+  fn max_total_shift()->u32 {
     let spare = WorkingType::nonsign_bits() - Coefficient::nonsign_bits();
     // we need to take out coefficients - 1 twice: once to do higher calculations at higher magnitude to remove the error, and once to make sure the calculations don't overflow due to accumulated value.
-    spare as i32 + 1 - <Self as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::accumulated_error_shift() as i32 - ($coefficients-1)
+    spare + 1 - <Self as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::accumulated_error_shift() - ($coefficients-1)
   }
-  fn all_taylor_coefficients_bounds_within_half(&self, input: WorkingType, input_shift: u32, precision_shift: i32)->Self::Output {
-    assert!(input_shift as i32 + precision_shift <= <Self as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::max_total_shift());
+  fn all_taylor_coefficients_bounds_within_half(&self, input: WorkingType, input_shift: u32, precision_shift: u32)->Self::Output {
+    assert!(input_shift + precision_shift <= <Self as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::max_total_shift());
     if input_shift == 0 {
       return self.map(|raw| {
         let mut raw = raw.into();
-        if precision_shift > 0 {
-          raw <<= precision_shift as u32;
-        }
+        raw <<= precision_shift as u32;
         let mut raw = [raw,raw];
-        if precision_shift < 0 {
-          raw[0] = shr_floor(raw[0], (-precision_shift) as u32);
-          raw[1] = shr_ceil(raw[1], (-precision_shift) as u32);
-        }
         raw
       })
     }
@@ -210,19 +204,12 @@ impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coeffi
     let flip_odd = input < Zero::zero();
     let input = if flip_odd {-input} else {input};
 
-    let total_initial_shift = precision_shift + accumulated_error_shift as i32;
+    let total_initial_shift = precision_shift + accumulated_error_shift;
     let mut intermediates: [[WorkingType; 2]; $coefficients] = array_ext::Array::from_fn(|index| {
       let mut raw: WorkingType = self[index].into();
-      if total_initial_shift > 0 {
-        raw <<= total_initial_shift as u32;
-      }
+      raw <<= total_initial_shift as u32;
       if flip_odd && index.is_odd() { raw = -raw; }
-      let mut raw = [raw,raw];
-      if total_initial_shift < 0 {
-        raw[0] = shr_floor(raw[0], (-total_initial_shift) as u32);
-        raw[1] = shr_ceil(raw[1], (-total_initial_shift) as u32);
-      }
-      raw
+      [raw,raw]
     });
     for first_source in (1..intermediates.len()).rev() {
       for source in first_source..intermediates.len() {
@@ -253,7 +240,7 @@ impl <Coefficient: DoubleSizedSignedInteger> AllTaylorCoefficientsBounds<DoubleS
     &self,
     input: DoubleSized<Coefficient>,
     input_shift: u32,
-    precision_shift: i32,
+    precision_shift: u32,
   ) -> Option<<Self as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<Coefficient>>>::Output> {
     let integer_input = shr_nicely_rounded(input, input_shift);
     let small_input = input.wrapping_sub(&(Shl::<u32>::shl(integer_input, input_shift)));
@@ -290,7 +277,7 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialRangeSearch<Coefficient, 
         self.polynomial.all_taylor_coefficients (input)
       }
       fn value_at_fractional (&self, nearest_integer_value: &Self::IntegerValue, relative_input: Self::Input)->Self::FractionalValue {
-        nearest_integer_value.all_taylor_coefficients_bounds_within_half (relative_input, self.input_shift, STANDARD_PRECISION_SHIFT as i32)
+        nearest_integer_value.all_taylor_coefficients_bounds_within_half (relative_input, self.input_shift, STANDARD_PRECISION_SHIFT)
       }
       fn integer_interval_filter (&self, endpoints: [&Self::IntegerValue; 2], duration: Self::Input)->bool {
         self.filter.interval_filter (range_search::coefficient_bounds_on_integer_interval (endpoints, duration) [0])
@@ -325,7 +312,7 @@ impl <Coefficient: DoubleSizedSignedInteger> SetNthTaylorCoefficientAtFractional
 ) -> Result<(), ::std::option::NoneError> {
   let mut target_values: ::smallvec::SmallVec<[DoubleSized<Coefficient>; 8]> =
     ::smallvec::SmallVec::with_capacity(which_derivative + 1);
-  let bounds = self.all_taylor_coefficients_bounds(input, input_shift, 0i32)?;
+  let bounds = self.all_taylor_coefficients_bounds(input, input_shift, 0u32)?;
   for index in 0..which_derivative {
     target_values.push(mean_round_to_even(
       bounds.as_slice()[index][0],
@@ -335,7 +322,7 @@ impl <Coefficient: DoubleSizedSignedInteger> SetNthTaylorCoefficientAtFractional
   target_values.push(target_value.into());
   for (index, target_value) in target_values.iter().enumerate().rev() {
     let current_bounds = self
-      .all_taylor_coefficients_bounds(input, input_shift, 0i32)?
+      .all_taylor_coefficients_bounds(input, input_shift, 0u32)?
       .as_slice()[index];
     let current_value = mean_round_to_even(current_bounds[0], current_bounds[1]);
     let change_size = target_value.checked_sub(&current_value)?;
@@ -392,7 +379,7 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSear
         Some(magsq)
       }
       fn value_at_fractional (&self, nearest_integer_value: &Self::IntegerValue, relative_input: Self::Input)->Self::FractionalValue {
-        <[DoubleSized<Coefficient>; $coefficients*2 -1] as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<DoubleSized<Coefficient>>>>::all_taylor_coefficients_bounds_within_half(nearest_integer_value, From::from(relative_input), self.input_shift, STANDARD_PRECISION_SHIFT as i32)
+        <[DoubleSized<Coefficient>; $coefficients*2 -1] as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<DoubleSized<Coefficient>>>>::all_taylor_coefficients_bounds_within_half(nearest_integer_value, From::from(relative_input), self.input_shift, STANDARD_PRECISION_SHIFT)
       }
      fn integer_interval_filter (&self, endpoints: [&Self::IntegerValue; 2], duration: Self::Input)->bool {
         self.filter.interval_filter (range_search::coefficient_bounds_on_integer_interval (endpoints, duration.into()) [0])
@@ -431,7 +418,7 @@ impl_squarable_polynomials!(1,2,3);
 #[derive(Copy, Clone, Serialize, Deserialize, Debug, Default)]
 pub struct ValueWithPrecision<P> {
   pub value: P,
-  pub precision: i32,
+  pub precision: u32,
 }
 
 #[derive(Copy, Clone, Serialize, Deserialize, Debug, Default)]
@@ -453,31 +440,19 @@ impl<P, I> PolynomialBasedAtInput<P, I> {
 }
 impl<T: Integer> ValueWithPrecision<T> {
   pub fn bounds_without_precision<WorkingType: Integer + From<T>>(&self) -> [WorkingType; 2] {
-    if self.precision > 0 {
       [
         shr_floor(self.value.into(), self.precision as u32),
         shr_ceil(self.value.into(), self.precision as u32),
       ]
-    } else {
-      let t: WorkingType = self.value.into();
-      [t << (-self.precision) as u32; 2]
-    }
   }
 }
 
 impl<T: Integer> ValueWithPrecision<[T; 2]> {
   pub fn without_precision<WorkingType: Integer + From<T>>(&self) -> [WorkingType; 2] {
-    if self.precision > 0 {
       [
         shr_floor(self.value[0].into(), self.precision as u32),
         shr_ceil(self.value[1].into(), self.precision as u32),
       ]
-    } else {
-      self.value.map(|a| {
-        let a: WorkingType = a.into();
-        a << (-self.precision) as u32
-      })
-    }
   }
 }
 
