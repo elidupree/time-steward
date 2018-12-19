@@ -112,6 +112,7 @@ pub mod impls {
     ($($Integer: ident $sign_bits: expr,)*) => {
       $(
         impl Integer for $Integer {
+          #[inline]
           fn saturating_mul (self, other: Self)->Self {
             self.saturating_mul(other)
           }
@@ -420,6 +421,9 @@ pub fn saturating_downcast<T: Integer + From<U> + TryInto<U>, U: Integer>(a: T) 
 pub mod array;
 pub mod polynomial;
 pub mod polynomial2;
+#[cfg(test)]
+pub mod polynomial2_tests;
+pub mod range_search;
 
 #[cfg(test)]
 mod tests {
