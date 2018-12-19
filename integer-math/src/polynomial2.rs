@@ -277,7 +277,7 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialRangeSearch<Coefficient, 
         self.filter.interval_filter (range_search::coefficient_bounds_on_integer_interval (endpoints, duration) [0])
       }
       fn fractional_interval_filter (&self, endpoints: [&Self::FractionalValue; 2], duration_shift: u32)->bool {
-        self.filter.interval_filter (range_search::coefficient_bounds_on_negative_power_of_2_interval::<_, Coefficient> (endpoints, duration_shift) [0])
+        self.filter.interval_filter (range_search::value_bounds_on_negative_power_of_2_interval::<_, Coefficient> (endpoints, duration_shift))
       }
       fn tail_filter (&self, endpoint: &Self::IntegerValue)->bool {
         self.filter.interval_filter (range_search::coefficient_bounds_on_tail (endpoint) [0])
@@ -379,7 +379,7 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSear
         self.filter.interval_filter (range_search::coefficient_bounds_on_integer_interval (endpoints, duration.into()) [0])
       }
       fn fractional_interval_filter (&self, endpoints: [&Self::FractionalValue; 2], duration_shift: u32)->bool {
-        self.filter.interval_filter (range_search::coefficient_bounds_on_negative_power_of_2_interval::<_, DoubleSized<Coefficient>> (endpoints, duration_shift) [0])
+        self.filter.interval_filter (range_search::value_bounds_on_negative_power_of_2_interval::<_, DoubleSized<Coefficient>> (endpoints, duration_shift))
       }
       fn tail_filter (&self, endpoint: &Self::IntegerValue)->bool {
         self.filter.interval_filter (range_search::coefficient_bounds_on_tail (endpoint) [0])

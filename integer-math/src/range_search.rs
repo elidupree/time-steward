@@ -69,17 +69,16 @@ pub fn coefficient_bounds_on_integer_interval<
 
 pub const STANDARD_PRECISION_SHIFT: u32 = 2;
 
-pub fn coefficient_bounds_on_negative_power_of_2_interval<
-  P: Array + arrayvec::Array<Item = [DoubleSized<Coefficient>; 2]> + ReplaceItemType<[Coefficient; 2]>,
+pub fn value_bounds_on_negative_power_of_2_interval<
+  P: Array + arrayvec::Array<Item = [DoubleSized<Coefficient>; 2]>,
   Coefficient: DoubleSizedSignedInteger,
 >(
   endpoints: [&P; 2], duration_shift: u32
-) -> <P as ReplaceItemType<[Coefficient; 2]>>::Type {
-  let mut result: <P as ReplaceItemType<[Coefficient; 2]>>::Type = array_ext::Array::from_fn(|_| [Zero::zero(); 2]);
+) -> [Coefficient; 2] {
   let max_magnitude = Shl::<u32>::shl(<DoubleSized<Coefficient>>::one(), Coefficient::nonsign_bits() + STANDARD_PRECISION_SHIFT);
   let double_sized_max_bounds = [-max_magnitude, max_magnitude];
   let mut movement_range_from_previous: [DoubleSized<Coefficient>; 2] = [Zero::zero(), Zero::zero()];
-  for exponent in (0..result.len() as u32).rev() {
+  for exponent in (0..endpoints[0].len() as u32).rev() {
     let end_bounds = endpoints.map(|endpoint|
       endpoint.as_slice()[exponent as usize]
     );
@@ -115,14 +114,18 @@ pub fn coefficient_bounds_on_negative_power_of_2_interval<
       [max(double_sized_max_bounds[0], max(left_min, right_min)), min(double_sized_max_bounds[1], min(left_max, right_max))]
     };
 
-    result.as_mut_slice()[exponent as usize][0] = saturating_downcast(shr_floor(bounds[0], STANDARD_PRECISION_SHIFT));
-    result.as_mut_slice()[exponent as usize][1] = saturating_downcast(shr_ceil(bounds[1], STANDARD_PRECISION_SHIFT));
+    if exponent == 0 {
+      return [
+        saturating_downcast(shr_floor(bounds[0], STANDARD_PRECISION_SHIFT)),
+        saturating_downcast(shr_ceil(bounds[1], STANDARD_PRECISION_SHIFT)),
+      ]
+    }
     let factor = <DoubleSized<Coefficient>>::from_u32(exponent).unwrap();
     movement_range_from_previous = bounds.map(|a| a * factor);
     movement_range_from_previous[0] = if bounds[0] <= double_sized_max_bounds[0] { double_sized_max_bounds[0] } else {shr_floor(bounds[0] * factor, duration_shift)};
     movement_range_from_previous[1] = if bounds[1] >= double_sized_max_bounds[1] { double_sized_max_bounds[1] } else {shr_ceil(bounds[1] * factor, duration_shift)};
   }
-  result
+  unreachable!()
 }
 
 pub fn coefficient_bounds_on_tail<
