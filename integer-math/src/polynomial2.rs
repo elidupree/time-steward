@@ -163,7 +163,7 @@ impl <Coefficient: DoubleSizedSignedInteger> AllTaylorCoefficients<DoubleSized<C
 impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient>> AllTaylorCoefficientsBoundsWithinHalf<WorkingType> for [Coefficient; $coefficients] {
   type Output = [[WorkingType; 2]; $coefficients];
   fn accumulated_error_shift()->u32 {
-    $coefficients
+    $coefficients - 1
   }
   fn max_total_shift()->u32 {
     let spare = WorkingType::nonsign_bits() - Coefficient::nonsign_bits();
@@ -187,7 +187,6 @@ impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coeffi
     // We want to scale down the error as far as possible, so we first left-shift by degree,
     // then right-shift by degree at the end of the calculation.
     // This reduces the accumulated error to less than half.
-    // (Actually we shift back and forth by degree+1 because negative precision can add a bit of extra error.)
     // It unavoidably adds an error of up to 1 due to the final rounding, so the final error is up to (not including) 1.5.
     // This means that the final upper and lower bound can be no more than 2 away from each other,
     // which is the best we can hope for.
