@@ -83,7 +83,6 @@ let ball: Ball = accessor.query (...);
 let time = ... // Examine various fields and compute the time when the ball hits the wall
 let prediction = accessor.create_prediction (time, BallHitsWallEvent {...});
 ```
-```
 
 If a later Event changes the motion of the ball, it should then destroy the original Prediction and create a new one based on the new trajectory.
 
