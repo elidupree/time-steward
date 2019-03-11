@@ -1,2 +1,0 @@
-
-simple_full!(all());
