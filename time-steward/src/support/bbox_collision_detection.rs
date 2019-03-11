@@ -16,7 +16,9 @@ macro_rules! time_steward_define_bbox_collision_detection {
       use array_ext::*;
       use rpds::RedBlackTreeMap;
       use std::collections::HashSet;
-      use {DeterministicRandomId, PersistentlyIdentifiedType, QueryResult, SimulationStateData};
+      use type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
+      use type_utils::list_of_types::{ListedType};
+      use {DeterministicRandomId, QueryResult, SimulationStateData};
 
       pub type Coordinate = u64;
       pub type NumDimensions = u32;

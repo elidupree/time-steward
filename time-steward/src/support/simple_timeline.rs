@@ -9,6 +9,7 @@ macro_rules! time_steward_define_simple_timeline {
       use super::super::super::api::*;
       use super::*;
       use implementation_support::common::split_off_greater_set;
+      use type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 
       #[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
       pub struct GetVarying;

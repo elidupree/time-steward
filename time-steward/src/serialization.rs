@@ -9,6 +9,7 @@
 #[macro_export]
 macro_rules! time_steward_serialization_impls {
   () => {
+  
 
   #[allow (unused_variables)]
   pub trait TimeStewardStructuresVisitor <Steward: TimeSteward> {
@@ -30,6 +31,8 @@ macro_rules! time_steward_serialization_impls {
   use serde::ser;
   use std::fmt::{self,Display};
   use std::marker::PhantomData;
+  use type_utils::static_downcast;
+  use type_utils::list_of_types::{ListOfTypes, ListOfTypesVisitor};     
   struct TimeStewardStructuresVisitingSerializeHack<T, Steward>(T, PhantomData<Steward>);
 
   trait MaybeVisitSerializeHack <Steward: TimeSteward> {
@@ -213,24 +216,12 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
 }
 
 
-  trait StaticDowncast <T> {
-    fn static_downcast (self)->T;
-  }
-  impl <T> StaticDowncast <T> for T {
-    fn static_downcast (self)->T {self}
-  }
-  impl <T, U> StaticDowncast <T> for U {
-    default fn static_downcast (self)->T {panic!("Tried to do TimeSteward serialization with non-bincode serializer/deserializer. TimeSteward serialization only supports bincode")}
-  }
-  fn static_downcast <T, U> (input: T)->U {
-    StaticDowncast::<U>::static_downcast (input)
-  }
-
+  
   fn bincode_error_to_generic <T, U> (result: $crate::bincode::Result <T>)->Result <T, U> {
-    result.map_err (static_downcast::<$crate::bincode::Error, U>)
+    result.map_err (|e| static_downcast::<$crate::bincode::Error, U>(e).expect("Tried to do TimeSteward serialization with non-bincode serializer/deserializer. TimeSteward serialization only supports bincode"))
   }
   fn generic_error_to_bincode <T, U> (result: Result <T, U>)->$crate::bincode::Result <T> {
-    result.map_err (static_downcast::<U, $crate::bincode::Error>)
+    result.map_err (|e| static_downcast::<U, $crate::bincode::Error>(e).expect("Tried to do TimeSteward serialization with non-bincode serializer/deserializer. TimeSteward serialization only supports bincode"))
   }
 
   use $crate::serde::{Serialize};
@@ -238,8 +229,8 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
 
   #[derive (Serialize, Deserialize, Debug)]
   enum SerializationElement {
-    DataHandleData(u64, PersistentTypeId),
-    EventHandleData(u64, PersistentTypeId),
+    DataHandleData(u64, ::type_utils::PersistentTypeId),
+    EventHandleData(u64, ::type_utils::PersistentTypeId),
     Finished,
   }
 
@@ -311,9 +302,9 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
   struct DeserializationContext {
     time: Box <Any>,
     data_handle_initialize_functions: ::std::collections::HashMap <
-      PersistentTypeId, fn (&mut Read, u64)->$crate::bincode::Result <()>>,
+      ::type_utils::PersistentTypeId, fn (&mut Read, u64)->$crate::bincode::Result <()>>,
     event_handle_initialize_functions: ::std::collections::HashMap <
-      PersistentTypeId, fn (&mut Read, u64)->$crate::bincode::Result <()>>,
+      ::type_utils::PersistentTypeId, fn (&mut Read, u64)->$crate::bincode::Result <()>>,
     handles: ::std::collections::HashMap <u64, Box <Any>>,
     uninitialized_handles: ::std::collections::HashSet <u64>,
     predictions: ::std::collections::HashSet <u64>,

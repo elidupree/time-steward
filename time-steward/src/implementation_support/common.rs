@@ -141,7 +141,7 @@ macro_rules! time_steward_common_impls_for_handles {
     time_steward_common_impls_for_event_handle! ([B: Basics] [EventHandle <B>] [B]);
     time_steward_common_impls_for_uniquely_identified_handle! ([B: Basics] [EventHandle <B>] self => (self.extended_time().id): DeterministicRandomId);
 
-impl <T: SimulationStateData + PersistentlyIdentifiedType> ::std::fmt::Debug for DataHandle <T> {
+impl <T: SimulationStateData + $crate::type_utils::PersistentlyIdentifiedType> ::std::fmt::Debug for DataHandle <T> {
   fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
     write!(f, "DataHandle(@{:p})", self.data)
   }

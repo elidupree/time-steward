@@ -28,7 +28,9 @@ macro_rules! printlnerr(
 
 use std::cmp::{min, max};
 use time_steward::{DeterministicRandomId};
-use time_steward::{PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::{DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
+use time_steward::type_utils::list_of_types::{ListedType};
 use time_steward::stewards::{simple_flat as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, query, set, unset};

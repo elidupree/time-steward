@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell, Ref, RefMut};
 use std::collections::{BTreeMap, BTreeSet, HashMap, Bound};
 use std::cmp::{Ordering, max};
 use std::borrow::Borrow;
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::io::{Read, Write};
 use std::rc::Rc;
 use std::fmt::Debug;
@@ -16,6 +16,7 @@ use std::ops::Deref;
 use super::super::api::*;
 use super::super::implementation_support::common::*;
 use {DeterministicRandomId};
+use type_utils::{PersistentlyIdentifiedType, DynamicPersistentlyIdentifiedType};
 
 use implementation_support::insert_only;
 
@@ -61,6 +62,7 @@ trait EventInnerTrait <B: Basics>: Any + Debug + SerializeInto + DynamicPersiste
   fn execute (&self, self_handle: & EventHandle <B>, steward: &mut Steward <B>);
   fn undo (&self, self_handle: & EventHandle <B>, steward: &mut Steward <B>);
   fn re_execute (&self, self_handle: & EventHandle <B>, steward: &mut Steward <B>);
+  fn get_type_id(&self)->TypeId;
 }
 impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
   fn execute (&self, self_handle: & EventHandle<B>, steward: &mut Steward <B>) {
@@ -96,6 +98,7 @@ impl <B: Basics, T: Event <Steward = Steward <B>>> EventInnerTrait <B> for T {
       execution_data: Box::new (result),
     }));
   }
+  fn get_type_id(&self)->TypeId {TypeId::of::<T>()}
 }
 
 

@@ -14,9 +14,10 @@ use steward_module::{
 use time_steward::stewards::simple_full as steward_module;
 use time_steward::DeterministicRandomId;
 use time_steward::{
-  Basics as BasicsTrait, DataTimelineCellTrait, ListedType, PersistentTypeId,
-  PersistentlyIdentifiedType,
+  Basics as BasicsTrait, DataTimelineCellTrait
 };
+use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
+use time_steward::type_utils::list_of_types::{ListedType};
 
 type Time = i64;
 type Steward = steward_module::Steward<Basics>;

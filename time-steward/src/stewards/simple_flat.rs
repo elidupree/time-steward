@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::borrow::Borrow;
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::cmp::{max, Ordering};
@@ -13,6 +13,7 @@ use std::rc::Rc;
 use super::super::api::*;
 use super::super::implementation_support::common::*;
 use DeterministicRandomId;
+use type_utils::{PersistentlyIdentifiedType, DynamicPersistentlyIdentifiedType};
 
 use implementation_support::insert_only;
 
@@ -47,6 +48,7 @@ trait EventInnerTrait<B: Basics>:
   Any + Debug + SerializeInto + DynamicPersistentlyIdentifiedType
 {
   fn execute(&self, self_handle: &EventHandle<B>, steward: &mut Steward<B>);
+  fn get_type_id(&self)->TypeId;
 }
 impl<B: Basics, T: Event<Steward = Steward<B>>> EventInnerTrait<B> for T {
   fn execute(&self, self_handle: &EventHandle<B>, steward: &mut Steward<B>) {
@@ -57,6 +59,7 @@ impl<B: Basics, T: Event<Steward = Steward<B>>> EventInnerTrait<B> for T {
     };
     <T as Event>::execute(self, &mut accessor);
   }
+  fn get_type_id(&self)->TypeId {TypeId::of::<T>()}
 }
 
 #[derive(Derivative)]

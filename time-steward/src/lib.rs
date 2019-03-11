@@ -59,6 +59,7 @@ extern crate failure;
 extern crate smallvec;
 
 pub extern crate time_steward_integer_math;
+pub extern crate time_steward_type_utils as type_utils;
 
 macro_rules! printlnerr(
     ($($arg:tt)*) => { {use std::io::Write;

@@ -36,7 +36,9 @@ use std::collections::HashSet;
 //use dimensioned::
 
 use time_steward::{DeterministicRandomId};
-use time_steward::{PersistentTypeId, PersistentlyIdentifiedType, ListedType, DataHandleTrait, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::{DataHandleTrait, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
+use time_steward::type_utils::list_of_types::{ListedType};
 use time_steward::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, query, query_ref, set, destroy, just_destroyed};
