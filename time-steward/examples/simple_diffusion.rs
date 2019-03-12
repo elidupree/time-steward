@@ -18,13 +18,6 @@ extern crate docopt;
 #[path = "../dev-shared/emscripten_compatibility.rs"] mod emscripten_compatibility;
 pub use emscripten_compatibility::canvas_click;
 
-macro_rules! printlnerr(
-    ($($arg:tt)*) => { {use std::io::Write;
-        let r = writeln!(&mut ::std::io::stderr(), $($arg)*);
-        r.expect("failed printing to stderr");
-    } }
-);
-
 
 use std::cmp::{min, max};
 use time_steward::{DeterministicRandomId};

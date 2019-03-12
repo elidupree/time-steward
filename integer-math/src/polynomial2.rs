@@ -1,6 +1,6 @@
-use array_ext::{Array as ArrayExtArray, *};
+use array_ext::*;
 use num::{
-  CheckedAdd, CheckedMul, CheckedSub, Integer as NumInteger, One,
+  CheckedAdd, CheckedMul, CheckedSub,
   Signed,
 };
 use std::cmp::{Ordering};

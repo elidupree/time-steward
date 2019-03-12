@@ -25,9 +25,7 @@
   specialization,
   never_type,
   raw,
-  get_type_id,
-  try_trait,
-  try_from
+  try_trait
 )]
 // #![feature (shared)]
 // #![feature (plugin, custom_derive)]
