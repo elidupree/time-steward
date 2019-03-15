@@ -21,9 +21,9 @@ extern crate serde_derive;
 use test::Bencher;
 
 use time_steward::{DeterministicRandomId};
-use time_steward::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, EntityCellTrait, SimulationSpec as SimulationSpecTrait};
 //use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, DataTimelineCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, EntityCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, GetVarying};
 
 #[path = "../dev-shared/bouncy_circles.rs"] mod bouncy_circles;
@@ -62,7 +62,7 @@ fn bouncy_circles_disturbed (bencher: &mut Bencher) {
 #[bench]
 fn bouncy_circles_disturbed_retroactive (bencher: &mut Bencher) {
   bencher.iter(|| {
-    let mut steward: amortized::Steward<Basics> = amortized::Steward::from_constants(());
+    let mut steward: amortized::Steward<SimulationSpec> = amortized::Steward::from_constants(());
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
     steward.snapshot_before(& (10*SECOND)).expect("steward failed to provide snapshot");
     for index in 1..10 {

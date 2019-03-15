@@ -115,19 +115,19 @@ macro_rules! time_steward_common_impls_for_uniquely_identified_handle {
   ([$($bounds:tt)*] [$($concrete:tt)*] $self_hack: ident => ($id: expr): $Id: ty) => {
 
 impl <$($bounds)*>  $($concrete)* {
-  fn id (&$self_hack)->$Id {
+  fn unique_handle_id (&$self_hack)->$Id {
     $id
   }
 }
 impl <$($bounds)*> Hash for $($concrete)* {
   fn hash <H: Hasher> (&self, state: &mut H) {
-    self.id().hash (state);
+    self.unique_handle_id().hash (state);
   }
 }
 impl <$($bounds)*> Eq for $($concrete)* {}
 impl <$($bounds)*> PartialEq for $($concrete)* {
   fn eq(&self, other: &Self) -> bool {
-    self.id() == other.id()
+    self.unique_handle_id() == other.unique_handle_id()
   }
 }
 
@@ -138,15 +138,15 @@ impl <$($bounds)*> PartialEq for $($concrete)* {
 #[macro_export]
 macro_rules! time_steward_common_impls_for_handles {
   () => {
-    time_steward_common_impls_for_event_handle! ([B: Basics] [EventHandle <B>] [B]);
-    time_steward_common_impls_for_uniquely_identified_handle! ([B: Basics] [EventHandle <B>] self => (self.extended_time().id): DeterministicRandomId);
+    time_steward_common_impls_for_event_handle! ([S: SimulationSpec] [EventHandle <S>] [S]);
+    time_steward_common_impls_for_uniquely_identified_handle! ([S: SimulationSpec] [EventHandle <S>] self => (self.extended_time().id): DeterministicRandomId);
 
 impl <T: SimulationStateData + $crate::type_utils::PersistentlyIdentifiedType> ::std::fmt::Debug for DataHandle <T> {
   fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
     write!(f, "DataHandle(@{:p})", self.data)
   }
 }
-impl <B: Basics> ::std::fmt::Debug for EventHandle <B> {
+impl <S: SimulationSpec> ::std::fmt::Debug for EventHandle <S> {
   fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
     write!(f, "DataHandle(@{:p})", self.data)
   }
@@ -157,16 +157,16 @@ impl <B: Basics> ::std::fmt::Debug for EventHandle <B> {
 
 /*pub trait DeserializationContext {
 fn deserialize_data <T: DeserializeOwned> (&mut self)->T;
-fn deserialize_timeline_handle <T: DataTimeline> (&mut self)->DataTimelineHandle <T>;
+fn deserialize_timeline_handle <T: Entity> (&mut self)->EntityHandle <T>;
 fn deserialize_prediction_handle <T: Event> (&mut self)->PredictionHandle <T>;
 fn deserialize_event_handle <T: Event> (&mut self)->EventHandle <T>;
 fn deserialize_dynamic_event_handle (&mut self)->DynamicEventHandle;
 }*/
 
-pub fn extended_time_of_fiat_event<B: Basics>(
-  time: B::Time,
+pub fn extended_time_of_fiat_event<S: SimulationSpec>(
+  time: S::Time,
   id: DeterministicRandomId,
-) -> ExtendedTime<B> {
+) -> ExtendedTime<S> {
   ExtendedTime {
     base: time,
     iteration: 0,
@@ -174,11 +174,11 @@ pub fn extended_time_of_fiat_event<B: Basics>(
   }
 }
 
-pub fn extended_time_of_predicted_event<B: Basics>(
-  event_base_time: B::Time,
+pub fn extended_time_of_predicted_event<S: SimulationSpec>(
+  event_base_time: S::Time,
   id: DeterministicRandomId,
-  from: &ExtendedTime<B>,
-) -> Option<ExtendedTime<B>> {
+  from: &ExtendedTime<S>,
+) -> Option<ExtendedTime<S>> {
   let iteration = match event_base_time.cmp(&from.base) {
     Ordering::Less => return None, // short-circuit
     Ordering::Greater => 0,
@@ -186,7 +186,7 @@ pub fn extended_time_of_predicted_event<B: Basics>(
       if id > from.id {
         from.iteration
       } else {
-        if from.iteration >= B::MAX_ITERATION {
+        if from.iteration >= S::MAX_ITERATION {
           panic!("Too many iterations at the same base time; probably an infinite loop")
         }
         from.iteration + 1
@@ -198,4 +198,23 @@ pub fn extended_time_of_predicted_event<B: Basics>(
     iteration: iteration,
     id: id,
   })
+}
+
+#[derive(Debug)]
+pub struct EventChildrenIdGenerator {
+  next: Option <DeterministicRandomId>
+}
+
+impl EventChildrenIdGenerator {
+  pub fn new()->EventChildrenIdGenerator {EventChildrenIdGenerator {next: None}}
+  pub fn next(&mut self, this_event_id: & DeterministicRandomId)->DeterministicRandomId {
+    let result = match self.next {
+      None => DeterministicRandomId::new (this_event_id),
+      Some (next) => next,
+    };
+    self.next = Some (DeterministicRandomId::from_raw ([
+      result.data() [0], result.data() [1].wrapping_add (1)
+    ]));
+    result
+  }
 }

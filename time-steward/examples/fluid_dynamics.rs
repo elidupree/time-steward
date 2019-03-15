@@ -36,11 +36,11 @@ use std::collections::HashSet;
 //use dimensioned::
 
 use time_steward::{DeterministicRandomId};
-use time_steward::{DataHandleTrait, DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::{DataHandleTrait, EntityCellTrait, SimulationSpec as SimulationSpecTrait};
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::type_utils::list_of_types::{ListedType};
 use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, EntityCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, query, query_ref, set, destroy, just_destroyed};
 
 #[path = "../dev-shared/tree_continuum.rs"] mod tree_continuum;
@@ -137,7 +137,7 @@ impl<U: Clone> DimensionedStruct<i64, U> {
 use units::*;
 
 
-type Steward = steward_module::Steward <Basics>;
+type Steward = steward_module::Steward <SimulationSpec>;
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct NodeVarying {
@@ -147,7 +147,7 @@ struct NodeVarying {
   fixed_approximate_mass: Mass, // used for pressure calculations, so that not everything has to be updated when one thing is updated
   
   last_fixed_update: Time,
-  next_update: Option <EventHandle <Basics>>,
+  next_update: Option <EventHandle <SimulationSpec>>,
 }
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -158,7 +158,7 @@ struct BoundaryVarying {
   fixed_approximate_momentum: Momentum, // used for mass movement calculations, so that not everything has to be updated when one thing is updated
   
   last_fixed_update: Time,
-  next_update: Option <EventHandle <Basics>>,
+  next_update: Option <EventHandle <SimulationSpec>>,
 }
 
 type NodeHandle = DataHandle <tree_continuum::NodeData <Physics>>;
@@ -224,7 +224,7 @@ impl TreeContinuumPhysics for Physics {
 }
 
 
-fn set_leaf<A: EventAccessor <Steward = Steward >> (accessor: &A, varying: & DataTimelineCell <SimpleTimeline <tree_continuum::NodeVarying<Physics>, Steward>>, data:tree_continuum::LeafVarying<Physics>) {
+fn set_leaf<A: EventAccessor <Steward = Steward >> (accessor: &A, varying: & EntityCell <SimpleTimeline <tree_continuum::NodeVarying<Physics>, Steward>>, data:tree_continuum::LeafVarying<Physics>) {
   set (accessor, &varying, tree_continuum::NodeVarying::Leaf (data));
 }
 
@@ -571,15 +571,15 @@ fn make_globals()-> Globals {
       width: 64*METER.value_unsafe,
       center: [0; 2],
       parent: None,
-      varying: DataTimelineCell::new (SimpleTimeline::new ()),
+      varying: EntityCell::new (SimpleTimeline::new ()),
     }),
   }
 }
 
-/// Finally, define the Basics type.
+/// Finally, define the SimulationSpec type.
 #[derive (Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug, Default)]
-struct Basics {}
-impl BasicsTrait for Basics {
+struct SimulationSpec {}
+impl SimulationSpecTrait for SimulationSpec {
   type Time = Time;
   type Globals = Globals;
   type Types = (ListedType <MomentumChange>, ListedType <MassChange>, ListedType <Initialize>, ListedType <AddMass>);

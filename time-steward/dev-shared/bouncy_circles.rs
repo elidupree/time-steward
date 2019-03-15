@@ -6,11 +6,11 @@ use nalgebra::Vector2;
 use std::marker::PhantomData;
 
 use time_steward::{DeterministicRandomId};
-use time_steward::{DataHandleTrait, DataTimelineCellTrait, QueryResult, Basics as BasicsTrait};
+use time_steward::{DataHandleTrait, EntityCellTrait, QueryResult, SimulationSpec as SimulationSpecTrait};
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::type_utils::list_of_types::{ListedType};
 pub use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, bbox_collision_detection_2d as collisions};
+use steward_module::{TimeSteward, Event, DataHandle, EntityCell, Accessor, EventAccessor, FutureCleanupAccessor, bbox_collision_detection_2d as collisions};
 use simple_timeline::{SimpleTimeline, query, tracking_query, tracking_query_ref, set, destroy};
 use self::collisions::{BoundingBox, NumDimensions, Detector};
 use self::collisions::simple_grid::{SimpleGridDetector};
@@ -55,7 +55,7 @@ impl Event for $Struct {
   }
 }
 
-fn modify<A: EventAccessor <Steward = Steward>, T: QueryResult, F: FnOnce(&mut T)>(accessor: &A, cell: &DataTimelineCell <SimpleTimeline <T, Steward>>, f: F) {
+fn modify<A: EventAccessor <Steward = Steward>, T: QueryResult, F: FnOnce(&mut T)>(accessor: &A, cell: &EntityCell <SimpleTimeline <T, Steward>>, f: F) {
   let mut data = query (accessor, cell);
   (f)(&mut data);
   set (accessor, cell, data);
@@ -88,27 +88,27 @@ fn trajectory_changed <A: EventAccessor <Steward = Steward>>(accessor: &A, circl
 
 
 #[derive (Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug, Default)]
-pub struct Basics {}
-impl BasicsTrait for Basics {
+pub struct SimulationSpec {}
+impl SimulationSpecTrait for SimulationSpec {
   type Time = Time;
   type Globals = Globals;
   type Types = (ListedType <RelationshipChange>, ListedType <BoundaryChange>, ListedType <Initialize>, ListedType <Disturb>, collisions::simple_grid::Types <Space>);
 }
 
-pub type Steward = steward_module::Steward <Basics>;
+pub type Steward = steward_module::Steward <SimulationSpec>;
 
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Globals {
   pub circles: Vec<CircleHandle>,
-  pub detector: DataTimelineCell <SimpleTimeline <DataHandle <SimpleGridDetector<Space>>, Steward>>,
+  pub detector: EntityCell <SimpleTimeline <DataHandle <SimpleGridDetector<Space>>, Steward>>,
 }
 
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Circle {
   pub index: usize,
   pub radius: SpaceCoordinate,
-  pub varying: DataTimelineCell <SimpleTimeline <CircleVarying, Steward>>,
+  pub varying: EntityCell <SimpleTimeline <CircleVarying, Steward>>,
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct CircleVarying {
@@ -126,7 +126,7 @@ type CircleHandle = DataHandle <Circle>;
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct Relationship {
   pub circles: (CircleHandle, CircleHandle),
-  pub varying: DataTimelineCell <SimpleTimeline <RelationshipVarying, Steward>>,
+  pub varying: EntityCell <SimpleTimeline <RelationshipVarying, Steward>>,
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct RelationshipVarying {
@@ -184,7 +184,7 @@ impl collisions::Space for Space {
       _marker: PhantomData
     }
   }
-  fn when_escapes<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, bounds: BoundingBox <Self>)->Option<<<Self::Steward as TimeSteward>::Basics as BasicsTrait>::Time> {
+  fn when_escapes<A: EventAccessor <Steward = Self::Steward>>(&self, accessor: &A, object: &DataHandle<Self::Object>, bounds: BoundingBox <Self>)->Option<<<Self::Steward as TimeSteward>::SimulationSpec as SimulationSpecTrait>::Time> {
     let varying = tracking_query (accessor, & object.varying);
     varying.position.next_time_possibly_outside_bounds ([*accessor.now(), Time::max_value()], STATIC_TIME_SHIFT, [
       Vector2::new (from_collision_space (bounds.bounds [0] [0]) + object.radius, from_collision_space (bounds.bounds [1] [0]) + object.radius),
@@ -196,7 +196,7 @@ impl collisions::Space for Space {
     //println!("become {:?}", (objects [0].index, objects [1].index));
     let relationship = accessor.new_handle (Relationship {
       circles: (objects [0].clone(), objects [1].clone()),
-      varying: DataTimelineCell::new(SimpleTimeline::new ()),
+      varying: EntityCell::new(SimpleTimeline::new ()),
     });
     set (accessor, & relationship.varying, RelationshipVarying {
       induced_acceleration: None,
@@ -396,7 +396,7 @@ define_event!{
   }
 }
 
-pub fn make_globals()-> <Basics as BasicsTrait>::Globals {
+pub fn make_globals()-> <SimulationSpec as SimulationSpecTrait>::Globals {
   let mut circles = Vec::new();
   let mut generator = DeterministicRandomId::new (&0u8).to_rng();
   
@@ -406,12 +406,12 @@ pub fn make_globals()-> <Basics as BasicsTrait>::Globals {
     circles.push (DataHandle::new_for_globals (Circle {
       index: index,
       radius: radius,
-      varying: DataTimelineCell::new(SimpleTimeline::new ())
+      varying: EntityCell::new(SimpleTimeline::new ())
     }));
   }
   Globals {
     circles: circles,
-    detector: DataTimelineCell::new(SimpleTimeline::new ()),
+    detector: EntityCell::new(SimpleTimeline::new ()),
   }
 }
 

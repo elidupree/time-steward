@@ -11,7 +11,7 @@ macro_rules! time_steward_define_bbox_collision_detection {
       use super::simple_timeline::{query, set, SimpleTimeline};
       use super::*;
       use super::{
-        DataHandle, DataTimelineCell, Event, EventAccessor, FutureCleanupAccessor, TimeSteward,
+        DataHandle, EntityCell, Event, EventAccessor, FutureCleanupAccessor, TimeSteward,
       };
       use array_ext::*;
       use rpds::RedBlackTreeMap;
@@ -66,7 +66,7 @@ macro_rules! time_steward_define_bbox_collision_detection {
           accessor: &A,
           object: &DataHandle<Self::Object>,
           BoundingBox<Self>,
-        ) -> Option<<<Self::Steward as TimeSteward>::Basics as Basics>::Time>;
+        ) -> Option<<<Self::Steward as TimeSteward>::SimulationSpec as SimulationSpec>::Time>;
 
         #[allow(unused_variables)]
         fn become_neighbors<A: EventAccessor<Steward = Self::Steward>>(
@@ -180,7 +180,7 @@ macro_rules! time_steward_define_bbox_collision_detection {
         pub struct SimpleGridDetector<S: Space> {
           space: S,
           cell_size: Coordinate,
-          cells: DataTimelineCell<
+          cells: EntityCell<
             SimpleTimeline<RedBlackTreeMap<[Coordinate; DIMENSIONS as usize], Cell<S>>, S::Steward>,
           >,
         }
@@ -339,7 +339,7 @@ macro_rules! time_steward_define_bbox_collision_detection {
             let result = accessor.new_handle(SimpleGridDetector {
               space: space,
               cell_size: cell_size,
-              cells: DataTimelineCell::new(SimpleTimeline::new()),
+              cells: EntityCell::new(SimpleTimeline::new()),
             });
             set(accessor, &result.cells, RedBlackTreeMap::new());
             result

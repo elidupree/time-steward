@@ -18,23 +18,28 @@ impl<T: PersistentlyIdentifiedType> DynamicPersistentlyIdentifiedType for T {
 
 
 
-trait StaticDowncast <T> {
-    fn static_downcast (self)->Option <T>;
+trait TryIdentity <T> {
+    fn try_identity (self)->Option <T>;
   }
-  impl <T> StaticDowncast <T> for T {
-    fn static_downcast (self)->Option <T> {Some (self)}
+  impl <T> TryIdentity <T> for T {
+    fn try_identity (self)->Option <T> {Some (self)}
   }
-  impl <T, U> StaticDowncast <T> for U {
-    default fn static_downcast (self)->Option <T> {None}
+  impl <T, U> TryIdentity <T> for U {
+    default fn try_identity (self)->Option <T> {None}
   }
   
 
 /// Convert between two types if they are actually the same type.
 ///
 /// 
+#[deprecated]
 pub fn static_downcast <T, U> (input: T)->Option <U> {
-  StaticDowncast::<U>::static_downcast (input)
+  TryIdentity::<U>::try_identity (input)
 }
+pub fn try_identity<T, U> (input: T)->Option <U> {
+  TryIdentity::<U>::try_identity (input)
+}
+
 
 #[cfg (test)]
 mod tests {

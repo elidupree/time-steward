@@ -8,29 +8,30 @@ extern crate serde_derive;
 
 use simple_timeline::{query, set, tracking_query, unset, SimpleTimeline};
 use steward_module::{
-  simple_timeline, ConstructibleTimeSteward, DataTimelineCell, Event, EventAccessor,
+  simple_timeline, ConstructibleTimeSteward, EntityCell, Event, EventAccessor,
   FutureCleanupAccessor, SnapshotAccessor, TimeSteward,
 };
-use time_steward::stewards::simple_full as steward_module;
+use time_steward::stewards::simple_flat as steward_module;
 use time_steward::DeterministicRandomId;
 use time_steward::{
-  Basics as BasicsTrait, DataTimelineCellTrait
+  SimulationSpec as SimulationSpecTrait, EntityCellTrait
 };
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::type_utils::list_of_types::{ListedType};
 
 type Time = i64;
-type Steward = steward_module::Steward<Basics>;
+type Steward = steward_module::Steward<SimulationSpec>;
 
 const HOW_MANY_PHILOSOPHERS: usize = 7;
 
-type PhilosopherCell = DataTimelineCell<SimpleTimeline<Philosopher, Steward>>;
+type PhilosopherCell = EntityCell<Philosopher>;
+type EventHandle = <Steward as TimeSteward>::EventHandle;
 
 #[derive(
   Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug, Default,
 )]
-struct Basics {}
-impl BasicsTrait for Basics {
+struct SimulationSpec {}
+impl SimulationSpecTrait for SimulationSpec {
   type Time = Time;
   type Globals = Vec<PhilosopherCell>;
   type Types = TimeStewardTypes;
@@ -42,7 +43,7 @@ struct Philosopher {
   // they muse philosophically about handshakes
   // for a while, whenever one of them happens.
   time_when_next_initiates_handshake: Time,
-  next_handshake_prediction: Option<<Steward as TimeSteward>::EventHandle>,
+  next_handshake_prediction: Option<EventHandle>,
 }
 
 impl Philosopher {
@@ -60,26 +61,24 @@ fn change_next_handshake_time<Accessor: EventAccessor<Steward = Steward>>(
   handle: &PhilosopherCell,
   time: Time,
 ) {
-  let mut philosopher = tracking_query(accessor, handle);
+  let philosopher = accessor.query(handle);
   philosopher.time_when_next_initiates_handshake = time;
-  if time >= *accessor.now() {
-    let time_id = accessor.extended_now().id;
-    philosopher.next_handshake_prediction = Some(accessor.create_prediction(
-      time,
-      DeterministicRandomId::new(&(time_id, index)),
-      Shake { whodunnit: index },
-    ));
-  } else {
-    philosopher.next_handshake_prediction = None;
+  if let Some(removed) = &philosopher.next_handshake_prediction {
+    accessor.destroy_prediction (removed);
   }
-  set(accessor, handle, philosopher);
-}
-
-fn unchange_next_handshake_time<Accessor: FutureCleanupAccessor<Steward = Steward>>(
-  accessor: &Accessor,
-  handle: &PhilosopherCell,
-) {
-  unset(accessor, handle);
+  let new_philosopher = Philosopher {
+    time_when_next_initiates_handshake: time
+    next_handshake_prediction: if time >= *accessor.now() {
+      Some(accessor.create_prediction(
+        time,
+        Shake { whodunnit: index },
+      ))
+    } else {
+      None
+    }
+  };
+  mem::drop(philosopher);
+  accessor.modify (handle, ReplaceWith(new_philosopher));
 }
 
 type TimeStewardTypes = (
@@ -87,6 +86,7 @@ type TimeStewardTypes = (
   ListedType<Tweak>,
   ListedType<TweakUnsafe>,
   ListedType<Shake>,
+  ListedType<ReplaceWith<Philosopher>>,
 );
 
 fn display_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: &Accessor) {
@@ -94,14 +94,14 @@ fn display_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: &Ac
   for handle in accessor.globals() {
     println!(
       "{}",
-      query(accessor, handle).time_when_next_initiates_handshake
+      accessor.query(handle).time_when_next_initiates_handshake
     );
   }
 }
 fn dump_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: &Accessor) -> Vec<Time> {
   let mut result = Vec::new();
   for handle in accessor.globals() {
-    result.push(query(accessor, handle).time_when_next_initiates_handshake);
+    result.push(accessor.query(handle).time_when_next_initiates_handshake);
   }
   result
 }
@@ -115,7 +115,6 @@ impl PersistentlyIdentifiedType for Shake {
 }
 impl Event for Shake {
   type Steward = Steward;
-  type ExecutionData = ();
   fn execute<Accessor: EventAccessor<Steward = Self::Steward>>(&self, accessor: &mut Accessor) {
     let now = *accessor.now();
     let mut rng = accessor.id().to_rng();
@@ -136,20 +135,6 @@ impl Event for Shake {
       awaken_time_2,
     );
   }
-  fn undo<Accessor: FutureCleanupAccessor<Steward = Self::Steward>>(
-    &self,
-    accessor: &mut Accessor,
-    _: (),
-  ) {
-    let mut rng = accessor.id().to_rng();
-    let friend_id = rng.gen_range(0, HOW_MANY_PHILOSOPHERS);
-    let philosophers = accessor.globals();
-    //println!("UNSHAKE!!! @{:?}. {} {}", accessor.extended_now(), self.whodunnit, friend_id);
-    if friend_id != self.whodunnit {
-      unchange_next_handshake_time(accessor, &philosophers[friend_id]);
-    }
-    unchange_next_handshake_time(accessor, &philosophers[self.whodunnit]);
-  }
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
@@ -164,19 +149,7 @@ impl Event for Initialize {
     println!("FIAT!!!!!");
     let philosophers = accessor.globals();
     for i in 0..HOW_MANY_PHILOSOPHERS {
-      set(accessor, &philosophers[i], Philosopher::new());
       change_next_handshake_time(accessor, i, &philosophers[i], (i + 1) as Time);
-    }
-  }
-  fn undo<Accessor: FutureCleanupAccessor<Steward = Self::Steward>>(
-    &self,
-    accessor: &mut Accessor,
-    _: (),
-  ) {
-    let philosophers = accessor.globals();
-    for i in 0..HOW_MANY_PHILOSOPHERS {
-      unchange_next_handshake_time(accessor, &philosophers[i]);
-      set(accessor, &philosophers[i], Philosopher::new());
     }
   }
 }
@@ -203,21 +176,6 @@ impl Event for Tweak {
     );
     change_next_handshake_time(accessor, friend_id, &philosophers[friend_id], awaken_time);
   }
-  fn undo<Accessor: FutureCleanupAccessor<Steward = Self::Steward>>(
-    &self,
-    accessor: &mut Accessor,
-    _: (),
-  ) {
-    let mut rng = accessor.id().to_rng();
-    let friend_id = rng.gen_range(0, HOW_MANY_PHILOSOPHERS);
-    let philosophers = accessor.globals();
-    println!(
-      " UnTweak !!!!! @{:?}. {}",
-      accessor.extended_now(),
-      friend_id
-    );
-    unchange_next_handshake_time(accessor, &philosophers[friend_id]);
-  }
 }
 
 use rand::{ChaChaRng, Rng, SeedableRng};
@@ -242,32 +200,19 @@ impl Event for TweakUnsafe {
     let philosophers = accessor.globals();
     change_next_handshake_time(accessor, friend_id, &philosophers[friend_id], awaken_time);
   }
-  fn undo<Accessor: FutureCleanupAccessor<Steward = Self::Steward>>(
-    &self,
-    accessor: &mut Accessor,
-    _: (),
-  ) {
-    let inconsistent = INCONSISTENT.with(|value| *value);
-    let mut rng =
-      ChaChaRng::from_seed([inconsistent.wrapping_add(accessor.id().data()[1] as u32) as u8; 32]);
-
-    let friend_id = rng.gen_range(0, HOW_MANY_PHILOSOPHERS);
-    let philosophers = accessor.globals();
-    unchange_next_handshake_time(accessor, &philosophers[friend_id]);
-  }
 }
 
-fn make_globals() -> <Basics as BasicsTrait>::Globals {
+fn make_globals() -> <SimulationSpec as SimulationSpecTrait>::Globals {
   let mut philosophers = Vec::new();
   for _ in 0..HOW_MANY_PHILOSOPHERS {
-    philosophers.push(DataTimelineCell::new(SimpleTimeline::new()));
+    philosophers.push(EntityCell::new(Philosopher::new()));
   }
   philosophers
 }
 
 #[test]
 pub fn handshakes_simple() {
-  //type Steward = crossverified::Steward<Basics, inefficient_flat::Steward<Basics>, memoized_flat::Steward<Basics>>;
+  //type Steward = crossverified::Steward<SimulationSpec, inefficient_flat::Steward<SimulationSpec>, memoized_flat::Steward<SimulationSpec>>;
   let mut stew: Steward = Steward::from_globals(make_globals());
 
   stew
@@ -380,8 +325,8 @@ fn handshakes_reloading() {
 
 #[test]
 pub fn handshakes_reloading() {
-  type Steward = crossverified::Steward<Basics, amortized::Steward<Basics>, memoized_flat::Steward<Basics>>;
-  let mut stew: Steward = Steward::from_global_timeline (Basics::GlobalTimeline::new(Vec::new()));
+  type Steward = crossverified::Steward<SimulationSpec, amortized::Steward<SimulationSpec>, memoized_flat::Steward<SimulationSpec>>;
+  let mut stew: Steward = Steward::from_global_timeline (SimulationSpec::GlobalTimeline::new(Vec::new()));
 
   stew.insert_fiat_event(0,
                        DeterministicRandomId::new(&0x32e1570766e768a7u64),
@@ -397,16 +342,16 @@ pub fn handshakes_reloading() {
     .map(|option| option.as_mut().expect("all these snapshots should have been valid")) {
     display_snapshot(snapshot);
     let mut writer: Vec<u8> = Vec::with_capacity(128);
-    time_steward::serialize_snapshot:: <Basics, <Steward as TimeSteward>::Snapshot,_,_> (snapshot, &mut writer, bincode::Infinite).unwrap();
+    time_steward::serialize_snapshot:: <SimulationSpec, <Steward as TimeSteward>::Snapshot,_,_> (snapshot, &mut writer, bincode::Infinite).unwrap();
     // let serialized = String::from_utf8 (serializer.into_inner()).unwrap();
     println!("{:?}", writer);
     use std::io::Cursor;
     let mut reader = Cursor::new(writer);
-    let deserialized = time_steward::deserialize_snapshot:: <Basics, _,_> (&mut reader, bincode::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/).unwrap();
+    let deserialized = time_steward::deserialize_snapshot:: <SimulationSpec, _,_> (&mut reader, bincode::Infinite/*serialized.as_bytes().iter().map (| bite | Ok (bite.clone()))*/).unwrap();
     println!("{:?}", deserialized);
     display_snapshot(&deserialized);
     use time_steward::MomentaryAccessor;
-    display_snapshot(&Steward::from_snapshot::<time_steward::FiatSnapshot<Basics>>(&deserialized).snapshot_before(deserialized.now()).unwrap());
+    display_snapshot(&Steward::from_snapshot::<time_steward::FiatSnapshot<SimulationSpec>>(&deserialized).snapshot_before(deserialized.now()).unwrap());
   }
   // panic!("anyway")
 }
@@ -420,7 +365,7 @@ fn local_synchronization_test() {
   let port = listener.local_addr().unwrap().port();
   ::std::thread::spawn(move || {
     let end_0 = listener.accept().unwrap().0;
-    let mut stew_0: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> =
+    let mut stew_0: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
       simply_synchronized::Steward::new(DeterministicRandomId::new(&0u32),
                                         0,
                                         4,
@@ -444,7 +389,7 @@ fn local_synchronization_test() {
     stew_0.finish();
   });
   let end_1 = TcpStream::connect(("127.0.0.1", port)).unwrap();
-  let mut stew_1: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> =
+  let mut stew_1: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
     simply_synchronized::Steward::new(DeterministicRandomId::new(&1u32),
                                       0,
                                       4,
@@ -473,7 +418,7 @@ fn local_synchronization_failure() {
   let port = listener.local_addr().unwrap().port();
   ::std::thread::spawn(move || {
     let end_0 = listener.accept().unwrap().0;
-    let mut stew_0: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> =
+    let mut stew_0: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
       simply_synchronized::Steward::new(DeterministicRandomId::new(&0u32),
                                         0,
                                         4,
@@ -499,7 +444,7 @@ fn local_synchronization_failure() {
     stew_0.finish();
   });
   let end_1 = TcpStream::connect(("127.0.0.1", port)).unwrap();
-  let mut stew_1: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> =
+  let mut stew_1: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
     simply_synchronized::Steward::new(DeterministicRandomId::new(&1u32),
                                       0,
                                       4,

@@ -21,11 +21,11 @@ pub use emscripten_compatibility::canvas_click;
 
 use std::cmp::{min, max};
 use time_steward::{DeterministicRandomId};
-use time_steward::{DataTimelineCellTrait, Basics as BasicsTrait};
+use time_steward::{EntityCellTrait, SimulationSpec as SimulationSpecTrait};
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::type_utils::list_of_types::{ListedType};
 use time_steward::stewards::{simple_flat as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, EntityCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, query, set, unset};
 
 
@@ -35,7 +35,7 @@ use simple_timeline::{SimpleTimeline, query, set, unset};
 type Time = i64;
 const SECOND: Time = 1i64 << 20;
 
-type Steward = steward_module::Steward <Basics>;
+type Steward = steward_module::Steward <SimulationSpec>;
 
 
 /// A type defining simulation constants.
@@ -54,8 +54,8 @@ struct Globals {
 // Derive all the traits required for field data types.
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct Cell {
-  varying: DataTimelineCell <SimpleTimeline <CellVarying, Steward>>,
-  transfers: [DataTimelineCell <SimpleTimeline <TransferVarying, Steward>>; 2],
+  varying: EntityCell <SimpleTimeline <CellVarying, Steward>>,
+  transfers: [EntityCell <SimpleTimeline <TransferVarying, Steward>>; 2],
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 struct CellVarying {
@@ -79,7 +79,7 @@ struct TransferVarying {
   rate: i64,
   last_change: Time,
   accumulated_error: i64,
-  next_change: Option <EventHandle <Basics>>,
+  next_change: Option <EventHandle <SimulationSpec>>,
 }
 
 fn ink_at (cell: &CellVarying, accumulation_rate: i64, time: Time)->i64 {
@@ -565,10 +565,10 @@ fn make_globals()-> Globals {
   let mut cells = Vec::new();
   for _ in 0..60*60 {
     cells.push (Cell{
-      varying: DataTimelineCell::new (SimpleTimeline::new ()),
+      varying: EntityCell::new (SimpleTimeline::new ()),
       transfers: [
-        DataTimelineCell::new (SimpleTimeline::new ()),
-        DataTimelineCell::new (SimpleTimeline::new ()),
+        EntityCell::new (SimpleTimeline::new ()),
+        EntityCell::new (SimpleTimeline::new ()),
       ],
     });
   }
@@ -579,10 +579,10 @@ fn make_globals()-> Globals {
   }
 }
 
-/// Finally, define the Basics type.
+/// Finally, define the SimulationSpec type.
 #[derive (Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug, Default)]
-struct Basics {}
-impl BasicsTrait for Basics {
+struct SimulationSpec {}
+impl SimulationSpecTrait for SimulationSpec {
   type Time = Time;
   type Globals = Globals;
   type Types = (ListedType <TransferChange>, ListedType <Initialize>, ListedType <AddInk>);
@@ -639,14 +639,14 @@ fn main() {
     if arguments.flag_listen {
       let listener = TcpListener::bind ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
       let stream = listener.accept().unwrap().0;
-      let mut steward: simply_synchronized::Steward<Basics, DefaultSteward <Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3, constants, BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+      let mut steward: simply_synchronized::Steward<SimulationSpec, DefaultSteward <SimulationSpec>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3, constants, BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
       steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
       run (steward, |a,b| (a.settle_before (b)));
       return;
     }
     else if arguments.flag_connect {
       let stream = TcpStream::connect ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
-      let steward: simply_synchronized::Steward<Basics, DefaultSteward <Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 1u32), 0, SECOND>>3, constants, BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+      let steward: simply_synchronized::Steward<SimulationSpec, DefaultSteward <SimulationSpec>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 1u32), 0, SECOND>>3, constants, BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
       run (steward, |a,b| (a.settle_before (b)));
       return;
     }

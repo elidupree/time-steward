@@ -40,11 +40,11 @@ use std::collections::HashSet;
 use array_ext::*;
 
 use time_steward::{DeterministicRandomId};
-use time_steward::{DataHandleTrait, DataTimelineCellTrait, QueryResult};
+use time_steward::{DataHandleTrait, EntityCellTrait, QueryResult};
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::type_utils::list_of_types::{ListedType};
 use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
+use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, EntityCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
 use simple_timeline::{SimpleTimeline, query, tracking_query, tracking_query_ref, set, destroy, just_destroyed};
 
 type Distance = i64;
@@ -69,7 +69,7 @@ pub struct NodeData<Physics: TreeContinuumPhysics> {
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   pub parent: Option <NodeHandle<Physics>>,
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
-  pub varying: DataTimelineCell <SimpleTimeline <NodeVarying<Physics>, Physics::Steward>>,
+  pub varying: EntityCell <SimpleTimeline <NodeVarying<Physics>, Physics::Steward>>,
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub enum NodeVarying<Physics: TreeContinuumPhysics> {
@@ -105,7 +105,7 @@ pub struct BoundaryData<Physics: TreeContinuumPhysics> {
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
   pub nodes: [NodeHandle<Physics>; 2],
   #[serde(deserialize_with = "::serde::Deserialize::deserialize")]
-  pub varying: DataTimelineCell <SimpleTimeline <BoundaryVarying<Physics>, Physics::Steward>>,
+  pub varying: EntityCell <SimpleTimeline <BoundaryVarying<Physics>, Physics::Steward>>,
 }
 #[derive (Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct BoundaryVarying<Physics: TreeContinuumPhysics> {
@@ -377,7 +377,7 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
         width: splitting_node.width >> 1,
         center: center,
         parent: Some (splitting_node.clone()),
-        varying: DataTimelineCell::new (SimpleTimeline::new ()),
+        varying: EntityCell::new (SimpleTimeline::new ()),
       });
       new_child
     }),
@@ -410,7 +410,7 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
               normal_dimension: dimension,
               center: boundary_center,
               nodes: boundary_nodes,
-              varying: DataTimelineCell::new (SimpleTimeline::new ()),
+              varying: EntityCell::new (SimpleTimeline::new ()),
             });
             let mut local_coordinates = coordinates;
             local_coordinates [dimension] <<= 1;
@@ -447,7 +447,7 @@ pub fn split <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
         normal_dimension: dimension,
         center: boundary_center,
         nodes: boundary_nodes,
-        varying: DataTimelineCell::new (SimpleTimeline::new ()),
+        varying: EntityCell::new (SimpleTimeline::new ()),
       });
       let mut local_coordinates = coordinates;
       local_coordinates [dimension] = 1;
@@ -572,7 +572,7 @@ pub fn merge <Physics: TreeContinuumPhysics, A: EventAccessor <Steward = Physics
                 normal_dimension: dimension,
                 center: boundary_center,
                 nodes: boundary_nodes,
-                varying: DataTimelineCell::new (SimpleTimeline::new ()),
+                varying: EntityCell::new (SimpleTimeline::new ()),
               });
               set (accessor, &new_boundary.varying, BoundaryVarying {
                 data: Physics::initialize_merge_boundary (accessor, MergeBoundaryInfo {

@@ -76,22 +76,22 @@ fn main() {
     if arguments.flag_listen {
       let listener = TcpListener::bind ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
       let stream = listener.accept().unwrap().0;
-      let mut steward: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+      let mut steward: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
       steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
       run (steward, |a,b| (a.settle_before (b)));
       return;
     }
     else if arguments.flag_connect {
       let stream = TcpStream::connect ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
-      let steward: simply_synchronized::Steward<Basics, amortized::Steward<Basics>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 1u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+      let steward: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 1u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
       run (steward, |a,b| (a.settle_before (b)));
       return;
     }
   }*/
   {
-    //let mut steward: s::Steward<Basics,
-                                //inefficient_flat::Steward<Basics>,
-                                //memoized_flat::Steward<Basics>> = s::Steward::from_constants(());
+    //let mut steward: s::Steward<SimulationSpec,
+                                //inefficient_flat::Steward<SimulationSpec>,
+                                //memoized_flat::Steward<SimulationSpec>> = s::Steward::from_constants(());
     let mut steward: Steward = Steward::from_globals(make_globals());
     steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize{}).unwrap();
     run (steward, |_,_|());

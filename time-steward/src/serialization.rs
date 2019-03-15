@@ -1,7 +1,7 @@
 //! Serialization for TimeSteward data.
 //!
 //! TimeSteward has a few special requirements for serialization:
-//! * DataTimelineHandle objects get special consideration, to support DAGs and cyclic data structures.
+//! * EntityHandle objects get special consideration, to support DAGs and cyclic data structures.
 //! * The serialization needs to not block other operations for more than O(1) time at a time.
 //! * The serialization must be lossless and platform-independent. For this reason, we always use bincode in low-endian mode.
 
@@ -15,7 +15,7 @@ macro_rules! time_steward_serialization_impls {
   pub trait TimeStewardStructuresVisitor <Steward: TimeSteward> {
     fn visit_data_handle <T: SimulationStateData + PersistentlyIdentifiedType> (&mut self, handle: & DataHandle <T>) {}
     fn visit_event_handle (&mut self, handle: & Steward::EventHandle) {}
-    fn visit_data_timeline_cell <T: DataTimeline> (&mut self, cell: & DataTimelineCell <T>) {}
+    fn visit_data_timeline_cell <T: Entity> (&mut self, cell: & EntityCell <T>) {}
   }
 
   pub trait TimeStewardStructuresVisitable <Steward: TimeSteward> {
@@ -31,24 +31,23 @@ macro_rules! time_steward_serialization_impls {
   use serde::ser;
   use std::fmt::{self,Display};
   use std::marker::PhantomData;
-  use type_utils::static_downcast;
   use type_utils::list_of_types::{ListOfTypes, ListOfTypesVisitor};     
   struct TimeStewardStructuresVisitingSerializeHack<T, Steward>(T, PhantomData<Steward>);
 
   trait MaybeVisitSerializeHack <Steward: TimeSteward> {
     fn visit_event_handle (&mut self, handle: & Steward::EventHandle)->bool;
-    fn visit_data_timeline_cell <T: DataTimeline> (&mut self, cell: & DataTimelineCell <T>)->bool;
+    fn visit_data_timeline_cell <T: Entity> (&mut self, cell: & EntityCell <T>)->bool;
   }
   impl <Steward: TimeSteward, MaybeVisitor> MaybeVisitSerializeHack <Steward> for MaybeVisitor {
     default fn visit_event_handle (&mut self, _handle: & Steward::EventHandle)->bool {false}
-    default fn visit_data_timeline_cell <T: DataTimeline> (&mut self, _cell: & DataTimelineCell <T>)->bool {false}
+    default fn visit_data_timeline_cell <T: Entity> (&mut self, _cell: & EntityCell <T>)->bool {false}
   }
   impl <'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> MaybeVisitSerializeHack <Steward> for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward> {
     fn visit_event_handle (&mut self, handle: & Steward::EventHandle)->bool {
       TimeStewardStructuresVisitor::<Steward>::visit_event_handle (&mut self.0, handle);
       true
     }
-    fn visit_data_timeline_cell <T: DataTimeline> (&mut self, cell: & DataTimelineCell <T>)->bool {
+    fn visit_data_timeline_cell <T: Entity> (&mut self, cell: & EntityCell <T>)->bool {
       TimeStewardStructuresVisitor::<Steward>::visit_data_timeline_cell (&mut self.0, cell);
       true
     }
@@ -218,10 +217,10 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
 
   
   fn bincode_error_to_generic <T, U> (result: $crate::bincode::Result <T>)->Result <T, U> {
-    result.map_err (|e| static_downcast::<$crate::bincode::Error, U>(e).expect("Tried to do TimeSteward serialization with non-bincode serializer/deserializer. TimeSteward serialization only supports bincode"))
+    result.map_err (|e| try_identity::<$crate::bincode::Error, U>(e).expect("Tried to do TimeSteward serialization with non-bincode serializer/deserializer. TimeSteward serialization only supports bincode"))
   }
   fn generic_error_to_bincode <T, U> (result: Result <T, U>)->$crate::bincode::Result <T> {
-    result.map_err (|e| static_downcast::<U, $crate::bincode::Error>(e).expect("Tried to do TimeSteward serialization with non-bincode serializer/deserializer. TimeSteward serialization only supports bincode"))
+    result.map_err (|e| try_identity::<U, $crate::bincode::Error>(e).expect("Tried to do TimeSteward serialization with non-bincode serializer/deserializer. TimeSteward serialization only supports bincode"))
   }
 
   use $crate::serde::{Serialize};
@@ -260,7 +259,7 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
     })
   }
 
-  impl<B: Basics> SerializeTargetInto for EventHandle <B> {
+  impl<S: SimulationSpec> SerializeTargetInto for EventHandle <S> {
     fn serialize_target_into(&self, writer: &mut Write, object_id: u64)->$crate::bincode::Result <()> {
       $crate::bincode::serialize_into (writer, & SerializationElement::EventHandleData (object_id, self.data.data.persistent_type_id()), $crate::bincode::Infinite)?;
       $crate::bincode::serialize_into (writer, self.extended_time(), $crate::bincode::Infinite)?;
@@ -272,22 +271,21 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
       $crate::bincode::serialize_into (writer, self, $crate::bincode::Infinite)
     }
   }
-  fn event_handle_initialize_function <B: Basics, T: Event <Steward = Steward <B> >>(reader: &mut Read, object_id: u64)->$crate::bincode::Result <()> {
+  fn event_handle_initialize_function <S: SimulationSpec, T: Event <Steward = Steward <S> >>(reader: &mut Read, object_id: u64)->$crate::bincode::Result <()> {
     with_deserialization_context (| context | {
       context.uninitialized_handles.remove(&object_id);
-      let now = context.time.downcast_ref::<ExtendedTime <B>>().unwrap().clone();
+      let now = context.time.downcast_ref::<ExtendedTime <S>>().unwrap().clone();
       let handle = context.find_handle::<_, <T::Steward as TimeSteward>::EventHandle> (object_id, || {
         let handle_box = Box::<<T::Steward as TimeSteward>::EventHandle>::new (EventHandle { data: Rc::new(unsafe {::std::mem::uninitialized()})});
-        handle_box.data.links.set(0);
         handle_box as Box<Any>
       })?.clone();
-      let time: ExtendedTime <B> = ::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
+      let time: ExtendedTime <S> = ::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
       let in_future = time > now;
       if in_future {context.predictions.insert (object_id);}
       let data: T = ::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
       unsafe {::std::ptr::write (
-        &*handle.data as *const EventInner<B> as *mut EventInner<B>,
-        deserialization_create_event_inner(time.clone(), data, in_future, handle.data.links.clone())
+        &*handle.data as *const EventInner<S> as *mut EventInner<S>,
+        deserialization_create_event_inner(time.clone(), data, in_future)
       );}
       Ok(())
     })
@@ -376,7 +374,7 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
   }
 
   impl <T: SimulationStateData + PersistentlyIdentifiedType> $crate::serde::Serialize for DataHandle <T> {
-    fn serialize <S: $crate::serde::Serializer> (&self, mut serializer: S)->Result <S::Ok, S::Error> {
+    fn serialize <Z: $crate::serde::Serializer> (&self, mut serializer: Z)->Result <Z::Ok, Z::Error> {
       if MaybeVisitSerializeHackUntyped::visit_data_handle(&mut serializer, self) {return serializer.serialize_none()}
       bincode_error_to_generic(with_serialization_context (| context | {
         let object_identifier = context.find_handle::<_, DataHandle <T>> (&*self.data as *const _ as usize, || {
@@ -397,51 +395,49 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
     }
   }
 
-  impl <B: Basics> $crate::serde::Serialize for EventHandle <B> {
-    fn serialize <S: $crate::serde::Serializer> (&self, mut serializer: S)->Result <S::Ok, S::Error> {
-      if MaybeVisitSerializeHack::<Steward<B>>::visit_event_handle(&mut serializer, self) {return serializer.serialize_none()}
+  impl <S: SimulationSpec> $crate::serde::Serialize for EventHandle <S> {
+    fn serialize <Z: $crate::serde::Serializer> (&self, mut serializer: Z)->Result <Z::Ok, Z::Error> {
+      if MaybeVisitSerializeHack::<Steward<S>>::visit_event_handle(&mut serializer, self) {return serializer.serialize_none()}
       bincode_error_to_generic(with_serialization_context (| context | {
-        let object_identifier = context.find_handle::<_, EventHandle <B>> (&*self.data as *const _ as usize, || {
+        let object_identifier = context.find_handle::<_, EventHandle <S>> (&*self.data as *const _ as usize, || {
           Box::new (self.clone())
         })?;
         generic_error_to_bincode(object_identifier.serialize (serializer))
       }))
     }
   }
-  impl <'a, B: Basics> $crate::serde::Deserialize <'a> for EventHandle <B> {
+  impl <'a, S: SimulationSpec> $crate::serde::Deserialize <'a> for EventHandle <S> {
     fn deserialize <D: $crate::serde::Deserializer<'a>> (deserializer: D)->Result <Self, D::Error> {
       bincode_error_to_generic(with_deserialization_context (| context | {
         let object_identifier = generic_error_to_bincode(u64::deserialize (deserializer))?;
-        let handle = context.find_handle::<_, EventHandle <B>> (object_identifier, || {
-          let handle_box = Box::<EventHandle <B>>::new (EventHandle { data: Rc::new(unsafe {::std::mem::uninitialized()})});
-          handle_box.data.links.set(0);
+        let handle = context.find_handle::<_, EventHandle <S>> (object_identifier, || {
+          let handle_box = Box::<EventHandle <S>>::new (EventHandle { data: Rc::new(unsafe {::std::mem::uninitialized()})});
           handle_box as Box<Any>
         })?.clone();
-        handle.data.links.set (handle.data.links.get () + 1);
         Ok(handle)
       }))
     }
   }
 
-  impl <T: DataTimeline> $crate::serde::Serialize for DataTimelineCell <T> {
+  impl <T: Entity> $crate::serde::Serialize for EntityCell <T> {
     fn serialize <S: $crate::serde::Serializer> (&self, mut serializer: S)->Result <S::Ok, S::Error> {
-      if MaybeVisitSerializeHack::<Steward<T::Basics>>::visit_data_timeline_cell(&mut serializer, self) {return serializer.serialize_none()}
+      if MaybeVisitSerializeHack::<Steward<T::SimulationSpec>>::visit_data_timeline_cell(&mut serializer, self) {return serializer.serialize_none()}
       let foo = bincode_error_to_generic(with_serialization_context (| context | {
-        Ok(context.snapshot.downcast_ref::<SnapshotHandle <T::Basics>>().unwrap().clone())
+        Ok(context.snapshot.downcast_ref::<SnapshotHandle <T::SimulationSpec>>().unwrap().clone())
       }))?;
       let clone = foo.get_clone (&self);
       let guard = clone.data.borrow();
       guard.serialize (serializer)
     }
   }
-  impl <'a, T: DataTimeline> $crate::serde::Deserialize <'a> for DataTimelineCell <T> {
+  impl <'a, T: Entity> $crate::serde::Deserialize <'a> for EntityCell <T> {
     fn deserialize <D: $crate::serde::Deserializer<'a>> (deserializer: D)->Result <Self, D::Error> {
       Ok(Self::new (T::deserialize (deserializer)?))
     }
   }
 
 
-  fn serialize_snapshot <B: Basics, W: Write> (writer: &mut W, snapshot: SnapshotHandle <B>)->$crate::bincode::Result <()> {
+  fn serialize_snapshot <S: SimulationSpec, W: Write> (writer: &mut W, snapshot: SnapshotHandle <S>)->$crate::bincode::Result <()> {
     SERIALIZATION_CONTEXT.with (| cell | {
       {
         let mut guard = cell.borrow_mut();
@@ -455,7 +451,7 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
       }
       // serialize inside a closure so that errors can be collected and we still clear the context afterwards
       let result = (|| {
-        $crate::bincode::serialize_into (writer, snapshot.extended_now(), $crate::bincode::Bounded (::std::mem::size_of::<ExtendedTime <B>>() as u64))?;
+        $crate::bincode::serialize_into (writer, snapshot.extended_now(), $crate::bincode::Bounded (::std::mem::size_of::<ExtendedTime <S>>() as u64))?;
         $crate::bincode::serialize_into (writer, snapshot.globals(), $crate::bincode::Infinite)?;
 
         while let Some((object_identifier, handle_box)) = cell.borrow_mut().as_mut().unwrap().handles_to_serialize_target.pop() {
@@ -477,9 +473,9 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
   trait MaybeData { fn visit (context: &mut DeserializationContext); }
   impl <T> MaybeEvent for T {default fn visit (_: &mut DeserializationContext) {} }
   impl <T> MaybeData for T {default fn visit (_: &mut DeserializationContext) {} }
-  impl <B: Basics, T: Event <Steward = Steward <B>>> MaybeEvent for T {
+  impl <S: SimulationSpec, T: Event <Steward = Steward <S>>> MaybeEvent for T {
     fn visit (context: &mut DeserializationContext) {
-      context.event_handle_initialize_functions.insert (T::ID, event_handle_initialize_function::<B, T>);
+      context.event_handle_initialize_functions.insert (T::ID, event_handle_initialize_function::<S, T>);
     }
   }
   impl <T: SimulationStateData + PersistentlyIdentifiedType> MaybeData for T {
@@ -494,8 +490,8 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
     }
   }
 
-  fn deserialize_something <B: Basics, R: Read> (reader: &mut R)->$crate::bincode::Result <Steward <B>> {
-    let time: ExtendedTime <B> = $crate::bincode::deserialize_from (reader, $crate::bincode::Bounded (::std::mem::size_of::<ExtendedTime <B>>() as u64))?;
+  fn deserialize_something <S: SimulationSpec, R: Read> (reader: &mut R)->$crate::bincode::Result <Steward <S>> {
+    let time: ExtendedTime <S> = $crate::bincode::deserialize_from (reader, $crate::bincode::Bounded (::std::mem::size_of::<ExtendedTime <S>>() as u64))?;
     DESERIALIZATION_CONTEXT.with (| cell | {
       {
         let mut guard = cell.borrow_mut();
@@ -509,12 +505,12 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
           predictions: ::std::collections::HashSet::new(),
           success: false,
         };
-        B::Types::visit_all (&mut context);
+        S::Types::visit_all (&mut context);
         *guard = Some(context);
       }
       // deserialize inside a closure so that errors can be collected and we still clear the context afterwards
       let result = (|| {
-        let globals: B::Globals = $crate::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
+        let globals: S::Globals = $crate::bincode::deserialize_from (reader, $crate::bincode::Infinite)?;
 
         while !cell.borrow().as_ref().unwrap().uninitialized_handles.is_empty() {
           // TODO: use actual size limits
@@ -547,7 +543,7 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
         let mut guard = cell.borrow_mut();
         let context = guard.as_mut().unwrap();
         for prediction in context.predictions.iter() {
-          deserialization_create_prediction(&mut steward, context.handles.get (prediction).unwrap().downcast_ref::<EventHandle <B>>().unwrap().clone());
+          deserialization_create_prediction(&mut steward, context.handles.get (prediction).unwrap().downcast_ref::<EventHandle <S>>().unwrap().clone());
         }
         steward.invalid_before = ValidSince::Before (time.base.clone()) ;
         context.success = true;

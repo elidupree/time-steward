@@ -100,7 +100,7 @@ macro_rules! time_steward_define_simple_timeline {
           }
         }
 
-        fn search_changes(&self, time: &ExtendedTime<Steward::Basics>) -> Result<usize, usize> {
+        fn search_changes(&self, time: &ExtendedTime<Steward::SimulationSpec>) -> Result<usize, usize> {
           // search at the end first, because we are usually in the present.
 
           match self.changes.back() {
@@ -249,12 +249,12 @@ macro_rules! time_steward_define_simple_timeline {
         }
       }
 
-      impl<VaryingData: QueryResult, Steward: TimeSteward> DataTimeline
+      impl<VaryingData: QueryResult, Steward: TimeSteward> Entity
         for SimpleTimeline<VaryingData, Steward>
       {
-        type Basics = Steward::Basics;
+        type SimulationSpec = Steward::SimulationSpec;
 
-        fn clone_for_snapshot(&self, time: &ExtendedTime<Self::Basics>) -> Self {
+        fn clone_for_snapshot(&self, time: &ExtendedTime<Self::SimulationSpec>) -> Self {
           let mut changes = VecDeque::new();
           match self.search_changes(&time) {
             Ok(index) => changes.push_back(self.changes[index].clone()),
@@ -271,7 +271,7 @@ macro_rules! time_steward_define_simple_timeline {
           }
         }
 
-        fn forget_before(&mut self, time: &ExtendedTime<Self::Basics>) {
+        fn forget_before(&mut self, time: &ExtendedTime<Self::SimulationSpec>) {
           let retained = self.other_dependent_events.split_off(time);
           mem::replace(&mut self.other_dependent_events, retained);
 
@@ -284,12 +284,12 @@ macro_rules! time_steward_define_simple_timeline {
           }
         }
       }
-      impl<VaryingData: QueryResult, Steward: TimeSteward> DataTimelineQueriableWith<GetVarying>
+      impl<VaryingData: QueryResult, Steward: TimeSteward> EntityQueriableWith<GetVarying>
         for SimpleTimeline<VaryingData, Steward>
       {
         type QueryResult = VaryingData;
 
-        fn query(&self, _: &GetVarying, time: &ExtendedTime<Self::Basics>) -> Self::QueryResult {
+        fn query(&self, _: &GetVarying, time: &ExtendedTime<Self::SimulationSpec>) -> Self::QueryResult {
           if self
             .destroyer
             .as_ref()
@@ -309,13 +309,13 @@ macro_rules! time_steward_define_simple_timeline {
             .clone()
         }
       }
-      impl<VaryingData: QueryResult, Steward: TimeSteward> DataTimelineQueryRefableWith<GetVarying>
+      impl<VaryingData: QueryResult, Steward: TimeSteward> EntityQueryRefableWith<GetVarying>
         for SimpleTimeline<VaryingData, Steward>
       {
         fn query_ref(
           &self,
           _: &GetVarying,
-          time: &ExtendedTime<Self::Basics>,
+          time: &ExtendedTime<Self::SimulationSpec>,
         ) -> &Self::QueryResult {
           if self
             .destroyer
@@ -335,12 +335,12 @@ macro_rules! time_steward_define_simple_timeline {
             .1
         }
       }
-      impl<VaryingData: QueryResult, Steward: TimeSteward> DataTimelineQueriableWith<JustDestroyed>
+      impl<VaryingData: QueryResult, Steward: TimeSteward> EntityQueriableWith<JustDestroyed>
         for SimpleTimeline<VaryingData, Steward>
       {
         type QueryResult = bool;
 
-        fn query(&self, _: &JustDestroyed, time: &ExtendedTime<Self::Basics>) -> Self::QueryResult {
+        fn query(&self, _: &JustDestroyed, time: &ExtendedTime<Self::SimulationSpec>) -> Self::QueryResult {
           match self
             .destroyer
             .as_ref()
@@ -359,7 +359,7 @@ macro_rules! time_steward_define_simple_timeline {
         A: Accessor<Steward = Steward>,
       >(
         accessor: &A,
-        handle: &DataTimelineCell<SimpleTimeline<VaryingData, Steward>>,
+        handle: &EntityCell<SimpleTimeline<VaryingData, Steward>>,
       ) -> VaryingData {
         accessor.query(handle, &GetVarying)
       }
@@ -369,7 +369,7 @@ macro_rules! time_steward_define_simple_timeline {
         Accessor: EventAccessor<Steward = Steward>,
       >(
         accessor: &Accessor,
-        handle: &DataTimelineCell<SimpleTimeline<VaryingData, Steward>>,
+        handle: &EntityCell<SimpleTimeline<VaryingData, Steward>>,
       ) -> VaryingData {
         accessor.modify(handle, |timeline| {
           timeline
@@ -385,8 +385,8 @@ macro_rules! time_steward_define_simple_timeline {
         A: Accessor<Steward = Steward>,
       >(
         accessor: &'timeline A,
-        handle: &'timeline DataTimelineCell<SimpleTimeline<VaryingData, Steward>>,
-      ) -> DataTimelineCellReadGuard<'timeline, VaryingData> {
+        handle: &'timeline EntityCell<SimpleTimeline<VaryingData, Steward>>,
+      ) -> EntityCellReadGuard<'timeline, VaryingData> {
         accessor.query_ref(handle, &GetVarying)
       }
       pub fn tracking_query_ref<
@@ -396,8 +396,8 @@ macro_rules! time_steward_define_simple_timeline {
         Accessor: EventAccessor<Steward = Steward>,
       >(
         accessor: &'timeline Accessor,
-        handle: &'timeline DataTimelineCell<SimpleTimeline<VaryingData, Steward>>,
-      ) -> DataTimelineCellReadGuard<'timeline, VaryingData> {
+        handle: &'timeline EntityCell<SimpleTimeline<VaryingData, Steward>>,
+      ) -> EntityCellReadGuard<'timeline, VaryingData> {
         accessor.modify(handle, |timeline| {
           timeline
             .other_dependent_events
@@ -411,7 +411,7 @@ macro_rules! time_steward_define_simple_timeline {
         Accessor: EventAccessor<Steward = Steward>,
       >(
         accessor: &Accessor,
-        handle: &DataTimelineCell<SimpleTimeline<VaryingData, Steward>>,
+        handle: &EntityCell<SimpleTimeline<VaryingData, Steward>>,
         modification: VaryingData,
       ) {
         //#[cfg (debug_assertions)]
@@ -456,7 +456,7 @@ macro_rules! time_steward_define_simple_timeline {
         Accessor: FutureCleanupAccessor<Steward = Steward>,
       >(
         accessor: &Accessor,
-        handle: &DataTimelineCell<SimpleTimeline<VaryingData, Steward>>,
+        handle: &EntityCell<SimpleTimeline<VaryingData, Steward>>,
       ) {
         //#[cfg (debug_assertions)]
         //let confirm = accessor.query (handle, &GetVarying, QueryOffset::Before);
@@ -478,7 +478,7 @@ macro_rules! time_steward_define_simple_timeline {
         Accessor: EventAccessor<Steward = Steward>,
       >(
         accessor: &Accessor,
-        handle: &DataTimelineCell<SimpleTimeline<VaryingData, Steward>>,
+        handle: &EntityCell<SimpleTimeline<VaryingData, Steward>>,
       ) {
         if let Some(accessor) = accessor.future_cleanup() {
           accessor.peek_mut(handle).remove_future(accessor, false);
@@ -497,7 +497,7 @@ macro_rules! time_steward_define_simple_timeline {
         A: Accessor<Steward = Steward>,
       >(
         accessor: &A,
-        handle: &DataTimelineCell<SimpleTimeline<VaryingData, Steward>>,
+        handle: &EntityCell<SimpleTimeline<VaryingData, Steward>>,
       ) -> bool {
         accessor.query(handle, &JustDestroyed)
       }
