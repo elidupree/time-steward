@@ -129,6 +129,7 @@ pub trait Accessor {
   fn id(&self) -> &DeterministicRandomId {
     &self.extended_now().id
   }
+  // TODO: see if I can change the lifetimes here to make it more practical for accessors to have mutable methods. Perhaps by giving the accessor trait a lifetime?
   fn query <'a, E: Entity, C: EntityCellTrait<E>> (&'a self, entity: &'a C)-><Self::Steward as TimeStewardEntityCell<'a, E, C>>::QueryGuard
     where Self::Steward: TimeStewardEntityCell<'a, E, C>;
 }
@@ -145,6 +146,9 @@ pub trait Modify <T>: Entity {
   fn modify (self, entity: &mut T)->Self::UndoData;
   fn undo (entity: &mut T, undo_data: &Self::UndoData);
 }
+
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug, Default)]
+pub struct ReplaceWith <T> (pub T);
 
 
 pub trait EventAccessor: Accessor {

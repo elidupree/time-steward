@@ -1,8 +1,8 @@
 use std::any::{Any, TypeId};
 use std::borrow::Borrow;
 use std::cell::{Cell, Ref, RefCell};
-use std::cmp::{max, Ordering};
-use std::collections::{BTreeMap, BTreeSet, Bound, HashMap};
+use std::cmp::{min, max, Ordering};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
@@ -77,8 +77,8 @@ impl<S: SimulationSpec, T: Event<Steward = Steward<S>>> EventInnerTrait<S> for T
     let mut accessor = EventAccessorStruct {
       handle: self_handle.clone(),
       globals: steward.globals.clone(),
-      child_id_generator: EventChildrenIdGenerator::new(),
-      steward: steward,
+      child_id_generator: RefCell::new (EventChildrenIdGenerator::new()),
+      steward: RefCell::new(steward),
     };
     <T as Event>::execute(self, &mut accessor);
   }
@@ -92,15 +92,17 @@ impl<S: SimulationSpec, T: Event<Steward = Steward<S>>> EventInnerTrait<S> for T
 pub struct EventAccessorStruct<'a, S: SimulationSpec> {
   handle: EventHandle<S>,
   globals: Rc<S::Globals>,
-  child_id_generator: EventChildrenIdGenerator,
-  steward: &'a mut Steward<S>,
+  // note: these are only RefCell because of the problem where modify/create_prediction can't take &mut self
+  child_id_generator: RefCell<EventChildrenIdGenerator>,
+  steward: RefCell<&'a mut Steward<S>>,
 }
 #[derive(Debug)]
 pub struct SnapshotInner<S: SimulationSpec> {
   index: usize,
   time: ExtendedTime<S>,
   globals: Rc<S::Globals>,
-  clones: insert_only::HashMap<usize, Box<Any>>,
+  // hack: RefCell only so that we can return a Ref
+  clones: RefCell<insert_only::HashMap<usize, Box<Any>>>,
   shared: Rc<RefCell<StewardShared<S>>>,
 }
 #[derive(Debug, Clone)]
@@ -222,6 +224,13 @@ use self::history::{History, HistoryIndex};
 
 
 
+impl<'a, S: SimulationSpec, E: Entity> TimeStewardEntityCell <'a, E, EntityCell<E>> for Steward<S> {
+  type QueryGuard = QueryGuard<'a, E>;
+}
+impl<S: SimulationSpec, T: SimulationStateData + PersistentlyIdentifiedType> TimeStewardDataHandle <T> for Steward<S> {
+  type DataHandle = DataHandle<T>;
+}
+
 impl<S: SimulationSpec> EventHandleTrait<S> for EventHandle<S> {
   fn extended_time(&self) -> &ExtendedTime<S> {
     &self.data.time
@@ -277,19 +286,6 @@ fn deserialization_create_prediction<S: SimulationSpec>(
 }
 
 
-impl<S: SimulationSpec> SnapshotHandle<S> {
-  fn get_clone<T: Entity>(
-    &self,
-    entity: &EntityCell<T>,
-  ) -> &T {
-    self.data.clones.get_default (entity.serial_number, | | {
-      let data = entity.data.borrow();
-      Some(Box::new (
-        (*self.data.shared).borrow().history.rollback_to_before (data.history_head, & data.current_value, & self.data.time)
-      ))
-    }).unwrap ().downcast_ref::<T>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow")
-  }
-}
 
 type SnapshotsTree<S> = BTreeMap<usize, SnapshotHandle<S>>;
 
@@ -317,7 +313,8 @@ impl<'b, S: SimulationSpec> Accessor for EventAccessorStruct<'b, S> {
   fn query <'a, E: Entity, C: EntityCellTrait<E>> (&'a self, entity: &'a C)-><Self::Steward as TimeStewardEntityCell<'a, E, C>>::QueryGuard
     where Self::Steward: TimeStewardEntityCell<'a, E, C> {
     let guard = try_identity::<&C, & EntityCell <E>>(entity).unwrap().data.borrow();
-    try_identity::<QueryGuard<'a, _>, <Self::Steward as TimeStewardEntityCell<'a, E, C>>::QueryGuard>(guard).unwrap()
+    let guard = Ref::map (guard, | inner | & inner.current_value);
+    try_identity::<QueryGuard<'a, E>, <Self::Steward as TimeStewardEntityCell<'a, E, C>>::QueryGuard>(guard).unwrap()
   }
 }
 impl<S: SimulationSpec> Accessor for SnapshotHandle<S> {
@@ -332,9 +329,14 @@ impl<S: SimulationSpec> Accessor for SnapshotHandle<S> {
     where Self::Steward: TimeStewardEntityCell<'a, E, C> {
     // hack: we could return just &T, but unfortunately my workarounds force us to return Ref
     let entity = try_identity::<&C, & EntityCell <E>>(entity).unwrap();
-    let clone: &'a E = self.get_clone(entity);
-    let guard: QueryGuard<'a, _> = entity.data.borrow();
-    let guard = Ref::map(guard, move |_| clone);
+    let entity_guard = entity.data.borrow();
+    
+    let guard: QueryGuard<'a, E> = Ref::map(self.data.clones.borrow(), |clones| clones.get_default (entity.serial_number, | | {
+      Some(Box::new (
+        (*self.data.shared).borrow().history.rollback_to_before (entity_guard.history_head, & entity_guard.current_value, & self.data.time)
+      ))
+    }).unwrap ().downcast_ref::<E>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow"));
+
     try_identity::<QueryGuard<'a, E>, <Self::Steward as TimeStewardEntityCell<'a, E, C>>::QueryGuard>(guard).unwrap()
   }
 }
@@ -355,7 +357,9 @@ impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
   fn modify <'a, M: Modify<E>, E: Entity, C: EntityCellTrait<E>> (&'a self, entity: &'a C, modification: M)
     where Self::Steward: TimeStewardEntityCell<'a, E, C> {
     let mut modify_guard = try_identity::<&C, & EntityCell <E>>(entity).unwrap().data.borrow_mut();
-    self.steward.shared.borrow_mut().history.insert_modification(&mut modify_guard.history_head, self.handle.clone(), modification.modify (&mut modify_guard.current_value));
+    let undo = modification.modify (&mut modify_guard.current_value);
+    let steward_guard = self.steward.borrow();
+    steward_guard.shared.borrow_mut().history.insert_modification::<E, M>(&mut modify_guard.history_head, self.handle.clone(), undo);
   }
 
 
@@ -366,7 +370,7 @@ impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
   ) -> EventHandle<S> {
     let time = extended_time_of_predicted_event::<<Self::Steward as TimeSteward>::SimulationSpec>(
       time,
-      self.child_id_generator.next(&self.handle.id()),
+      self.child_id_generator.borrow_mut().next(&self.handle.id()),
       self.extended_now(),
     )
     .unwrap();
@@ -379,6 +383,7 @@ impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
     assert!(
         self
           .steward
+          .borrow_mut()
           .existent_predictions
           .insert(prediction.clone()),
         "created a prediction that already existed?!"
@@ -390,6 +395,7 @@ impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
     assert!(
         self
           .steward
+          .borrow_mut()
           .existent_predictions
           .remove(prediction),
         "destroyed a prediction that didn't exist"
@@ -418,6 +424,17 @@ impl<S: SimulationSpec> Steward<S> {
     self.upcoming_fiat_events.remove(event);
     self.existent_predictions.remove(event);
     self.last_event = Some(event.extended_time().clone());
+  }
+  
+  fn garbage_collect (&mut self) {
+    let mut earliest_remembered_time = self.invalid_before.clone();
+    for snapshot in (*self.shared).borrow().snapshots.values() {
+      earliest_remembered_time = min (earliest_remembered_time, ValidSince::Before (snapshot.data.time.base.clone()));
+    }
+    
+    if let ValidSince::Before (time) | ValidSince::After (time) = earliest_remembered_time {
+      self.shared.borrow_mut().history.forget_before (ExtendedTime::beginning_of (time));
+    }
   }
 }
 
@@ -489,7 +506,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
         index: self.next_snapshot_index,
         globals: self.globals.clone(),
         time: ExtendedTime::beginning_of(time.clone()),
-        clones: insert_only::HashMap::new(),
+        clones: RefCell::new(insert_only::HashMap::new()),
         shared: self.shared.clone(),
       }),
     };
@@ -507,6 +524,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
       self.invalid_before.clone(),
       ValidSince::Before(time.clone()),
     );
+    self.garbage_collect();
   }
 }
 

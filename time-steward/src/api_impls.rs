@@ -3,6 +3,13 @@ use std::fmt;
 use super::api::*;
 use std::cmp::Ordering;
 
+impl <T: Entity> Modify <T> for ReplaceWith <T> {
+  type UndoData = T;
+  fn modify (self, entity: &mut T)->Self::UndoData {::std::mem::replace (entity, self.0)}
+  fn undo (entity: &mut T, undo_data: &Self::UndoData) {*entity = undo_data.clone()}
+}
+
+
 impl<B: fmt::Display> fmt::Display for ValidSince<B> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {

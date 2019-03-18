@@ -15,7 +15,7 @@ macro_rules! time_steward_serialization_impls {
   pub trait TimeStewardStructuresVisitor <Steward: TimeSteward> {
     fn visit_data_handle <T: SimulationStateData + PersistentlyIdentifiedType> (&mut self, handle: & DataHandle <T>) {}
     fn visit_event_handle (&mut self, handle: & Steward::EventHandle) {}
-    fn visit_data_timeline_cell <T: Entity> (&mut self, cell: & EntityCell <T>) {}
+    fn visit_entity_cell <T: Entity> (&mut self, cell: & EntityCell <T>) {}
   }
 
   pub trait TimeStewardStructuresVisitable <Steward: TimeSteward> {
@@ -36,32 +36,32 @@ macro_rules! time_steward_serialization_impls {
 
   trait MaybeVisitSerializeHack <Steward: TimeSteward> {
     fn visit_event_handle (&mut self, handle: & Steward::EventHandle)->bool;
-    fn visit_data_timeline_cell <T: Entity> (&mut self, cell: & EntityCell <T>)->bool;
   }
   impl <Steward: TimeSteward, MaybeVisitor> MaybeVisitSerializeHack <Steward> for MaybeVisitor {
     default fn visit_event_handle (&mut self, _handle: & Steward::EventHandle)->bool {false}
-    default fn visit_data_timeline_cell <T: Entity> (&mut self, _cell: & EntityCell <T>)->bool {false}
   }
   impl <'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> MaybeVisitSerializeHack <Steward> for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward> {
     fn visit_event_handle (&mut self, handle: & Steward::EventHandle)->bool {
       TimeStewardStructuresVisitor::<Steward>::visit_event_handle (&mut self.0, handle);
       true
     }
-    fn visit_data_timeline_cell <T: Entity> (&mut self, cell: & EntityCell <T>)->bool {
-      TimeStewardStructuresVisitor::<Steward>::visit_data_timeline_cell (&mut self.0, cell);
-      true
-    }
   }
 
   trait MaybeVisitSerializeHackUntyped {
     fn visit_data_handle <T: SimulationStateData + PersistentlyIdentifiedType> (&mut self, handle: & DataHandle <T>)->bool;
+    fn visit_entity_cell <T: Entity> (&mut self, cell: & EntityCell <T>)->bool;
   }
   impl <MaybeVisitor> MaybeVisitSerializeHackUntyped for MaybeVisitor {
     default fn visit_data_handle <T: SimulationStateData + PersistentlyIdentifiedType> (&mut self, _handle: & DataHandle <T>)->bool {false}
+    default fn visit_entity_cell <T: Entity> (&mut self, _cell: & EntityCell <T>)->bool {false}
   }
   impl <'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> MaybeVisitSerializeHackUntyped for &'a mut TimeStewardStructuresVisitingSerializeHack<Visitor, Steward> {
     fn visit_data_handle <T: SimulationStateData + PersistentlyIdentifiedType> (&mut self, handle: & DataHandle <T>)->bool {
       TimeStewardStructuresVisitor::<Steward>::visit_data_handle (&mut self.0, handle);
+      true
+    }
+    fn visit_entity_cell <T: Entity> (&mut self, cell: & EntityCell <T>)->bool {
+      TimeStewardStructuresVisitor::<Steward>::visit_entity_cell (&mut self.0, cell);
       true
     }
   }
@@ -421,13 +421,14 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
 
   impl <T: Entity> $crate::serde::Serialize for EntityCell <T> {
     fn serialize <S: $crate::serde::Serializer> (&self, mut serializer: S)->Result <S::Ok, S::Error> {
-      if MaybeVisitSerializeHack::<Steward<T::SimulationSpec>>::visit_data_timeline_cell(&mut serializer, self) {return serializer.serialize_none()}
-      let foo = bincode_error_to_generic(with_serialization_context (| context | {
+      if MaybeVisitSerializeHackUntyped::visit_entity_cell(&mut serializer, self) {return serializer.serialize_none()}
+      unimplemented!()
+      /*let foo = bincode_error_to_generic(with_serialization_context (| context | {
         Ok(context.snapshot.downcast_ref::<SnapshotHandle <T::SimulationSpec>>().unwrap().clone())
       }))?;
       let clone = foo.get_clone (&self);
       let guard = clone.data.borrow();
-      guard.serialize (serializer)
+      guard.serialize (serializer)*/
     }
   }
   impl <'a, T: Entity> $crate::serde::Deserialize <'a> for EntityCell <T> {

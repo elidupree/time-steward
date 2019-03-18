@@ -6,15 +6,13 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
-use simple_timeline::{query, set, tracking_query, unset, SimpleTimeline};
 use steward_module::{
-  simple_timeline, ConstructibleTimeSteward, EntityCell, Event, EventAccessor,
-  FutureCleanupAccessor, SnapshotAccessor, TimeSteward,
-};
+   EntityCell, };
 use time_steward::stewards::simple_flat as steward_module;
 use time_steward::DeterministicRandomId;
 use time_steward::{
-  SimulationSpec as SimulationSpecTrait, EntityCellTrait
+  SimulationSpec as SimulationSpecTrait, EntityCellTrait, Event, EventAccessor, SnapshotAccessor, TimeSteward, ConstructibleTimeSteward, ReplaceWith,
+
 };
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::type_utils::list_of_types::{ListedType};
@@ -37,7 +35,7 @@ impl SimulationSpecTrait for SimulationSpec {
   type Types = TimeStewardTypes;
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 struct Philosopher {
   // This is sometimes in the future because
   // they muse philosophically about handshakes
@@ -61,13 +59,12 @@ fn change_next_handshake_time<Accessor: EventAccessor<Steward = Steward>>(
   handle: &PhilosopherCell,
   time: Time,
 ) {
-  let philosopher = accessor.query(handle);
-  philosopher.time_when_next_initiates_handshake = time;
+  let philosopher = accessor.query::<'_, Philosopher, PhilosopherCell>(handle);
   if let Some(removed) = &philosopher.next_handshake_prediction {
     accessor.destroy_prediction (removed);
   }
   let new_philosopher = Philosopher {
-    time_when_next_initiates_handshake: time
+    time_when_next_initiates_handshake: time,
     next_handshake_prediction: if time >= *accessor.now() {
       Some(accessor.create_prediction(
         time,
@@ -77,7 +74,7 @@ fn change_next_handshake_time<Accessor: EventAccessor<Steward = Steward>>(
       None
     }
   };
-  mem::drop(philosopher);
+  ::std::mem::drop(philosopher);
   accessor.modify (handle, ReplaceWith(new_philosopher));
 }
 
@@ -144,7 +141,6 @@ impl PersistentlyIdentifiedType for Initialize {
 }
 impl Event for Initialize {
   type Steward = Steward;
-  type ExecutionData = ();
   fn execute<Accessor: EventAccessor<Steward = Self::Steward>>(&self, accessor: &mut Accessor) {
     println!("FIAT!!!!!");
     let philosophers = accessor.globals();
@@ -161,7 +157,6 @@ impl PersistentlyIdentifiedType for Tweak {
 }
 impl Event for Tweak {
   type Steward = Steward;
-  type ExecutionData = ();
   fn execute<Accessor: EventAccessor<Steward = Self::Steward>>(&self, accessor: &mut Accessor) {
     let now = *accessor.now();
     let mut rng = accessor.id().to_rng();
@@ -188,7 +183,6 @@ impl PersistentlyIdentifiedType for TweakUnsafe {
 }
 impl Event for TweakUnsafe {
   type Steward = Steward;
-  type ExecutionData = ();
   fn execute<Accessor: EventAccessor<Steward = Self::Steward>>(&self, accessor: &mut Accessor) {
     let inconsistent = INCONSISTENT.with(|value| *value);
     let mut rng =
