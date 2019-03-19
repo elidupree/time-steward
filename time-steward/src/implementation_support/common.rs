@@ -2,7 +2,7 @@ use super::super::api::*;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
-use DeterministicRandomId;
+use crate::DeterministicRandomId;
 
 pub fn split_off_greater<K: Ord + Borrow<Q> + Clone, V, Q: Ord + ?Sized>(
   input: &mut BTreeMap<K, V>,

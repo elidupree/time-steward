@@ -12,10 +12,10 @@ use std::rc::Rc;
 
 use super::super::api::*;
 use super::super::implementation_support::common::*;
-use DeterministicRandomId;
-use type_utils::{PersistentlyIdentifiedType, DynamicPersistentlyIdentifiedType, try_identity};
+use crate::DeterministicRandomId;
+use crate::type_utils::{PersistentlyIdentifiedType, DynamicPersistentlyIdentifiedType, try_identity};
 
-use implementation_support::insert_only;
+use crate::implementation_support::insert_only;
 
 //time_steward_steward_specific_api!();
 
