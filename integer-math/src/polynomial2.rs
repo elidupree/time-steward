@@ -8,7 +8,7 @@ use std::cmp::{Ordering};
 use serde::Serialize;
 
 use super::*;
-use range_search::{RangeSearch, RangeSearchRunner, STANDARD_PRECISION_SHIFT};
+use crate::range_search::{RangeSearch, RangeSearchRunner, STANDARD_PRECISION_SHIFT};
 use std::marker::PhantomData;
 
 /// Evaluate all Taylor coefficients of a polynomial.

@@ -1,4 +1,4 @@
-use array::{Array, ReplaceItemType};
+use crate::array::{Array, ReplaceItemType};
 use array_ext::{Array as ArrayExtArray, *};
 use arrayvec::{self, ArrayVec};
 use num::{
@@ -10,7 +10,7 @@ use std::cmp::{max, min};
 use serde::Serialize;
 
 use super::*;
-use polynomial2::{PolynomialBasedAtInput};
+use crate::polynomial2::{PolynomialBasedAtInput};
 
 
 pub fn coefficient_bounds_on_integer_interval<
