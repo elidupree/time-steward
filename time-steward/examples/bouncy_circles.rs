@@ -42,13 +42,13 @@ use glium::{DisplayBuild, Surface};
 
 use time_steward::{DeterministicRandomId};
 //use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, Accessor, simple_timeline};
-use simple_timeline::{query};
+use crate::steward_module::{TimeSteward, ConstructibleTimeSteward, Accessor, simple_timeline};
+use crate::simple_timeline::{query};
 
 #[path = "../dev-shared/bouncy_circles.rs"] mod bouncy_circles;
-use bouncy_circles::*;
+use crate::bouncy_circles::*;
 #[path = "../dev-shared/emscripten_compatibility.rs"] mod emscripten_compatibility;
-pub use emscripten_compatibility::canvas_click;
+pub use crate::emscripten_compatibility::canvas_click;
 
 
 #[derive(Copy, Clone)]

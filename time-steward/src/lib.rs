@@ -89,11 +89,11 @@ pub mod dynamic {
 }*/
 
 mod deterministic_random_id;
-pub use deterministic_random_id::*;
+pub use crate::deterministic_random_id::*;
 
 #[macro_use]
 mod api;
-pub use api::*;
+pub use crate::api::*;
 pub mod api_impls;
 
 #[macro_use]

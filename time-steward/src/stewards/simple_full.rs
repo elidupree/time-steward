@@ -15,10 +15,10 @@ use std::ops::Deref;
 
 use super::super::api::*;
 use super::super::implementation_support::common::*;
-use {DeterministicRandomId};
-use type_utils::{PersistentlyIdentifiedType, DynamicPersistentlyIdentifiedType};
+use crate::{DeterministicRandomId};
+use crate::type_utils::{PersistentlyIdentifiedType, DynamicPersistentlyIdentifiedType};
 
-use implementation_support::insert_only;
+use crate::implementation_support::insert_only;
 
 time_steward_steward_specific_api!();
 

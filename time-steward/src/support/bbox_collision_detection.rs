@@ -16,9 +16,9 @@ macro_rules! time_steward_define_bbox_collision_detection {
       use array_ext::*;
       use rpds::RedBlackTreeMap;
       use std::collections::HashSet;
-      use type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
-      use type_utils::list_of_types::{ListedType};
-      use {DeterministicRandomId, QueryResult, SimulationStateData};
+      use crate::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
+      use crate::type_utils::list_of_types::{ListedType};
+      use crate::{DeterministicRandomId, QueryResult, SimulationStateData};
 
       pub type Coordinate = u64;
       pub type NumDimensions = u32;
@@ -65,7 +65,7 @@ macro_rules! time_steward_define_bbox_collision_detection {
           &self,
           accessor: &A,
           object: &DataHandle<Self::Object>,
-          BoundingBox<Self>,
+          _: BoundingBox<Self>,
         ) -> Option<<<Self::Steward as TimeSteward>::Basics as Basics>::Time>;
 
         #[allow(unused_variables)]

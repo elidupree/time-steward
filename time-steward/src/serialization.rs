@@ -31,8 +31,8 @@ macro_rules! time_steward_serialization_impls {
   use serde::ser;
   use std::fmt::{self,Display};
   use std::marker::PhantomData;
-  use type_utils::static_downcast;
-  use type_utils::list_of_types::{ListOfTypes, ListOfTypesVisitor};     
+  use crate::type_utils::static_downcast;
+  use crate::type_utils::list_of_types::{ListOfTypes, ListOfTypesVisitor};     
   struct TimeStewardStructuresVisitingSerializeHack<T, Steward>(T, PhantomData<Steward>);
 
   trait MaybeVisitSerializeHack <Steward: TimeSteward> {
@@ -229,8 +229,8 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
 
   #[derive (Serialize, Deserialize, Debug)]
   enum SerializationElement {
-    DataHandleData(u64, ::type_utils::PersistentTypeId),
-    EventHandleData(u64, ::type_utils::PersistentTypeId),
+    DataHandleData(u64, crate::type_utils::PersistentTypeId),
+    EventHandleData(u64, crate::type_utils::PersistentTypeId),
     Finished,
   }
 
@@ -302,9 +302,9 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
   struct DeserializationContext {
     time: Box <Any>,
     data_handle_initialize_functions: ::std::collections::HashMap <
-      ::type_utils::PersistentTypeId, fn (&mut Read, u64)->$crate::bincode::Result <()>>,
+      crate::type_utils::PersistentTypeId, fn (&mut Read, u64)->$crate::bincode::Result <()>>,
     event_handle_initialize_functions: ::std::collections::HashMap <
-      ::type_utils::PersistentTypeId, fn (&mut Read, u64)->$crate::bincode::Result <()>>,
+      crate::type_utils::PersistentTypeId, fn (&mut Read, u64)->$crate::bincode::Result <()>>,
     handles: ::std::collections::HashMap <u64, Box <Any>>,
     uninitialized_handles: ::std::collections::HashSet <u64>,
     predictions: ::std::collections::HashSet <u64>,

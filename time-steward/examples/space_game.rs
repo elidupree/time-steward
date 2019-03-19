@@ -43,15 +43,15 @@ use glium::{DisplayBuild, Surface};
 
 use time_steward::{DeterministicRandomId};
 //use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, Accessor, simple_timeline};
-use simple_timeline::{query};
-use steward_module::bbox_collision_detection_2d::{BoundingBox, Detector};
-use steward_module::bbox_collision_detection_2d::simple_grid::SimpleGridDetector;
+use crate::steward_module::{TimeSteward, ConstructibleTimeSteward, Accessor, simple_timeline};
+use crate::simple_timeline::{query};
+use crate::steward_module::bbox_collision_detection_2d::{BoundingBox, Detector};
+use crate::steward_module::bbox_collision_detection_2d::simple_grid::SimpleGridDetector;
 
 #[path = "../dev-shared/space_game.rs"] mod space_game;
-use space_game::*;
+use crate::space_game::*;
 #[path = "../dev-shared/emscripten_compatibility.rs"] mod emscripten_compatibility;
-pub use emscripten_compatibility::canvas_click;
+pub use crate::emscripten_compatibility::canvas_click;
 
 
 #[derive(Copy, Clone)]

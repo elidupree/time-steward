@@ -1,7 +1,7 @@
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::hash::Hash;
-use DeterministicRandomId;
+use crate::DeterministicRandomId;
 //use std::io::{Read, Write};
 use std::any::Any;
 use std::fmt::Debug;
@@ -9,8 +9,8 @@ use std::fmt::Debug;
 use std::borrow::Borrow;
 use std::ops::Deref;
 
-use type_utils::PersistentlyIdentifiedType;
-use type_utils::list_of_types::{ListOfTypes};
+use crate::type_utils::PersistentlyIdentifiedType;
+use crate::type_utils::list_of_types::{ListOfTypes};
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///

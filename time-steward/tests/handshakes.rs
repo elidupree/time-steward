@@ -6,8 +6,8 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
-use simple_timeline::{query, set, tracking_query, unset, SimpleTimeline};
-use steward_module::{
+use crate::simple_timeline::{query, set, tracking_query, unset, SimpleTimeline};
+use crate::steward_module::{
   simple_timeline, ConstructibleTimeSteward, DataTimelineCell, Event, EventAccessor,
   FutureCleanupAccessor, SnapshotAccessor, TimeSteward,
 };

@@ -10,8 +10,8 @@ use time_steward::{DataHandleTrait, DataTimelineCellTrait, QueryResult, Basics a
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::type_utils::list_of_types::{ListedType};
 pub use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, bbox_collision_detection_2d as collisions};
-use simple_timeline::{SimpleTimeline, query, tracking_query, tracking_query_ref, set, destroy};
+use crate::steward_module::{TimeSteward, Event, DataHandle, DataTimelineCell, Accessor, EventAccessor, FutureCleanupAccessor, bbox_collision_detection_2d as collisions};
+use crate::simple_timeline::{SimpleTimeline, query, tracking_query, tracking_query_ref, set, destroy};
 use self::collisions::{BoundingBox, NumDimensions, Detector};
 use self::collisions::simple_grid::{SimpleGridDetector};
 

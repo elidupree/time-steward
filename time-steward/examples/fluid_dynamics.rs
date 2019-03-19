@@ -18,7 +18,7 @@ extern crate time_steward;
 #[macro_use]
 extern crate glium;
 #[path = "../dev-shared/emscripten_compatibility.rs"] mod emscripten_compatibility;
-pub use emscripten_compatibility::canvas_click;
+pub use crate::emscripten_compatibility::canvas_click;
 
 #[allow (unused_macros)]
 macro_rules! printlnerr(
@@ -40,11 +40,11 @@ use time_steward::{DataHandleTrait, DataTimelineCellTrait, Basics as BasicsTrait
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::type_utils::list_of_types::{ListedType};
 use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
-use simple_timeline::{SimpleTimeline, query, query_ref, set, destroy, just_destroyed};
+use crate::steward_module::{TimeSteward, ConstructibleTimeSteward, IncrementalTimeSteward, Event, DataHandle, DataTimelineCell, EventHandle, Accessor, EventAccessor, FutureCleanupAccessor, simple_timeline};
+use crate::simple_timeline::{SimpleTimeline, query, query_ref, set, destroy, just_destroyed};
 
 #[path = "../dev-shared/tree_continuum.rs"] mod tree_continuum;
-use tree_continuum::*;
+use crate::tree_continuum::*;
 
 mod units {
   make_units! {
@@ -134,7 +134,7 @@ impl<U: Clone> DimensionedStruct<i64, U> {
   constant!(GENERIC_MASS: Mass = GENERIC_DENSITY.value_unsafe*METER.value_unsafe*METER.value_unsafe*DEPTH.value_unsafe);
 }
 
-use units::*;
+use crate::units::*;
 
 
 type Steward = steward_module::Steward <Basics>;
