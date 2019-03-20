@@ -214,3 +214,5 @@ pub trait IncrementalTimeSteward: TimeSteward {
   fn step(&mut self);
   fn updated_until_before(&self) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
 }
+
+pub trait CanonicalTimeSteward: TimeSteward {}

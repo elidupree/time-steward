@@ -561,7 +561,7 @@ impl<S: SimulationSpec> IncrementalTimeSteward for Steward<S> {
       .map(|event| event.extended_time().base.clone())
   }
 }
-//impl<S: SimulationSpec> CanonicalTimeSteward for Steward<S> {}
+impl<S: SimulationSpec> CanonicalTimeSteward for Steward<S> {}
 
 //time_steward_define_simple_timeline!();
 //time_steward_define_bbox_collision_detection!();
