@@ -31,13 +31,6 @@ fn new_serial_number() -> usize {
 }
 
 
-#[derive(Derivative)]
-#[derivative(Clone(bound = ""))]
-pub struct DataHandle<T: SimulationStateData + PersistentlyIdentifiedType> {
-  data: Rc<T>,
-}
-
-
 
 #[derive(Debug)]
 pub struct EntityCell<T> {
@@ -51,13 +44,6 @@ pub struct EntityCellInner<T> {
   history_head: HistoryIndex,
 }
 
-
-
-#[derive(Derivative)]
-#[derivative(Clone(bound = ""))]
-pub struct EventHandle<S: SimulationSpec> {
-  data: Rc<EventInner<S>>,
-}
 
 #[derive(Debug)]
 struct EventInner<S: SimulationSpec> {
@@ -84,6 +70,9 @@ impl<S: SimulationSpec, T: Event<Steward = Steward<S>>> EventInnerTrait<S> for T
   }
   fn get_type_id(&self)->TypeId {TypeId::of::<T>()}
 }
+
+type EventHandle<S> = DataHandle<(), EventInner<S>>;
+type EntityHandle<T,U> = DataHandle<T, EntityCell<U>>;
 
 
 

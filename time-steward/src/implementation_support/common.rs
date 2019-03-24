@@ -2,6 +2,11 @@ use super::super::api::*;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Debug;
+use std::ops::Deref;
+use std::rc::Rc;
+use std::any::Any;
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use crate::DeterministicRandomId;
 
 pub fn split_off_greater<K: Ord + Borrow<Q> + Clone, V, Q: Ord + ?Sized>(
@@ -78,82 +83,117 @@ macro_rules! downcast_ref {
   }};
 }
 
+
 #[doc(hidden)]
 #[macro_export]
-macro_rules! time_steward_common_impls_for_event_handle {
-  ([$($bounds:tt)*] [$($concrete:tt)*] [$($basics:tt)*]) => {
-
-
-    impl <$($bounds)*> Borrow<ExtendedTime <$($basics)*>> for $($concrete)* {
-      fn borrow (&self)->& ExtendedTime <$($basics)*> {self.extended_time()}
-    }
-
-    /*impl<$($bounds)*> Eq for $($concrete)* {}
-    impl<$($bounds)*> PartialEq for $($concrete)* {
-      fn eq(&self, other: &Self) -> bool {
-        self.extended_time().eq(other.extended_time())
-      }
-    }*/
+macro_rules! delegate {
+  (Ord, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
     impl<$($bounds)*> Ord for $($concrete)* {
       fn cmp(&self, other: &Self) -> Ordering {
-        self.extended_time().cmp(other.extended_time())
+        let foo = { let $this = self; $target };
+        let bar = { let $this = other; $target };
+        foo.cmp(bar)
       }
     }
+  };
+  (PartialOrd, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
     impl<$($bounds)*> PartialOrd for $($concrete)* {
-      fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+      fn partial_cmp(&self, other: &Self) ->Option <Ordering> {
+        let foo = { let $this = self; $target };
+        let bar = { let $this = other; $target };
+        foo.partial_cmp(bar)
       }
     }
-
-
+  };
+  (Eq, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
+    impl<$($bounds)*> Eq for $($concrete)* {}
+  };
+  (PartialEq, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
+    impl<$($bounds)*> PartialEq for $($concrete)* {
+      fn eq(&self, other: &Self) -> bool {
+        let foo = { let $this = self; $target };
+        let bar = { let $this = other; $target };
+        foo.eq(bar)
+      }
+    }
+  };
+  (Hash, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
+    impl<$($bounds)*> ::std::hash::Hash for $($concrete)* {
+      fn hash <H: ::std::hash::Hasher> (&self, state: &mut H) {
+        let foo = { let $this = self; $target };
+        foo.hash (state);
+      }
+    }
+  };
+  ($Trait1: tt, $Trait2: tt, [$this: ident => $target: expr], [$($bounds:tt)*], [$($concrete:tt)*]) => {
+    delegate! ($Trait1, $this => $target, [$($bounds)*], [$($concrete)*]);
+    delegate! ($Trait2, $this => $target, [$($bounds)*], [$($concrete)*]);
+  };
+  ($Trait1: tt, $Trait2: tt, $Trait3: tt, [$this: ident => $target: expr], [$($bounds:tt)*], [$($concrete:tt)*]) => {
+    delegate! ($Trait1, $this => $target, [$($bounds)*], [$($concrete)*]);
+    delegate! ($Trait2, $this => $target, [$($bounds)*], [$($concrete)*]);
+    delegate! ($Trait3, $this => $target, [$($bounds)*], [$($concrete)*]);
+  };
+  ($Trait1: tt, $Trait2: tt, $Trait3: tt, $Trait4: tt, [$this: ident => $target: expr], [$($bounds:tt)*], [$($concrete:tt)*]) => {
+    delegate! ($Trait1, $this => $target, [$($bounds)*], [$($concrete)*]);
+    delegate! ($Trait2, $this => $target, [$($bounds)*], [$($concrete)*]);
+    delegate! ($Trait3, $this => $target, [$($bounds)*], [$($concrete)*]);
+    delegate! ($Trait4, $this => $target, [$($bounds)*], [$($concrete)*]);
+  };
+  ($Trait1: tt, $Trait2: tt, $Trait3: tt, $Trait4: tt, $Trait5: tt, [$this: ident => $target: expr], [$($bounds:tt)*], [$($concrete:tt)*]) => {
+    delegate! ($Trait1, $this => $target, [$($bounds)*], [$($concrete)*]);
+    delegate! ($Trait2, $this => $target, [$($bounds)*], [$($concrete)*]);
+    delegate! ($Trait3, $this => $target, [$($bounds)*], [$($concrete)*]);
+    delegate! ($Trait4, $this => $target, [$($bounds)*], [$($concrete)*]);
+    delegate! ($Trait5, $this => $target, [$($bounds)*], [$($concrete)*]);
   };
 }
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! time_steward_common_impls_for_uniquely_identified_handle {
-  ([$($bounds:tt)*] [$($concrete:tt)*] $self_hack: ident => ($id: expr): $Id: ty) => {
+pub trait PrivateTimeStewardDataTrait: Any + Debug {}
+impl <T: Any + Debug> PrivateTimeStewardDataTrait for T {}
 
-impl <$($bounds)*>  $($concrete)* {
-  fn unique_handle_id (&$self_hack)->$Id {
-    $id
-  }
-}
-impl <$($bounds)*> Hash for $($concrete)* {
-  fn hash <H: Hasher> (&self, state: &mut H) {
-    self.unique_handle_id().hash (state);
-  }
-}
-impl <$($bounds)*> Eq for $($concrete)* {}
-impl <$($bounds)*> PartialEq for $($concrete)* {
-  fn eq(&self, other: &Self) -> bool {
-    self.unique_handle_id() == other.unique_handle_id()
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""))]
+pub struct DataHandle <PublicImmutableData, PrivateTimeStewardData> (Rc<(PublicImmutableData, PrivateTimeStewardData)>);
+
+impl <PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait> DataHandleTrait for DataHandle<PublicImmutableData, PrivateTimeStewardData> {}
+
+impl <PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait> Deref for DataHandle<PublicImmutableData, PrivateTimeStewardData> {
+  type Target = PublicImmutableData;
+  fn deref (&self)->& Self::Target {
+    & (self.0).0
   }
 }
 
-  };
+delegate! (PartialEq, Eq, Hash, [this => &(&*this as *const _ as usize)], [PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait], [DataHandle<PublicImmutableData, PrivateTimeStewardData>]);
+
+#[derive (Clone, Debug)]
+pub struct TimeOrderedEventHandle <Steward: TimeSteward> (Steward::EventHandle);
+
+delegate! (PartialEq, Eq, PartialOrd, Ord, Hash, [this => this.0.extended_time()], [Steward: TimeSteward], [TimeOrderedEventHandle <Steward>]);
+
+impl <Steward: TimeSteward> Borrow<ExtendedTime <Steward::SimulationSpec>> for TimeOrderedEventHandle <Steward> {
+  fn borrow (&self)->& ExtendedTime <Steward::SimulationSpec> {self.0.extended_time()}
 }
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! time_steward_common_impls_for_handles {
-  () => {
-    time_steward_common_impls_for_event_handle! ([S: SimulationSpec] [EventHandle <S>] [S]);
-    time_steward_common_impls_for_uniquely_identified_handle! ([S: SimulationSpec] [EventHandle <S>] self => (self.extended_time().id): DeterministicRandomId);
-
-impl <T: SimulationStateData + $crate::type_utils::PersistentlyIdentifiedType> ::std::fmt::Debug for DataHandle <T> {
+impl <PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait> Debug for DataHandle<PublicImmutableData, PrivateTimeStewardData> {
   fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-    write!(f, "DataHandle(@{:p})", self.data)
-  }
-}
-impl <S: SimulationSpec> ::std::fmt::Debug for EventHandle <S> {
-  fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-    write!(f, "DataHandle(@{:p})", self.data)
+    write!(f, "DataHandle(@{:p})", self.0)
   }
 }
 
-  };
+impl <PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait> Serialize for DataHandle<PublicImmutableData, PrivateTimeStewardData> {
+  fn serialize <S: Serializer> (&self, _serializer: S)->Result <S::Ok, S::Error> {
+    unimplemented!()
+  }
 }
+
+impl <'a, PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait> Deserialize<'a> for DataHandle<PublicImmutableData, PrivateTimeStewardData> {
+  fn deserialize <D: Deserializer<'a>> (_deserializer: D)->Result <Self, D::Error> {
+    unimplemented!()
+  }
+}
+
 
 /*pub trait DeserializationContext {
 fn deserialize_data <T: DeserializeOwned> (&mut self)->T;

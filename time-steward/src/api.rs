@@ -8,8 +8,9 @@ use std::fmt::Debug;
 //use std::cmp::Ordering;
 use std::borrow::Borrow;
 use std::ops::Deref;
+use std::marker::PhantomData;
 
-use crate::type_utils::PersistentlyIdentifiedType;
+use crate::type_utils::{PersistentlyIdentifiedType, PersistentTypeId};
 use crate::type_utils::list_of_types::{ListOfTypes};
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
@@ -17,11 +18,8 @@ use crate::type_utils::list_of_types::{ListOfTypes};
 /// We used to require `Send + Sync` for SimulationStateData, but now that EntityHandles can be part of SimulationStateData, we have to omit that to support TimeSteward types that have !Send/!Sync handles (like Rc)
 ///
 /// Clone, Eq, and Hash are omitted because
-pub trait SimulationStateData: Any + Serialize + DeserializeOwned + Debug {}
-impl<T: Any + Serialize + DeserializeOwned + Debug> SimulationStateData for T {}
-
-pub trait Entity: SimulationStateData + Clone + Eq + Hash {}
-impl<T: SimulationStateData + Clone + Eq + Hash> Entity for T {}
+pub trait SimulationStateData: Any + Clone + Eq + Hash + Serialize + DeserializeOwned + Debug {}
+impl<T: Any + Clone + Eq + Hash + Serialize + DeserializeOwned + Debug> SimulationStateData for T {}
 
 // Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time.
 
@@ -69,8 +67,11 @@ pub enum FiatEventOperationError {
   InvalidTime,
 }
 
-pub trait EventHandleTrait<S: SimulationSpec>:
-  SimulationStateData + Clone + Ord + Hash + Borrow<ExtendedTime<S>>
+
+/// Data handles where clones point to the same data, and Eq and Hash by object identity
+pub trait DataHandleTrait: SimulationStateData {}
+
+pub trait EventHandleTrait<S: SimulationSpec>: DataHandleTrait + Borrow<ExtendedTime<S>>
 {
   fn extended_time(&self) -> &ExtendedTime<S>;
   fn time(&self) -> &S::Time {
@@ -79,22 +80,13 @@ pub trait EventHandleTrait<S: SimulationSpec>:
   fn id(&self) -> &DeterministicRandomId {
     &self.extended_time().id
   }
-  fn downcast_ref<T: Any>(&self) -> Option<&T>;
-}
-/// Data handles that Eq and Hash by object identity
-pub trait DataHandleTrait<T>:
-  SimulationStateData + Clone + Eq + Hash + Deref<Target = T>
-{
-  fn new_for_globals(data: T) -> Self;
-}
-pub trait EntityCellTrait<T>: SimulationStateData + Hash {
-  fn new(data: T) -> Self;
 }
 
-/*pub struct TimeRange <Time> {
-  pub start: Time,
-  pub end: Option <Time>,
-}*/
+pub trait EntityHandleTrait: DataHandleTrait + PersistentlyIdentifiedType {
+  type ImmutableData: SimulationStateData + PersistentlyIdentifiedType;
+  type MutableData: SimulationStateData + PersistentlyIdentifiedType;
+}
+
 
 // This exists to support a variety of time stewards
 // along with allowing BaseTime to be dense (e.g. a
@@ -130,19 +122,48 @@ pub trait Accessor {
     &self.extended_now().id
   }
   // TODO: see if I can change the lifetimes here to make it more practical for accessors to have mutable methods. Perhaps by giving the accessor trait a lifetime?
-  fn query <'a, E: Entity, C: EntityCellTrait<E>> (&'a self, entity: &'a C)-><Self::Steward as TimeStewardEntityCell<'a, E, C>>::QueryGuard
-    where Self::Steward: TimeStewardEntityCell<'a, E, C>;
+  fn query <'a, T: EntityHandleTrait> (&'a self, entity: &'a T)-><Self as AccessorQueryHack<'a, T>>::QueryGuard {self.query_hack(entity)}
 }
 
-pub trait TimeStewardEntityCell <'a, E, C>: TimeSteward {
-  type QueryGuard: Deref<Target = E>;
-}
-pub trait TimeStewardDataHandle <T>: TimeSteward {
-  type DataHandle: DataHandleTrait<T>;
+pub trait AccessorQueryHack <'a, T: EntityHandleTrait> {
+  type QueryGuard: Deref<Target = T::MutableData>;
+  fn query_hack (&'a self, entity: &'a T)->Self::QueryGuard;
 }
 
-pub trait Modify <T>: Entity {
-  type UndoData: Entity;
+impl <'a, T: EntityHandleTrait, A: Accessor + ?Sized> AccessorQueryHack<'a, T> for A {
+  type QueryGuard = &'a T::MutableData;
+  fn query_hack (&'a self, _entity: &'a T)->Self::QueryGuard {panic!("query_hack() called when it shouldn't be")}
+}
+
+
+pub trait TimeStewardEntityHandleHack <ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType> {
+  type EntityHandle: EntityHandleTrait + Deref<Target = ImmutableData>;
+  fn new_entity_handle_nonreplicable_hack (immutable: ImmutableData, mutable: MutableData)->Self::EntityHandle;
+}
+
+type EntityHandle <Steward, ImmutableData, MutableData> = <Steward as TimeStewardEntityHandleHack <ImmutableData, MutableData>>::EntityHandle;
+
+#[derive (Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
+pub struct NeverEntityHandle <T, U> (PhantomData <*const (T, U)>);
+
+impl<ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType> DataHandleTrait for NeverEntityHandle <ImmutableData, MutableData> {}
+impl<ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType> EntityHandleTrait for NeverEntityHandle <ImmutableData, MutableData> {type ImmutableData = ImmutableData; type MutableData = MutableData;}
+impl<ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType> PersistentlyIdentifiedType for NeverEntityHandle <ImmutableData, MutableData> {const ID: PersistentTypeId = PersistentTypeId (0x0793df01adf97abd);}
+impl<ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType> Deref for NeverEntityHandle <ImmutableData, MutableData> {type Target = ImmutableData; fn deref (&self)->& ImmutableData {unreachable!()}}
+
+impl <ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType, Steward: TimeSteward> TimeStewardEntityHandleHack <ImmutableData, MutableData> for Steward {
+  type EntityHandle = NeverEntityHandle<ImmutableData, MutableData>;
+  fn new_entity_handle_nonreplicable_hack (_immutable: ImmutableData, _mutable: MutableData)->Self::EntityHandle {
+    panic!("new_entity_handle_nonreplicable_hack() called when it shouldn't be")
+  }
+}
+
+pub trait TimeStewardEntityHandle <T: EntityHandleTrait>: TimeSteward {
+  fn create_entity_handle_nonreplicable (immutable: T::ImmutableData, mutable: T::MutableData)->T;
+}
+
+pub trait Modify <T>: SimulationStateData {
+  type UndoData: SimulationStateData;
   fn modify (self, entity: &mut T)->Self::UndoData;
   fn undo (entity: &mut T, undo_data: &Self::UndoData);
 }
@@ -154,13 +175,13 @@ pub struct ReplaceWith <T> (pub T);
 pub trait EventAccessor: Accessor {
   fn this_event(&self) -> &<Self::Steward as TimeSteward>::EventHandle;
 
-  fn new_handle<T: SimulationStateData + PersistentlyIdentifiedType>(
+  fn new_entity_handle<ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType>(
     &self,
-    data: T,
-  ) -> <Self::Steward as TimeStewardDataHandle <T>>::DataHandle where Self::Steward: TimeStewardDataHandle <T>;
+    immutable: ImmutableData, mutable: MutableData
+  ) -> EntityHandle<Self::Steward, ImmutableData, MutableData>;
 
-  fn modify <'a, M: Modify<E>, E: Entity, C: EntityCellTrait<E>> (&'a self, entity: &'a C, modification: M)
-    where Self::Steward: TimeStewardEntityCell<'a, E, C>;
+  fn modify <'a, T: EntityHandleTrait, M: Modify<T::MutableData>> (&'a self, entity: &'a T, modification: M);
+    //where Self::Steward: TimeStewardEntityCell<'a, E, C>;
 
   fn create_prediction<E: Event<Steward = Self::Steward>>(
     &self,
@@ -181,6 +202,11 @@ pub trait TimeSteward: Any + Sized + Debug {
   type SimulationSpec: SimulationSpec;
   type SnapshotAccessor: SnapshotAccessor<Steward = Self>;
   type EventHandle: EventHandleTrait<Self::SimulationSpec>;
+  
+  fn new_entity_handle_nonreplicable<ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType>(
+    &self,
+    immutable: ImmutableData, mutable: MutableData
+  ) -> EntityHandle<Self, ImmutableData, MutableData>{Self::new_entity_handle_nonreplicable_hack(immutable, mutable)}
   
   fn insert_fiat_event<E: Event<Steward = Self>>(
     &mut self,
