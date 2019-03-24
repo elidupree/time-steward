@@ -64,7 +64,7 @@ pub fn split_off_greater_set<K: Ord + Borrow<Q>, Q: Ord + ?Sized>(
     };
     result
   }}
-}*/
+}*//*
 macro_rules! downcast_ref {
   ($input: expr, $T: ty, $($Trait:tt)*) => {{
     let result: Option<&$T> = {
@@ -81,7 +81,7 @@ macro_rules! downcast_ref {
     };
     result
   }};
-}
+}*/
 
 
 #[doc(hidden)]

@@ -131,8 +131,8 @@ pub trait AccessorQueryHack <'a, T: EntityHandleTrait> {
 }
 
 impl <'a, T: EntityHandleTrait, A: Accessor + ?Sized> AccessorQueryHack<'a, T> for A {
-  type QueryGuard = &'a T::MutableData;
-  fn query_hack (&'a self, _entity: &'a T)->Self::QueryGuard {panic!("query_hack() called when it shouldn't be")}
+  default type QueryGuard = &'a T::MutableData;
+  default fn query_hack (&'a self, _entity: &'a T)->Self::QueryGuard {panic!("query_hack() called when it shouldn't be")}
 }
 
 
@@ -141,7 +141,7 @@ pub trait TimeStewardEntityHandleHack <ImmutableData: SimulationStateData + Pers
   fn new_entity_handle_nonreplicable_hack (immutable: ImmutableData, mutable: MutableData)->Self::EntityHandle;
 }
 
-type EntityHandle <Steward, ImmutableData, MutableData> = <Steward as TimeStewardEntityHandleHack <ImmutableData, MutableData>>::EntityHandle;
+pub type EntityHandle <Steward, ImmutableData, MutableData> = <Steward as TimeStewardEntityHandleHack <ImmutableData, MutableData>>::EntityHandle;
 
 #[derive (Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 pub struct NeverEntityHandle <T, U> (PhantomData <*const (T, U)>);
@@ -152,8 +152,8 @@ impl<ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableDat
 impl<ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType> Deref for NeverEntityHandle <ImmutableData, MutableData> {type Target = ImmutableData; fn deref (&self)->& ImmutableData {unreachable!()}}
 
 impl <ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType, Steward: TimeSteward> TimeStewardEntityHandleHack <ImmutableData, MutableData> for Steward {
-  type EntityHandle = NeverEntityHandle<ImmutableData, MutableData>;
-  fn new_entity_handle_nonreplicable_hack (_immutable: ImmutableData, _mutable: MutableData)->Self::EntityHandle {
+  default type EntityHandle = NeverEntityHandle<ImmutableData, MutableData>;
+  default fn new_entity_handle_nonreplicable_hack (_immutable: ImmutableData, _mutable: MutableData)->Self::EntityHandle {
     panic!("new_entity_handle_nonreplicable_hack() called when it shouldn't be")
   }
 }
