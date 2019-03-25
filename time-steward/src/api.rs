@@ -32,9 +32,17 @@ pub trait SimulationSpec:
   + Ord //+ Hash + Serialize + DeserializeOwned + Debug + Default
 {
   type Time: SimulationStateData + Send + Sync + Clone + Ord + Hash;
+  const MAX_ITERATION: IterationType = 65535;
+}
+
+pub trait SimulationSpecGATs<Steward: TimeSteward>: SimulationSpec {
   type Globals: SimulationStateData;
   type Types: ListOfTypes;
-  const MAX_ITERATION: IterationType = 65535;
+}
+
+impl <S: SimulationSpec, Steward: TimeSteward> SimulationSpecGATs<Steward> for S {
+  default type Globals = ();
+  default type Types = ();
 }
 
 pub type IterationType = u32;
@@ -106,9 +114,8 @@ pub enum ValidSince<BaseTime> {
 
 
 
-pub trait Event: SimulationStateData + PersistentlyIdentifiedType {
-  type Steward: TimeSteward;
-  fn execute<Accessor: EventAccessor<Steward = Self::Steward>>(
+pub trait Event <Steward: TimeSteward>: SimulationStateData + PersistentlyIdentifiedType {
+  fn execute<Accessor: EventAccessor<Steward = Steward>>(
     &self,
     accessor: &mut Accessor,
   );
@@ -116,7 +123,7 @@ pub trait Event: SimulationStateData + PersistentlyIdentifiedType {
 
 pub trait Accessor {
   type Steward: TimeSteward;
-  fn globals(&self) -> &<<Self::Steward as TimeSteward>::SimulationSpec as SimulationSpec>::Globals;
+  fn globals(&self) -> &<<Self::Steward as TimeSteward>::SimulationSpec as SimulationSpecGATs<Self::Steward>>::Globals;
   fn extended_now(&self) -> &ExtendedTime<<Self::Steward as TimeSteward>::SimulationSpec>;
   fn now(&self) -> &<<Self::Steward as TimeSteward>::SimulationSpec as SimulationSpec>::Time {
     &self.extended_now().base
@@ -182,7 +189,7 @@ pub trait EventAccessor: Accessor {
 
   fn modify <'a, ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType, M: Modify<MutableData>> (&'a self, entity: &'a EntityHandle <Self::Steward, ImmutableData, MutableData>, modification: M);
 
-  fn create_prediction<E: Event<Steward = Self::Steward>>(
+  fn create_prediction<E: Event<Self::Steward>>(
     &self,
     time: <<Self::Steward as TimeSteward>::SimulationSpec as SimulationSpec>::Time,
     event: E,
@@ -206,7 +213,7 @@ pub trait TimeSteward: Any + Sized + Debug {
     immutable: ImmutableData, mutable: MutableData
   ) -> EntityHandle<Self, ImmutableData, MutableData>{Self::new_entity_handle_nonreplicable_hack(immutable, mutable)}
   
-  fn insert_fiat_event<E: Event<Steward = Self>>(
+  fn insert_fiat_event<E: Event<Self>>(
     &mut self,
     time: <Self::SimulationSpec as SimulationSpec>::Time,
     id: DeterministicRandomId,
@@ -229,7 +236,7 @@ pub trait TimeSteward: Any + Sized + Debug {
 /// A trait for TimeSteward types that can be initialized from just the initial physics data.
 /// Most TimeSteward types should implement this. Exceptions are types that can't function without certain extra runtime metadata
 pub trait ConstructibleTimeSteward: TimeSteward {
-  fn from_globals(globals: <Self::SimulationSpec as SimulationSpec>::Globals) -> Self;
+  fn from_globals(globals: <Self::SimulationSpec as SimulationSpecGATs<Self>>::Globals) -> Self;
   /// note: SnapshotAccessor::serialize() matches TimeSteward::deserialize()
   fn deserialize_from<R: Read>(data: &mut R) -> ::bincode::Result<Self>;
 }

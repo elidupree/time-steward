@@ -56,7 +56,7 @@ trait EventInnerTrait<S: SimulationSpec>:
   fn get_type_id(&self)->TypeId;
 }
 
-impl<S: SimulationSpec, T: Event<Steward = Steward<S>>> EventInnerTrait<S> for T {
+impl<S: SimulationSpec, T: Event<Steward<S>>> EventInnerTrait<S> for T {
   fn execute(&self, self_handle: &EventHandle<S>, steward: &mut Steward<S>) {
     let mut accessor = EventAccessorStruct {
       handle: self_handle.clone(),
@@ -64,7 +64,7 @@ impl<S: SimulationSpec, T: Event<Steward = Steward<S>>> EventInnerTrait<S> for T
       child_id_generator: RefCell::new (EventChildrenIdGenerator::new()),
       steward: RefCell::new(steward),
     };
-    <T as Event>::execute(self, &mut accessor);
+    <T as Event<Steward<S>>>::execute(self, &mut accessor);
   }
   fn get_type_id(&self)->TypeId {TypeId::of::<T>()}
 }
@@ -75,7 +75,7 @@ type EventHandle<S> = DataHandle<(), EventInner<S>>;
 #[derivative(Debug (bound = ""))]
 pub struct EventAccessorStruct<'a, S: SimulationSpec> {
   handle: EventHandle<S>,
-  globals: Rc<S::Globals>,
+  globals: Rc<<S as SimulationSpecGATs<Steward<S>>>::Globals>,
   // note: these are only RefCell because of the problem where modify/create_prediction can't take &mut self
   child_id_generator: RefCell<EventChildrenIdGenerator>,
   steward: RefCell<&'a mut Steward<S>>,
@@ -85,7 +85,7 @@ pub struct EventAccessorStruct<'a, S: SimulationSpec> {
 pub struct SnapshotInner<S: SimulationSpec> {
   index: usize,
   time: ExtendedTime<S>,
-  globals: Rc<S::Globals>,
+  globals: Rc<<S as SimulationSpecGATs<Steward<S>>>::Globals>,
   // hack: RefCell only so that we can return a Ref
   clones: insert_only::HashMap<usize, Box<Any>>,
   shared: Rc<RefCell<StewardShared<S>>>,
@@ -100,7 +100,7 @@ pub struct SnapshotHandle<S: SimulationSpec> {
 #[derive(Derivative)]
 #[derivative(Debug (bound = ""))]
 pub struct Steward<S: SimulationSpec> {
-  globals: Rc<S::Globals>,
+  globals: Rc<<S as SimulationSpecGATs<Steward<S>>>::Globals>,
   invalid_before: ValidSince<S::Time>,
   last_event: Option<ExtendedTime<S>>,
   upcoming_fiat_events: BTreeSet<TimeOrderedEventHandle<Steward<S>>>,
@@ -282,7 +282,7 @@ impl<S: SimulationSpec> Drop for SnapshotHandle<S> {
 
 impl<'b, S: SimulationSpec> Accessor for EventAccessorStruct<'b, S> {
   type Steward = Steward<S>;
-  fn globals(&self) -> &S::Globals {
+  fn globals(&self) -> &<S as SimulationSpecGATs<Steward<S>>>::Globals {
     &*self.globals
   }
   fn extended_now(&self) -> &ExtendedTime<<Self::Steward as TimeSteward>::SimulationSpec> {
@@ -299,7 +299,7 @@ impl <'a, 'b, ImmutableData: SimulationStateData + PersistentlyIdentifiedType, M
 
 impl<S: SimulationSpec> Accessor for SnapshotHandle<S> {
   type Steward = Steward<S>;
-  fn globals(&self) -> &S::Globals {
+  fn globals(&self) -> &<S as SimulationSpecGATs<Steward<S>>>::Globals {
     &self.data.globals
   }
   fn extended_now(&self) -> &ExtendedTime<<Self::Steward as TimeSteward>::SimulationSpec> {
@@ -345,7 +345,7 @@ impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
   }
 
 
-  fn create_prediction<E: Event<Steward = Self::Steward>>(
+  fn create_prediction<E: Event<Self::Steward>>(
     &self,
     time: <<Self::Steward as TimeSteward>::SimulationSpec as SimulationSpec>::Time,
     event: E,
@@ -433,7 +433,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
     )
   }
 
-  fn insert_fiat_event<E: Event<Steward = Self>>(
+  fn insert_fiat_event<E: Event<Self>>(
     &mut self,
     time: S::Time,
     id: DeterministicRandomId,
@@ -510,7 +510,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
 }
 
 impl<S: SimulationSpec> ConstructibleTimeSteward for Steward<S> {
-  fn from_globals(globals: <Self::SimulationSpec as SimulationSpec>::Globals) -> Self {
+  fn from_globals(globals: <Self::SimulationSpec as SimulationSpecGATs<Self>>::Globals) -> Self {
     Steward {
       globals: Rc::new(globals),
       invalid_before: ValidSince::TheBeginning,
