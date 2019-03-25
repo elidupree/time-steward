@@ -1,39 +1,27 @@
 use std::any::{Any, TypeId};
 use std::borrow::Borrow;
-use std::cell::{Cell, Ref, RefCell};
+use std::cell::{Ref, RefCell};
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::io::{Read, Write};
 use std::rc::Rc;
 
-use super::super::api::*;
-use super::super::implementation_support::common::*;
+use crate::api::*;
+use crate::implementation_support::common::*;
 use crate::type_utils::{
   DynamicPersistentlyIdentifiedType, PersistentTypeId, PersistentlyIdentifiedType,
 };
 use crate::{DeterministicRandomId, EntityHandle};
-
 use crate::implementation_support::insert_only;
 
-//time_steward_steward_specific_api!();
 
-thread_local! {
-  static NEXT_SERIAL_NUMBER: Cell <usize> = Cell::new (0);
-}
-fn new_serial_number() -> usize {
-  NEXT_SERIAL_NUMBER.with(|cell| {
-    let result = cell.get();
-    cell.set(result + 1);
-    result
-  })
-}
+// ###################################################
+// ############     Handle definitions    ############
+// ###################################################
 
-#[derive(Debug)]
-pub struct EntityCell<T> {
-  serial_number: usize,
-  data: RefCell<EntityCellInner<T>>,
-}
+type EventHandle<S> = DataHandle<(), EventInner<S>>;
+type EntityCell<T> = RefCell<EntityCellInner<T>>;
 
 #[derive(Debug)]
 pub struct EntityCellInner<T> {
@@ -68,7 +56,63 @@ impl<S: SimulationSpec, T: Event<Steward<S>>> EventInnerTrait<S> for T {
   }
 }
 
-type EventHandle<S> = DataHandle<(), EventInner<S>>;
+
+impl<
+    S: SimulationSpec,
+    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
+    MutableData: SimulationStateData + PersistentlyIdentifiedType,
+  > TimeStewardEntityHandleHack<ImmutableData, MutableData> for Steward<S>
+{
+  type EntityHandle = DataHandle<ImmutableData, EntityCell<MutableData>>;
+  fn new_entity_handle_nonreplicable_hack(
+    immutable: ImmutableData,
+    mutable: MutableData,
+  ) -> Self::EntityHandle {
+    DataHandle::new_nonreplicable(
+      immutable,
+      RefCell::new(EntityCellInner {
+        current_value: mutable,
+        history_head: HistoryIndex::null(),
+      }),
+    )
+  }
+}
+
+impl<
+    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
+    MutableData: SimulationStateData + PersistentlyIdentifiedType,
+  > EntityHandleTrait for DataHandle<ImmutableData, EntityCell<MutableData>>
+{
+  type ImmutableData = ImmutableData;
+  type MutableData = MutableData;
+}
+
+impl<
+    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
+    MutableData: SimulationStateData + PersistentlyIdentifiedType,
+  > PersistentlyIdentifiedType for DataHandle<ImmutableData, EntityCell<MutableData>>
+{
+  const ID: PersistentTypeId =
+    PersistentTypeId(0x9ec13003c540d3a9 ^ ImmutableData::ID.0 ^ MutableData::ID.0);
+}
+
+impl<S: SimulationSpec> EventHandleTrait<S> for EventHandle<S> {
+  fn extended_time(&self) -> &ExtendedTime<S> {
+    &self.private().time
+  }
+}
+
+impl<S: SimulationSpec> Borrow<ExtendedTime<S>> for EventHandle<S> {
+  fn borrow(&self) -> &ExtendedTime<S> {
+    &self.private().time
+  }
+}
+
+
+
+// ###################################################
+// #########  Accessor/steward definitions  ##########
+// ###################################################
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
@@ -95,6 +139,8 @@ pub struct SnapshotHandle<S: SimulationSpec> {
   data: Rc<SnapshotInner<S>>,
 }
 
+type SnapshotsTree<S> = BTreeMap<usize, SnapshotHandle<S>>;
+
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
 pub struct Steward<S: SimulationSpec> {
@@ -113,6 +159,10 @@ struct StewardShared<S: SimulationSpec> {
   snapshots: SnapshotsTree<S>,
   history: History<S>,
 }
+
+// ###################################################
+// ############           History         ############
+// ###################################################
 
 mod history {
   use super::EventHandle;
@@ -224,79 +274,10 @@ mod history {
 
 use self::history::{History, HistoryIndex};
 
-impl<
-    S: SimulationSpec,
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-  > TimeStewardEntityHandleHack<ImmutableData, MutableData> for Steward<S>
-{
-  type EntityHandle = DataHandle<ImmutableData, EntityCell<MutableData>>;
-  fn new_entity_handle_nonreplicable_hack(
-    immutable: ImmutableData,
-    mutable: MutableData,
-  ) -> Self::EntityHandle {
-    DataHandle::new_nonreplicable(
-      immutable,
-      EntityCell {
-        serial_number: new_serial_number(),
-        data: RefCell::new(EntityCellInner {
-          current_value: mutable,
-          history_head: HistoryIndex::null(),
-        }),
-      },
-    )
-  }
-}
 
-impl<
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-  > EntityHandleTrait for DataHandle<ImmutableData, EntityCell<MutableData>>
-{
-  type ImmutableData = ImmutableData;
-  type MutableData = MutableData;
-}
-
-impl<
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-  > PersistentlyIdentifiedType for DataHandle<ImmutableData, EntityCell<MutableData>>
-{
-  const ID: PersistentTypeId =
-    PersistentTypeId(0x9ec13003c540d3a9 ^ ImmutableData::ID.0 ^ MutableData::ID.0);
-}
-
-impl<S: SimulationSpec> EventHandleTrait<S> for EventHandle<S> {
-  fn extended_time(&self) -> &ExtendedTime<S> {
-    &self.private().time
-  }
-}
-
-impl<S: SimulationSpec> Borrow<ExtendedTime<S>> for EventHandle<S> {
-  fn borrow(&self) -> &ExtendedTime<S> {
-    &self.private().time
-  }
-}
-
-/*
-fn deserialization_create_event_inner<S: SimulationSpec, T: Event<Steward = Steward<S>>>(
-  time: ExtendedTime<S>,
-  data: T,
-  _in_future: bool,
-) -> EventInner<S> {
-  EventInner {
-    time: time,
-    data: Box::new(data),
-  }
-}
-fn deserialization_create_prediction<S: SimulationSpec>(
-  steward: &mut Steward<S>,
-  prediction: EventHandle<S>,
-) {
-  steward.existent_predictions.insert(prediction);
-}*/
-
-type SnapshotsTree<S> = BTreeMap<usize, SnapshotHandle<S>>;
+// ###################################################
+// ############      Accessor impls       ############
+// ###################################################
 
 impl<S: SimulationSpec> Drop for SnapshotHandle<S> {
   fn drop(&mut self) {
@@ -333,7 +314,7 @@ impl<
     &'a self,
     entity: &'a EntityHandle<Steward<S>, ImmutableData, MutableData>,
   ) -> Self::QueryGuard {
-    let guard = entity.private().data.borrow();
+    let guard = entity.private().borrow();
     Ref::map(guard, |inner| &inner.current_value)
   }
 }
@@ -359,10 +340,10 @@ impl<
     &'a self,
     entity: &'a EntityHandle<Steward<S>, ImmutableData, MutableData>,
   ) -> Self::QueryGuard {
-    let guard = entity.private().data.borrow();
+    let guard = entity.private().borrow();
     Ref::map(guard, |inner| &inner.current_value);
 
-    let entity_guard = entity.private().data.borrow();
+    let entity_guard = entity.private().borrow();
 
     // hack: store a copy of the entity handle to guarantee that it doesn't get dropped so that it's valid to use its address as a unique id
     &self.data.clones.get_default (entity.address() as usize, | | {
@@ -401,7 +382,7 @@ impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
     entity: &'a EntityHandle<Steward<S>, ImmutableData, MutableData>,
     modification: M,
   ) {
-    let mut modify_guard = entity.private().data.borrow_mut();
+    let mut modify_guard = entity.private().borrow_mut();
     let undo = modification.modify(&mut modify_guard.current_value);
     let steward_guard = self.steward.borrow();
     steward_guard
@@ -461,6 +442,12 @@ impl<S: SimulationSpec> SnapshotAccessor for SnapshotHandle<S> {
     unimplemented!() //serialize_snapshot(writer, self.clone())
   }
 }
+
+
+
+// ###################################################
+// ############       Steward impls       ############
+// ###################################################
 
 impl<S: SimulationSpec> Steward<S> {
   fn next_event(&self) -> Option<&EventHandle<S>> {
@@ -625,5 +612,23 @@ impl<S: SimulationSpec> IncrementalTimeSteward for Steward<S> {
 }
 impl<S: SimulationSpec> CanonicalTimeSteward for Steward<S> {}
 
-//time_steward_define_simple_timeline!();
-//time_steward_define_bbox_collision_detection!();
+
+
+/*
+fn deserialization_create_event_inner<S: SimulationSpec, T: Event<Steward = Steward<S>>>(
+  time: ExtendedTime<S>,
+  data: T,
+  _in_future: bool,
+) -> EventInner<S> {
+  EventInner {
+    time: time,
+    data: Box::new(data),
+  }
+}
+fn deserialization_create_prediction<S: SimulationSpec>(
+  steward: &mut Steward<S>,
+  prediction: EventHandle<S>,
+) {
+  steward.existent_predictions.insert(prediction);
+}*/
+
