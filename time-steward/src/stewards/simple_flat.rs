@@ -10,7 +10,7 @@ use std::rc::Rc;
 use super::super::api::*;
 use super::super::implementation_support::common::*;
 use crate::{DeterministicRandomId, EntityHandle};
-use crate::type_utils::{PersistentlyIdentifiedType, DynamicPersistentlyIdentifiedType, PersistentTypeId, try_identity};
+use crate::type_utils::{PersistentlyIdentifiedType, DynamicPersistentlyIdentifiedType, PersistentTypeId};
 
 use crate::implementation_support::insert_only;
 
@@ -282,10 +282,9 @@ impl<'b, S: SimulationSpec> Accessor for EventAccessorStruct<'b, S> {
     self.this_event().extended_time()
   }
 }
-impl <'a, 'b, T: EntityHandleTrait, S: SimulationSpec> AccessorQueryHack<'a, T> for EventAccessorStruct<'b, S> {
-  type QueryGuard = Ref<'a, T::MutableData>;
-  fn query_hack (&'a self, entity: &'a T)->Self::QueryGuard {
-    let entity = try_identity::<&T, &EntityHandle <Steward<S>, T::ImmutableData, T::MutableData>>(entity).unwrap();
+impl <'a, 'b, ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType, S: SimulationSpec> AccessorQueryHack<'a, ImmutableData, MutableData> for EventAccessorStruct<'b, S> {
+  type QueryGuard = Ref<'a, MutableData>;
+  fn query_hack (&'a self, entity: &'a EntityHandle <Steward<S>, ImmutableData, MutableData>)->Self::QueryGuard {
     let guard = entity.private().data.borrow();
     Ref::map (guard, | inner | & inner.current_value)
   }
@@ -300,10 +299,9 @@ impl<S: SimulationSpec> Accessor for SnapshotHandle<S> {
     &self.data.time
   }
 }
-impl <'a, T: EntityHandleTrait, S: SimulationSpec> AccessorQueryHack<'a, T> for SnapshotHandle<S> {
-  type QueryGuard = &'a T::MutableData;
-  fn query_hack (&'a self, entity: &'a T)->Self::QueryGuard {
-    let entity = try_identity::<&T, &EntityHandle <Steward<S>, T::ImmutableData, T::MutableData>>(entity).unwrap();
+impl <'a, ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType, S: SimulationSpec> AccessorQueryHack<'a, ImmutableData, MutableData> for SnapshotHandle<S> {
+  type QueryGuard = &'a MutableData;
+  fn query_hack (&'a self, entity: &'a EntityHandle <Steward<S>, ImmutableData, MutableData>)->Self::QueryGuard {
     let guard = entity.private().data.borrow();
     Ref::map (guard, | inner | & inner.current_value);
     
@@ -311,12 +309,12 @@ impl <'a, T: EntityHandleTrait, S: SimulationSpec> AccessorQueryHack<'a, T> for 
     
     // hack: store a copy of the entity handle to guarantee that it doesn't get dropped so that it's valid to use its address as a unique id
     &self.data.clones.get_default (entity.address() as usize, | | {
-      let entity: EntityHandle <Steward<S>, T::ImmutableData, T::MutableData> = entity.clone();
-      let past_value: T::MutableData = (*self.data.shared).borrow().history.rollback_to_before (entity_guard.history_head, & entity_guard.current_value, & self.data.time);
+      let entity: EntityHandle <Steward<S>, ImmutableData, MutableData> = entity.clone();
+      let past_value: MutableData = (*self.data.shared).borrow().history.rollback_to_before (entity_guard.history_head, & entity_guard.current_value, & self.data.time);
       Some(Box::new (
         (entity, past_value)
       ))
-    }).unwrap ().downcast_ref::<(EntityHandle <Steward<S>, T::ImmutableData, T::MutableData>, T::MutableData)>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow").1
+    }).unwrap ().downcast_ref::<(EntityHandle <Steward<S>, ImmutableData, MutableData>, MutableData)>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow").1
   }
 }
 
@@ -332,12 +330,11 @@ impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
     Self::Steward::new_entity_handle_nonreplicable(immutable, mutable)
   }
   
-  fn modify <'a, T: EntityHandleTrait, M: Modify<T::MutableData>> (&'a self, entity: &'a T, modification: M) {
-    let entity = try_identity::<&T, &EntityHandle <Steward<S>, T::ImmutableData, T::MutableData>>(entity).unwrap();
+  fn modify <'a, ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType, M: Modify<MutableData>> (&'a self, entity: &'a EntityHandle <Steward<S>, ImmutableData, MutableData>, modification: M) {
     let mut modify_guard = entity.private().data.borrow_mut();
     let undo = modification.modify (&mut modify_guard.current_value);
     let steward_guard = self.steward.borrow();
-    steward_guard.shared.borrow_mut().history.insert_modification::<T::MutableData, M>(&mut modify_guard.history_head, self.handle.clone(), undo);
+    steward_guard.shared.borrow_mut().history.insert_modification::<MutableData, M>(&mut modify_guard.history_head, self.handle.clone(), undo);
   }
 
 

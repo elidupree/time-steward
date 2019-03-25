@@ -122,17 +122,17 @@ pub trait Accessor {
     &self.extended_now().id
   }
   // TODO: see if I can change the lifetimes here to make it more practical for accessors to have mutable methods. Perhaps by giving the accessor trait a lifetime?
-  fn query <'a, T: EntityHandleTrait> (&'a self, entity: &'a T)-><Self as AccessorQueryHack<'a, T>>::QueryGuard {self.query_hack(entity)}
+  fn query <'a, ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType> (&'a self, entity: &'a EntityHandle <Self::Steward, ImmutableData, MutableData>)-><Self as AccessorQueryHack<'a, ImmutableData, MutableData>>::QueryGuard {self.query_hack(entity)}
 }
 
-pub trait AccessorQueryHack <'a, T: EntityHandleTrait> {
-  type QueryGuard: Deref<Target = T::MutableData>;
-  fn query_hack (&'a self, entity: &'a T)->Self::QueryGuard;
+pub trait AccessorQueryHack <'a, ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType>: Accessor {
+  type QueryGuard: Deref<Target = MutableData>;
+  fn query_hack (&'a self, entity: &'a EntityHandle <Self::Steward, ImmutableData, MutableData>)->Self::QueryGuard;
 }
 
-impl <'a, T: EntityHandleTrait, A: Accessor + ?Sized> AccessorQueryHack<'a, T> for A {
-  default type QueryGuard = &'a T::MutableData;
-  default fn query_hack (&'a self, _entity: &'a T)->Self::QueryGuard {panic!("query_hack() called when it shouldn't be")}
+impl <'a, ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType, A: Accessor + ?Sized> AccessorQueryHack<'a, ImmutableData, MutableData> for A {
+  default type QueryGuard = &'a MutableData;
+  default fn query_hack (&'a self, _entity: &'a EntityHandle <Self::Steward, ImmutableData, MutableData>)->Self::QueryGuard {panic!("query_hack() called when it shouldn't be")}
 }
 
 
@@ -177,8 +177,7 @@ pub trait EventAccessor: Accessor {
     immutable: ImmutableData, mutable: MutableData
   ) -> EntityHandle<Self::Steward, ImmutableData, MutableData>;
 
-  fn modify <'a, T: EntityHandleTrait, M: Modify<T::MutableData>> (&'a self, entity: &'a T, modification: M);
-    //where Self::Steward: TimeStewardEntityCell<'a, E, C>;
+  fn modify <'a, ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType, M: Modify<MutableData>> (&'a self, entity: &'a EntityHandle <Self::Steward, ImmutableData, MutableData>, modification: M);
 
   fn create_prediction<E: Event<Steward = Self::Steward>>(
     &self,
