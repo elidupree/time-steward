@@ -28,7 +28,8 @@ impl<T: Any + Clone + Eq + Hash + Serialize + DeserializeOwned + Debug> Simulati
 This is intended to be implemented on an empty struct. Requiring Clone etc. is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
 */
 pub trait SimulationSpec:
-  Any + Send + Sync + Copy + Clone + Ord + Hash + Serialize + DeserializeOwned + Debug + Default
+  Any //+ Send + Sync + Copy + Clone 
+  + Ord //+ Hash + Serialize + DeserializeOwned + Debug + Default
 {
   type Time: SimulationStateData + Send + Sync + Clone + Ord + Hash;
   type Globals: SimulationStateData;
@@ -37,7 +38,9 @@ pub trait SimulationSpec:
 }
 
 pub type IterationType = u32;
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+#[derive(PartialOrd, Ord, Serialize, Deserialize, Derivative)]
+#[derivative(Clone(bound = ""), PartialEq(bound = ""), Eq(bound = ""), Hash(bound = ""), Debug (bound = ""))]
+#[serde(bound = "")]
 pub struct ExtendedTime<S: SimulationSpec> {
   pub base: S::Time,
   pub iteration: IterationType,

@@ -42,7 +42,8 @@ pub struct EntityCellInner<T> {
 }
 
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug (bound = ""))]
 pub struct EventInner<S: SimulationSpec> {
   time: ExtendedTime<S>,
   data: Box<EventInnerTrait<S>>,
@@ -70,7 +71,8 @@ impl<S: SimulationSpec, T: Event<Steward = Steward<S>>> EventInnerTrait<S> for T
 
 type EventHandle<S> = DataHandle<(), EventInner<S>>;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug (bound = ""))]
 pub struct EventAccessorStruct<'a, S: SimulationSpec> {
   handle: EventHandle<S>,
   globals: Rc<S::Globals>,
@@ -78,7 +80,8 @@ pub struct EventAccessorStruct<'a, S: SimulationSpec> {
   child_id_generator: RefCell<EventChildrenIdGenerator>,
   steward: RefCell<&'a mut Steward<S>>,
 }
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug (bound = ""))]
 pub struct SnapshotInner<S: SimulationSpec> {
   index: usize,
   time: ExtendedTime<S>,
@@ -87,13 +90,15 @@ pub struct SnapshotInner<S: SimulationSpec> {
   clones: insert_only::HashMap<usize, Box<Any>>,
   shared: Rc<RefCell<StewardShared<S>>>,
 }
-#[derive(Debug, Clone)]
+#[derive(Derivative)]
+#[derivative(Debug (bound = ""), Clone(bound = ""))]
 pub struct SnapshotHandle<S: SimulationSpec> {
   data: Rc<SnapshotInner<S>>,
 }
 
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug (bound = ""))]
 pub struct Steward<S: SimulationSpec> {
   globals: Rc<S::Globals>,
   invalid_before: ValidSince<S::Time>,
@@ -104,7 +109,8 @@ pub struct Steward<S: SimulationSpec> {
   next_snapshot_index: usize,
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug (bound = ""))]
 struct StewardShared<S: SimulationSpec> {
   snapshots: SnapshotsTree<S>,
   history: History<S>,
@@ -122,8 +128,8 @@ use crate::{SimulationSpec, Modify, ExtendedTime, EventHandleTrait, SimulationSt
 #[derive (Copy, Clone, Debug, Default)]
 pub struct HistoryIndex (usize);
 
-
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug (bound = ""))]
 struct HistoryItem<S: SimulationSpec>  {
   event: EventHandle<S>,
   undo: Box <dyn AnyUndo>,
@@ -146,7 +152,8 @@ impl<T: SimulationStateData,M: Modify <T>> AnyUndo for Undo <T, M> {
   }
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug (bound = ""))]
 pub struct History<S: SimulationSpec>  {
   items: VecDeque <HistoryItem<S>>,
   start: usize,

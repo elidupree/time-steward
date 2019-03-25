@@ -89,7 +89,7 @@ macro_rules! downcast_ref {
 macro_rules! delegate {
   (Ord, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
     impl<$($bounds)*> Ord for $($concrete)* {
-      fn cmp(&self, other: &Self) -> Ordering {
+      fn cmp(&self, other: &Self) -> ::std::cmp::Ordering {
         let foo = { let $this = self; $target };
         let bar = { let $this = other; $target };
         foo.cmp(bar)
@@ -98,7 +98,7 @@ macro_rules! delegate {
   };
   (PartialOrd, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
     impl<$($bounds)*> PartialOrd for $($concrete)* {
-      fn partial_cmp(&self, other: &Self) ->Option <Ordering> {
+      fn partial_cmp(&self, other: &Self) ->Option <::std::cmp::Ordering> {
         let foo = { let $this = self; $target };
         let bar = { let $this = other; $target };
         foo.partial_cmp(bar)
