@@ -1,4 +1,4 @@
-#![feature (specialization)]
+#![feature(specialization)]
 
 //#[macro_use]
 extern crate time_steward;
@@ -12,22 +12,24 @@ extern crate serde_derive;
 extern crate derivative;
 
 use time_steward::stewards::simple_flat;
+use time_steward::type_utils::list_of_types::ListedType;
+use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::DeterministicRandomId;
 use time_steward::{
-  SimulationSpec as SimulationSpecTrait, SimulationSpecGATs, EntityHandle, EventHandleTrait, Event, EventAccessor, SnapshotAccessor, TimeSteward, ConstructibleTimeSteward, ReplaceWith,
-
+  ConstructibleTimeSteward, EntityHandle, Event, EventAccessor, EventHandleTrait, ReplaceWith,
+  SimulationSpec as SimulationSpecTrait, SimulationSpecGATs, SnapshotAccessor, TimeSteward,
 };
-use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
-use time_steward::type_utils::list_of_types::{ListedType};
 
 type Time = i64;
 
 const HOW_MANY_PHILOSOPHERS: usize = 7;
 
-type PhilosopherHandle <Steward> = EntityHandle<Steward, (), Philosopher<Steward>>;
-type EventHandle <Steward> = <Steward as TimeSteward>::EventHandle;
+type PhilosopherHandle<Steward> = EntityHandle<Steward, (), Philosopher<Steward>>;
+type EventHandle<Steward> = <Steward as TimeSteward>::EventHandle;
 
-#[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug, Default)]
+#[derive(
+  Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug, Default,
+)]
 struct SimulationSpec;
 //delegate!(PartialEq, Eq, PartialOrd, Ord, [this => &()], [Steward: TimeSteward], [SimulationSpec]);
 impl SimulationSpecTrait for SimulationSpec {
@@ -39,21 +41,27 @@ impl<Steward: TimeSteward> SimulationSpecGATs<Steward> for SimulationSpec {
 }
 
 #[derive(Serialize, Deserialize, Derivative)]
-#[derivative(Clone(bound = ""), PartialEq(bound = ""), Eq(bound = ""), Hash(bound = ""), Debug (bound = ""))]
+#[derivative(
+  Clone(bound = ""),
+  PartialEq(bound = ""),
+  Eq(bound = ""),
+  Hash(bound = ""),
+  Debug(bound = "")
+)]
 #[serde(bound = "")]
-struct Philosopher <Steward: TimeSteward> {
+struct Philosopher<Steward: TimeSteward> {
   // This is sometimes in the future because
   // they muse philosophically about handshakes
   // for a while, whenever one of them happens.
   time_when_next_initiates_handshake: Time,
-  next_handshake_prediction: Option<EventHandle <Steward>>,
+  next_handshake_prediction: Option<EventHandle<Steward>>,
 }
 
-impl <Steward: TimeSteward> PersistentlyIdentifiedType for Philosopher <Steward> {
+impl<Steward: TimeSteward> PersistentlyIdentifiedType for Philosopher<Steward> {
   const ID: PersistentTypeId = PersistentTypeId(0x28c7f7c2007af71f);
 }
 
-impl <Steward: TimeSteward> Philosopher <Steward> {
+impl<Steward: TimeSteward> Philosopher<Steward> {
   fn new() -> Self {
     Philosopher {
       time_when_next_initiates_handshake: -1,
@@ -62,29 +70,34 @@ impl <Steward: TimeSteward> Philosopher <Steward> {
   }
 }
 
-fn change_next_handshake_time<Steward: TimeSteward <SimulationSpec = SimulationSpec>, Accessor: EventAccessor<Steward = Steward>>(
+fn change_next_handshake_time<
+  Steward: TimeSteward<SimulationSpec = SimulationSpec>,
+  Accessor: EventAccessor<Steward = Steward>,
+>(
   accessor: &Accessor,
   index: usize,
   handle: &PhilosopherHandle<Steward>,
   time: Time,
-) where <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec> {
+) where
+  <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec>,
+{
   let philosopher = accessor.query::<(), Philosopher<Steward>>(handle);
   if let Some(removed) = &philosopher.next_handshake_prediction {
-    accessor.destroy_prediction (removed);
+    accessor.destroy_prediction(removed);
   }
   let new_philosopher = Philosopher {
     time_when_next_initiates_handshake: time,
     next_handshake_prediction: if time >= *accessor.now() {
-      Some(accessor.create_prediction(
-        time,
-        Shake { whodunnit: index },
-      ))
+      Some(accessor.create_prediction(time, Shake { whodunnit: index }))
     } else {
       None
-    }
+    },
   };
   ::std::mem::drop(philosopher);
-  accessor.modify::<(), Philosopher<Steward>, ReplaceWith<Philosopher<Steward>>>(handle, ReplaceWith(new_philosopher));
+  accessor.modify::<(), Philosopher<Steward>, ReplaceWith<Philosopher<Steward>>>(
+    handle,
+    ReplaceWith(new_philosopher),
+  );
 }
 
 type TimeStewardTypes<Steward> = (
@@ -95,19 +108,40 @@ type TimeStewardTypes<Steward> = (
   ListedType<ReplaceWith<Philosopher<Steward>>>,
 );
 
-fn display_snapshot<Steward: TimeSteward <SimulationSpec = SimulationSpec>, Accessor: SnapshotAccessor<Steward = Steward>>(accessor: &Accessor) where <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec> {
+fn display_snapshot<
+  Steward: TimeSteward<SimulationSpec = SimulationSpec>,
+  Accessor: SnapshotAccessor<Steward = Steward>,
+>(
+  accessor: &Accessor,
+) where
+  <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec>,
+{
   println!("snapshot for {}", accessor.now());
   for handle in accessor.globals() {
     println!(
       "{}",
-      accessor.query::<(), Philosopher<Steward>>(handle).time_when_next_initiates_handshake
+      accessor
+        .query::<(), Philosopher<Steward>>(handle)
+        .time_when_next_initiates_handshake
     );
   }
 }
-fn dump_snapshot<Steward: TimeSteward <SimulationSpec = SimulationSpec>, Accessor: SnapshotAccessor<Steward = Steward>>(accessor: &Accessor) -> Vec<Time> where <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec> {
+fn dump_snapshot<
+  Steward: TimeSteward<SimulationSpec = SimulationSpec>,
+  Accessor: SnapshotAccessor<Steward = Steward>,
+>(
+  accessor: &Accessor,
+) -> Vec<Time>
+where
+  <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec>,
+{
   let mut result = Vec::new();
   for handle in accessor.globals() {
-    result.push(accessor.query::<(), Philosopher<Steward>>(handle).time_when_next_initiates_handshake);
+    result.push(
+      accessor
+        .query::<(), Philosopher<Steward>>(handle)
+        .time_when_next_initiates_handshake,
+    );
   }
   result
 }
@@ -119,7 +153,10 @@ struct Shake {
 impl PersistentlyIdentifiedType for Shake {
   const ID: PersistentTypeId = PersistentTypeId(0x8987a0b8e7d3d624);
 }
-impl<Steward: TimeSteward <SimulationSpec = SimulationSpec>> Event<Steward> for Shake where <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec> {
+impl<Steward: TimeSteward<SimulationSpec = SimulationSpec>> Event<Steward> for Shake
+where
+  <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec>,
+{
   fn execute<Accessor: EventAccessor<Steward = Steward>>(&self, accessor: &mut Accessor) {
     let now = *accessor.now();
     let mut rng = accessor.id().to_rng();
@@ -147,7 +184,10 @@ struct Initialize {}
 impl PersistentlyIdentifiedType for Initialize {
   const ID: PersistentTypeId = PersistentTypeId(0xd5e73d8ba6ec59a2);
 }
-impl<Steward: TimeSteward <SimulationSpec = SimulationSpec>> Event<Steward> for Initialize where <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec> {
+impl<Steward: TimeSteward<SimulationSpec = SimulationSpec>> Event<Steward> for Initialize
+where
+  <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec>,
+{
   fn execute<Accessor: EventAccessor<Steward = Steward>>(&self, accessor: &mut Accessor) {
     println!("FIAT!!!!!");
     let philosophers = accessor.globals();
@@ -162,7 +202,10 @@ struct Tweak {}
 impl PersistentlyIdentifiedType for Tweak {
   const ID: PersistentTypeId = PersistentTypeId(0xfe9ff3047f9a9552);
 }
-impl<Steward: TimeSteward <SimulationSpec = SimulationSpec>> Event<Steward> for Tweak where <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec> {
+impl<Steward: TimeSteward<SimulationSpec = SimulationSpec>> Event<Steward> for Tweak
+where
+  <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec>,
+{
   fn execute<Accessor: EventAccessor<Steward = Steward>>(&self, accessor: &mut Accessor) {
     let now = *accessor.now();
     let mut rng = accessor.id().to_rng();
@@ -187,7 +230,10 @@ struct TweakUnsafe {}
 impl PersistentlyIdentifiedType for TweakUnsafe {
   const ID: PersistentTypeId = PersistentTypeId(0xa1618440808703da);
 }
-impl<Steward: TimeSteward <SimulationSpec = SimulationSpec>> Event<Steward> for TweakUnsafe where <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec> {
+impl<Steward: TimeSteward<SimulationSpec = SimulationSpec>> Event<Steward> for TweakUnsafe
+where
+  <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec>,
+{
   fn execute<Accessor: EventAccessor<Steward = Steward>>(&self, accessor: &mut Accessor) {
     let inconsistent = INCONSISTENT.with(|value| *value);
     let mut rng =
@@ -201,15 +247,25 @@ impl<Steward: TimeSteward <SimulationSpec = SimulationSpec>> Event<Steward> for 
   }
 }
 
-fn make_globals<Steward: TimeSteward <SimulationSpec = SimulationSpec>>() -> <SimulationSpec as SimulationSpecGATs<Steward>>::Globals where <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec> {
+fn make_globals<Steward: TimeSteward<SimulationSpec = SimulationSpec>>(
+) -> <SimulationSpec as SimulationSpecGATs<Steward>>::Globals
+where
+  <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec>,
+{
   let mut philosophers = Vec::new();
   for _ in 0..HOW_MANY_PHILOSOPHERS {
-    philosophers.push(Steward::new_entity_handle_nonreplicable((), Philosopher::new()));
+    philosophers.push(Steward::new_entity_handle_nonreplicable(
+      (),
+      Philosopher::new(),
+    ));
   }
   philosophers
 }
 
-fn make_steward<Steward: ConstructibleTimeSteward <SimulationSpec = SimulationSpec>>()->Steward where <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec> {
+fn make_steward<Steward: ConstructibleTimeSteward<SimulationSpec = SimulationSpec>>() -> Steward
+where
+  <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec>,
+{
   let mut steward: Steward = Steward::from_globals(make_globals::<Steward>());
 
   steward
@@ -219,14 +275,16 @@ fn make_steward<Steward: ConstructibleTimeSteward <SimulationSpec = SimulationSp
       Initialize {},
     )
     .unwrap();
-  
+
   steward
 }
 
-
 type FlatSteward = self::simple_flat::Steward<SimulationSpec>;
 
-fn handshakes_simple_generic<Steward: ConstructibleTimeSteward <SimulationSpec = SimulationSpec>>() where <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec> {
+fn handshakes_simple_generic<Steward: ConstructibleTimeSteward<SimulationSpec = SimulationSpec>>()
+where
+  <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec>,
+{
   //type Steward = crossverified::Steward<SimulationSpec, inefficient_flat::Steward<SimulationSpec>, memoized_flat::Steward<SimulationSpec>>;
   let mut steward = make_steward::<Steward>();
 
@@ -242,35 +300,40 @@ fn handshakes_simple() {
   handshakes_simple_generic::<FlatSteward>();
 }
 
-fn handshakes_snapshot_consistency_generic<Steward: ConstructibleTimeSteward <SimulationSpec = SimulationSpec>>() where <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec> {
+fn handshakes_snapshot_consistency_generic<
+  Steward: ConstructibleTimeSteward<SimulationSpec = SimulationSpec>,
+>()
+where
+  <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec>,
+{
   let mut steward_1 = make_steward::<Steward>();
   let mut steward_2 = make_steward::<Steward>();
   let mut steward_3 = make_steward::<Steward>();
   let mut steward_4 = make_steward::<Steward>();
-  
+
   let mut dumps_1 = Vec::new();
   let mut dumps_2 = Vec::new();
   let mut snapshots_3 = Vec::new();
   let mut snapshots_4 = Vec::new();
-  
+
   steward_2.snapshot_before(&2000i64).unwrap();
 
   for increment in 1..21 {
     let time = increment * 100i64;
-    dumps_1.push (dump_snapshot(&steward_1.snapshot_before(&time).unwrap()));
-    dumps_2.push (dump_snapshot(&steward_2.snapshot_before(&time).unwrap()));
-    snapshots_3.push (steward_3.snapshot_before(&time).unwrap());
+    dumps_1.push(dump_snapshot(&steward_1.snapshot_before(&time).unwrap()));
+    dumps_2.push(dump_snapshot(&steward_2.snapshot_before(&time).unwrap()));
+    snapshots_3.push(steward_3.snapshot_before(&time).unwrap());
     let snapshot = steward_4.snapshot_before(&time).unwrap();
-    dump_snapshot (& snapshot);
-    snapshots_4.push (snapshot) ;
+    dump_snapshot(&snapshot);
+    snapshots_4.push(snapshot);
   }
-  
-  let dumps_3: Vec<_> = snapshots_3.iter().map (dump_snapshot).collect();
-  let dumps_4: Vec<_> = snapshots_4.iter().map (dump_snapshot).collect();
-  
-  assert_eq! (dumps_1, dumps_2);
-  assert_eq! (dumps_1, dumps_3);
-  assert_eq! (dumps_1, dumps_4);
+
+  let dumps_3: Vec<_> = snapshots_3.iter().map(dump_snapshot).collect();
+  let dumps_4: Vec<_> = snapshots_4.iter().map(dump_snapshot).collect();
+
+  assert_eq!(dumps_1, dumps_2);
+  assert_eq!(dumps_1, dumps_3);
+  assert_eq!(dumps_1, dumps_4);
 }
 
 #[test]
@@ -278,7 +341,12 @@ fn handshakes_snapshot_consistency() {
   handshakes_snapshot_consistency_generic::<FlatSteward>();
 }
 
-fn handshakes_retroactive_generic<Steward: ConstructibleTimeSteward <SimulationSpec = SimulationSpec>>() where <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec> {
+fn handshakes_retroactive_generic<
+  Steward: ConstructibleTimeSteward<SimulationSpec = SimulationSpec>,
+>()
+where
+  <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec>,
+{
   let mut steward = make_steward::<Steward>();
 
   let first_dump;
@@ -323,7 +391,12 @@ fn handshakes_retroactive() {
   handshakes_retroactive_generic::<FlatSteward>();
 }
 
-fn handshakes_reloading_generic<Steward: ConstructibleTimeSteward <SimulationSpec = SimulationSpec>>() where <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec> {
+fn handshakes_reloading_generic<
+  Steward: ConstructibleTimeSteward<SimulationSpec = SimulationSpec>,
+>()
+where
+  <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec>,
+{
   let mut steward = make_steward::<Steward>();
 
   let first_dump;
@@ -356,12 +429,10 @@ fn handshakes_reloading_generic<Steward: ConstructibleTimeSteward <SimulationSpe
   }
 }
 
-
 #[test]
 fn handshakes_reloading() {
   handshakes_reloading_generic::<FlatSteward>();
 }
-
 
 /*
 

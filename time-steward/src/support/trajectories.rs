@@ -1,12 +1,13 @@
 //use nalgebra::Vector2;
 use super::integer_math::{Vector as GenericVector, *};
-use num::traits::{Signed};
+use num::traits::Signed;
 use num::{One, Zero};
 use std::cmp::min;
 //use self::polynomial::RootSearchResult;
 use self::polynomial2::{
-  AllTaylorCoefficients, AllTaylorCoefficientsBounds, Polynomial,
-  GreaterThanEqualToFilter, GreaterThanFilter, LessThanFilter, PolynomialRangeSearch, PolynomialMagnitudeSquaredRangeSearch, SetNthTaylorCoefficientAtFractionalInput,
+  AllTaylorCoefficients, AllTaylorCoefficientsBounds, GreaterThanEqualToFilter, GreaterThanFilter,
+  LessThanFilter, Polynomial, PolynomialMagnitudeSquaredRangeSearch, PolynomialRangeSearch,
+  SetNthTaylorCoefficientAtFractionalInput,
 };
 use array_ext::*;
 use smallvec::SmallVec;

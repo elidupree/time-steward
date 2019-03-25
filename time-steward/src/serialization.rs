@@ -9,7 +9,7 @@
 #[macro_export]
 macro_rules! time_steward_serialization_impls {
   () => {
-  
+
 
   #[allow (unused_variables)]
   pub trait TimeStewardStructuresVisitor <Steward: TimeSteward> {
@@ -31,7 +31,7 @@ macro_rules! time_steward_serialization_impls {
   use serde::ser;
   use std::fmt::{self,Display};
   use std::marker::PhantomData;
-  use crate::type_utils::list_of_types::{ListOfTypes, ListOfTypesVisitor};     
+  use crate::type_utils::list_of_types::{ListOfTypes, ListOfTypesVisitor};
   struct TimeStewardStructuresVisitingSerializeHack<T, Steward>(T, PhantomData<Steward>);
 
   trait MaybeVisitSerializeHack <Steward: TimeSteward> {
@@ -215,7 +215,7 @@ impl<'a, Steward: TimeSteward, Visitor: TimeStewardStructuresVisitor <Steward>> 
 }
 
 
-  
+
   fn bincode_error_to_generic <T, U> (result: $crate::bincode::Result <T>)->Result <T, U> {
     result.map_err (|e| try_identity::<$crate::bincode::Error, U>(e).expect("Tried to do TimeSteward serialization with non-bincode serializer/deserializer. TimeSteward serialization only supports bincode"))
   }

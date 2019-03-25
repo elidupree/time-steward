@@ -1,13 +1,13 @@
 use super::super::api::*;
+use crate::DeterministicRandomId;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::any::Any;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::rc::Rc;
-use std::any::Any;
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
-use crate::DeterministicRandomId;
 
 pub fn split_off_greater<K: Ord + Borrow<Q> + Clone, V, Q: Ord + ?Sized>(
   input: &mut BTreeMap<K, V>,
@@ -83,7 +83,6 @@ macro_rules! downcast_ref {
   }};
 }*/
 
-
 #[doc(hidden)]
 #[macro_export]
 macro_rules! delegate {
@@ -150,59 +149,96 @@ macro_rules! delegate {
 }
 
 pub trait PrivateTimeStewardDataTrait: Any + Debug {}
-impl <T: Any + Debug> PrivateTimeStewardDataTrait for T {}
+impl<T: Any + Debug> PrivateTimeStewardDataTrait for T {}
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub struct DataHandle <PublicImmutableData, PrivateTimeStewardData> (Rc<(PublicImmutableData, PrivateTimeStewardData)>);
+pub struct DataHandle<PublicImmutableData, PrivateTimeStewardData>(
+  Rc<(PublicImmutableData, PrivateTimeStewardData)>,
+);
 
-impl <PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait> DataHandle<PublicImmutableData, PrivateTimeStewardData> {
-  pub fn new_nonreplicable(public: PublicImmutableData, private: PrivateTimeStewardData)->Self {
+impl<
+    PublicImmutableData: SimulationStateData,
+    PrivateTimeStewardData: PrivateTimeStewardDataTrait,
+  > DataHandle<PublicImmutableData, PrivateTimeStewardData>
+{
+  pub fn new_nonreplicable(public: PublicImmutableData, private: PrivateTimeStewardData) -> Self {
     DataHandle(Rc::new((public, private)))
   }
-  pub fn public (&self)->&PublicImmutableData {&(self.0).0}
-  pub fn private (&self)->&PrivateTimeStewardData {&(self.0).1}
-  pub fn address (&self)->*const () {(&*self.0) as *const (PublicImmutableData, PrivateTimeStewardData) as *const ()}
+  pub fn public(&self) -> &PublicImmutableData {
+    &(self.0).0
+  }
+  pub fn private(&self) -> &PrivateTimeStewardData {
+    &(self.0).1
+  }
+  pub fn address(&self) -> *const () {
+    (&*self.0) as *const (PublicImmutableData, PrivateTimeStewardData) as *const ()
+  }
 }
 
-impl <PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait> DataHandleTrait for DataHandle<PublicImmutableData, PrivateTimeStewardData> {}
+impl<
+    PublicImmutableData: SimulationStateData,
+    PrivateTimeStewardData: PrivateTimeStewardDataTrait,
+  > DataHandleTrait for DataHandle<PublicImmutableData, PrivateTimeStewardData>
+{
+}
 
-impl <PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait> Deref for DataHandle<PublicImmutableData, PrivateTimeStewardData> {
+impl<
+    PublicImmutableData: SimulationStateData,
+    PrivateTimeStewardData: PrivateTimeStewardDataTrait,
+  > Deref for DataHandle<PublicImmutableData, PrivateTimeStewardData>
+{
   type Target = PublicImmutableData;
-  fn deref (&self)->& Self::Target {
-    & (self.0).0
+  fn deref(&self) -> &Self::Target {
+    &(self.0).0
   }
 }
 
 delegate! (PartialEq, Eq, Hash, [this => &(&*this as *const _ as usize)], [PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait], [DataHandle<PublicImmutableData, PrivateTimeStewardData>]);
 
-#[derive (Clone, Debug)]
-pub struct TimeOrderedEventHandle <Steward: TimeSteward> (pub Steward::EventHandle);
+#[derive(Clone, Debug)]
+pub struct TimeOrderedEventHandle<Steward: TimeSteward>(pub Steward::EventHandle);
 
 delegate! (PartialEq, Eq, PartialOrd, Ord, Hash, [this => this.0.extended_time()], [Steward: TimeSteward], [TimeOrderedEventHandle <Steward>]);
 
-impl <Steward: TimeSteward> Borrow<ExtendedTime <Steward::SimulationSpec>> for TimeOrderedEventHandle <Steward> {
-  fn borrow (&self)->& ExtendedTime <Steward::SimulationSpec> {self.0.extended_time()}
+impl<Steward: TimeSteward> Borrow<ExtendedTime<Steward::SimulationSpec>>
+  for TimeOrderedEventHandle<Steward>
+{
+  fn borrow(&self) -> &ExtendedTime<Steward::SimulationSpec> {
+    self.0.extended_time()
+  }
 }
 
-impl <PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait> Debug for DataHandle<PublicImmutableData, PrivateTimeStewardData> {
+impl<
+    PublicImmutableData: SimulationStateData,
+    PrivateTimeStewardData: PrivateTimeStewardDataTrait,
+  > Debug for DataHandle<PublicImmutableData, PrivateTimeStewardData>
+{
   fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
     write!(f, "DataHandle(@{:p})", self.0)
   }
 }
 
-impl <PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait> Serialize for DataHandle<PublicImmutableData, PrivateTimeStewardData> {
-  fn serialize <S: Serializer> (&self, _serializer: S)->Result <S::Ok, S::Error> {
+impl<
+    PublicImmutableData: SimulationStateData,
+    PrivateTimeStewardData: PrivateTimeStewardDataTrait,
+  > Serialize for DataHandle<PublicImmutableData, PrivateTimeStewardData>
+{
+  fn serialize<S: Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
     unimplemented!()
   }
 }
 
-impl <'a, PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait> Deserialize<'a> for DataHandle<PublicImmutableData, PrivateTimeStewardData> {
-  fn deserialize <D: Deserializer<'a>> (_deserializer: D)->Result <Self, D::Error> {
+impl<
+    'a,
+    PublicImmutableData: SimulationStateData,
+    PrivateTimeStewardData: PrivateTimeStewardDataTrait,
+  > Deserialize<'a> for DataHandle<PublicImmutableData, PrivateTimeStewardData>
+{
+  fn deserialize<D: Deserializer<'a>>(_deserializer: D) -> Result<Self, D::Error> {
     unimplemented!()
   }
 }
-
 
 /*pub trait DeserializationContext {
 fn deserialize_data <T: DeserializeOwned> (&mut self)->T;
@@ -251,18 +287,21 @@ pub fn extended_time_of_predicted_event<S: SimulationSpec>(
 
 #[derive(Debug)]
 pub struct EventChildrenIdGenerator {
-  next: Option <DeterministicRandomId>
+  next: Option<DeterministicRandomId>,
 }
 
 impl EventChildrenIdGenerator {
-  pub fn new()->EventChildrenIdGenerator {EventChildrenIdGenerator {next: None}}
-  pub fn next(&mut self, this_event_id: & DeterministicRandomId)->DeterministicRandomId {
+  pub fn new() -> EventChildrenIdGenerator {
+    EventChildrenIdGenerator { next: None }
+  }
+  pub fn next(&mut self, this_event_id: &DeterministicRandomId) -> DeterministicRandomId {
     let result = match self.next {
-      None => DeterministicRandomId::new (this_event_id),
-      Some (next) => next,
+      None => DeterministicRandomId::new(this_event_id),
+      Some(next) => next,
     };
-    self.next = Some (DeterministicRandomId::from_raw ([
-      result.data() [0], result.data() [1].wrapping_add (1)
+    self.next = Some(DeterministicRandomId::from_raw([
+      result.data()[0],
+      result.data()[1].wrapping_add(1),
     ]));
     result
   }
