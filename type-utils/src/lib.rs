@@ -16,6 +16,10 @@ impl<T: PersistentlyIdentifiedType> DynamicPersistentlyIdentifiedType for T {
   }
 }
 
+impl PersistentlyIdentifiedType for () {
+  const ID: PersistentTypeId = PersistentTypeId(0x8087a0d59fb441b6);
+}
+
 
 
 trait TryIdentity <T> {
@@ -47,8 +51,8 @@ mod tests {
   
   #[test]
   fn test_static_downcast() {
-    assert_eq! (static_downcast::<i32, i32> (5i32), Some (5i32)) ;
-    assert_eq! (static_downcast::<i32, i16> (5i32), None) ;
+    assert_eq! (try_identity::<i32, i32> (5i32), Some (5i32)) ;
+    assert_eq! (try_identity::<i32, i16> (5i32), None) ;
   }
 }
 

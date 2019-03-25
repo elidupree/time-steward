@@ -6,12 +6,10 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
-use steward_module::{
-   EntityCell, };
 use time_steward::stewards::simple_flat as steward_module;
 use time_steward::DeterministicRandomId;
 use time_steward::{
-  SimulationSpec as SimulationSpecTrait, EntityCellTrait, Event, EventAccessor, SnapshotAccessor, TimeSteward, ConstructibleTimeSteward, ReplaceWith,
+  SimulationSpec as SimulationSpecTrait, EntityHandle, Event, EventAccessor, SnapshotAccessor, TimeSteward, ConstructibleTimeSteward, ReplaceWith,
 
 };
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
@@ -22,7 +20,7 @@ type Steward = steward_module::Steward<SimulationSpec>;
 
 const HOW_MANY_PHILOSOPHERS: usize = 7;
 
-type PhilosopherCell = EntityCell<Philosopher>;
+type PhilosopherHandle = EntityHandle<Steward, (), Philosopher>;
 type EventHandle = <Steward as TimeSteward>::EventHandle;
 
 #[derive(
@@ -31,7 +29,7 @@ type EventHandle = <Steward as TimeSteward>::EventHandle;
 struct SimulationSpec {}
 impl SimulationSpecTrait for SimulationSpec {
   type Time = Time;
-  type Globals = Vec<PhilosopherCell>;
+  type Globals = Vec<PhilosopherHandle>;
   type Types = TimeStewardTypes;
 }
 
@@ -42,6 +40,10 @@ struct Philosopher {
   // for a while, whenever one of them happens.
   time_when_next_initiates_handshake: Time,
   next_handshake_prediction: Option<EventHandle>,
+}
+
+impl PersistentlyIdentifiedType for Philosopher {
+  const ID: PersistentTypeId = PersistentTypeId(0x28c7f7c2007af71f);
 }
 
 impl Philosopher {
@@ -56,10 +58,10 @@ impl Philosopher {
 fn change_next_handshake_time<Accessor: EventAccessor<Steward = Steward>>(
   accessor: &Accessor,
   index: usize,
-  handle: &PhilosopherCell,
+  handle: &PhilosopherHandle,
   time: Time,
 ) {
-  let philosopher = accessor.query::<'_, Philosopher, PhilosopherCell>(handle);
+  let philosopher = accessor.query::<(), Philosopher>(handle);
   if let Some(removed) = &philosopher.next_handshake_prediction {
     accessor.destroy_prediction (removed);
   }
@@ -75,7 +77,7 @@ fn change_next_handshake_time<Accessor: EventAccessor<Steward = Steward>>(
     }
   };
   ::std::mem::drop(philosopher);
-  accessor.modify (handle, ReplaceWith(new_philosopher));
+  accessor.modify::<(), Philosopher, ReplaceWith<Philosopher>>(handle, ReplaceWith(new_philosopher));
 }
 
 type TimeStewardTypes = (
@@ -91,19 +93,19 @@ fn display_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: &Ac
   for handle in accessor.globals() {
     println!(
       "{}",
-      accessor.query(handle).time_when_next_initiates_handshake
+      accessor.query::<(), Philosopher>(handle).time_when_next_initiates_handshake
     );
   }
 }
 fn dump_snapshot<Accessor: SnapshotAccessor<Steward = Steward>>(accessor: &Accessor) -> Vec<Time> {
   let mut result = Vec::new();
   for handle in accessor.globals() {
-    result.push(accessor.query(handle).time_when_next_initiates_handshake);
+    result.push(accessor.query::<(), Philosopher>(handle).time_when_next_initiates_handshake);
   }
   result
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 struct Shake {
   whodunnit: usize,
 }
@@ -134,7 +136,7 @@ impl Event for Shake {
   }
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 struct Initialize {}
 impl PersistentlyIdentifiedType for Initialize {
   const ID: PersistentTypeId = PersistentTypeId(0xd5e73d8ba6ec59a2);
@@ -150,7 +152,7 @@ impl Event for Initialize {
   }
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 struct Tweak {}
 impl PersistentlyIdentifiedType for Tweak {
   const ID: PersistentTypeId = PersistentTypeId(0xfe9ff3047f9a9552);
@@ -176,7 +178,7 @@ impl Event for Tweak {
 use rand::{ChaChaRng, Rng, SeedableRng};
 thread_local! {static INCONSISTENT: u32 = rand::thread_rng().gen::<u32>();}
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 struct TweakUnsafe {}
 impl PersistentlyIdentifiedType for TweakUnsafe {
   const ID: PersistentTypeId = PersistentTypeId(0xa1618440808703da);
@@ -199,7 +201,7 @@ impl Event for TweakUnsafe {
 fn make_globals() -> <SimulationSpec as SimulationSpecTrait>::Globals {
   let mut philosophers = Vec::new();
   for _ in 0..HOW_MANY_PHILOSOPHERS {
-    philosophers.push(EntityCell::new(Philosopher::new()));
+    philosophers.push(Steward::new_entity_handle_nonreplicable((), Philosopher::new()));
   }
   philosophers
 }
