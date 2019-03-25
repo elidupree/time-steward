@@ -206,46 +206,76 @@ fn make_globals() -> <SimulationSpec as SimulationSpecTrait>::Globals {
   philosophers
 }
 
-#[test]
-pub fn handshakes_simple() {
-  //type Steward = crossverified::Steward<SimulationSpec, inefficient_flat::Steward<SimulationSpec>, memoized_flat::Steward<SimulationSpec>>;
-  let mut stew: Steward = Steward::from_globals(make_globals());
+fn make_steward()->Steward {
+  let mut steward: Steward = Steward::from_globals(make_globals());
 
-  stew
+  steward
     .insert_fiat_event(
       0,
       DeterministicRandomId::new(&0x32e1570766e768a7u64),
       Initialize {},
     )
     .unwrap();
+  
+  steward
+}
+
+#[test]
+pub fn handshakes_simple() {
+  //type Steward = crossverified::Steward<SimulationSpec, inefficient_flat::Steward<SimulationSpec>, memoized_flat::Steward<SimulationSpec>>;
+  let mut steward = make_steward();
 
   for increment in 1..21 {
     let snapshot: <Steward as TimeSteward>::SnapshotAccessor =
-      stew.snapshot_before(&(increment * 100i64)).unwrap();
+      steward.snapshot_before(&(increment * 100i64)).unwrap();
     display_snapshot(&snapshot);
   }
 }
 
 #[test]
-fn handshakes_retroactive() {
-  let mut stew: Steward = Steward::from_globals(make_globals());
+pub fn handshakes_snapshot_consistency() {
+  let mut steward_1 = make_steward();
+  let mut steward_2 = make_steward();
+  let mut steward_3 = make_steward();
+  let mut steward_4 = make_steward();
+  
+  let mut dumps_1 = Vec::new();
+  let mut dumps_2 = Vec::new();
+  let mut snapshots_3 = Vec::new();
+  let mut snapshots_4 = Vec::new();
+  
+  steward_2.snapshot_before(&2000i64).unwrap();
 
-  stew
-    .insert_fiat_event(
-      0,
-      DeterministicRandomId::new(&0x32e1570766e768a7u64),
-      Initialize {},
-    )
-    .unwrap();
+  for increment in 1..21 {
+    let time = increment * 100i64;
+    dumps_1.push (dump_snapshot(&steward_1.snapshot_before(&time).unwrap()));
+    dumps_2.push (dump_snapshot(&steward_2.snapshot_before(&time).unwrap()));
+    snapshots_3.push (steward_3.snapshot_before(&time).unwrap());
+    let snapshot = steward_4.snapshot_before(&time).unwrap();
+    dump_snapshot (& snapshot);
+    snapshots_4.push (snapshot) ;
+  }
+  
+  let dumps_3: Vec<_> = snapshots_3.iter().map (dump_snapshot).collect();
+  let dumps_4: Vec<_> = snapshots_4.iter().map (dump_snapshot).collect();
+  
+  assert_eq! (dumps_1, dumps_2);
+  assert_eq! (dumps_1, dumps_3);
+  assert_eq! (dumps_1, dumps_4);
+}
+
+#[test]
+fn handshakes_retroactive() {
+  let mut steward = make_steward();
 
   let first_dump;
   {
-    let snapshot = stew.snapshot_before(&(2000i64)).unwrap();
+    let snapshot = steward.snapshot_before(&(2000i64)).unwrap();
     first_dump = dump_snapshot(&snapshot);
     display_snapshot(&snapshot);
   }
   for increment in 1..21 {
-    stew
+    steward
       .insert_fiat_event(
         increment * 100i64,
         DeterministicRandomId::new(&increment),
@@ -253,23 +283,23 @@ fn handshakes_retroactive() {
       )
       .unwrap();
     let snapshot: <Steward as TimeSteward>::SnapshotAccessor =
-      stew.snapshot_before(&(2000i64)).unwrap();
+      steward.snapshot_before(&(2000i64)).unwrap();
     display_snapshot(&snapshot);
   }
   for increment in 1..21 {
-    stew
+    steward
       .remove_fiat_event(
         &(increment * 100i64),
         DeterministicRandomId::new(&increment),
       )
       .unwrap();
     let snapshot: <Steward as TimeSteward>::SnapshotAccessor =
-      stew.snapshot_before(&(2000i64)).unwrap();
+      steward.snapshot_before(&(2000i64)).unwrap();
     display_snapshot(&snapshot);
   }
   let last_dump;
   {
-    let snapshot = stew.snapshot_before(&(2000i64)).unwrap();
+    let snapshot = steward.snapshot_before(&(2000i64)).unwrap();
     last_dump = dump_snapshot(&snapshot);
   }
   assert_eq!(first_dump, last_dump);
@@ -277,25 +307,17 @@ fn handshakes_retroactive() {
 
 #[test]
 fn handshakes_reloading() {
-  let mut stew: Steward = Steward::from_globals(make_globals());
-
-  stew
-    .insert_fiat_event(
-      0,
-      DeterministicRandomId::new(&0x32e1570766e768a7u64),
-      Initialize {},
-    )
-    .unwrap();
+  let mut steward = make_steward();
 
   let first_dump;
   {
-    let snapshot = stew.snapshot_before(&(2000i64)).unwrap();
+    let snapshot = steward.snapshot_before(&(2000i64)).unwrap();
     first_dump = dump_snapshot(&snapshot);
     display_snapshot(&snapshot);
   }
 
   for increment in 1..21 {
-    stew
+    steward
       .insert_fiat_event(
         increment * 100i64,
         DeterministicRandomId::new(&increment),
@@ -303,14 +325,14 @@ fn handshakes_reloading() {
       )
       .unwrap();
     let earlier_snapshot: <Steward as TimeSteward>::SnapshotAccessor =
-      stew.snapshot_before(&(increment * 100i64)).unwrap();
+      steward.snapshot_before(&(increment * 100i64)).unwrap();
     let mut serialized = Vec::new();
     earlier_snapshot.serialize_into(&mut serialized).unwrap();
     use std::io::Cursor;
     let mut reader = Cursor::new(serialized);
-    stew = Steward::deserialize_from(&mut reader).unwrap();
+    steward = Steward::deserialize_from(&mut reader).unwrap();
     let ending_snapshot: <Steward as TimeSteward>::SnapshotAccessor =
-      stew.snapshot_before(&(2000i64)).unwrap();
+      steward.snapshot_before(&(2000i64)).unwrap();
     let dump = dump_snapshot(&ending_snapshot);
     display_snapshot(&earlier_snapshot);
     assert_eq!(first_dump, dump);
@@ -322,17 +344,17 @@ fn handshakes_reloading() {
 #[test]
 pub fn handshakes_reloading() {
   type Steward = crossverified::Steward<SimulationSpec, amortized::Steward<SimulationSpec>, memoized_flat::Steward<SimulationSpec>>;
-  let mut stew: Steward = Steward::from_global_timeline (SimulationSpec::GlobalTimeline::new(Vec::new()));
+  let mut steward: Steward = Steward::from_global_timeline (SimulationSpec::GlobalTimeline::new(Vec::new()));
 
-  stew.insert_fiat_event(0,
+  steward.insert_fiat_event(0,
                        DeterministicRandomId::new(&0x32e1570766e768a7u64),
                        Initialize::new())
     .unwrap();
 
   let mut snapshots = Vec::new();
   for increment in 1..21 {
-    snapshots.push(stew.snapshot_before(&(increment * 100i64)));
-    stew = Steward::from_snapshot::<<Steward as TimeSteward>::Snapshot> (snapshots.last().unwrap().as_ref().unwrap());
+    snapshots.push(steward.snapshot_before(&(increment * 100i64)));
+    steward = Steward::from_snapshot::<<Steward as TimeSteward>::Snapshot> (snapshots.last().unwrap().as_ref().unwrap());
   }
   for snapshot in snapshots.iter_mut()
     .map(|option| option.as_mut().expect("all these snapshots should have been valid")) {
@@ -361,14 +383,14 @@ fn local_synchronization_test() {
   let port = listener.local_addr().unwrap().port();
   ::std::thread::spawn(move || {
     let end_0 = listener.accept().unwrap().0;
-    let mut stew_0: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
+    let mut steward_0: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
       simply_synchronized::Steward::new(DeterministicRandomId::new(&0u32),
                                         0,
                                         4,
                                         (),
                                         BufReader::new(end_0.try_clone().unwrap()),
                                         BufWriter::new(end_0));
-    stew_0.insert_fiat_event(0,
+    steward_0.insert_fiat_event(0,
                          DeterministicRandomId::new(&0x32e1570766e768a7u64),
                          Initialize::new())
       .unwrap();
@@ -376,16 +398,16 @@ fn local_synchronization_test() {
     for increment in 1..21 {
       let time = increment * 100i64;
       if increment % 3 == 0 {
-        stew_0.insert_fiat_event(time, DeterministicRandomId::new(&increment), Tweak::new())
+        steward_0.insert_fiat_event(time, DeterministicRandomId::new(&increment), Tweak::new())
           .unwrap();
       }
-      stew_0.snapshot_before(&time);
-      stew_0.settle_before(time);
+      steward_0.snapshot_before(&time);
+      steward_0.settle_before(time);
     }
-    stew_0.finish();
+    steward_0.finish();
   });
   let end_1 = TcpStream::connect(("127.0.0.1", port)).unwrap();
-  let mut stew_1: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
+  let mut steward_1: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
     simply_synchronized::Steward::new(DeterministicRandomId::new(&1u32),
                                       0,
                                       4,
@@ -396,12 +418,12 @@ fn local_synchronization_test() {
   for increment in 1..21 {
     let time = increment * 100i64;
     if increment % 4 == 0 {
-      stew_1.insert_fiat_event(time, DeterministicRandomId::new(&increment), Tweak::new()).unwrap();
+      steward_1.insert_fiat_event(time, DeterministicRandomId::new(&increment), Tweak::new()).unwrap();
     }
-    stew_1.snapshot_before(&time);
-    stew_1.settle_before(time);
+    steward_1.snapshot_before(&time);
+    steward_1.settle_before(time);
   }
-  stew_1.finish();
+  steward_1.finish();
 }
 
 #[test]
@@ -414,14 +436,14 @@ fn local_synchronization_failure() {
   let port = listener.local_addr().unwrap().port();
   ::std::thread::spawn(move || {
     let end_0 = listener.accept().unwrap().0;
-    let mut stew_0: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
+    let mut steward_0: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
       simply_synchronized::Steward::new(DeterministicRandomId::new(&0u32),
                                         0,
                                         4,
                                         (),
                                         BufReader::new(end_0.try_clone().unwrap()),
                                         BufWriter::new(end_0));
-    stew_0.insert_fiat_event(0,
+    steward_0.insert_fiat_event(0,
                          DeterministicRandomId::new(&0x32e1570766e768a7u64),
                          Initialize::new())
       .unwrap();
@@ -429,18 +451,18 @@ fn local_synchronization_failure() {
     for increment in 1..21 {
       let time = increment * 100i64;
       if increment % 3 == 0 {
-        stew_0.insert_fiat_event(time,
+        steward_0.insert_fiat_event(time,
                              DeterministicRandomId::new(&increment),
                              TweakUnsafe::new())
           .unwrap();
       }
-      stew_0.snapshot_before(&time);
-      stew_0.settle_before(time);
+      steward_0.snapshot_before(&time);
+      steward_0.settle_before(time);
     }
-    stew_0.finish();
+    steward_0.finish();
   });
   let end_1 = TcpStream::connect(("127.0.0.1", port)).unwrap();
-  let mut stew_1: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
+  let mut steward_1: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
     simply_synchronized::Steward::new(DeterministicRandomId::new(&1u32),
                                       0,
                                       4,
@@ -451,14 +473,14 @@ fn local_synchronization_failure() {
   for increment in 1..21 {
     let time = increment * 100i64;
     if increment % 4 == 0 {
-      stew_1.insert_fiat_event(time,
+      steward_1.insert_fiat_event(time,
                            DeterministicRandomId::new(&increment),
                            TweakUnsafe::new())
         .unwrap();
     }
-    stew_1.snapshot_before(&time);
-    stew_1.settle_before(time);
+    steward_1.snapshot_before(&time);
+    steward_1.settle_before(time);
   }
-  stew_1.finish();
+  steward_1.finish();
 }
 */
