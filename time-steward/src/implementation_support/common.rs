@@ -156,6 +156,15 @@ impl <T: Any + Debug> PrivateTimeStewardDataTrait for T {}
 #[derivative(Clone(bound = ""))]
 pub struct DataHandle <PublicImmutableData, PrivateTimeStewardData> (Rc<(PublicImmutableData, PrivateTimeStewardData)>);
 
+impl <PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait> DataHandle<PublicImmutableData, PrivateTimeStewardData> {
+  pub fn new_nonreplicable(public: PublicImmutableData, private: PrivateTimeStewardData)->Self {
+    DataHandle(Rc::new((public, private)))
+  }
+  pub fn public (&self)->&PublicImmutableData {&(self.0).0}
+  pub fn private (&self)->&PrivateTimeStewardData {&(self.0).1}
+  pub fn address (&self)->*const () {(&*self.0) as *const (PublicImmutableData, PrivateTimeStewardData) as *const ()}
+}
+
 impl <PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait> DataHandleTrait for DataHandle<PublicImmutableData, PrivateTimeStewardData> {}
 
 impl <PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait> Deref for DataHandle<PublicImmutableData, PrivateTimeStewardData> {
@@ -168,7 +177,7 @@ impl <PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateT
 delegate! (PartialEq, Eq, Hash, [this => &(&*this as *const _ as usize)], [PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait], [DataHandle<PublicImmutableData, PrivateTimeStewardData>]);
 
 #[derive (Clone, Debug)]
-pub struct TimeOrderedEventHandle <Steward: TimeSteward> (Steward::EventHandle);
+pub struct TimeOrderedEventHandle <Steward: TimeSteward> (pub Steward::EventHandle);
 
 delegate! (PartialEq, Eq, PartialOrd, Ord, Hash, [this => this.0.extended_time()], [Steward: TimeSteward], [TimeOrderedEventHandle <Steward>]);
 

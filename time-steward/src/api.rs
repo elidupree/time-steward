@@ -158,9 +158,6 @@ impl <ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableDa
   }
 }
 
-pub trait TimeStewardEntityHandle <T: EntityHandleTrait>: TimeSteward {
-  fn create_entity_handle_nonreplicable (immutable: T::ImmutableData, mutable: T::MutableData)->T;
-}
 
 pub trait Modify <T>: SimulationStateData {
   type UndoData: SimulationStateData;
@@ -204,7 +201,6 @@ pub trait TimeSteward: Any + Sized + Debug {
   type EventHandle: EventHandleTrait<Self::SimulationSpec>;
   
   fn new_entity_handle_nonreplicable<ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType>(
-    &self,
     immutable: ImmutableData, mutable: MutableData
   ) -> EntityHandle<Self, ImmutableData, MutableData>{Self::new_entity_handle_nonreplicable_hack(immutable, mutable)}
   

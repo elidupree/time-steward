@@ -10,7 +10,7 @@ use std::rc::Rc;
 use super::super::api::*;
 use super::super::implementation_support::common::*;
 use crate::{DeterministicRandomId, EntityHandle};
-use crate::type_utils::{PersistentlyIdentifiedType, DynamicPersistentlyIdentifiedType, try_identity};
+use crate::type_utils::{PersistentlyIdentifiedType, DynamicPersistentlyIdentifiedType, PersistentTypeId, try_identity};
 
 use crate::implementation_support::insert_only;
 
@@ -43,7 +43,7 @@ pub struct EntityCellInner<T> {
 
 
 #[derive(Debug)]
-struct EventInner<S: SimulationSpec> {
+pub struct EventInner<S: SimulationSpec> {
   time: ExtendedTime<S>,
   data: Box<EventInnerTrait<S>>,
 }
@@ -98,8 +98,8 @@ pub struct Steward<S: SimulationSpec> {
   globals: Rc<S::Globals>,
   invalid_before: ValidSince<S::Time>,
   last_event: Option<ExtendedTime<S>>,
-  upcoming_fiat_events: BTreeSet<EventHandle<S>>,
-  existent_predictions: BTreeSet<EventHandle<S>>,
+  upcoming_fiat_events: BTreeSet<TimeOrderedEventHandle<Steward<S>>>,
+  existent_predictions: BTreeSet<TimeOrderedEventHandle<Steward<S>>>,
   shared: Rc<RefCell<StewardShared<S>>>,
   next_snapshot_index: usize,
 }
@@ -110,8 +110,6 @@ struct StewardShared<S: SimulationSpec> {
   history: History<S>,
 }
 
-
-pub type QueryGuard<'a, T> = Ref<'a, T>;
 
 
 mod history {
@@ -217,11 +215,28 @@ impl<S: SimulationSpec, ImmutableData: SimulationStateData + PersistentlyIdentif
 }
 
 
+impl<ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType> EntityHandleTrait for DataHandle<ImmutableData, EntityCell<MutableData>> {
+  type ImmutableData = ImmutableData;
+  type MutableData = MutableData;
+}
+
+impl<ImmutableData: SimulationStateData + PersistentlyIdentifiedType, MutableData: SimulationStateData + PersistentlyIdentifiedType> PersistentlyIdentifiedType for DataHandle<ImmutableData, EntityCell<MutableData>> {
+  const ID: PersistentTypeId = PersistentTypeId(0x9ec13003c540d3a9 ^ ImmutableData::ID.0 ^ MutableData::ID.0);
+}
+
+
 impl<S: SimulationSpec> EventHandleTrait<S> for EventHandle<S> {
   fn extended_time(&self) -> &ExtendedTime<S> {
-    &self.data.time
+    &self.private().time
   }
 }
+
+impl<S: SimulationSpec> Borrow<ExtendedTime<S>> for EventHandle<S> {
+  fn borrow(&self) -> &ExtendedTime<S> {
+    &self.private().time
+  }
+}
+
 
 /*
 fn deserialization_create_event_inner<S: SimulationSpec, T: Event<Steward = Steward<S>>>(
@@ -270,8 +285,9 @@ impl<'b, S: SimulationSpec> Accessor for EventAccessorStruct<'b, S> {
 impl <'a, 'b, T: EntityHandleTrait, S: SimulationSpec> AccessorQueryHack<'a, T> for EventAccessorStruct<'b, S> {
   type QueryGuard = Ref<'a, T::MutableData>;
   fn query_hack (&'a self, entity: &'a T)->Self::QueryGuard {
-    let guard = entity.1.data.borrow();
-    Ref::map (guard, | inner | & inner.current_value);
+    let entity = try_identity::<&T, &EntityHandle <Steward<S>, T::ImmutableData, T::MutableData>>(entity).unwrap();
+    let guard = entity.private().data.borrow();
+    Ref::map (guard, | inner | & inner.current_value)
   }
 }
 
@@ -287,16 +303,20 @@ impl<S: SimulationSpec> Accessor for SnapshotHandle<S> {
 impl <'a, T: EntityHandleTrait, S: SimulationSpec> AccessorQueryHack<'a, T> for SnapshotHandle<S> {
   type QueryGuard = &'a T::MutableData;
   fn query_hack (&'a self, entity: &'a T)->Self::QueryGuard {
-    let guard = entity.1.data.borrow();
+    let entity = try_identity::<&T, &EntityHandle <Steward<S>, T::ImmutableData, T::MutableData>>(entity).unwrap();
+    let guard = entity.private().data.borrow();
     Ref::map (guard, | inner | & inner.current_value);
     
-    let entity_guard = entity.1.data.borrow();
+    let entity_guard = entity.private().data.borrow();
     
-    self.data.clones.get_default (entity.serial_number, | | {
+    // hack: store a copy of the entity handle to guarantee that it doesn't get dropped so that it's valid to use its address as a unique id
+    &self.data.clones.get_default (entity.address() as usize, | | {
+      let entity: EntityHandle <Steward<S>, T::ImmutableData, T::MutableData> = entity.clone();
+      let past_value: T::MutableData = (*self.data.shared).borrow().history.rollback_to_before (entity_guard.history_head, & entity_guard.current_value, & self.data.time);
       Some(Box::new (
-        (*self.data.shared).borrow().history.rollback_to_before (entity_guard.history_head, & entity_guard.current_value, & self.data.time)
+        (entity, past_value)
       ))
-    }).unwrap ().downcast_ref::<T::MutableData>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow")
+    }).unwrap ().downcast_ref::<(EntityHandle <Steward<S>, T::ImmutableData, T::MutableData>, T::MutableData)>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow").1
   }
 }
 
@@ -313,8 +333,8 @@ impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
   }
   
   fn modify <'a, T: EntityHandleTrait, M: Modify<T::MutableData>> (&'a self, entity: &'a T, modification: M) {
-    let entity = try_identity::<&T, &EntityHandle <T::ImmutableData, T::MutableData>>(entity).unwrap();
-    let modify_guard = entity.1.data.borrow_mut();
+    let entity = try_identity::<&T, &EntityHandle <Steward<S>, T::ImmutableData, T::MutableData>>(entity).unwrap();
+    let mut modify_guard = entity.private().data.borrow_mut();
     let undo = modification.modify (&mut modify_guard.current_value);
     let steward_guard = self.steward.borrow();
     steward_guard.shared.borrow_mut().history.insert_modification::<T::MutableData, M>(&mut modify_guard.history_head, self.handle.clone(), undo);
@@ -332,18 +352,16 @@ impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
       self.extended_now(),
     )
     .unwrap();
-    let prediction = EventHandle {
-      data: Rc::new(EventInner {
+    let prediction = DataHandle::new_nonreplicable ((), EventInner {
         time: time,
         data: Box::new(event),
-      }),
-    };
+      });
     assert!(
         self
           .steward
           .borrow_mut()
           .existent_predictions
-          .insert(prediction.clone()),
+          .insert(TimeOrderedEventHandle(prediction.clone())),
         "created a prediction that already existed?!"
       );
     //printlnerr!("at {:?}, creating prediction at {:?}", self.extended_now(), handle.extended_time());
@@ -355,7 +373,7 @@ impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
           .steward
           .borrow_mut()
           .existent_predictions
-          .remove(prediction),
+          .remove(prediction.extended_time()),
         "destroyed a prediction that didn't exist"
       );
   }
@@ -373,14 +391,14 @@ impl<S: SimulationSpec> Steward<S> {
     let first_fiat_event_iter = self.upcoming_fiat_events.iter().take(1);
     let first_predicted_event_iter = self.existent_predictions.iter().take(1);
     let events_iter = first_fiat_event_iter.chain(first_predicted_event_iter);
-    events_iter.min()
+    events_iter.min().map(|a|&a.0)
   }
 
   fn execute_event(&mut self, event: &EventHandle<S>) {
-    event.data.data.execute(event, &mut *self);
+    event.private().data.execute(event, &mut *self);
     // clean it up:
-    self.upcoming_fiat_events.remove(event);
-    self.existent_predictions.remove(event);
+    self.upcoming_fiat_events.remove(event.extended_time());
+    self.existent_predictions.remove(event.extended_time());
     self.last_event = Some(event.extended_time().clone());
   }
   
@@ -420,12 +438,13 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
     if self.valid_since() > time {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    match self.upcoming_fiat_events.insert(EventHandle {
-      data: Rc::new(EventInner {
+    match self.upcoming_fiat_events.insert(TimeOrderedEventHandle(DataHandle::new_nonreplicable(
+      (),
+      EventInner {
         time: extended_time_of_fiat_event(time, id),
         data: Box::new(event),
-      }),
-    }) {
+      },
+    ))) {
       true => Ok(()),
       false => Err(FiatEventOperationError::InvalidInput),
     }
@@ -464,7 +483,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
         index: self.next_snapshot_index,
         globals: self.globals.clone(),
         time: ExtendedTime::beginning_of(time.clone()),
-        clones: RefCell::new(insert_only::HashMap::new()),
+        clones: insert_only::HashMap::new(),
         shared: self.shared.clone(),
       }),
     };
