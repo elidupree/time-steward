@@ -9,12 +9,11 @@ use std::rc::Rc;
 
 use crate::api::*;
 use crate::implementation_support::common::*;
+use crate::implementation_support::insert_only;
 use crate::type_utils::{
   DynamicPersistentlyIdentifiedType, PersistentTypeId, PersistentlyIdentifiedType,
 };
 use crate::{DeterministicRandomId, EntityHandle};
-use crate::implementation_support::insert_only;
-
 
 // ###################################################
 // ############     Handle definitions    ############
@@ -55,7 +54,6 @@ impl<S: SimulationSpec, T: Event<Steward<S>>> EventInnerTrait<S> for T {
     TypeId::of::<T>()
   }
 }
-
 
 impl<
     S: SimulationSpec,
@@ -107,8 +105,6 @@ impl<S: SimulationSpec> Borrow<ExtendedTime<S>> for EventHandle<S> {
     &self.private().time
   }
 }
-
-
 
 // ###################################################
 // #########  Accessor/steward definitions  ##########
@@ -274,7 +270,6 @@ mod history {
 
 use self::history::{History, HistoryIndex};
 
-
 // ###################################################
 // ############      Accessor impls       ############
 // ###################################################
@@ -301,18 +296,13 @@ impl<'b, S: SimulationSpec> Accessor for EventAccessorStruct<'b, S> {
     self.this_event().extended_time()
   }
 }
-impl<
-    'a,
-    'b,
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-    S: SimulationSpec,
-  > AccessorQueryHack<'a, ImmutableData, MutableData> for EventAccessorStruct<'b, S>
+impl<'a, 'b, E: EntityHandleTrait, S: SimulationSpec> AccessorQueryHack<'a, E>
+  for EventAccessorStruct<'b, S>
 {
-  type QueryGuard = Ref<'a, MutableData>;
+  type QueryGuard = Ref<'a, E::MutableData>;
   fn query_hack(
     &'a self,
-    entity: &'a EntityHandle<Steward<S>, ImmutableData, MutableData>,
+    entity: &'a EntityHandle<Steward<S>, E::ImmutableData, E::MutableData>,
   ) -> Self::QueryGuard {
     let guard = entity.private().borrow();
     Ref::map(guard, |inner| &inner.current_value)
@@ -328,17 +318,11 @@ impl<S: SimulationSpec> Accessor for SnapshotHandle<S> {
     &self.data.time
   }
 }
-impl<
-    'a,
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-    S: SimulationSpec,
-  > AccessorQueryHack<'a, ImmutableData, MutableData> for SnapshotHandle<S>
-{
-  type QueryGuard = &'a MutableData;
+impl<'a, E: EntityHandleTrait, S: SimulationSpec> AccessorQueryHack<'a, E> for SnapshotHandle<S> {
+  type QueryGuard = &'a E::MutableData;
   fn query_hack(
     &'a self,
-    entity: &'a EntityHandle<Steward<S>, ImmutableData, MutableData>,
+    entity: &'a EntityHandle<Steward<S>, E::ImmutableData, E::MutableData>,
   ) -> Self::QueryGuard {
     let guard = entity.private().borrow();
     Ref::map(guard, |inner| &inner.current_value);
@@ -347,12 +331,12 @@ impl<
 
     // hack: store a copy of the entity handle to guarantee that it doesn't get dropped so that it's valid to use its address as a unique id
     &self.data.clones.get_default (entity.address() as usize, | | {
-      let entity: EntityHandle <Steward<S>, ImmutableData, MutableData> = entity.clone();
-      let past_value: MutableData = (*self.data.shared).borrow().history.rollback_to_before (entity_guard.history_head, & entity_guard.current_value, & self.data.time);
+      let entity: EntityHandle <Steward<S>, E::ImmutableData, E::MutableData> = entity.clone();
+      let past_value: E::MutableData = (*self.data.shared).borrow().history.rollback_to_before (entity_guard.history_head, & entity_guard.current_value, & self.data.time);
       Some(Box::new (
         (entity, past_value)
       ))
-    }).unwrap ().downcast_ref::<(EntityHandle <Steward<S>, ImmutableData, MutableData>, MutableData)>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow").1
+    }).unwrap ().downcast_ref::<(EntityHandle <Steward<S>, E::ImmutableData, E::MutableData>, E::MutableData)>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow").1
   }
 }
 
@@ -442,8 +426,6 @@ impl<S: SimulationSpec> SnapshotAccessor for SnapshotHandle<S> {
     unimplemented!() //serialize_snapshot(writer, self.clone())
   }
 }
-
-
 
 // ###################################################
 // ############       Steward impls       ############
@@ -612,8 +594,6 @@ impl<S: SimulationSpec> IncrementalTimeSteward for Steward<S> {
 }
 impl<S: SimulationSpec> CanonicalTimeSteward for Steward<S> {}
 
-
-
 /*
 fn deserialization_create_event_inner<S: SimulationSpec, T: Event<Steward = Steward<S>>>(
   time: ExtendedTime<S>,
@@ -631,4 +611,3 @@ fn deserialization_create_prediction<S: SimulationSpec>(
 ) {
   steward.existent_predictions.insert(prediction);
 }*/
-

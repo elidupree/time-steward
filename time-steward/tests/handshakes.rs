@@ -81,7 +81,7 @@ fn change_next_handshake_time<
 ) where
   <Steward as TimeSteward>::EventHandle: EventHandleTrait<<Steward as TimeSteward>::SimulationSpec>,
 {
-  let philosopher = accessor.query::<(), Philosopher<Steward>>(handle);
+  let philosopher = accessor.query(handle);
   if let Some(removed) = &philosopher.next_handshake_prediction {
     accessor.destroy_prediction(removed);
   }
@@ -120,9 +120,7 @@ fn display_snapshot<
   for handle in accessor.globals() {
     println!(
       "{}",
-      accessor
-        .query::<(), Philosopher<Steward>>(handle)
-        .time_when_next_initiates_handshake
+      accessor.query(handle).time_when_next_initiates_handshake
     );
   }
 }
@@ -137,11 +135,7 @@ where
 {
   let mut result = Vec::new();
   for handle in accessor.globals() {
-    result.push(
-      accessor
-        .query::<(), Philosopher<Steward>>(handle)
-        .time_when_next_initiates_handshake,
-    );
+    result.push(accessor.query(handle).time_when_next_initiates_handshake);
   }
   result
 }

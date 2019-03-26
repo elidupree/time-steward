@@ -137,40 +137,35 @@ pub trait Accessor {
   // TODO: see if I can change the lifetimes here to make it more practical for accessors to have mutable methods. Perhaps by giving the accessor trait a lifetime?
   fn query<
     'a,
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
+    E: EntityHandleTrait
+      + Borrow<
+        EntityHandle<
+          Self::Steward,
+          <E as EntityHandleTrait>::ImmutableData,
+          <E as EntityHandleTrait>::MutableData,
+        >,
+      >,
   >(
     &'a self,
-    entity: &'a EntityHandle<Self::Steward, ImmutableData, MutableData>,
-  ) -> <Self as AccessorQueryHack<'a, ImmutableData, MutableData>>::QueryGuard {
-    self.query_hack(entity)
+    entity: &'a E,
+  ) -> <Self as AccessorQueryHack<'a, E>>::QueryGuard {
+    <Self as AccessorQueryHack<'a, E>>::query_hack(self, entity.borrow())
   }
 }
 
-pub trait AccessorQueryHack<
-  'a,
-  ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-  MutableData: SimulationStateData + PersistentlyIdentifiedType,
->: Accessor
-{
-  type QueryGuard: Deref<Target = MutableData>;
+pub trait AccessorQueryHack<'a, E: EntityHandleTrait>: Accessor {
+  type QueryGuard: Deref<Target = E::MutableData>;
   fn query_hack(
     &'a self,
-    entity: &'a EntityHandle<Self::Steward, ImmutableData, MutableData>,
+    entity: &'a EntityHandle<Self::Steward, E::ImmutableData, E::MutableData>,
   ) -> Self::QueryGuard;
 }
 
-impl<
-    'a,
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-    A: Accessor + ?Sized,
-  > AccessorQueryHack<'a, ImmutableData, MutableData> for A
-{
-  default type QueryGuard = &'a MutableData;
+impl<'a, E: EntityHandleTrait, A: Accessor + ?Sized> AccessorQueryHack<'a, E> for A {
+  default type QueryGuard = &'a E::MutableData;
   default fn query_hack(
     &'a self,
-    _entity: &'a EntityHandle<Self::Steward, ImmutableData, MutableData>,
+    _entity: &'a EntityHandle<Self::Steward, E::ImmutableData, E::MutableData>,
   ) -> Self::QueryGuard {
     panic!("query_hack() called when it shouldn't be")
   }
@@ -181,7 +176,8 @@ pub trait TimeStewardEntityHandleHack<
   MutableData: SimulationStateData + PersistentlyIdentifiedType,
 >
 {
-  type EntityHandle: EntityHandleTrait + Deref<Target = ImmutableData>;
+  type EntityHandle: EntityHandleTrait<ImmutableData = ImmutableData, MutableData = MutableData>
+    + Deref<Target = ImmutableData>;
   fn new_entity_handle_nonreplicable_hack(
     immutable: ImmutableData,
     mutable: MutableData,
