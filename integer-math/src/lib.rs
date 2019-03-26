@@ -316,7 +316,7 @@ fn mul_shr_round<
   let mut factor1 = factor1;
   while shift > 0 {
     shift -= 1;
-    if (factor0>>1u32).abs() > (factor1>>1u32).abs() {
+    if (factor0 >> 1u32).abs() > (factor1 >> 1u32).abs() {
       factor0 = if factor1 > Zero::zero() {
         (shift_round_pos)(factor0, 1u32)
       } else {

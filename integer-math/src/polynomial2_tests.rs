@@ -3,109 +3,108 @@ use crate::array::{Array, ReplaceItemType};
 use array_ext::{Array as ArrayExtArray, *};
 use arrayvec::{self, ArrayVec};
 use num::{
-  Bounded, CheckedAdd, CheckedMul, CheckedSub, FromPrimitive, Integer as NumInteger, One,
-  Signed,
+  Bounded, CheckedAdd, CheckedMul, CheckedSub, FromPrimitive, Integer as NumInteger, One, Signed,
 };
-use std::cmp::{max, min, Ordering};
 #[allow(unused_imports)]
 use serde::Serialize;
+use std::cmp::{max, min, Ordering};
 
 use super::*;
 
-  use super::polynomial2::*;
-  use super::range_search::*;
-  use num::{BigInt, BigRational};
-  use proptest::prelude::*;
+use super::polynomial2::*;
+use super::range_search::*;
+use num::{BigInt, BigRational};
+use proptest::prelude::*;
 
-  fn naive_perfect_evaluate<Coefficient: Integer>(
-    coefficients: &[Coefficient],
-    input: BigRational,
-  ) -> BigRational
-  where
-    BigInt: From<Coefficient>,
-  {
-    let mut result = BigRational::zero();
-    for (exponent, coefficient) in coefficients.iter().enumerate() {
-      let mut term = BigRational::from(BigInt::from(*coefficient));
-      for _ in 0..exponent {
-        term = term * &input;
-      }
-      result = result + term;
+fn naive_perfect_evaluate<Coefficient: Integer>(
+  coefficients: &[Coefficient],
+  input: BigRational,
+) -> BigRational
+where
+  BigInt: From<Coefficient>,
+{
+  let mut result = BigRational::zero();
+  for (exponent, coefficient) in coefficients.iter().enumerate() {
+    let mut term = BigRational::from(BigInt::from(*coefficient));
+    for _ in 0..exponent {
+      term = term * &input;
     }
-    result
+    result = result + term;
   }
-  
-  fn naive_perfect_evaluate_magnitude_squared<Coefficient: Integer>(
-    coordinates: &[&[Coefficient]],
-    input: BigRational,
-  ) -> BigRational
-  where
-    BigInt: From<Coefficient>,
-  {
-    let mut result = BigRational::zero();
-    for coefficients in coordinates {
-      let notsq = naive_perfect_evaluate(coefficients, input.clone());
-      result = result + &notsq*&notsq;
+  result
+}
+
+fn naive_perfect_evaluate_magnitude_squared<Coefficient: Integer>(
+  coordinates: &[&[Coefficient]],
+  input: BigRational,
+) -> BigRational
+where
+  BigInt: From<Coefficient>,
+{
+  let mut result = BigRational::zero();
+  for coefficients in coordinates {
+    let notsq = naive_perfect_evaluate(coefficients, input.clone());
+    result = result + &notsq * &notsq;
+  }
+  result
+}
+
+fn naive_factorial(value: usize) -> BigInt {
+  let mut result = BigInt::one();
+  for factor in 2..=value {
+    result = result * BigInt::from(factor);
+  }
+  result
+}
+
+fn naive_binomial_coefficient(n: usize, k: usize) -> BigInt {
+  naive_factorial(n) / (naive_factorial(k) * naive_factorial(n - k))
+}
+
+fn naive_perfect_nth_taylor_coefficient<Coefficient: Integer>(
+  coefficients: &[Coefficient],
+  input: BigRational,
+  n: usize,
+) -> BigRational
+where
+  BigInt: From<Coefficient>,
+{
+  let mut result = BigRational::zero();
+  for (exponent, coefficient) in coefficients.iter().enumerate().skip(n) {
+    let mut term = BigRational::from(BigInt::from(*coefficient));
+    for _ in n..exponent {
+      term = term * &input;
     }
-    result
+    result = result + term * naive_binomial_coefficient(exponent, n);
   }
+  result
+}
 
-  fn naive_factorial(value: usize) -> BigInt {
-    let mut result = BigInt::one();
-    for factor in 2..=value {
-      result = result * BigInt::from(factor);
-    }
-    result
-  }
+fn precision_scale(precision_shift: u32) -> BigRational {
+  BigRational::new(
+    BigInt::from_i64(1i64 << precision_shift).unwrap(),
+    BigInt::one(),
+  )
+}
 
-  fn naive_binomial_coefficient(n: usize, k: usize) -> BigInt {
-    naive_factorial(n) / (naive_factorial(k) * naive_factorial(n - k))
-  }
+fn rational_input<T>(input: FractionalInput<T>) -> BigRational
+where
+  BigInt: From<T>,
+{
+  BigRational::new(
+    BigInt::from(input.numerator),
+    BigInt::from_i64(1i64 << input.shift).unwrap(),
+  )
+}
 
-  fn naive_perfect_nth_taylor_coefficient<Coefficient: Integer>(
-    coefficients: &[Coefficient],
-    input: BigRational,
-    n: usize,
-  ) -> BigRational
-  where
-    BigInt: From<Coefficient>,
-  {
-    let mut result = BigRational::zero();
-    for (exponent, coefficient) in coefficients.iter().enumerate().skip(n) {
-      let mut term = BigRational::from(BigInt::from(*coefficient));
-      for _ in n..exponent {
-        term = term * &input;
-      }
-      result = result + term * naive_binomial_coefficient(exponent, n);
-    }
-    result
-  }
+fn arbitrary_fractional_input() -> BoxedStrategy<FractionalInput<i64>> {
+  (0u32..16)
+    .prop_flat_map(|shift| ((-16i64 << shift..16i64 << shift), Just(shift)))
+    .prop_map(|(numerator, shift)| FractionalInput { numerator, shift })
+    .boxed()
+}
 
-  fn precision_scale(precision_shift: u32) -> BigRational {
-    BigRational::new(
-      BigInt::from_i64(1i64 << precision_shift).unwrap(),
-      BigInt::one(),
-    )
-  }
-
-  fn rational_input<T>(input: FractionalInput<T>) -> BigRational
-  where
-    BigInt: From<T>,
-  {
-    BigRational::new(
-      BigInt::from(input.numerator),
-      BigInt::from_i64(1i64 << input.shift).unwrap(),
-    )
-  }
-
-  fn arbitrary_fractional_input() -> BoxedStrategy<FractionalInput<i64>> {
-    (0u32..16)
-      .prop_flat_map(|shift| ((-16i64 << shift..16i64 << shift), Just(shift)))
-      .prop_map(|(numerator, shift)| FractionalInput { numerator, shift })
-      .boxed()
-  }
-
-  macro_rules! test_polynomials {
+macro_rules! test_polynomials {
   ($($coefficients: expr, $integer: ident, $double: ident, $uniform: ident, $name: ident,)*) => {
 $(
   mod $name {
@@ -255,7 +254,7 @@ $(
         let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(FractionalInput::new(test_time, input.shift)), 0);
         prop_assert!(exact < exact_require_threshold);
       }
-      
+
       #[test]
       fn randomly_test_coefficient_bounds_on_integer_interval (coefficients in prop::array::$uniform(-16 as $integer..16), start in -16 as $double..16, duration in 0 as $double..16, test_frac in 0f64..1f64) {
         let first = coefficients.all_taylor_coefficients (start);
@@ -264,7 +263,7 @@ $(
         let second = coefficients.all_taylor_coefficients (start+duration);
         prop_assume! (second.is_some());
         let second = second.unwrap();
-        
+
         let computed = coefficient_bounds_on_integer_interval([&first, &second], duration);
         let test_time = start + ((duration as f64+0.999) * test_frac).floor() as $double;
         for (exponent, bounds) in computed.iter().enumerate() {
@@ -273,13 +272,13 @@ $(
           prop_assert!(bounds [1] == Bounded::max_value() || BigRational::from(BigInt::from(bounds [1])) >= exact);
         }
       }
-      
+
       #[test]
       fn randomly_test_coefficient_bounds_on_tail (coefficients in prop::array::$uniform(-16 as $integer..16), start in -16 as $double..16, test_frac in 0f64..1f64) {
         let first = coefficients.all_taylor_coefficients (start);
         prop_assume! (first.is_some());
         let first = first.unwrap();
-        
+
         let computed = coefficient_bounds_on_tail (&first);
         let test_time = start + max(0, (1.0/test_frac).floor() as $double);
         for (exponent, bounds) in computed.iter().enumerate() {
@@ -288,7 +287,7 @@ $(
           prop_assert!(bounds [1] == Bounded::max_value() || BigRational::from(BigInt::from(bounds [1])) >= exact);
         }
       }
-      
+
       #[test]
       fn randomly_test_value_bounds_on_negative_power_of_2_interval (coefficients in prop::array::$uniform(-16 as $integer..16), (start, duration_shift) in arbitrary_fractional_input().prop_flat_map(|input| (Just(input), 0..input.shift+1)), test_frac in 0f64..1f64) {
         let first = coefficients.all_taylor_coefficients_bounds (start.numerator, start.shift, STANDARD_PRECISION_SHIFT);
@@ -298,11 +297,11 @@ $(
         let second = coefficients.all_taylor_coefficients_bounds (start.numerator+duration, start.shift, STANDARD_PRECISION_SHIFT);
         prop_assume! (second.is_some());
         let second = second.unwrap();
-        
+
         let bounds = value_bounds_on_negative_power_of_2_interval::<_,$integer>([&first, &second], duration_shift);
         let test_time = start.numerator + ((duration as f64+0.999) * test_frac).floor() as $double;
         let test_time = rational_input(FractionalInput::new(test_time, start.shift));
-        
+
         let exact = naive_perfect_nth_taylor_coefficient(&coefficients, test_time.clone(), 0);
         prop_assert!(BigRational::from(BigInt::from(bounds [0])) <= exact);
         prop_assert!(BigRational::from(BigInt::from(bounds [1])) >= exact);
@@ -314,9 +313,9 @@ $(
 macro_rules! test_squarable_polynomials {
   ($($coefficients: expr, $integer: ident, $double: ident, $uniform: ident, $name: ident,)*) => {
 $(
-  mod $name {   
+  mod $name {
   use super::*;
-  
+
   proptest! {
 
       #[test]
@@ -364,59 +363,59 @@ $(
   }
 }
 
-  test_polynomials!(
-    1,
-    i32,
-    i64,
-    uniform1,
-    polynomial_tests_1,
-    2,
-    i32,
-    i64,
-    uniform2,
-    polynomial_tests_2,
-    3,
-    i32,
-    i64,
-    uniform3,
-    polynomial_tests_3,
-    4,
-    i32,
-    i64,
-    uniform4,
-    polynomial_tests_4,
-    5,
-    i32,
-    i64,
-    uniform5,
-    polynomial_tests_5,
-  );
-  
-  test_squarable_polynomials!(
-    /*1,
-    i32,
-    i64,
-    uniform1,
-    polynomial_tests_12,*/
-    2,
-    i32,
-    i64,
-    uniform2,
-    polynomial_tests_22,
-    3,
-    i32,
-    i64,
-    uniform3,
-    polynomial_tests_32,
-  );
+test_polynomials!(
+  1,
+  i32,
+  i64,
+  uniform1,
+  polynomial_tests_1,
+  2,
+  i32,
+  i64,
+  uniform2,
+  polynomial_tests_2,
+  3,
+  i32,
+  i64,
+  uniform3,
+  polynomial_tests_3,
+  4,
+  i32,
+  i64,
+  uniform4,
+  polynomial_tests_4,
+  5,
+  i32,
+  i64,
+  uniform5,
+  polynomial_tests_5,
+);
 
-  /*#[test]
-  fn print_record_data() {
-     use std::io::Write;
-     let mut data: Vec<Vec<RangeSearchRecordHack>> = serde_json::from_reader (::std::fs::File::open("/n/pfft/range_search_data.json").unwrap()).unwrap();
-     data.sort_by_key(|datum|datum.len());
-     let percentiles:Vec<usize> = (0..=100).map(|percent| data[percent*(data.len()-1)/100].len()).collect();
-     write!(::std::io::stderr(), "Number of searches: {:?}", data.len());
-     write!(::std::io::stderr(), "Sizes: {:?}", percentiles);
-     write!(::std::io::stderr(), "Worst: {}", serde_json::to_string_pretty(data.last().unwrap()).unwrap());
-  }*/
+test_squarable_polynomials!(
+  /*1,
+  i32,
+  i64,
+  uniform1,
+  polynomial_tests_12,*/
+  2,
+  i32,
+  i64,
+  uniform2,
+  polynomial_tests_22,
+  3,
+  i32,
+  i64,
+  uniform3,
+  polynomial_tests_32,
+);
+
+/*#[test]
+fn print_record_data() {
+   use std::io::Write;
+   let mut data: Vec<Vec<RangeSearchRecordHack>> = serde_json::from_reader (::std::fs::File::open("/n/pfft/range_search_data.json").unwrap()).unwrap();
+   data.sort_by_key(|datum|datum.len());
+   let percentiles:Vec<usize> = (0..=100).map(|percent| data[percent*(data.len()-1)/100].len()).collect();
+   write!(::std::io::stderr(), "Number of searches: {:?}", data.len());
+   write!(::std::io::stderr(), "Sizes: {:?}", percentiles);
+   write!(::std::io::stderr(), "Worst: {}", serde_json::to_string_pretty(data.last().unwrap()).unwrap());
+}*/

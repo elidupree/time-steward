@@ -1,11 +1,8 @@
 use array_ext::*;
-use num::{
-  CheckedAdd, CheckedMul, CheckedSub,
-  Signed,
-};
-use std::cmp::{Ordering};
+use num::{CheckedAdd, CheckedMul, CheckedSub, Signed};
 #[allow(unused_imports)]
 use serde::Serialize;
+use std::cmp::Ordering;
 
 use super::*;
 use crate::range_search::{RangeSearch, RangeSearchRunner, STANDARD_PRECISION_SHIFT};
@@ -18,8 +15,7 @@ pub trait AllTaylorCoefficients<WorkingType>: Sized {
   fn all_taylor_coefficients(&self, input: impl Copy + Into<WorkingType>) -> Option<Self>;
 }
 
-pub trait AllTaylorCoefficientsBoundsWithinHalf<WorkingType>
-{
+pub trait AllTaylorCoefficientsBoundsWithinHalf<WorkingType> {
   type Output;
   fn accumulated_error_shift() -> u32;
   fn max_total_shift() -> u32;
@@ -30,7 +26,8 @@ pub trait AllTaylorCoefficientsBoundsWithinHalf<WorkingType>
     precision_shift: u32,
   ) -> Self::Output;
 }
-pub trait AllTaylorCoefficientsBounds<WorkingType>: AllTaylorCoefficientsBoundsWithinHalf<WorkingType>
+pub trait AllTaylorCoefficientsBounds<WorkingType>:
+  AllTaylorCoefficientsBoundsWithinHalf<WorkingType>
 {
   fn all_taylor_coefficients_bounds(
     &self,
@@ -78,15 +75,12 @@ impl_filter!(LessThanEqualToFilter, <=, 0, 1, <, -Coefficient::one());
 impl_filter!(GreaterThanFilter, >, 1, 0, >, Coefficient::one());
 impl_filter!(GreaterThanEqualToFilter, >=, 1, 0, >, Coefficient::one());
 
-
 pub trait PolynomialBase {
   type Coefficient: Integer + Signed;
 }
 pub type Coefficient<T> = <T as PolynomialBase>::Coefficient;
 pub trait PolynomialRangeSearch<Coefficient, WorkingType>: PolynomialBase {
-  fn next_time_value_passes<
-    Filter: PolynomialBoundsFilter<Coefficient>,
-  >(
+  fn next_time_value_passes<Filter: PolynomialBoundsFilter<Coefficient>>(
     &self,
     start_input: WorkingType,
     input_shift: u32,
@@ -94,9 +88,7 @@ pub trait PolynomialRangeSearch<Coefficient, WorkingType>: PolynomialBase {
   ) -> Option<WorkingType>;
 }
 pub trait PolynomialMagnitudeSquaredRangeSearch<WorkingType>: PolynomialBase + Sized {
-  fn next_time_magnitude_squared_passes<
-    Filter: PolynomialBoundsFilter<WorkingType>,
-  >(
+  fn next_time_magnitude_squared_passes<Filter: PolynomialBoundsFilter<WorkingType>>(
     coordinates: &[Self],
     start_input: WorkingType,
     input_shift: u32,
@@ -106,28 +98,28 @@ pub trait PolynomialMagnitudeSquaredRangeSearch<WorkingType>: PolynomialBase + S
 
 pub trait SetNthTaylorCoefficientAtFractionalInput<WorkingType>: PolynomialBase {
   fn set_nth_taylor_coefficient_at_fractional_input(
-  &mut self,
-  which_derivative: usize,
-  input: WorkingType,
-  input_shift: u32,
-  target_value: Self::Coefficient,
-) -> Result<(), ::std::option::NoneError>;
+    &mut self,
+    which_derivative: usize,
+    input: WorkingType,
+    input_shift: u32,
+    target_value: Self::Coefficient,
+  ) -> Result<(), ::std::option::NoneError>;
 }
 
 pub trait Polynomial<Coefficient: DoubleSizedSignedInteger>:
-  PolynomialBase <Coefficient=Coefficient>
+  PolynomialBase<Coefficient = Coefficient>
   + AllTaylorCoefficients<DoubleSized<Coefficient>>
   + AllTaylorCoefficientsBounds<DoubleSized<Coefficient>>
   + PolynomialRangeSearch<Coefficient, DoubleSized<Coefficient>>
-  //+ PolynomialMagnitudeSquaredRangeSearch<Coefficient, DoubleSized<Coefficient>>
+//+ PolynomialMagnitudeSquaredRangeSearch<Coefficient, DoubleSized<Coefficient>>
 {
 }
-impl<Coefficient: DoubleSizedSignedInteger,
-    P: PolynomialBase<Coefficient=Coefficient>
+impl<
+    Coefficient: DoubleSizedSignedInteger,
+    P: PolynomialBase<Coefficient = Coefficient>
       + AllTaylorCoefficients<DoubleSized<Coefficient>>
       + AllTaylorCoefficientsBounds<DoubleSized<Coefficient>>
-      + PolynomialRangeSearch<Coefficient, DoubleSized<Coefficient>>
-      //+ PolynomialMagnitudeSquaredRangeSearch<Coefficient, DoubleSized<Coefficient>>,
+      + PolynomialRangeSearch<Coefficient, DoubleSized<Coefficient>>, //+ PolynomialMagnitudeSquaredRangeSearch<Coefficient, DoubleSized<Coefficient>>
   > Polynomial<Coefficient> for P
 {
 }
@@ -188,7 +180,7 @@ impl <Coefficient: Integer + Signed, WorkingType: Integer + Signed + From<Coeffi
         panic!("all_taylor_coefficients_bounds_within_half called with an input({}) that is not within half (shift: {})", input, input_shift);
       },
     }
-    
+
     // In the loop, error accumulates each term.
     // Fortunately, the error is strictly bounded above by 2^(degree-1).
     // We want to scale down the error as far as possible, so we first left-shift by degree+1,
@@ -333,8 +325,6 @@ impl <Coefficient: DoubleSizedSignedInteger> SetNthTaylorCoefficientAtFractional
   }
 }
 
-
-
 macro_rules! impl_squarable_polynomials {
   ($($coefficients: expr),*) => {
 $(
@@ -404,10 +394,7 @@ impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSear
 }
 
 impl_polynomials!(1, 2, 3, 4, 5);
-impl_squarable_polynomials!(1,2,3);
-
-
-
+impl_squarable_polynomials!(1, 2, 3);
 
 #[derive(Copy, Clone, Serialize, Deserialize, Debug, Default)]
 pub struct ValueWithPrecision<P> {
@@ -429,24 +416,27 @@ pub struct FractionalInput<T> {
 
 impl<P, I> PolynomialBasedAtInput<P, I> {
   pub fn new(coefficients: P, origin: I) -> Self {
-    PolynomialBasedAtInput { coefficients, origin }
+    PolynomialBasedAtInput {
+      coefficients,
+      origin,
+    }
   }
 }
 impl<T: Integer> ValueWithPrecision<T> {
   pub fn bounds_without_precision<WorkingType: Integer + From<T>>(&self) -> [WorkingType; 2] {
-      [
-        shr_floor(self.value.into(), self.precision as u32),
-        shr_ceil(self.value.into(), self.precision as u32),
-      ]
+    [
+      shr_floor(self.value.into(), self.precision as u32),
+      shr_ceil(self.value.into(), self.precision as u32),
+    ]
   }
 }
 
 impl<T: Integer> ValueWithPrecision<[T; 2]> {
   pub fn without_precision<WorkingType: Integer + From<T>>(&self) -> [WorkingType; 2] {
-      [
-        shr_floor(self.value[0].into(), self.precision as u32),
-        shr_ceil(self.value[1].into(), self.precision as u32),
-      ]
+    [
+      shr_floor(self.value[0].into(), self.precision as u32),
+      shr_ceil(self.value[1].into(), self.precision as u32),
+    ]
   }
 }
 
@@ -554,8 +544,5 @@ impl<T: Integer> FractionalInput<T> {
   }
 }
 
-
 //Note: currently, this function is strict (always find the exact time the max goes below the threshold). With a certain amount of error when the value is very close to the threshold, this could force searching every time unit. TODO: fix this by rigorously limiting the error and allowing that much leeway
 // Returns a time where the polynomial output is definitely less than permit_threshold, such that there is no EARLIER output less than require_threshold. (Or returns None if it encounters overflow before any output less than require_threshold.) With only approximate polynomial evaluation, for these conditions to be theoretically meetable, we must have permit_threshold >= require_threshold + 2. (Imagine that we have permit_threshold = 5, require_threshold = 4. The polynomial may output the range [3, 5]. We wouldn't be permitted to return that time because the true value may be 5, which is not less than permit_threshold and therefore not permitted. But we wouldn't be able to pass by that time because the true value could be 3, which is less than require_threshold.) For EFFICIENCY, we need permit_threshold >= require_threshold + 3, because there's an extra 1 of error in computing bounds on an interval. (Imagine that we have permit_threshold = 5, require_threshold = 3. The polynomial may output the range [3, 5] for a long interval. But the interval might report a lower bound of 2, meaning the algorithm doesn't know it can skip that interval. Theoretically, this might lead the algorithm to explore every individual time within a long interval.)
-
-

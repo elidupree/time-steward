@@ -1,6 +1,5 @@
 use std::marker::PhantomData;
 
-
 pub struct ListedType<T>(PhantomData<T>, !);
 pub trait ListOfTypesVisitor {
   fn visit<T>(&mut self);
@@ -8,8 +7,6 @@ pub trait ListOfTypesVisitor {
 pub trait ListOfTypes {
   fn visit_all<Visitor: ListOfTypesVisitor>(visitor: &mut Visitor);
 }
-
-
 
 impl<T> ListOfTypes for ListedType<T> {
   fn visit_all<Visitor: ListOfTypesVisitor>(visitor: &mut Visitor) {
@@ -138,4 +135,3 @@ tuple_impls! {
         (11) -> L LL
     }
 }
-
