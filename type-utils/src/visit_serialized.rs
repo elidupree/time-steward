@@ -1,10 +1,10 @@
 //! Piggyback on the Serialize trait to scan an object for members of specific types.
 //!
-//! This is not rigorous! If the serialize impl of the target object is called by another serialize impl rather than implicitly through the serializer, the object is missed! We account the only builtin case of this (deref impls), but custom impls could easily violate this condition. Probably, this should be eventually replaced by my own custom derive.
+//! This can only visit specific types but implement VisitTarget and use a custom Serialize impl to make it possible. Probably, this should be eventually replaced by my own custom derive.
 
-use serde::{ser, Serialize};
+use serde::{ser, Serialize, Serializer};
 use std::fmt::{self,Display};
-use std::ops::Deref;
+use std::marker::PhantomData;
 
 
 pub trait VisitAny {
@@ -22,11 +22,51 @@ impl <V: VisitAny + ?Sized, T: Serialize + ?Sized> VisitSpecific<T> for V {
     value.serialize(VisitingSerializerHack(self)).unwrap();
   }
 }
-impl <'a, V: VisitAny + ?Sized, T: Serialize + Deref + ?Sized> VisitSpecific<T> for V where T::Target: Serialize {
-  default fn visit_specific(&mut self, value: &T) {
-    //eprintln!("deref {}", unsafe{std::intrinsics::type_name::<T>()});
-    self.visit_specific(&**value);
+
+pub trait VisitTarget: Serialize {}
+
+
+
+trait MaybeVisitTarget: Serialize {
+  fn verify (&self);
+}
+
+
+impl <T: Serialize + ?Sized> MaybeVisitTarget for T {
+  default fn verify (&self) {}
+}
+
+impl <T: VisitTarget + ?Sized> MaybeVisitTarget for T {
+  fn verify (&self) {
+    struct Visitor <'a, U: ?Sized> (& 'a mut i32, PhantomData <*const U>);
+    impl <'a, U: Serialize + ?Sized> VisitAny for Visitor <'a, U> {}
+    impl <'a, U: Serialize + ?Sized> VisitSpecific<U> for Visitor <'a, U> {
+      fn visit_specific(&mut self, _value: &U) {
+        *self.0 += 1;
+      }
+    }
+    eprintln!(" {:?} ",()) ;
+    let mut count: i32 = 0;
+    let mut visitor: Visitor <T> = Visitor (&mut count, PhantomData);
+    self.serialize(VisitingSerializerHack(&mut visitor)).unwrap();
+    assert_eq!(count, 1, "a type implemented VisitTarget without handling the serialization correctly");
   }
+}
+
+trait MaybeVisitingSerializerHack: Serializer {
+  fn maybe_visit<T: VisitTarget + ?Sized>(&mut self, value: & T)->Option<Result<Self::Ok, Self::Error>>;
+}
+
+impl <S: Serializer> MaybeVisitingSerializerHack for S {
+  default fn maybe_visit<T: VisitTarget + ?Sized>(&mut self, _value: & T)->Option<Result<Self::Ok, Self::Error>> {None}
+}
+
+impl <'a, V: VisitAny + ?Sized> MaybeVisitingSerializerHack for VisitingSerializerHack<'a, V> {
+  fn maybe_visit<T: VisitTarget + ?Sized>(&mut self, value: & T)->Option<Result<Self::Ok, Self::Error>> {self.0.visit (value); Some(Ok(())) }
+}
+
+pub fn maybe_visit <S: Serializer, T: VisitTarget + ?Sized>(serializer: &mut S, value: & T)->Option<Result<S::Ok, S::Error>> {
+  serializer.maybe_visit(value)
 }
 
 struct VisitingSerializerHack<'a, V: VisitAny + ?Sized>(&'a mut V);
@@ -49,6 +89,12 @@ impl ::std::error::Error for NeverError {
 impl Display for NeverError {
   fn fmt(&self, _formatter: &mut fmt::Formatter) -> fmt::Result {
       unreachable!()
+  }
+}
+impl<'a, V: VisitAny + ?Sized> VisitingSerializerHack<'a, V> {
+  fn handle<T: Serialize + ?Sized> (&mut self, value: & T) -> Result<(),NeverError> {
+    value.verify();
+    value.serialize (VisitingSerializerHack(self.0))
   }
 }
 impl<'a, V: VisitAny + ?Sized> ser::Serializer for VisitingSerializerHack<'a, V> {
@@ -78,8 +124,8 @@ impl<'a, V: VisitAny + ?Sized> ser::Serializer for VisitingSerializerHack<'a, V>
   fn serialize_str(self, _: &str) -> Result<(),NeverError> { Ok(()) }
   fn serialize_bytes(self, _: &[u8]) -> Result<(),NeverError> { Ok(()) }
   fn serialize_none(self) -> Result<(),NeverError> { Ok(()) }
-  fn serialize_some<T>(self, value: &T) -> Result<(),NeverError>
-      where T: ?Sized + Serialize { self.0.visit(value); Ok(()) }
+  fn serialize_some<T>(mut self, value: &T) -> Result<(),NeverError>
+      where T: ?Sized + Serialize { self.handle(value) }
   fn serialize_unit(self) -> Result<(),NeverError> { Ok(()) }
   fn serialize_unit_struct(self, _name: &'static str) -> Result<(),NeverError> { Ok(()) }
   fn serialize_unit_variant(
@@ -88,16 +134,16 @@ impl<'a, V: VisitAny + ?Sized> ser::Serializer for VisitingSerializerHack<'a, V>
       __variant_index: u32,
       _variant: &'static str
   ) -> Result<(),NeverError> { Ok(()) }
-  fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<(),NeverError>
-      where T: ?Sized + Serialize{ self.0.visit(value); Ok(()) }
+  fn serialize_newtype_struct<T>(mut self, _name: &'static str, value: &T) -> Result<(),NeverError>
+      where T: ?Sized + Serialize{ self.handle(value) }
   fn serialize_newtype_variant<T>(
-      self,
+      mut self,
       _name: &'static str,
       _variant_index: u32,
       _variant: &'static str,
       value: &T
   )  -> Result<(),NeverError>
-      where T: ?Sized + Serialize { self.0.visit(value); Ok(()) }
+      where T: ?Sized + Serialize { self.handle(value) }
 
   fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq,NeverError> { Ok(self) }
   fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple,NeverError> { Ok(self) }
@@ -131,51 +177,51 @@ impl<'a, V: VisitAny + ?Sized> ser::SerializeSeq for VisitingSerializerHack<'a, 
   type Ok = ();
   type Error = NeverError;
   fn serialize_element<T>(&mut self, value: &T) -> Result<(),NeverError>
-      where T: ?Sized + Serialize { self.0.visit(value); Ok(()) }
+      where T: ?Sized + Serialize { self.handle(value) }
   fn end(self) -> Result<(),NeverError> { Ok(()) }
 }
 impl<'a, V: VisitAny + ?Sized> ser::SerializeTuple for VisitingSerializerHack<'a, V> {
   type Ok = ();
   type Error = NeverError;
   fn serialize_element<T>(&mut self, value: &T) -> Result<(),NeverError>
-      where T: ?Sized + Serialize { self.0.visit(value); Ok(()) }
+      where T: ?Sized + Serialize { self.handle(value) }
   fn end(self) -> Result<(),NeverError> { Ok(()) }
 }
 impl<'a, V: VisitAny + ?Sized> ser::SerializeTupleStruct for VisitingSerializerHack<'a, V> {
   type Ok = ();
   type Error = NeverError;
   fn serialize_field<T>(&mut self, value: &T) -> Result<(),NeverError>
-      where T: ?Sized + Serialize { self.0.visit(value); Ok(()) }
+      where T: ?Sized + Serialize { self.handle(value) }
   fn end(self) -> Result<(),NeverError> { Ok(()) }
 }
 impl<'a, V: VisitAny + ?Sized> ser::SerializeTupleVariant for VisitingSerializerHack<'a, V> {
   type Ok = ();
   type Error = NeverError;
   fn serialize_field<T>(&mut self, value: &T) -> Result<(),NeverError>
-      where T: ?Sized + Serialize { self.0.visit(value); Ok(()) }
+      where T: ?Sized + Serialize { self.handle(value) }
   fn end(self) -> Result<(),NeverError> { Ok(()) }
 }
 impl<'a, V: VisitAny + ?Sized> ser::SerializeMap for VisitingSerializerHack<'a, V> {
   type Ok = ();
   type Error = NeverError;
   fn serialize_key<T>(&mut self, key: &T) -> Result<(),NeverError>
-      where T: ?Sized + Serialize { self.0.visit(key); Ok(())  }
+      where T: ?Sized + Serialize { self.handle(key) }
   fn serialize_value<T>(&mut self, value: &T) -> Result<(),NeverError>
-      where T: ?Sized + Serialize { self.0.visit(value); Ok(()) }
+      where T: ?Sized + Serialize { self.handle(value) }
   fn end(self) -> Result<(),NeverError> { Ok(()) }
 }
 impl<'a, V: VisitAny + ?Sized> ser::SerializeStruct for VisitingSerializerHack<'a, V> {
   type Ok = ();
   type Error = NeverError;
   fn serialize_field<T>(&mut self, _key: &'static str, value: &T) -> Result<(),NeverError>
-      where T: ?Sized + Serialize { self.0.visit(value); Ok(()) }
+      where T: ?Sized + Serialize { self.handle(value) }
   fn end(self) -> Result<(),NeverError> { Ok(()) }
 }
 impl<'a, V: VisitAny + ?Sized> ser::SerializeStructVariant for VisitingSerializerHack<'a, V> {
   type Ok = ();
   type Error = NeverError;
   fn serialize_field<T>(&mut self, _key: &'static str, value: &T) -> Result<(),NeverError>
-      where T: ?Sized + Serialize { self.0.visit(value); Ok(()) }
+      where T: ?Sized + Serialize { self.handle(value) }
   fn end(self) -> Result<(),NeverError> { Ok(()) }
 }
 
@@ -185,8 +231,16 @@ mod tests {
 
   #[test]
   fn test_visit_serialized() {
-    #[derive (PartialEq, Eq, Serialize)]
+    #[derive (PartialEq, Eq)]
     struct ToVisit(i32);
+    impl VisitTarget for ToVisit {}
+    impl Serialize for ToVisit {
+      fn serialize<S: Serializer>(&self, mut serializer: S) -> Result<S::Ok, S::Error> {
+        if let Some(a) = maybe_visit (&mut serializer, self) {return a}
+        panic!()
+      }
+    }
+    
     #[derive (Serialize)]
     struct Wrapper(ToVisit);
     struct Visitor <'a> (& 'a mut Vec<i32>);
@@ -203,5 +257,26 @@ mod tests {
     visitor.visit (&(ToVisit(0), 1i64, 2i32, vec![ToVisit(3), ToVisit(4)], vec![Some(ToVisit(5)), None, Some(ToVisit(6))], Some(ToVisit(7)), &&&&mut&& ToVisit(8), Box::new(ToVisit(9)), Wrapper(ToVisit(10))));
     
     assert_eq!(result, vec![0, 3, 4, 5, 6, 7, 8, 9, 10])
+  }
+  
+  #[test]
+  #[should_panic (expected ="a type implemented VisitTarget without handling the serialization correctly")]
+  fn test_catching_visit_target_implemented_wrongly() {
+    #[derive (PartialEq, Eq, Serialize)]
+    struct ToVisit(i32);
+    impl VisitTarget for ToVisit {}
+
+    struct Visitor <'a> (& 'a mut Vec<i32>);
+    impl <'a> VisitAny for Visitor <'a> {}
+    impl <'a> VisitSpecific<ToVisit> for Visitor <'a> {
+      fn visit_specific(&mut self, value: &ToVisit) {
+        //eprintln!("q");
+        self.0.push (value.0);
+      }
+    }
+    
+    let mut result = Vec::new() ;
+    let mut visitor = Visitor (&mut result);
+    visitor.visit (&(ToVisit(0), 1i64, 2i32, vec![ToVisit(3), ToVisit(4)], vec![Some(ToVisit(5)), None, Some(ToVisit(6))], Some(ToVisit(7)), &&&&mut&& ToVisit(8), Box::new(ToVisit(9))));
   }
 }
