@@ -57,3 +57,4 @@ mod tests {
 }
 
 pub mod list_of_types;
+pub mod visit_serialized;
