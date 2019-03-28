@@ -69,6 +69,13 @@ pub fn maybe_visit <S: Serializer, T: VisitTarget + ?Sized>(serializer: &mut S, 
   serializer.maybe_visit(value)
 }
 
+#[macro_export]
+macro_rules! maybe_visit {
+  ($value: expr, $serializer: expr) => {
+    if let Some(a) = maybe_visit (&mut $serializer, $value) {return a}
+  };
+}
+
 struct VisitingSerializerHack<'a, V: VisitAny + ?Sized>(&'a mut V);
 
 
@@ -236,7 +243,7 @@ mod tests {
     impl VisitTarget for ToVisit {}
     impl Serialize for ToVisit {
       fn serialize<S: Serializer>(&self, mut serializer: S) -> Result<S::Ok, S::Error> {
-        if let Some(a) = maybe_visit (&mut serializer, self) {return a}
+        maybe_visit! (self, serializer);
         panic!()
       }
     }
