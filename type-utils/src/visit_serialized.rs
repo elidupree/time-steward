@@ -55,7 +55,7 @@ impl <T: VisitTarget + ?Sized> MaybeVisitTarget for T {
         *self.0 += 1;
       }
     }
-    eprintln!(" {:?} ",()) ;
+    //eprintln!(" {:?} ",()) ;
     let mut count: i32 = 0;
     let mut visitor: Visitor <T> = Visitor (&mut count, PhantomData);
     visit_all(&mut visitor, self);
@@ -271,10 +271,21 @@ mod tests {
     
     #[derive (Serialize)]
     struct Wrapper(ToVisit);
+    
     #[derive (PartialEq, Eq)]
     struct WrapperThatIsAlsoUnusedTarget<T>(T);
     impl<T: Serialize> VisitTarget for WrapperThatIsAlsoUnusedTarget<T> {}
     impl<T: Serialize> Serialize for WrapperThatIsAlsoUnusedTarget<T> {
+      fn serialize<S: Serializer>(&self, mut serializer: S) -> Result<S::Ok, S::Error> {
+        maybe_apply_visitor! (self, serializer);
+        self.0.serialize(serializer)
+      }
+    }
+    
+    #[derive (PartialEq, Eq)]
+    struct WrapperThatIsAlsoUsedTarget<T>(T);
+    impl<T: Serialize> VisitTarget for WrapperThatIsAlsoUsedTarget<T> {}
+    impl<T: Serialize> Serialize for WrapperThatIsAlsoUsedTarget<T> {
       fn serialize<S: Serializer>(&self, mut serializer: S) -> Result<S::Ok, S::Error> {
         maybe_apply_visitor! (self, serializer);
         self.0.serialize(serializer)
@@ -288,10 +299,15 @@ mod tests {
         self.0.push (value.0);
       }
     }
+    impl <'a, T: Serialize> Visit<WrapperThatIsAlsoUsedTarget<T>> for Visitor <'a> {
+      fn visit(&mut self, _value: &WrapperThatIsAlsoUsedTarget<T>) {
+        // do nothing
+      }
+    }
     
     let mut result = Vec::new() ;
     let mut visitor = Visitor (&mut result);
-    visit_all(&mut visitor, &(ToVisit(0), 1i64, 2i32, vec![ToVisit(3), ToVisit(4)], vec![Some(ToVisit(5)), None, Some(ToVisit(6))], Some(ToVisit(7)), &&&&mut&& ToVisit(8), Box::new(ToVisit(9)), Wrapper(ToVisit(10)), WrapperThatIsAlsoUnusedTarget(ToVisit(11))));
+    visit_all(&mut visitor, &(ToVisit(0), 1i64, 2i32, vec![ToVisit(3), ToVisit(4)], vec![Some(ToVisit(5)), None, Some(ToVisit(6))], Some(ToVisit(7)), &&&&mut&& ToVisit(8), Box::new(ToVisit(9)), Wrapper(ToVisit(10)), WrapperThatIsAlsoUnusedTarget(ToVisit(11)), WrapperThatIsAlsoUsedTarget(ToVisit(12))));
     
     assert_eq!(result, vec![0, 3, 4, 5, 6, 7, 8, 9, 10, 11])
   }
