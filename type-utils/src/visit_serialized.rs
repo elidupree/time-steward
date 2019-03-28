@@ -271,6 +271,16 @@ mod tests {
     
     #[derive (Serialize)]
     struct Wrapper(ToVisit);
+    #[derive (PartialEq, Eq)]
+    struct WrapperThatIsAlsoUnusedTarget<T>(T);
+    impl<T: Serialize> VisitTarget for WrapperThatIsAlsoUnusedTarget<T> {}
+    impl<T: Serialize> Serialize for WrapperThatIsAlsoUnusedTarget<T> {
+      fn serialize<S: Serializer>(&self, mut serializer: S) -> Result<S::Ok, S::Error> {
+        maybe_apply_visitor! (self, serializer);
+        self.0.serialize(serializer)
+      }
+    }
+    
     struct Visitor <'a> (& 'a mut Vec<i32>);
     impl <'a> Visit<ToVisit> for Visitor <'a> {
       fn visit(&mut self, value: &ToVisit) {
@@ -281,9 +291,9 @@ mod tests {
     
     let mut result = Vec::new() ;
     let mut visitor = Visitor (&mut result);
-    visit_all(&mut visitor, &(ToVisit(0), 1i64, 2i32, vec![ToVisit(3), ToVisit(4)], vec![Some(ToVisit(5)), None, Some(ToVisit(6))], Some(ToVisit(7)), &&&&mut&& ToVisit(8), Box::new(ToVisit(9)), Wrapper(ToVisit(10))));
+    visit_all(&mut visitor, &(ToVisit(0), 1i64, 2i32, vec![ToVisit(3), ToVisit(4)], vec![Some(ToVisit(5)), None, Some(ToVisit(6))], Some(ToVisit(7)), &&&&mut&& ToVisit(8), Box::new(ToVisit(9)), Wrapper(ToVisit(10)), WrapperThatIsAlsoUnusedTarget(ToVisit(11))));
     
-    assert_eq!(result, vec![0, 3, 4, 5, 6, 7, 8, 9, 10])
+    assert_eq!(result, vec![0, 3, 4, 5, 6, 7, 8, 9, 10, 11])
   }
   
   #[test]
