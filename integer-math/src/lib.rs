@@ -94,7 +94,7 @@ pub trait DoubleSizedSignedInteger: Integer + Signed {
 pub type DoubleSized<T> = <T as DoubleSizedSignedInteger>::DoubleSized;
 
 pub mod impls {
-  use super::*;
+  use super::{Vector, *};
   use nalgebra::*;
   macro_rules! impl_vector {
     ($([$coordinates: expr, $Vector: ident],)*) => {

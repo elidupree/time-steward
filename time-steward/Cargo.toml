@@ -26,7 +26,7 @@ time_steward_integer_math = {path="../integer-math"}
 time_steward_type_utils = {path="../type-utils"}
 
 [dependencies.nalgebra]
-version = "0.12"
+version = "0.18"
 features = ["serde-serialize"]
 
 [dependencies.rpds]
