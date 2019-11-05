@@ -1,10 +1,11 @@
 use super::super::api::*;
 use crate::DeterministicRandomId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::borrow::Borrow;
+use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -191,6 +192,39 @@ impl<
   type Target = PublicImmutableData;
   fn deref(&self) -> &Self::Target {
     &(self.0).0
+  }
+}
+
+impl<
+    PublicImmutableData: SimulationStateData + Default,
+    PrivateTimeStewardData: PrivateTimeStewardDataTrait + Default,
+  > Default for DataHandle<PublicImmutableData, PrivateTimeStewardData>
+{
+  fn default()->Self {
+    struct InProgress;
+    thread_local! {
+      static DEFAULTS: RefCell<HashMap <TypeId, Box <dyn Any>>> = RefCell::new (HashMap::new());
+    }
+    DEFAULTS.with (| defaults | {
+      let id = TypeId::of::<Self>();
+      if let Some (existing) = defaults.borrow().get (& id) {
+        if existing.is::<InProgress>() {
+          panic!("Infinite recursion in Default impl of TimeSteward simulation data type {}", std::any::type_name::<Self>())
+        }
+        else if let Some(concrete) = existing.downcast_ref::<Self>() {
+          concrete.clone()
+        }
+        else {
+          unreachable!("Wrong type stored in DataHandle defaults map")
+        }
+      }
+      else {
+        defaults.borrow_mut().insert (id.clone(), Box::new (InProgress));
+        let handle = Self::new_nonreplicable(PublicImmutableData::default(), PrivateTimeStewardData::default());
+        defaults.borrow_mut().insert (id, Box::new (handle.clone())) ;
+        handle
+      }
+    })
   }
 }
 
