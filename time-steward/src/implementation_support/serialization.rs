@@ -3,7 +3,18 @@
 //! TimeSteward has a few special requirements for serialization:
 //! * DataHandle objects get special consideration, to support DAGs and cyclic data structures.
 //! * The serialization needs to not block other operations for more than O(1) time at a time.
-//! * The serialization must be lossless and platform-independent. For this reason, we always use bincode in low-endian mode.
+//! * It must be possible for the serialization to be lossless and platform-independent – although we also support other serializers, such as the lossy serde_json, because it's useful to be able to look at a human-readable version of the data.
+/*!
+Technical details:
+
+To prevent large blocking operations, we return a future that does a little bit of the work each time you poll it.
+
+To deal with the cyclic nature of the mutable data of DataHandles, we first use Default to create placeholders for all of the objects, then deserialize the mutable data into place using interior mutability.
+
+We can't do the same thing for the immutable data of DataHandles (because their types don't have interior mutability), but fortunately, they also cannot be cyclic (for the same reason you can't have cycles in Rc without interior mutability). Thus, they form a DAG. In order to deserialize them without unsafe code, they need to be serialized in topological order. This can be done using a depth-first search. Since the DAG may have arbitrary depth, we can't use the function call stack for this; we make our own stack on the heap.
+
+*/
+
 
 use crate::{SimulationStateData};
 use crate::implementation_support::common::{DataHandle, PrivateTimeStewardDataTrait};
