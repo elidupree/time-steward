@@ -28,11 +28,9 @@ impl<T: Any + Clone + Eq + Hash + Serialize + DeserializeOwned + Debug> Simulati
 
 //These would be associated type constructors if Rust supported those: EntityHandle, EventHandle, DynamicEventHandle, PredictionHandle
 /**
-This is intended to be implemented on an empty struct. Requiring Clone etc. is a hack to work around [a compiler weakness](https://github.com/rust-lang/rust/issues/26925).
+This is intended to be implemented on an empty struct.
 */
-pub trait SimulationSpec:
-  Any //+ Send + Sync + Copy + Clone 
-  + Ord //+ Hash + Serialize + DeserializeOwned + Debug + Default
+pub trait SimulationSpec: Any
 {
   type Time: SimulationStateData + Send + Sync + Clone + Ord + Hash;
   const MAX_ITERATION: IterationType = 65535;
@@ -49,11 +47,13 @@ impl<S: SimulationSpec, Steward: TimeSteward> SimulationSpecGATs<Steward> for S 
 }
 
 pub type IterationType = u32;
-#[derive(PartialOrd, Ord, Serialize, Deserialize, Derivative)]
+#[derive(Serialize, Deserialize, Derivative)]
 #[derivative(
   Clone(bound = ""),
   PartialEq(bound = ""),
   Eq(bound = ""),
+  PartialOrd(bound = ""),
+  Ord(bound = ""),
   Hash(bound = ""),
   Debug(bound = "")
 )]
