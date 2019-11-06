@@ -65,9 +65,27 @@ impl<
 {
   fn deserialize<D: Deserializer<'a>>(deserializer: D) -> Result<Self, D::Error> {
     let serial_number = u64::deserialize(deserializer);
-    with_deserialization_context (| contact | {
+    with_deserialization_context (| context | {
       context.handles_by_serial_number.get(&serial_number).cloned().ok_or_else (|| D::Error::custom("deserializing a DataHandle to data that hasn't already been deserialized"))
     })
+  }
+}
+
+
+impl<
+    'a,
+    PublicImmutableData: SimulationStateData,
+    PrivateTimeStewardData: PrivateTimeStewardDataTrait,
+  > DataHandle<PublicImmutableData, PrivateTimeStewardData>
+{
+  fn deserialize_immutable_only<D: Deserializer<'a>>(serial_number: u64, deserializer: D) -> Result<Self, D::Error> {
+    let immutable = PublicImmutableData::deserialize(deserializer);
+    let handle = Self::new_nonreplicable (immutable, PrivateTimeStewardData::default());
+    // actually, probably put this in the caller:
+    with_deserialization_context (| context | {
+      context.handles_by_serial_number.insert (serial_number, handle.clone());
+    })
+    Ok (handle)
   }
 }
 
