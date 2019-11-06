@@ -13,6 +13,8 @@ To deal with the cyclic nature of the mutable data of DataHandles, we first use 
 
 We can't do the same thing for the immutable data of DataHandles (because their types don't have interior mutability), but fortunately, they also cannot be cyclic (for the same reason you can't have cycles in Rc without interior mutability). Thus, they form a DAG. In order to deserialize them without unsafe code, they need to be serialized in topological order. This can be done using a depth-first search. Since the DAG may have arbitrary depth, we can't use the function call stack for this; we make our own stack on the heap.
 
+2019-11-06 note: DataHandle probably wants to have its generic parameters refactored; either <ImmutableData, MutableData> or just one <Contents>. MutableData/Contents needs to implement a trait that takes care of substituting in the deserialized version. TimeSteward privacy can be dealt with separately - at worst, just by making Contents have private fields. I also got sidetracked worrying about whether DataHandle should always store a deterministic unique id; I can put off making this decision if I simply preserve the possibility of adding a id() method to the Contents trait later.
+
 */
 
 
