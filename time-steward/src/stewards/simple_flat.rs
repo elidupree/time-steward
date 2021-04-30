@@ -1,3 +1,4 @@
+use derivative::Derivative;
 use std::any::{Any, TypeId};
 use std::borrow::Borrow;
 use std::cell::{Ref, RefCell};
@@ -163,6 +164,7 @@ struct StewardShared<S: SimulationSpec> {
 mod history {
   use super::EventHandle;
   use crate::{EventHandleTrait, ExtendedTime, Modify, SimulationSpec, SimulationStateData};
+  use derivative::Derivative;
   use std::any::Any;
   use std::collections::VecDeque;
   use std::marker::PhantomData;

@@ -35,15 +35,13 @@ extern crate rand;
 extern crate rand_core;
 extern crate rpds;
 extern crate serde;
-extern crate serde_derive;
 extern crate siphasher;
 //extern crate crossbeam;
+extern crate derivative;
 #[cfg_attr(test, macro_use)]
 extern crate proptest;
 #[cfg_attr(test, macro_use)]
 extern crate quickcheck;
-#[macro_use]
-extern crate derivative;
 //#[macro_use]
 extern crate failure;
 //#[macro_use]

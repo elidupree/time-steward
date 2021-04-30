@@ -1,7 +1,7 @@
 use bincode;
 use rand::{self, ChaChaRng, Rng, RngCore};
 use rand_core;
-use serde::Serialize;
+use serde::{ser, Deserialize, Serialize};
 use siphasher::sip::SipHasher;
 use std;
 use std::fmt;
@@ -69,7 +69,7 @@ impl DeterministicRandomId {
   /// on the current system, not in a standardized order.
   /// Therefore, we generate IDs from Serialize implementors,
   /// because Serialize IS meant to be compatible between platforms.
-  pub fn new<T: Serialize>(data: &T) -> DeterministicRandomId {
+  pub fn new<T: ser::Serialize>(data: &T) -> DeterministicRandomId {
     let mut writer = SiphashIdGenerator::new();
     bincode::serialize_into(&mut writer, data, bincode::Infinite).unwrap();
     writer.generate()
@@ -176,7 +176,7 @@ impl RngCore for DeterministicRandomIdRng {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use serde::Serialize;
+  use serde::ser;
   use std::fmt::Debug;
 
   #[test]
@@ -184,7 +184,7 @@ mod tests {
     assert!(DeterministicRandomId { data: [1, 0] } > DeterministicRandomId { data: [0, 1] });
   }
 
-  fn test_id_endianness_impl<T: Serialize + Debug>(thing: T, confirm: DeterministicRandomId) {
+  fn test_id_endianness_impl<T: ser::Serialize + Debug>(thing: T, confirm: DeterministicRandomId) {
     println!(
       "DeterministicRandomId::new({:?}) = {:?}",
       thing,

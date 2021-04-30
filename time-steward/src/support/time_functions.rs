@@ -1,6 +1,8 @@
-use super::rounding_error_tolerant_math::*;
 use nalgebra::Vector2;
+use serde::{Deserialize, Serialize};
 use std::cmp::max;
+
+use super::rounding_error_tolerant_math::*;
 
 // TODO: polymorphic in number of dimensions, and numeric type
 // TODO: optimize away the pointless inefficiencies I introduced

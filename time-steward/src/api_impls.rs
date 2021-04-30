@@ -1,7 +1,7 @@
+use std::cmp::Ordering;
 use std::fmt;
 
 use super::api::*;
-use std::cmp::Ordering;
 
 impl<T: SimulationStateData> Modify<T> for ReplaceWith<T> {
   type UndoData = T;

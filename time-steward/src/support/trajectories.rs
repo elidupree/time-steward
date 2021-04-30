@@ -1,5 +1,4 @@
 //use nalgebra::Vector2;
-use super::integer_math::{Vector as GenericVector, *};
 use num::traits::Signed;
 use num::{One, Zero};
 use std::cmp::min;
@@ -10,9 +9,12 @@ use self::polynomial2::{
   SetNthTaylorCoefficientAtFractionalInput,
 };
 use array_ext::*;
+use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::convert::TryInto;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+
+use super::integer_math::{Vector as GenericVector, *};
 
 pub type Time = i64;
 pub type Coordinate = i32;

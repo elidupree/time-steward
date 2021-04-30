@@ -1,17 +1,17 @@
-use crate::DeterministicRandomId;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use std::any::Any;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::{Read, Write};
 //use std::cmp::Ordering;
+use derivative::Derivative;
+use serde::{de::DeserializeOwned, ser, Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
 use crate::type_utils::list_of_types::ListOfTypes;
 use crate::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
+use crate::DeterministicRandomId;
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
@@ -19,10 +19,13 @@ use crate::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 ///
 /// Clone, Eq, and Hash are omitted because
 pub trait SimulationStateData:
-  Any + Clone + Eq + Hash + Serialize + DeserializeOwned + Debug
+  Any + Clone + Eq + Hash + ser::Serialize + DeserializeOwned + Debug
 {
 }
-impl<T: Any + Clone + Eq + Hash + Serialize + DeserializeOwned + Debug> SimulationStateData for T {}
+impl<T: Any + Clone + Eq + Hash + ser::Serialize + DeserializeOwned + Debug> SimulationStateData
+  for T
+{
+}
 
 // Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time.
 
