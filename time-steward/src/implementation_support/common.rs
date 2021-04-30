@@ -200,28 +200,33 @@ impl<
     PrivateTimeStewardData: PrivateTimeStewardDataTrait + Default,
   > Default for DataHandle<PublicImmutableData, PrivateTimeStewardData>
 {
-  fn default()->Self {
+  fn default() -> Self {
     struct InProgress;
     thread_local! {
       static DEFAULTS: RefCell<HashMap <TypeId, Box <dyn Any>>> = RefCell::new (HashMap::new());
     }
-    DEFAULTS.with (| defaults | {
+    DEFAULTS.with(|defaults| {
       let id = TypeId::of::<Self>();
-      if let Some (existing) = defaults.borrow().get (& id) {
+      if let Some(existing) = defaults.borrow().get(&id) {
         if existing.is::<InProgress>() {
-          panic!("Infinite recursion in Default impl of TimeSteward simulation data type {}", std::any::type_name::<Self>())
-        }
-        else if let Some(concrete) = existing.downcast_ref::<Self>() {
+          panic!(
+            "Infinite recursion in Default impl of TimeSteward simulation data type {}",
+            std::any::type_name::<Self>()
+          )
+        } else if let Some(concrete) = existing.downcast_ref::<Self>() {
           concrete.clone()
-        }
-        else {
+        } else {
           unreachable!("Wrong type stored in DataHandle defaults map")
         }
-      }
-      else {
-        defaults.borrow_mut().insert (id.clone(), Box::new (InProgress));
-        let handle = Self::new_nonreplicable(PublicImmutableData::default(), PrivateTimeStewardData::default());
-        defaults.borrow_mut().insert (id, Box::new (handle.clone())) ;
+      } else {
+        defaults
+          .borrow_mut()
+          .insert(id.clone(), Box::new(InProgress));
+        let handle = Self::new_nonreplicable(
+          PublicImmutableData::default(),
+          PrivateTimeStewardData::default(),
+        );
+        defaults.borrow_mut().insert(id, Box::new(handle.clone()));
         handle
       }
     })

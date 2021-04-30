@@ -872,7 +872,6 @@ mod impls {
     }
     root_search_split(metadata, range, bound_values, which_derivative, split_point)
   }
-
 }
 
 #[cfg(test)]

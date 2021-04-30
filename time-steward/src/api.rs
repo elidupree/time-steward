@@ -30,8 +30,7 @@ impl<T: Any + Clone + Eq + Hash + Serialize + DeserializeOwned + Debug> Simulati
 /**
 This is intended to be implemented on an empty struct.
 */
-pub trait SimulationSpec: Any
-{
+pub trait SimulationSpec: Any {
   type Time: SimulationStateData + Send + Sync + Clone + Ord + Hash;
   const MAX_ITERATION: IterationType = 65535;
 }

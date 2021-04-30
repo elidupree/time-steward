@@ -816,5 +816,4 @@ mod tests {
     assert_eq!(Range::exactly(4) / Range::exactly(2), Range::exactly(2));
     assert_eq!(Range::exactly(0) / Range::exactly(5), Range::exactly(0));
   }
-
 }

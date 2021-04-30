@@ -618,5 +618,4 @@ proptest! {
     QuarticTrajectory
   );
   test_trajectory!(quar, QuarticTrajectory, 4, uniform5, (any()), Unused);
-
 }

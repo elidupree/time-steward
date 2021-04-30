@@ -265,7 +265,6 @@ mod history {
       value
     }
   }
-
 }
 
 use self::history::{History, HistoryIndex};
