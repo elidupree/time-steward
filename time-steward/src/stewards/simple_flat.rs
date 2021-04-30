@@ -423,7 +423,7 @@ impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
 }
 
 impl<S: SimulationSpec> SnapshotAccessor for SnapshotHandle<S> {
-  fn serialize_into<W: Write>(&self, writer: &mut W) -> ::bincode::Result<()> {
+  fn serialize_into<W: Write>(&self, _writer: &mut W) -> ::bincode::Result<()> {
     unimplemented!() //serialize_snapshot(writer, self.clone())
   }
 }
@@ -576,7 +576,7 @@ impl<S: SimulationSpec> ConstructibleTimeSteward for Steward<S> {
     }
   }
 
-  fn deserialize_from<R: Read>(data: &mut R) -> ::bincode::Result<Self> {
+  fn deserialize_from<R: Read>(_data: &mut R) -> ::bincode::Result<Self> {
     unimplemented!() //deserialize_something(data)
   }
 }
