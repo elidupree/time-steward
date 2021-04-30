@@ -248,7 +248,7 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
     let next_integer = start_integer + S::Input::one();
     let next_value = PolynomialBasedAtInput::new(
       search.value_at_integer(next_integer)?,
-      start_integer + One::one(),
+      start_integer + S::Input::one(),
     );
 
     /*let start_diff = start_input - (start_integer<<input_shift);
@@ -301,7 +301,7 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
         let mut end_inputs = self.latest_integer_interval().map(|a| a.origin);
 
         'finding_midpoint: loop {
-          if end_inputs[0] + One::one() == end_inputs[1] {
+          if end_inputs[0] + S::Input::one() == end_inputs[1] {
             if let Some(result) = self.search_fractional() {
               return Some(result);
             }
@@ -403,7 +403,7 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
           //eprintln!("frac {:?}", (&data[left_end].origin));
           return Some(beginning_of_this_unit_interval + data[left_end].origin);
         }
-        if data[left_end].origin + One::one() == data[right_end].origin {
+        if data[left_end].origin + S::Input::one() == data[right_end].origin {
           break 'searching_subintervals;
         }
         current_input_shift += 1;
