@@ -1,9 +1,6 @@
-use bincode;
 use rand::{self, ChaChaRng, Rng, RngCore};
-use rand_core;
 use serde::{ser, Deserialize, Serialize};
 use siphasher::sip::SipHasher;
-use std;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::io::{self, Write};
