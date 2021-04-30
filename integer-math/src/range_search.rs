@@ -1,5 +1,5 @@
 use crate::array::{Array, ReplaceItemType};
-use array_ext::{Array as ArrayExtArray, *};
+use array_ext::Array as ArrayExtArray;
 use arrayvec::{self, ArrayVec};
 use num::{CheckedAdd, FromPrimitive, One, Signed};
 #[allow(unused_imports)]

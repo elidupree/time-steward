@@ -707,7 +707,6 @@ pub fn root_search<Coefficient: Integer, T: Integer + Signed + From<Coefficient>
 
 mod impls {
   use super::*;
-  use array_ext::*;
 
   pub(super) struct RootSearchMetadata<'a, T: 'a> {
     pub(super) input_shift: u32,
@@ -894,7 +893,7 @@ mod tests {
         (Just(source_values), 0..(63 - input_shift) / divisor)
       })
       .prop_flat_map(move |(source_values, time_scale_shift)| {
-        (Just(
+        Just(
           source_values
             .iter()
             .enumerate()
@@ -902,7 +901,7 @@ mod tests {
               coefficient >> (input_shift + power as u32 * time_scale_shift)
             })
             .collect(),
-        ))
+        )
       })
       .boxed()
   }

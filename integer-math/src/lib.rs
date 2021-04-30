@@ -1,4 +1,4 @@
-#![feature(nll, try_trait, specialization)]
+#![feature(array_map, array_methods, try_trait)]
 
 #[macro_use]
 extern crate failure;
