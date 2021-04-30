@@ -72,7 +72,7 @@ pub fn evaluate_at_small_input<Coefficient: Integer, T: Integer + Signed + From<
     "inputs to evaluate_at_small_input must be in the range [-0.5, 0.5]"
   );
 
-  if coefficients.len() == 0 {
+  if coefficients.is_empty() {
     return T::zero();
   }
 
@@ -150,7 +150,7 @@ pub fn evaluate_at_fractional_input<
 ) -> Result<T, OverflowError> {
   evaluate_at_fractional_input_check(coefficients, input_numerator, input_shift)?;
   if coefficients.len() <= 1 || input_numerator == T::zero() {
-    if coefficients.len() == 0 {
+    if coefficients.is_empty() {
       return Ok(T::zero());
     }
     return Ok(coefficients[0].into());
@@ -327,7 +327,7 @@ pub fn translate_check<
   input: T,
   maximum: MaximumFn,
 ) -> Result<(), Error<T>> {
-  if coefficients.len() == 0 {
+  if coefficients.is_empty() {
     return Ok(());
   }
   if input == T::zero() {
@@ -362,7 +362,7 @@ pub fn translate_check<
       running_maximum,
       maximum(power)
         .checked_shr(sum_safety_shift)
-        .unwrap_or(T::zero()),
+        .unwrap_or_else(T::zero),
     );
     if coefficient == T::min_value() {
       return Err(Error::TermOverflowed {
@@ -436,7 +436,7 @@ pub fn conservative_safe_translation_range<T: Integer + Signed, MaximumFn: Fn(us
   coefficients: &[T],
   maximum: MaximumFn,
 ) -> T {
-  if coefficients.len() == 0 {
+  if coefficients.is_empty() {
     return T::max_value();
   }
   if within_bounds_check(coefficients, &maximum).is_err() {
@@ -451,12 +451,12 @@ pub fn conservative_safe_translation_range<T: Integer + Signed, MaximumFn: Fn(us
       running_maximum,
       maximum(power)
         .checked_shr(sum_safety_shift)
-        .unwrap_or(T::zero()),
+        .unwrap_or_else(T::zero),
     );
     while magnitude
       > running_maximum
         .checked_shr((result_shift * power) as u32)
-        .unwrap_or(T::zero())
+        .unwrap_or_else(T::zero)
     {
       if result_shift == 0 {
         return T::zero();
@@ -526,9 +526,9 @@ pub fn compute_nth_taylor_coefficient_function<
   Ok(())
 }
 
-pub fn derivative_unchecked<'a, Coefficient: Integer, T: Integer + Signed + From<Coefficient>>(
-  coefficients: &'a [Coefficient],
-) -> impl Iterator<Item = T> + 'a {
+pub fn derivative_unchecked<Coefficient: Integer, T: Integer + Signed + From<Coefficient>>(
+  coefficients: &[Coefficient],
+) -> impl Iterator<Item = T> + '_ {
   coefficients
     .iter()
     .enumerate()
@@ -622,18 +622,18 @@ use std::cmp::Ordering;
 impl<T: Ord> Ord for RootSearchResult<T> {
   fn cmp(&self, other: &Self) -> Ordering {
     match (self, other) {
-      (&RootSearchResult::Finished, &RootSearchResult::Finished) => Ordering::Equal,
-      (&RootSearchResult::Finished, _) => Ordering::Greater,
-      (_, &RootSearchResult::Finished) => Ordering::Less,
+      (RootSearchResult::Finished, RootSearchResult::Finished) => Ordering::Equal,
+      (RootSearchResult::Finished, _) => Ordering::Greater,
+      (_, RootSearchResult::Finished) => Ordering::Less,
       _ => {
         let first = match self {
-          &RootSearchResult::Root(ref value) => (value, false),
-          &RootSearchResult::Overflow(ref value) => (value, true),
+          RootSearchResult::Root(value) => (value, false),
+          RootSearchResult::Overflow(value) => (value, true),
           _ => unreachable!(),
         };
         let second = match other {
-          &RootSearchResult::Root(ref value) => (value, false),
-          &RootSearchResult::Overflow(ref value) => (value, true),
+          RootSearchResult::Root(value) => (value, false),
+          RootSearchResult::Overflow(value) => (value, true),
           _ => unreachable!(),
         };
         first.cmp(&second)
@@ -699,7 +699,8 @@ pub fn root_search<Coefficient: Integer, T: Integer + Signed + From<Coefficient>
     &metadata,
     [
       (range[0] >> input_shift) << input_shift,
-      overflow_checked_shl(shr_ceil(range[1], input_shift), input_shift).unwrap_or(T::max_value()),
+      overflow_checked_shl(shr_ceil(range[1], input_shift), input_shift)
+        .unwrap_or_else(T::max_value),
     ],
     coefficients.len() - 2,
   )

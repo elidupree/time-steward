@@ -442,6 +442,7 @@ impl<T: Integer> ValueWithPrecision<[T; 2]> {
 
 impl<T: Integer> PartialEq<FractionalInput<T>> for FractionalInput<T> {
   fn eq(&self, other: &Self) -> bool {
+    #[allow(clippy::collapsible_else_if)]
     if self.shift < other.shift {
       if let Some(scaled) = self.raised_to_precision(other.shift) {
         scaled.numerator == other.numerator
@@ -462,6 +463,7 @@ impl<T: Integer> Eq for FractionalInput<T> {}
 
 impl<T: Integer> Ord for FractionalInput<T> {
   fn cmp(&self, other: &Self) -> Ordering {
+    #[allow(clippy::collapsible_else_if)]
     if self.shift < other.shift {
       if let Some(scaled) = self.raised_to_precision(other.shift) {
         scaled.numerator.cmp(&other.numerator)

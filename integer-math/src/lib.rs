@@ -330,7 +330,7 @@ fn mul_shr_round<
       };
     }
     if let Some(result) = factor0.checked_mul(&factor1) {
-      return Some((final_shift)(result, shift.into()));
+      return Some((final_shift)(result, shift));
     }
   }
   if (factor0 > Zero::zero()) == (factor1 > Zero::zero()) {
