@@ -26,6 +26,11 @@ impl Write for SiphashIdGenerator {
     Ok(())
   }
 }
+impl Default for SiphashIdGenerator {
+  fn default() -> Self {
+    Self::new()
+  }
+}
 impl SiphashIdGenerator {
   pub fn generate(&self) -> DeterministicRandomId {
     DeterministicRandomId {
@@ -76,9 +81,9 @@ impl DeterministicRandomId {
       data: [rng.gen::<u64>(), rng.gen::<u64>()],
     }
   }
-  pub fn to_rng(&self) -> DeterministicRandomIdRng {
+  pub fn to_rng(self) -> DeterministicRandomIdRng {
     let mut result = DeterministicRandomIdRng {
-      state: *self,
+      state: self,
       index: 0,
     };
     result.reroll();
@@ -88,7 +93,7 @@ impl DeterministicRandomId {
   /// events, for implementations that need them. A common usage is to have
   /// "before all other events" sentinels.
   pub fn from_raw(data: [u64; 2]) -> DeterministicRandomId {
-    DeterministicRandomId { data: data }
+    DeterministicRandomId { data }
   }
   /// TimeSteward implementors use this internally to make sure fiat events have unique ids.
   ///
@@ -127,6 +132,8 @@ impl fmt::Debug for DeterministicRandomId {
   }
 }
 
+// (this hash function is consistent with the default PartialEq)
+#[allow(clippy::derive_hash_xor_eq)]
 impl Hash for DeterministicRandomId {
   /// Since this id is already random, we don't need to hash more than 64 bits of it.
   /// We use the lower bits to avoid the small bias created by using the ordering.
@@ -161,7 +168,8 @@ impl RngCore for DeterministicRandomIdRng {
     rand_core::impls::fill_bytes_via_next(self, destination)
   }
   fn try_fill_bytes(&mut self, destination: &mut [u8]) -> Result<(), rand::Error> {
-    Ok(self.fill_bytes(destination))
+    self.fill_bytes(destination);
+    Ok(())
   }
 }
 

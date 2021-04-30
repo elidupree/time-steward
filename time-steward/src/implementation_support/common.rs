@@ -90,18 +90,18 @@ macro_rules! delegate {
   (Ord, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
     impl<$($bounds)*> Ord for $($concrete)* {
       fn cmp(&self, other: &Self) -> ::std::cmp::Ordering {
-        let foo = { let $this = self; $target };
-        let bar = { let $this = other; $target };
-        foo.cmp(bar)
+        let my_target = { let $this = self; $target };
+        let other_target = { let $this = other; $target };
+        my_target.cmp(other_target)
       }
     }
   };
   (PartialOrd, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
     impl<$($bounds)*> PartialOrd for $($concrete)* {
       fn partial_cmp(&self, other: &Self) ->Option <::std::cmp::Ordering> {
-        let foo = { let $this = self; $target };
-        let bar = { let $this = other; $target };
-        foo.partial_cmp(bar)
+        let my_target = { let $this = self; $target };
+        let other_target = { let $this = other; $target };
+        my_target.partial_cmp(other_target)
       }
     }
   };
@@ -111,17 +111,17 @@ macro_rules! delegate {
   (PartialEq, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
     impl<$($bounds)*> PartialEq for $($concrete)* {
       fn eq(&self, other: &Self) -> bool {
-        let foo = { let $this = self; $target };
-        let bar = { let $this = other; $target };
-        foo.eq(bar)
+        let my_target = { let $this = self; $target };
+        let other_target = { let $this = other; $target };
+        my_target.eq(other_target)
       }
     }
   };
   (Hash, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
     impl<$($bounds)*> ::std::hash::Hash for $($concrete)* {
       fn hash <H: ::std::hash::Hasher> (&self, state: &mut H) {
-        let foo = { let $this = self; $target };
-        foo.hash (state);
+        let my_target = { let $this = self; $target };
+        my_target.hash (state);
       }
     }
   };
@@ -219,9 +219,7 @@ impl<
           unreachable!("Wrong type stored in DataHandle defaults map")
         }
       } else {
-        defaults
-          .borrow_mut()
-          .insert(id.clone(), Box::new(InProgress));
+        defaults.borrow_mut().insert(id, Box::new(InProgress));
         let handle = Self::new_nonreplicable(
           PublicImmutableData::default(),
           PrivateTimeStewardData::default(),
@@ -319,8 +317,8 @@ pub fn extended_time_of_predicted_event<S: SimulationSpec>(
   };
   Some(ExtendedTime {
     base: event_base_time,
-    iteration: iteration,
-    id: id,
+    iteration,
+    id,
   })
 }
 
@@ -329,6 +327,11 @@ pub struct EventChildrenIdGenerator {
   next: Option<DeterministicRandomId>,
 }
 
+impl Default for EventChildrenIdGenerator {
+  fn default() -> Self {
+    Self::new()
+  }
+}
 impl EventChildrenIdGenerator {
   pub fn new() -> EventChildrenIdGenerator {
     EventChildrenIdGenerator { next: None }

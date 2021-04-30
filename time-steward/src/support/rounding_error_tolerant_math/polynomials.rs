@@ -8,7 +8,10 @@ A polynomial pseudo-solver, using Range.
 
 Returns a collection of ranges that include the exact roots. False-positives are possible.
 
-TODO: instead of Vec<Range>, these should return a stack-allocated type.
+This is all deprecated in favor of the integer-math sibling crate in the workspace,
+so it's not a priority to fix the various messy code in this module.
+
+TO(formerly)DO: instead of Vec<Range>, these should return a stack-allocated type.
 
 */
 
@@ -62,7 +65,7 @@ pub fn roots_quadratic(terms: [Range; 3], min_input: i64, max_input: i64) -> Vec
   }
 
   // printlnerr!("My results: {:?}", results);
-  return results;
+  results
   // if result_0.max >= result_1.min {
   // vec![Range {
   // min: result_0.min,
@@ -74,6 +77,7 @@ pub fn roots_quadratic(terms: [Range; 3], min_input: i64, max_input: i64) -> Vec
   // }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn find_root_search<
   Metadata: Copy,
   InputStrategy: Fn(i64, i64, Range, Range, Metadata) -> i64,
@@ -509,7 +513,7 @@ pub fn time_until_which_quadratic_trajectory_may_remain_in_bounds(
   max_error: i64,
 ) -> Option<i64> {
   assert!(trajectory.len() == bounds.len());
-  assert!(trajectory.len() > 0);
+  assert!(!trajectory.is_empty());
   let mut min_input = start_time;
   let mut max_input = i64::max_value() - max(0, start_time);
   // printlnerr!("begin {:?} {:?} {:?}", start_time, trajectory, bounds);
@@ -562,7 +566,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(
   max_error: i64,
 ) -> Vec<Range> {
   assert!(first.1.len() == second.1.len());
-  assert!(first.1.len() > 0);
+  assert!(!first.1.is_empty());
   let base = max(first.0, second.0);
   let mut proxy = [
     Range::exactly(0),
@@ -617,7 +621,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(
   let real_distance_squared = |input| {
     let mut result = 0i64;
     for (third, more) in first.1.iter().zip(second.1.iter()) {
-      let mut rubble = third.clone();
+      let mut rubble = *third;
       if !quadratic_move_origin_rounding_change_towards_0(
         &mut rubble,
         input - first.0,
@@ -626,7 +630,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(
       ) {
         return None;
       }
-      let mut bravo = more.clone();
+      let mut bravo = *more;
       if !quadratic_move_origin_rounding_change_towards_0(
         &mut bravo,
         input - second.0,
@@ -636,7 +640,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(
         return None;
       }
       for index in 0..3 {
-        rubble[index] = rubble[index] - bravo[index];
+        rubble[index] -= bravo[index];
       }
       if let Some(term) = rubble[0].checked_mul(rubble[0]) {
         if let Some(res) = result.checked_add(term) {
@@ -653,7 +657,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(
   let test = |input| {
     let evaluated = evaluate(&proxy, input);
     // printlnerr!("input: {}, base: {}, evaluated: {}", input, base, evaluated);
-    if input < 0 || input > 1i64 << 32 {
+    if !(0..=(1i64 << 32)).contains(&input) {
       return evaluated;
     }
     if let Some(distance_squared) = real_distance_squared(input + base) {
@@ -682,10 +686,7 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(
       rand::thread_rng().gen_range(start, stop),
       rand::thread_rng().gen_range(start, stop),
     ];
-    let sample_values: Vec<Range> = sample_points
-      .iter()
-      .map(|input| test(input.clone()))
-      .collect();
+    let sample_values: Vec<Range> = sample_points.iter().map(|input| test(*input)).collect();
     let signum = sample_values[0].internal_min().signum();
     for value in sample_values.iter() {
       if value.includes_0_strictly() || value.internal_min().signum() == -signum {

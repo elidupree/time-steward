@@ -44,10 +44,9 @@ impl<K: Eq + Hash, V, S: BuildHasher> HashMap<K, V, S> {
     );
     self.inserting.set(true);
     let result = match unsafe { (*self.data.get()).entry(key) } {
-      Entry::Vacant(entry) => match default_function() {
-        None => None,
-        Some(value) => Some((*entry.insert(Box::new(value))).borrow()),
-      },
+      Entry::Vacant(entry) => {
+        default_function().map(|value| (*entry.insert(Box::new(value))).borrow())
+      }
       Entry::Occupied(entry) => Some((*entry.into_mut()).borrow()),
     };
     self.inserting.set(false);
@@ -66,6 +65,10 @@ impl<K: Eq + Hash, V, S: BuildHasher> HashMap<K, V, S> {
        callback for a get_default() on the same map"
     );
     unsafe { (*self.data.get()).len() }
+  }
+
+  pub fn is_empty(&self) -> bool {
+    self.len() == 0
   }
 }
 

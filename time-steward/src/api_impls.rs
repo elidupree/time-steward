@@ -16,9 +16,9 @@ impl<T: SimulationStateData> Modify<T> for ReplaceWith<T> {
 impl<B: fmt::Display> fmt::Display for ValidSince<B> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
-      &ValidSince::TheBeginning => write!(f, "TheBeginning"),
-      &ValidSince::Before(ref something) => write!(f, "Before({})", something),
-      &ValidSince::After(ref something) => write!(f, "After({})", something),
+      ValidSince::TheBeginning => write!(f, "TheBeginning"),
+      ValidSince::Before(something) => write!(f, "Before({})", something),
+      ValidSince::After(something) => write!(f, "After({})", something),
     }
   }
 }
@@ -61,15 +61,15 @@ impl<T> PartialEq<T> for ValidSince<T> {
 impl<T: Ord> PartialOrd<T> for ValidSince<T> {
   fn partial_cmp(&self, other: &T) -> Option<Ordering> {
     Some(match self {
-      &ValidSince::TheBeginning => Ordering::Less,
-      &ValidSince::Before(ref something) => {
+      ValidSince::TheBeginning => Ordering::Less,
+      ValidSince::Before(something) => {
         if something <= other {
           Ordering::Less
         } else {
           Ordering::Greater
         }
       }
-      &ValidSince::After(ref something) => {
+      ValidSince::After(something) => {
         if something < other {
           Ordering::Less
         } else {

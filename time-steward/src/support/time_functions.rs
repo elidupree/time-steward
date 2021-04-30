@@ -34,8 +34,8 @@ impl QuadraticTrajectory {
     coordinates: [Coordinate; 6],
   ) -> QuadraticTrajectory {
     QuadraticTrajectory {
-      time_scale_shift: time_scale_shift,
-      max_distance_traveled_at_once: max_distance_traveled_at_once,
+      time_scale_shift,
+      max_distance_traveled_at_once,
       data: [
         [coordinates[0], coordinates[2], coordinates[4]],
         [coordinates[1], coordinates[3], coordinates[5]],

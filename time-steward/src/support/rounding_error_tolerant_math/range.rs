@@ -71,8 +71,8 @@ impl Range {
   pub fn new(min: i64, max: i64) -> Range {
     assert!(max >= min, "invalid Range");
     let mut result = Range {
-      min: min,
-      max: max,
+      min,
+      max,
       exponent: 0,
     };
     if min == i64::min_value() {
@@ -139,7 +139,7 @@ impl Range {
   fn minimize_exponent(&mut self) {
     let mut confirm = Range::zero();
     if cfg!(debug_assertions) {
-      confirm = self.clone();
+      confirm = *self;
     }
     if self.exponent == 0 {
       return;
@@ -171,7 +171,7 @@ impl Range {
             .checked_mul(2)
             .map_or(true, |result| result == i64::min_value())
       );
-      let mut confirm_2 = self.clone();
+      let mut confirm_2 = *self;
       confirm_2.increase_exponent_to(confirm.exponent);
       assert!(confirm == confirm_2);
     }
@@ -237,7 +237,7 @@ impl Range {
   }
 
   pub fn clamp_to_0_exponent(&self) -> Option<Range> {
-    let mut result = self.clone();
+    let mut result = *self;
     if self.exponent >= 63 {
       result.min = self.min.signum() * i64::max_value();
       result.max = self.max.signum() * i64::max_value();
@@ -316,8 +316,8 @@ impl<'a> Add for &'a Range {
   type Output = Range;
   fn add(self, other: Self) -> Range {
     let possibly_needed = max(self.exponent, other.exponent);
-    let mut result = self.clone();
-    let mut other = other.clone();
+    let mut result = *self;
+    let mut other = *other;
     result.increase_exponent_to(possibly_needed);
     other.increase_exponent_to(possibly_needed);
     if result
@@ -350,8 +350,8 @@ binary_operation_fill!(Range, Range, Sub, sub);
 impl<'a> Mul for &'a Range {
   type Output = Range;
   fn mul(self, other: Self) -> Range {
-    let mut result = self.clone();
-    let mut other = other.clone();
+    let mut result = *self;
+    let mut other = *other;
     let result_high_bit = 63
       - min(
         result.min.abs().leading_zeros(),
@@ -412,7 +412,7 @@ impl<'a> Mul for &'a Range {
 impl<'a> Mul<&'a i64> for &'a Range {
   type Output = Range;
   fn mul(self, other: &'a i64) -> Range {
-    let mut result = self.clone();
+    let mut result = *self;
     let result_high_bit = 63
       - min(
         result.min.abs().leading_zeros(),
@@ -423,7 +423,7 @@ impl<'a> Mul<&'a i64> for &'a Range {
     let overflow = result_high_bit + other_high_bit + 2 - 62;
     if overflow > 0 {
       if result_high_bit - overflow < 31 {
-        return self * Range::exactly(other.clone());
+        return self * Range::exactly(*other);
       }
       result.increase_exponent_by(overflow as u32);
     }
@@ -449,8 +449,8 @@ binary_operation_fill!(Range, i64, Mul, mul);
 impl<'a> Div for &'a Range {
   type Output = Range;
   fn div(self, other: Self) -> Range {
-    let mut result = self.clone();
-    let mut other = other.clone();
+    let mut result = *self;
+    let mut other = *other;
 
     if other.min < 0 {
       other = -other;
@@ -488,11 +488,11 @@ impl<'a> Div for &'a Range {
 
     // TODO: we might still be able to reduce the rounding error further in these cases:
     if result.min > 0 {
-      result.min = result.min / other.max;
+      result.min /= other.max;
       result.minimize_exponent();
     }
     if result.max < 0 {
-      result.max = result.max / other.max;
+      result.max /= other.max;
       result.minimize_exponent();
     }
     result
@@ -504,12 +504,12 @@ binary_operation_fill!(Range, Range, Div, div);
 impl<'a> Shr<&'a u32> for &'a Range {
   type Output = Range;
   fn shr(self, other: &u32) -> Range {
-    let mut result = self.clone();
-    if result.exponent >= other.clone() {
-      result.exponent -= other.clone();
+    let mut result = *self;
+    if result.exponent >= *other {
+      result.exponent -= *other;
       return result;
     }
-    result.increase_exponent_to(other.clone());
+    result.increase_exponent_to(*other);
     result.exponent = 0;
     result
   }
@@ -518,9 +518,10 @@ binary_operation_fill!(Range, u32, Shr, shr);
 
 impl<'a> Shl<&'a u32> for &'a Range {
   type Output = Range;
+  #[allow(clippy::suspicious_arithmetic_impl)]
   fn shl(self, other: &u32) -> Range {
-    let mut result = self.clone();
-    result.exponent += other.clone();
+    let mut result = *self;
+    result.exponent += other;
     result.minimize_exponent();
     result
   }
@@ -556,7 +557,7 @@ impl Range {
 
   /// Squaring is a slightly narrower operation than self*self, because it never invokes (for instance) self.min*self.max.
   pub fn squared(&self) -> Range {
-    let mut result = self.clone();
+    let mut result = *self;
     let leeway = min(
       self.min.abs().leading_zeros(),
       self.max.abs().leading_zeros(),
@@ -583,7 +584,7 @@ impl Range {
   }
 
   pub fn sqrt(&self) -> Option<Range> {
-    let mut result = self.clone();
+    let mut result = *self;
     if result.exponent % 2 == 1 {
       result.increase_exponent_by(1)
     }
@@ -615,7 +616,7 @@ impl Range {
     result.minimize_exponent();
     if cfg!(debug_assertions) {
       let confirm = result.squared();
-      let mut confirmation = self.clone();
+      let mut confirmation = *self;
       if confirmation.min < 0 {
         confirmation.min = 0;
       }
@@ -718,9 +719,7 @@ impl Arbitrary for Range {
         }
       }
     }
-    Box::new(Shrinker {
-      value: self.clone(),
-    })
+    Box::new(Shrinker { value: *self })
   }
 }
 

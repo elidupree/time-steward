@@ -393,7 +393,7 @@ impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
     let prediction = DataHandle::new_nonreplicable(
       (),
       EventInner {
-        time: time,
+        time,
         data: Box::new(event),
       },
     );

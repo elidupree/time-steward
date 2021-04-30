@@ -25,7 +25,7 @@ where
 {
   match (a, b) {
     (Some(x), None) | (None, Some(x)) => Some(x),
-    (Some(x), Some(y)) => Some(f(x, y)),
+    (Some(a), Some(b)) => Some(f(a, b)),
     (None, None) => None,
   }
 }
@@ -290,7 +290,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
       combine_options(
         trajectory.next_time_significantly_le (range, input_shift, bounds [0].coordinate (dimension) + four),
         trajectory.next_time_significantly_ge (range, input_shift, bounds [1].coordinate (dimension) - four),
-        |a,b| min(a,b)
+        min
       )
     }).min()
   }

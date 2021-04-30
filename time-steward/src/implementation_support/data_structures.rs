@@ -71,7 +71,7 @@ pub mod partially_persistent_nonindexed_set {
   unsafe impl<K: Clone + Eq + Sync> Send for Snapshot<K> {}
   unsafe impl<K: Clone + Eq + Sync> Sync for Snapshot<K> {}
   impl<K: Clone + Eq + Hash> Snapshot<K> {
-    pub fn iter<'a>(&'a self) -> SnapshotIter<'a, K> {
+    pub fn iter(&self) -> SnapshotIter<K> {
       SnapshotIter {
         snapshot: self,
         position: self.used_length,
@@ -88,7 +88,7 @@ pub mod partially_persistent_nonindexed_set {
       }
       self.position -= 1;
       let entry = unsafe { &(*self.snapshot.buffer.data.get()).data[self.position] };
-      if entry.insertion == false {
+      if !entry.insertion {
         self.ignore.insert(entry.key.clone());
       } else if !self.ignore.contains(&entry.key) {
         return Some(Some(entry.key.clone()));
@@ -129,7 +129,7 @@ pub mod partially_persistent_nonindexed_set {
 
         next_transfer_index: 0,
         potential_next_buffer_usage: 0,
-        hash_builder: hash_builder,
+        hash_builder,
       }
     }
 
@@ -141,7 +141,7 @@ pub mod partially_persistent_nonindexed_set {
       if self.live_members.insert(key.clone()) {
         let live_data = unsafe { self.live_buffer.data.get().as_mut().unwrap() };
         live_data.data.push(Entry {
-          key: key,
+          key,
           insertion: true,
         });
         self.potential_next_buffer_usage += 1;
@@ -165,7 +165,7 @@ pub mod partially_persistent_nonindexed_set {
           let next_data = unsafe { self.next_buffer.data.get().as_mut().unwrap() };
           self.next_buffer.deletions += 1;
           next_data.data.push(Entry {
-            key: key,
+            key,
             insertion: false,
           });
           self.potential_next_buffer_usage += 1;
