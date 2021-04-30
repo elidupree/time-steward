@@ -32,7 +32,7 @@ extern crate proptest;
 #[cfg_attr(test, macro_use)]
 extern crate quickcheck;
 
-pub extern crate time_steward_integer_math;
+pub extern crate time_steward_integer_math as integer_math;
 pub extern crate time_steward_type_utils as type_utils;
 
 macro_rules! printlnerr(
