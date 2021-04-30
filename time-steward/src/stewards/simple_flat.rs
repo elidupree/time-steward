@@ -32,7 +32,7 @@ pub struct EntityCellInner<T> {
 #[derivative(Debug(bound = ""))]
 pub struct EventInner<S: SimulationSpec> {
   time: ExtendedTime<S>,
-  data: Box<EventInnerTrait<S>>,
+  data: Box<dyn EventInnerTrait<S>>,
 }
 
 trait EventInnerTrait<S: SimulationSpec>: Any + Debug + DynamicPersistentlyIdentifiedType {
@@ -126,7 +126,7 @@ pub struct SnapshotInner<S: SimulationSpec> {
   time: ExtendedTime<S>,
   globals: Rc<<S as SimulationSpecGATs<Steward<S>>>::Globals>,
   // hack: RefCell only so that we can return a Ref
-  clones: insert_only::HashMap<usize, Box<Any>>,
+  clones: insert_only::HashMap<usize, Box<dyn Any>>,
   shared: Rc<RefCell<StewardShared<S>>>,
 }
 #[derive(Derivative)]

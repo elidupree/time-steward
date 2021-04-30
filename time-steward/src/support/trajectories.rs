@@ -154,7 +154,7 @@ impl_binop_and_assign! {
   let mut other = other;
   if self.origin < other.origin {self.set_origin (other.origin).unwrap();}
   if other.origin < self.origin {other.set_origin (self.origin).unwrap();}
-  for (mine, others) in self.coefficients.iter_mut().zip (other.coefficients.into_iter()) {
+  for (mine, others) in self.coefficients.iter_mut().zip (other.coefficients.iter()) {
     mine.$method_assign (others);
   }
 },

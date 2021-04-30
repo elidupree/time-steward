@@ -698,7 +698,7 @@ impl Arbitrary for Range {
     result
   }
   // TODO: implement shrink
-  fn shrink(&self) -> Box<Iterator<Item = Range>> {
+  fn shrink(&self) -> Box<dyn Iterator<Item = Range>> {
     struct Shrinker {
       value: Range,
     }
