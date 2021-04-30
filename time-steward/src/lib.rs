@@ -27,25 +27,10 @@
 // #![plugin (quickcheck_macros)]
 //#![cfg_attr(test,feature(core_intrinsics))]
 
-extern crate array_ext;
-extern crate bincode;
-extern crate nalgebra;
-extern crate num;
-extern crate rand;
-extern crate rand_core;
-extern crate rpds;
-extern crate serde;
-extern crate siphasher;
-//extern crate crossbeam;
-extern crate derivative;
 #[cfg_attr(test, macro_use)]
 extern crate proptest;
 #[cfg_attr(test, macro_use)]
 extern crate quickcheck;
-//#[macro_use]
-extern crate failure;
-//#[macro_use]
-extern crate smallvec;
 
 pub extern crate time_steward_integer_math;
 pub extern crate time_steward_type_utils as type_utils;
