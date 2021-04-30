@@ -14,6 +14,10 @@ impl<T> ListOfTypes for ListedType<T> {
   }
 }
 
+impl ListOfTypes for () {
+  fn visit_all<Visitor: ListOfTypesVisitor>(_visitor: &mut Visitor) {}
+}
+
 // macro for implementing n-ary tuple functions and operations, adapted from libcore
 macro_rules! tuple_impls {
     ($(
