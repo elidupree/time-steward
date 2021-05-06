@@ -57,27 +57,6 @@ impl<S: SimulationSpec, T: Event<Steward<S>>> EventInnerTrait<S> for T {
 }
 
 impl<
-    S: SimulationSpec,
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-  > TimeStewardEntityHandleHack<ImmutableData, MutableData> for Steward<S>
-{
-  type EntityHandle = DataHandle<ImmutableData, EntityCell<MutableData>>;
-  fn new_entity_handle_nonreplicable_hack(
-    immutable: ImmutableData,
-    mutable: MutableData,
-  ) -> Self::EntityHandle {
-    DataHandle::new_nonreplicable(
-      immutable,
-      RefCell::new(EntityCellInner {
-        current_value: mutable,
-        history_head: HistoryIndex::null(),
-      }),
-    )
-  }
-}
-
-impl<
     ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
     MutableData: SimulationStateData + PersistentlyIdentifiedType,
   > EntityHandleTrait for DataHandle<ImmutableData, EntityCell<MutableData>>
@@ -481,6 +460,26 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
   type SimulationSpec = S;
   type SnapshotAccessor = SnapshotHandle<S>;
   type EventHandle = EventHandle<S>;
+  type EntityHandle<
+    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
+    MutableData: SimulationStateData + PersistentlyIdentifiedType,
+  > = DataHandle<ImmutableData, EntityCell<MutableData>>;
+
+  fn new_entity_handle_nonreplicable<
+    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
+    MutableData: SimulationStateData + PersistentlyIdentifiedType,
+  >(
+    immutable: ImmutableData,
+    mutable: MutableData,
+  ) -> EntityHandle<Self, ImmutableData, MutableData> {
+    DataHandle::new_nonreplicable(
+      immutable,
+      RefCell::new(EntityCellInner {
+        current_value: mutable,
+        history_head: HistoryIndex::null(),
+      }),
+    )
+  }
 
   fn valid_since(&self) -> ValidSince<S::Time> {
     max(

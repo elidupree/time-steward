@@ -6,11 +6,10 @@ use std::io::{Read, Write};
 use derivative::Derivative;
 use serde::{de::DeserializeOwned, ser, Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::marker::PhantomData;
 use std::ops::Deref;
 
 use crate::type_utils::list_of_types::ListOfTypes;
-use crate::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
+use crate::type_utils::PersistentlyIdentifiedType;
 use crate::DeterministicRandomId;
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
@@ -167,57 +166,7 @@ pub trait TimeStewardEntityHandleHack<
 }
 
 pub type EntityHandle<Steward, ImmutableData, MutableData> =
-  <Steward as TimeStewardEntityHandleHack<ImmutableData, MutableData>>::EntityHandle;
-
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
-pub struct NeverEntityHandle<T, U>(PhantomData<*const (T, U)>);
-
-impl<
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-  > DataHandleTrait for NeverEntityHandle<ImmutableData, MutableData>
-{
-}
-impl<
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-  > EntityHandleTrait for NeverEntityHandle<ImmutableData, MutableData>
-{
-  type ImmutableData = ImmutableData;
-  type MutableData = MutableData;
-}
-impl<
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-  > PersistentlyIdentifiedType for NeverEntityHandle<ImmutableData, MutableData>
-{
-  const ID: PersistentTypeId = PersistentTypeId(0x0793df01adf97abd);
-}
-impl<
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-  > Deref for NeverEntityHandle<ImmutableData, MutableData>
-{
-  type Target = ImmutableData;
-  fn deref(&self) -> &ImmutableData {
-    unreachable!()
-  }
-}
-
-impl<
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-    Steward: TimeSteward,
-  > TimeStewardEntityHandleHack<ImmutableData, MutableData> for Steward
-{
-  default type EntityHandle = NeverEntityHandle<ImmutableData, MutableData>;
-  default fn new_entity_handle_nonreplicable_hack(
-    _immutable: ImmutableData,
-    _mutable: MutableData,
-  ) -> Self::EntityHandle {
-    panic!("new_entity_handle_nonreplicable_hack() called when it shouldn't be")
-  }
-}
+  <Steward as TimeSteward>::EntityHandle<ImmutableData, MutableData>;
 
 pub trait Modify<T>: SimulationStateData {
   type UndoData: SimulationStateData;
@@ -270,6 +219,8 @@ pub trait TimeSteward: Any + Sized + Debug {
   type SimulationSpec: SimulationSpec;
   type SnapshotAccessor: SnapshotAccessor<Steward = Self>;
   type EventHandle: EventHandleTrait<Self::SimulationSpec>;
+  type EntityHandle<ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
+    MutableData: SimulationStateData + PersistentlyIdentifiedType>: EntityHandleTrait;
 
   fn new_entity_handle_nonreplicable<
     ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
@@ -277,9 +228,7 @@ pub trait TimeSteward: Any + Sized + Debug {
   >(
     immutable: ImmutableData,
     mutable: MutableData,
-  ) -> EntityHandle<Self, ImmutableData, MutableData> {
-    Self::new_entity_handle_nonreplicable_hack(immutable, mutable)
-  }
+  ) -> EntityHandle<Self, ImmutableData, MutableData>;
 
   fn insert_fiat_event<E: Event<Self>>(
     &mut self,
