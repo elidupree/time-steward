@@ -247,4 +247,15 @@ pub trait IncrementalTimeSteward: TimeSteward {
   fn updated_until_before(&self) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
 }
 
+/// A marker trait indicating a TimeSteward that implements the canonical behavior.
+///
+/// All CanonicalTimeStewards must behave the same way given the same inputs.
+/// Non-canonical TimeStewards use the same API, but may behave differently.
+///
+/// The motivating example of a non-canonical TimeSteward is a wrapper that
+/// shares fiat events across the network.
+/// Like other TimeStewards, you interact with it by inserting fiat events,
+/// taking snapshots, etc – but it's doesn't behave according to
+/// just the fiat events you put in, but also fiat events it received
+/// from remote clients.
 pub trait CanonicalTimeSteward: TimeSteward {}
