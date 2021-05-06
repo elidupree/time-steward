@@ -20,12 +20,14 @@
 //
 //
 
-#![feature(unboxed_closures, specialization, never_type, raw, try_trait)]
-// #![feature (shared)]
-// #![feature (plugin, custom_derive)]
-// #![plugin (serde_macros)]
-// #![plugin (quickcheck_macros)]
-//#![cfg_attr(test,feature(core_intrinsics))]
+#![feature(
+  unboxed_closures,
+  specialization,
+  never_type,
+  raw,
+  try_trait,
+  generic_associated_types
+)]
 
 #[cfg_attr(test, macro_use)]
 extern crate proptest;

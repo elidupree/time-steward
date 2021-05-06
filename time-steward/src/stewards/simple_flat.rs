@@ -296,15 +296,19 @@ impl<'b, S: SimulationSpec> Accessor for EventAccessorStruct<'b, S> {
   fn extended_now(&self) -> &ExtendedTime<<Self::Steward as TimeSteward>::SimulationSpec> {
     self.this_event().extended_time()
   }
-}
-impl<'a, 'b, E: EntityHandleTrait, S: SimulationSpec> AccessorQueryHack<'a, E>
-  for EventAccessorStruct<'b, S>
-{
-  type QueryGuard = Ref<'a, E::MutableData>;
-  fn query_hack(
+  type QueryGuard<
+    'a,
+    Immutable: SimulationStateData + PersistentlyIdentifiedType,
+    Mutable: SimulationStateData + PersistentlyIdentifiedType,
+  > = Ref<'a, Mutable>;
+  fn query<
+    'a,
+    Immutable: SimulationStateData + PersistentlyIdentifiedType,
+    Mutable: SimulationStateData + PersistentlyIdentifiedType,
+  >(
     &'a self,
-    entity: &'a EntityHandle<Steward<S>, E::ImmutableData, E::MutableData>,
-  ) -> Self::QueryGuard {
+    entity: &'a EntityHandle<Self::Steward, Immutable, Mutable>,
+  ) -> Self::QueryGuard<'a, Immutable, Mutable> {
     let guard = entity.private().borrow();
     Ref::map(guard, |inner| &inner.current_value)
   }
@@ -318,13 +322,19 @@ impl<S: SimulationSpec> Accessor for SnapshotHandle<S> {
   fn extended_now(&self) -> &ExtendedTime<<Self::Steward as TimeSteward>::SimulationSpec> {
     &self.data.time
   }
-}
-impl<'a, E: EntityHandleTrait, S: SimulationSpec> AccessorQueryHack<'a, E> for SnapshotHandle<S> {
-  type QueryGuard = &'a E::MutableData;
-  fn query_hack(
+  type QueryGuard<
+    'a,
+    Immutable: SimulationStateData + PersistentlyIdentifiedType,
+    Mutable: SimulationStateData + PersistentlyIdentifiedType,
+  > = &'a Mutable;
+  fn query<
+    'a,
+    Immutable: SimulationStateData + PersistentlyIdentifiedType,
+    Mutable: SimulationStateData + PersistentlyIdentifiedType,
+  >(
     &'a self,
-    entity: &'a EntityHandle<Steward<S>, E::ImmutableData, E::MutableData>,
-  ) -> Self::QueryGuard {
+    entity: &'a EntityHandle<Self::Steward, Immutable, Mutable>,
+  ) -> Self::QueryGuard<'a, Immutable, Mutable> {
     let guard = entity.private().borrow();
     Ref::map(guard, |inner| &inner.current_value);
 
@@ -332,12 +342,12 @@ impl<'a, E: EntityHandleTrait, S: SimulationSpec> AccessorQueryHack<'a, E> for S
 
     // hack: store a copy of the entity handle to guarantee that it doesn't get dropped so that it's valid to use its address as a unique id
     &self.data.clones.get_default (entity.address() as usize, | | {
-      let entity: EntityHandle <Steward<S>, E::ImmutableData, E::MutableData> = entity.clone();
-      let past_value: E::MutableData = (*self.data.shared).borrow().history.rollback_to_before (entity_guard.history_head, & entity_guard.current_value, & self.data.time);
+      let entity: EntityHandle <Steward<S>, Immutable, Mutable> = entity.clone();
+      let past_value: Mutable = (*self.data.shared).borrow().history.rollback_to_before (entity_guard.history_head, & entity_guard.current_value, & self.data.time);
       Some(Box::new (
         (entity, past_value)
       ))
-    }).unwrap ().downcast_ref::<(EntityHandle <Steward<S>, E::ImmutableData, E::MutableData>, E::MutableData)>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow").1
+    }).unwrap ().downcast_ref::<(EntityHandle <Steward<S>, Immutable, Mutable>, Mutable)>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow").1
   }
 }
 
