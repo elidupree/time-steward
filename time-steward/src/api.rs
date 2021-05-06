@@ -152,19 +152,6 @@ pub trait Accessor {
   ) -> Self::QueryGuard<'a, Immutable, Mutable>;
 }
 
-pub trait TimeStewardEntityHandleHack<
-  ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-  MutableData: SimulationStateData + PersistentlyIdentifiedType,
->
-{
-  type EntityHandle: EntityHandleTrait<ImmutableData = ImmutableData, MutableData = MutableData>
-    + Deref<Target = ImmutableData>;
-  fn new_entity_handle_nonreplicable_hack(
-    immutable: ImmutableData,
-    mutable: MutableData,
-  ) -> Self::EntityHandle;
-}
-
 pub trait Modify<T>: SimulationStateData {
   type UndoData: SimulationStateData;
   fn modify(self, entity: &mut T) -> Self::UndoData;
