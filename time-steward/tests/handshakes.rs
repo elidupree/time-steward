@@ -1,15 +1,7 @@
 #![feature(specialization)]
 
-//#[macro_use]
-extern crate time_steward;
-
-extern crate rand;
-
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-#[macro_use]
-extern crate derivative;
+use derivative::Derivative;
+use serde::{Deserialize, Serialize};
 
 use time_steward::stewards::simple_flat;
 use time_steward::type_utils::list_of_types::ListedType;

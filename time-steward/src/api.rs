@@ -140,7 +140,7 @@ pub trait Accessor {
     'a,
     Immutable: SimulationStateData + PersistentlyIdentifiedType,
     Mutable: SimulationStateData + PersistentlyIdentifiedType,
-  >;
+  >: Deref<Target=Mutable>;
   // TODO: see if I can change the lifetimes here to make it more practical for accessors to have mutable methods. Perhaps by giving the accessor trait a lifetime?
   fn query<
     'a,
