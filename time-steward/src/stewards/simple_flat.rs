@@ -14,7 +14,7 @@ use crate::implementation_support::insert_only;
 use crate::type_utils::{
   DynamicPersistentlyIdentifiedType, PersistentTypeId, PersistentlyIdentifiedType,
 };
-use crate::{DeterministicRandomId, EntityHandle};
+use crate::DeterministicRandomId;
 
 // ###################################################
 // ############     Handle definitions    ############
@@ -286,7 +286,7 @@ impl<'b, S: SimulationSpec> Accessor for EventAccessorStruct<'b, S> {
     Mutable: SimulationStateData + PersistentlyIdentifiedType,
   >(
     &'a self,
-    entity: &'a EntityHandle<Self::Steward, Immutable, Mutable>,
+    entity: &'a <Self::Steward as TimeSteward>::EntityHandle<Immutable, Mutable>,
   ) -> Self::QueryGuard<'a, Immutable, Mutable> {
     let guard = entity.private().borrow();
     Ref::map(guard, |inner| &inner.current_value)
@@ -312,7 +312,7 @@ impl<S: SimulationSpec> Accessor for SnapshotHandle<S> {
     Mutable: SimulationStateData + PersistentlyIdentifiedType,
   >(
     &'a self,
-    entity: &'a EntityHandle<Self::Steward, Immutable, Mutable>,
+    entity: &'a <Self::Steward as TimeSteward>::EntityHandle<Immutable, Mutable>,
   ) -> Self::QueryGuard<'a, Immutable, Mutable> {
     let guard = entity.private().borrow();
     Ref::map(guard, |inner| &inner.current_value);
@@ -321,12 +321,12 @@ impl<S: SimulationSpec> Accessor for SnapshotHandle<S> {
 
     // hack: store a copy of the entity handle to guarantee that it doesn't get dropped so that it's valid to use its address as a unique id
     &self.data.clones.get_default (entity.address() as usize, | | {
-      let entity: EntityHandle <Steward<S>, Immutable, Mutable> = entity.clone();
+      let entity: <Self::Steward as TimeSteward>::EntityHandle<Immutable, Mutable> = entity.clone();
       let past_value: Mutable = (*self.data.shared).borrow().history.rollback_to_before (entity_guard.history_head, & entity_guard.current_value, & self.data.time);
       Some(Box::new (
         (entity, past_value)
       ))
-    }).unwrap ().downcast_ref::<(EntityHandle <Steward<S>, Immutable, Mutable>, Mutable)>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow").1
+    }).unwrap ().downcast_ref::<(<Self::Steward as TimeSteward>::EntityHandle<Immutable, Mutable>, Mutable)>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow").1
   }
 }
 
@@ -342,7 +342,7 @@ impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
     &self,
     immutable: ImmutableData,
     mutable: MutableData,
-  ) -> EntityHandle<Self::Steward, ImmutableData, MutableData> {
+  ) -> <Self::Steward as TimeSteward>::EntityHandle<ImmutableData, MutableData> {
     Self::Steward::new_entity_handle_nonreplicable(immutable, mutable)
   }
 
@@ -353,7 +353,7 @@ impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
     M: Modify<MutableData>,
   >(
     &'a self,
-    entity: &'a EntityHandle<Steward<S>, ImmutableData, MutableData>,
+    entity: &'a <Self::Steward as TimeSteward>::EntityHandle<ImmutableData, MutableData>,
     modification: M,
   ) {
     let mut modify_guard = entity.private().borrow_mut();
@@ -471,7 +471,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
   >(
     immutable: ImmutableData,
     mutable: MutableData,
-  ) -> EntityHandle<Self, ImmutableData, MutableData> {
+  ) -> Self::EntityHandle<ImmutableData, MutableData> {
     DataHandle::new_nonreplicable(
       immutable,
       RefCell::new(EntityCellInner {

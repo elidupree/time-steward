@@ -148,7 +148,7 @@ pub trait Accessor {
     Mutable: SimulationStateData + PersistentlyIdentifiedType,
   >(
     &'a self,
-    entity: &'a EntityHandle<Self::Steward, Immutable, Mutable>,
+    entity: &'a <Self::Steward as TimeSteward>::EntityHandle<Immutable, Mutable>,
   ) -> Self::QueryGuard<'a, Immutable, Mutable>;
 }
 
@@ -164,9 +164,6 @@ pub trait TimeStewardEntityHandleHack<
     mutable: MutableData,
   ) -> Self::EntityHandle;
 }
-
-pub type EntityHandle<Steward, ImmutableData, MutableData> =
-  <Steward as TimeSteward>::EntityHandle<ImmutableData, MutableData>;
 
 pub trait Modify<T>: SimulationStateData {
   type UndoData: SimulationStateData;
@@ -187,7 +184,7 @@ pub trait EventAccessor: Accessor {
     &self,
     immutable: ImmutableData,
     mutable: MutableData,
-  ) -> EntityHandle<Self::Steward, ImmutableData, MutableData>;
+  ) -> <Self::Steward as TimeSteward>::EntityHandle<ImmutableData, MutableData>;
 
   fn modify<
     'a,
@@ -196,7 +193,7 @@ pub trait EventAccessor: Accessor {
     M: Modify<MutableData>,
   >(
     &'a self,
-    entity: &'a EntityHandle<Self::Steward, ImmutableData, MutableData>,
+    entity: &'a <Self::Steward as TimeSteward>::EntityHandle<ImmutableData, MutableData>,
     modification: M,
   );
 
@@ -228,7 +225,7 @@ pub trait TimeSteward: Any + Sized + Debug {
   >(
     immutable: ImmutableData,
     mutable: MutableData,
-  ) -> EntityHandle<Self, ImmutableData, MutableData>;
+  ) -> Self::EntityHandle<ImmutableData, MutableData>;
 
   fn insert_fiat_event<E: Event<Self>>(
     &mut self,

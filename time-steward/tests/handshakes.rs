@@ -8,7 +8,7 @@ use time_steward::type_utils::list_of_types::ListedType;
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::DeterministicRandomId;
 use time_steward::{
-  ConstructibleTimeSteward, EntityHandle, Event, EventAccessor, EventHandleTrait, ReplaceWith,
+  ConstructibleTimeSteward, Event, EventAccessor, EventHandleTrait, ReplaceWith,
   SimulationSpec as SimulationSpecTrait, SimulationSpecGATs, SnapshotAccessor, TimeSteward,
 };
 
@@ -16,7 +16,7 @@ type Time = i64;
 
 const HOW_MANY_PHILOSOPHERS: usize = 7;
 
-type PhilosopherHandle<Steward> = EntityHandle<Steward, (), Philosopher<Steward>>;
+type PhilosopherHandle<Steward> = <Steward as TimeSteward>::EntityHandle<(), Philosopher<Steward>>;
 type EventHandle<Steward> = <Steward as TimeSteward>::EventHandle;
 
 #[derive(
