@@ -345,7 +345,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward>> (acc
   transfer.next_change = time.map (|time| {
     accessor.create_prediction (
         time,
-        DeterministicRandomId::new (&(accessor.id(), coordinates, dimension)),
+        DeterministicRandomId::hash_of (&(accessor.id(), coordinates, dimension)),
         TransferChange {coordinates: coordinates, dimension: dimension}
       )
   });
@@ -639,21 +639,21 @@ fn main() {
     if arguments.flag_listen {
       let listener = TcpListener::bind ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
       let stream = listener.accept().unwrap().0;
-      let mut steward: simply_synchronized::Steward<SimulationSpec, DefaultSteward <SimulationSpec>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3, constants, BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
-      steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
+      let mut steward: simply_synchronized::Steward<SimulationSpec, DefaultSteward <SimulationSpec>> = simply_synchronized::Steward::new(DeterministicRandomId::hash_of (& 0u32), 0, SECOND>>3, constants, BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+      steward.insert_fiat_event(0, DeterministicRandomId::hash_of(&0), Initialize::new()).unwrap();
       run (steward, |a,b| (a.settle_before (b)));
       return;
     }
     else if arguments.flag_connect {
       let stream = TcpStream::connect ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
-      let steward: simply_synchronized::Steward<SimulationSpec, DefaultSteward <SimulationSpec>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 1u32), 0, SECOND>>3, constants, BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+      let steward: simply_synchronized::Steward<SimulationSpec, DefaultSteward <SimulationSpec>> = simply_synchronized::Steward::new(DeterministicRandomId::hash_of (& 1u32), 0, SECOND>>3, constants, BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
       run (steward, |a,b| (a.settle_before (b)));
       return;
     }
   }*/
   {
     let mut steward: Steward = Steward::from_globals(globals);
-    steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize{}).unwrap();
+    steward.insert_fiat_event(0, DeterministicRandomId::hash_of(&0), Initialize{}).unwrap();
     run (steward, |_,_|());
   }
 }
@@ -737,7 +737,7 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
         glium::glutin::Event::MouseInput (_,_) => {
           if in_bounds (globals, mouse_coordinates) {
             event_index += 1;
-            stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
+            stew.insert_fiat_event (time, DeterministicRandomId::hash_of (& event_index), AddInk {
               coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
               amount: ((input_derivative+1)%2)*(generic_amount << input_magnitude_shift)*input_signum,
               accumulation: input_derivative*(generic_amount << input_magnitude_shift)*input_signum/SECOND,
@@ -777,7 +777,7 @@ gl_FragColor = vec4 (vec3(0.5 - ink_transfer/100000000000.0), 1.0);
       mouse_coordinates [1] = ((1.0-y)*60.0) as i32;
       if in_bounds (globals, mouse_coordinates) {
         event_index += 1;
-        stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
+        stew.insert_fiat_event (time, DeterministicRandomId::hash_of (& event_index), AddInk {
             coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
             amount: ((input_derivative+1)%2)*(generic_amount << input_magnitude_shift)*input_signum,
             accumulation: input_derivative*(generic_amount << input_magnitude_shift)*input_signum/SECOND,

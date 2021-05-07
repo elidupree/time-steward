@@ -356,7 +356,7 @@ fn update_transfer_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   boundary_varying.data.next_change = time.map (|time| {
     accessor.create_prediction (
       time,
-      DeterministicRandomId::new (&(accessor.id(), boundary.center)),
+      DeterministicRandomId::hash_of (&(accessor.id(), boundary.center)),
       TransferChange {boundary: boundary.clone()}
     )
   });
@@ -715,7 +715,7 @@ implement_vertex!(Vertex, center, slope, direction, density);
 
 fn main() {
   let mut steward: Steward = Steward::from_globals(make_globals());
-  steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize{}).unwrap();
+  steward.insert_fiat_event(0, DeterministicRandomId::hash_of(&0), Initialize{}).unwrap();
   run (steward, |_,_|());
 }
 
@@ -804,7 +804,7 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
         glium::glutin::Event::MouseInput (_,_) => {
           //if in_bounds (globals, mouse_coordinates) {
             event_index += 1;
-            stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
+            stew.insert_fiat_event (time, DeterministicRandomId::hash_of (& event_index), AddInk {
               coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
               amount: ((input_derivative+1)%2)*(GENERIC_INK_AMOUNT << input_magnitude_shift)*input_signum,
               accumulation: input_derivative*(GENERIC_INK_AMOUNT << input_magnitude_shift)*input_signum/(SECOND as Amount),
@@ -844,7 +844,7 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
       mouse_coordinates [1] = ((0.5-y)*accessor.globals().size [0] as f64) as Distance;
       //if in_bounds (globals, mouse_coordinates) {
         event_index += 1;
-        stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddInk {
+        stew.insert_fiat_event (time, DeterministicRandomId::hash_of (& event_index), AddInk {
             coordinates: [mouse_coordinates [0], mouse_coordinates [1]],
             amount: ((input_derivative+1)%2)*(GENERIC_INK_AMOUNT*8 << input_magnitude_shift)*input_signum,
             accumulation: input_derivative*(GENERIC_INK_AMOUNT*8 << input_magnitude_shift)*input_signum/(SECOND as Amount),

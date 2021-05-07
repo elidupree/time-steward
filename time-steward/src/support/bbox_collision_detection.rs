@@ -454,7 +454,7 @@ macro_rules! time_steward_define_bbox_collision_detection {
                 let time_id = accessor.extended_now().id;
                 accessor.create_prediction(
                   time,
-                  DeterministicRandomId::new(&(
+                  DeterministicRandomId::hash_of(&(
                     0xe5d3c2856ad28befu64,
                     time_id,
                     detector.space.unique_id(accessor, object),

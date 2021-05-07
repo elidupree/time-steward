@@ -268,7 +268,7 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
       // println!(" planned for {}", &yes);
       accessor.create_prediction (
         time,
-        DeterministicRandomId::new (&(accessor.extended_now().id, circles.0.id, circles.1.id, 0x6515c48170b61837u64)),
+        DeterministicRandomId::hash_of (&(accessor.extended_now().id, circles.0.id, circles.1.id, 0x6515c48170b61837u64)),
         RelationshipChange {relationship_handle: relationship_handle.clone()}
       )
     ));
@@ -318,7 +318,7 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
       // println!(" planned for {}", &yes);
       accessor.create_prediction (
         time,
-        DeterministicRandomId::new (&(accessor.extended_now().id, circle_handle.id)),
+        DeterministicRandomId::hash_of (&(accessor.extended_now().id, circle_handle.id)),
         BoundaryChange {circle_handle: circle_handle.clone()}
       )
     ));
@@ -353,7 +353,7 @@ pub fn update_shoot_prediction <Accessor: EventAccessor <Steward = Steward>>(acc
       
       new.object_type = ObjectType::Turret {last_fired: last_fired, shots_fired: shots_fired, next_shoot: Some(accessor.create_prediction (
         last_fired + SECOND/10,
-        DeterministicRandomId::new (&(accessor.extended_now().id, circle_handle.id, 0xd3e65114a9b8cdbau64)),
+        DeterministicRandomId::hash_of (&(accessor.extended_now().id, circle_handle.id, 0xd3e65114a9b8cdbau64)),
         Shoot {circle_handle: circle_handle.clone()}
       ))};
     }
@@ -371,7 +371,7 @@ define_event!{
         
         new.object_type = ObjectType::Turret {last_fired: accessor.now().clone(), shots_fired: shots_fired + 1, next_shoot};
         
-        let shot = accessor.new_handle(Circle {id: DeterministicRandomId::new (& (self.circle_handle.id, shots_fired)), radius: ARENA_SIZE/60, varying:EntityCell::new(SimpleTimeline::new ())}) ;
+        let shot = accessor.new_handle(Circle {id: DeterministicRandomId::hash_of (& (self.circle_handle.id, shots_fired)), radius: ARENA_SIZE/60, varying:EntityCell::new(SimpleTimeline::new ())}) ;
         let position_now = new.position.evaluate();
         let position = QuadraticTrajectory::new(TIME_SHIFT,
                               MAX_DISTANCE_TRAVELED_AT_ONCE,
@@ -405,7 +405,7 @@ define_event!{
     set (accessor, &accessor.globals().detector, SimpleGridDetector::new (accessor, Space, (ARENA_SIZE >> 4) as collisions::Coordinate));
     let circles = &accessor.globals().circles;
     let mut varying = Vec::new();
-    let mut generator = DeterministicRandomId::new (&2u8).to_rng();
+    let mut generator = DeterministicRandomId::hash_of (&2u8).to_rng();
     let thingy = ARENA_SIZE / 20;
     for index in 0..HOW_MANY_CIRCLES {
       let position = QuadraticTrajectory::new(TIME_SHIFT,
@@ -468,13 +468,13 @@ define_event!{
 
 pub fn make_globals()-> <SimulationSpec as SimulationSpecTrait>::Globals {
   let mut circles = Vec::new();
-  let mut generator = DeterministicRandomId::new (&0u8).to_rng();
+  let mut generator = DeterministicRandomId::hash_of (&0u8).to_rng();
   
   for index in 0..HOW_MANY_CIRCLES {
     let radius = generator.gen_range(ARENA_SIZE / 30, ARENA_SIZE / 15);
 
     circles.push (DataHandle::new_for_globals (Circle {
-      id: DeterministicRandomId::new (& index),
+      id: DeterministicRandomId::hash_of (& index),
       radius: radius,
       varying: EntityCell::new(SimpleTimeline::new ())
     }));

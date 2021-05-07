@@ -257,7 +257,7 @@ where
   steward
     .insert_fiat_event(
       0,
-      DeterministicRandomId::new(&0x32e1570766e768a7u64),
+      DeterministicRandomId::hash_of(&0x32e1570766e768a7u64),
       Initialize {},
     )
     .unwrap();
@@ -345,7 +345,7 @@ where
     steward
       .insert_fiat_event(
         increment * 100i64,
-        DeterministicRandomId::new(&increment),
+        DeterministicRandomId::hash_of(&increment),
         Tweak {},
       )
       .unwrap();
@@ -357,7 +357,7 @@ where
     steward
       .remove_fiat_event(
         &(increment * 100i64),
-        DeterministicRandomId::new(&increment),
+        DeterministicRandomId::hash_of(&increment),
       )
       .unwrap();
     let snapshot: <Steward as TimeSteward>::SnapshotAccessor =
@@ -396,7 +396,7 @@ where
     steward
       .insert_fiat_event(
         increment * 100i64,
-        DeterministicRandomId::new(&increment),
+        DeterministicRandomId::hash_of(&increment),
         Tweak {},
       )
       .unwrap();
@@ -428,7 +428,7 @@ pub fn handshakes_reloading() {
   let mut steward: Steward = Steward::from_global_timeline (SimulationSpec::GlobalTimeline::new(Vec::new()));
 
   steward.insert_fiat_event(0,
-                       DeterministicRandomId::new(&0x32e1570766e768a7u64),
+                       DeterministicRandomId::hash_of(&0x32e1570766e768a7u64),
                        Initialize::new())
     .unwrap();
 
@@ -465,21 +465,21 @@ fn local_synchronization_test() {
   ::std::thread::spawn(move || {
     let end_0 = listener.accept().unwrap().0;
     let mut steward_0: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
-      simply_synchronized::Steward::new(DeterministicRandomId::new(&0u32),
+      simply_synchronized::Steward::new(DeterministicRandomId::hash_of(&0u32),
                                         0,
                                         4,
                                         (),
                                         BufReader::new(end_0.try_clone().unwrap()),
                                         BufWriter::new(end_0));
     steward_0.insert_fiat_event(0,
-                         DeterministicRandomId::new(&0x32e1570766e768a7u64),
+                         DeterministicRandomId::hash_of(&0x32e1570766e768a7u64),
                          Initialize::new())
       .unwrap();
 
     for increment in 1..21 {
       let time = increment * 100i64;
       if increment % 3 == 0 {
-        steward_0.insert_fiat_event(time, DeterministicRandomId::new(&increment), Tweak::new())
+        steward_0.insert_fiat_event(time, DeterministicRandomId::hash_of(&increment), Tweak::new())
           .unwrap();
       }
       steward_0.snapshot_before(&time);
@@ -489,7 +489,7 @@ fn local_synchronization_test() {
   });
   let end_1 = TcpStream::connect(("127.0.0.1", port)).unwrap();
   let mut steward_1: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
-    simply_synchronized::Steward::new(DeterministicRandomId::new(&1u32),
+    simply_synchronized::Steward::new(DeterministicRandomId::hash_of(&1u32),
                                       0,
                                       4,
                                       (),
@@ -499,7 +499,7 @@ fn local_synchronization_test() {
   for increment in 1..21 {
     let time = increment * 100i64;
     if increment % 4 == 0 {
-      steward_1.insert_fiat_event(time, DeterministicRandomId::new(&increment), Tweak::new()).unwrap();
+      steward_1.insert_fiat_event(time, DeterministicRandomId::hash_of(&increment), Tweak::new()).unwrap();
     }
     steward_1.snapshot_before(&time);
     steward_1.settle_before(time);
@@ -518,14 +518,14 @@ fn local_synchronization_failure() {
   ::std::thread::spawn(move || {
     let end_0 = listener.accept().unwrap().0;
     let mut steward_0: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
-      simply_synchronized::Steward::new(DeterministicRandomId::new(&0u32),
+      simply_synchronized::Steward::new(DeterministicRandomId::hash_of(&0u32),
                                         0,
                                         4,
                                         (),
                                         BufReader::new(end_0.try_clone().unwrap()),
                                         BufWriter::new(end_0));
     steward_0.insert_fiat_event(0,
-                         DeterministicRandomId::new(&0x32e1570766e768a7u64),
+                         DeterministicRandomId::hash_of(&0x32e1570766e768a7u64),
                          Initialize::new())
       .unwrap();
 
@@ -533,7 +533,7 @@ fn local_synchronization_failure() {
       let time = increment * 100i64;
       if increment % 3 == 0 {
         steward_0.insert_fiat_event(time,
-                             DeterministicRandomId::new(&increment),
+                             DeterministicRandomId::hash_of(&increment),
                              TweakUnsafe::new())
           .unwrap();
       }
@@ -544,7 +544,7 @@ fn local_synchronization_failure() {
   });
   let end_1 = TcpStream::connect(("127.0.0.1", port)).unwrap();
   let mut steward_1: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> =
-    simply_synchronized::Steward::new(DeterministicRandomId::new(&1u32),
+    simply_synchronized::Steward::new(DeterministicRandomId::hash_of(&1u32),
                                       0,
                                       4,
                                       (),
@@ -555,7 +555,7 @@ fn local_synchronization_failure() {
     let time = increment * 100i64;
     if increment % 4 == 0 {
       steward_1.insert_fiat_event(time,
-                           DeterministicRandomId::new(&increment),
+                           DeterministicRandomId::hash_of(&increment),
                            TweakUnsafe::new())
         .unwrap();
     }

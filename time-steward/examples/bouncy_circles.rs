@@ -73,14 +73,14 @@ fn main() {
     if arguments.flag_listen {
       let listener = TcpListener::bind ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
       let stream = listener.accept().unwrap().0;
-      let mut steward: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 0u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
-      steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize::new()).unwrap();
+      let mut steward: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> = simply_synchronized::Steward::new(DeterministicRandomId::hash_of (& 0u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+      steward.insert_fiat_event(0, DeterministicRandomId::hash_of(&0), Initialize::new()).unwrap();
       run (steward, |a,b| (a.settle_before (b)));
       return;
     }
     else if arguments.flag_connect {
       let stream = TcpStream::connect ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
-      let steward: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> = simply_synchronized::Steward::new(DeterministicRandomId::new (& 1u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
+      let steward: simply_synchronized::Steward<SimulationSpec, amortized::Steward<SimulationSpec>> = simply_synchronized::Steward::new(DeterministicRandomId::hash_of (& 1u32), 0, SECOND>>3,(), BufReader::new (stream.try_clone().unwrap()), BufWriter::new (stream));
       run (steward, |a,b| (a.settle_before (b)));
       return;
     }
@@ -90,7 +90,7 @@ fn main() {
                                 //inefficient_flat::Steward<SimulationSpec>,
                                 //memoized_flat::Steward<SimulationSpec>> = s::Steward::from_constants(());
     let mut steward: Steward = Steward::from_globals(make_globals());
-    steward.insert_fiat_event(0, DeterministicRandomId::new(&0), Initialize{}).unwrap();
+    steward.insert_fiat_event(0, DeterministicRandomId::hash_of(&0), Initialize{}).unwrap();
     run (steward, |_,_|());
   }
 }
@@ -166,7 +166,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
           },
           glium::glutin::Event::MouseInput (_,_) => {
             event_index += 1;
-            stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), Disturb {coordinates: [mouse_coordinates [0], mouse_coordinates [1]]}).unwrap();
+            stew.insert_fiat_event (time, DeterministicRandomId::hash_of (& event_index), Disturb {coordinates: [mouse_coordinates [0], mouse_coordinates [1]]}).unwrap();
           },
           _ => (),
         }
@@ -176,7 +176,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
         mouse_coordinates [0] = (((x*600.0) as SpaceCoordinate) - 150) * ARENA_SIZE / 300;
         mouse_coordinates [1] = (450-((y*600.0) as SpaceCoordinate)) * ARENA_SIZE / 300;
         event_index += 1;
-        stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), Disturb {coordinates: [mouse_coordinates [0], mouse_coordinates [1]]}).unwrap();
+        stew.insert_fiat_event (time, DeterministicRandomId::hash_of (& event_index), Disturb {coordinates: [mouse_coordinates [0], mouse_coordinates [1]]}).unwrap();
       }
 
       let mut target = display.draw();

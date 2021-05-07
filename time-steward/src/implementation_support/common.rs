@@ -340,7 +340,7 @@ impl EventChildrenIdGenerator {
   }
   pub fn next(&mut self, this_event_id: &DeterministicRandomId) -> DeterministicRandomId {
     let result = match self.next {
-      None => DeterministicRandomId::new(this_event_id),
+      None => DeterministicRandomId::hash_of(this_event_id),
       Some(next) => next,
     };
     self.next = Some(DeterministicRandomId::from_raw([

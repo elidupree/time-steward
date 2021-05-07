@@ -56,7 +56,7 @@ impl DeterministicRandomId {
   /// ```rust
   /// # type YourDataType = Vec<u64>;
   /// # use time_steward::DeterministicRandomId;
-  /// let id = DeterministicRandomId::new(&(0xdefacab1e_bad_1du64, YourDataType::new()));
+  /// let id = DeterministicRandomId::hash_of(&(0xdefacab1e_bad_1du64, YourDataType::new()));
   /// ```
   ///
   /// Why do we use Serialize rather than Hash?
@@ -66,7 +66,7 @@ impl DeterministicRandomId {
   /// on the current system, not in a standardized order.
   /// Therefore, we generate IDs from Serialize implementors,
   /// because Serialize IS meant to be compatible between platforms.
-  pub fn new<T: ser::Serialize>(data: &T) -> DeterministicRandomId {
+  pub fn hash_of<T: ser::Serialize>(data: &T) -> DeterministicRandomId {
     let mut writer = SiphashIdGenerator::new();
     bincode::serialize_into(&mut writer, data, bincode::Infinite).unwrap();
     writer.generate()
@@ -145,7 +145,7 @@ pub struct DeterministicRandomIdRng {
 }
 impl DeterministicRandomIdRng {
   fn reroll(&mut self) {
-    self.state = DeterministicRandomId::new(&self.state);
+    self.state = DeterministicRandomId::hash_of(&self.state);
   }
 }
 impl RngCore for DeterministicRandomIdRng {
@@ -183,11 +183,11 @@ mod tests {
 
   fn test_id_endianness_impl<T: ser::Serialize + Debug>(thing: T, confirm: DeterministicRandomId) {
     println!(
-      "DeterministicRandomId::new({:?}) = {:?}",
+      "DeterministicRandomId::hash_of({:?}) = {:?}",
       thing,
-      DeterministicRandomId::new(&thing)
+      DeterministicRandomId::hash_of(&thing)
     );
-    assert_eq!(DeterministicRandomId::new(&thing), confirm);
+    assert_eq!(DeterministicRandomId::hash_of(&thing), confirm);
   }
 
   #[test]
@@ -214,7 +214,7 @@ mod tests {
       },
     );
     test_id_endianness_impl(
-      DeterministicRandomId::new(&0x70f7b85b08ba4fd5u64),
+      DeterministicRandomId::hash_of(&0x70f7b85b08ba4fd5u64),
       DeterministicRandomId {
         data: [15806623539012513099, 2804789490945853517],
       },

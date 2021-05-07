@@ -106,7 +106,7 @@ for time in 0..50 {
   if the user is holding down the red button {
     steward.insert_fiat_event(
       time,
-      DeterministicRandomId::new(&time),
+      DeterministicRandomId::hash_of(&time),
       UserContinuesHoldingdownRedButtonEvent::new());
   }
 }

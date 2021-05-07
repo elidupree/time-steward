@@ -371,7 +371,7 @@ fn update_momentum_change_prediction <A: EventAccessor <Steward = Steward >> (ac
   varying.data.next_update = time.map (|time| {
     accessor.create_prediction (
       time,
-      DeterministicRandomId::new (&(accessor.id(), 0x2b6c06473da80206u64, boundary.center)),
+      DeterministicRandomId::hash_of (&(accessor.id(), 0x2b6c06473da80206u64, boundary.center)),
       MomentumChange {boundary: boundary.clone()}
     )
   });
@@ -391,7 +391,7 @@ fn update_mass_change_prediction <A: EventAccessor <Steward = Steward >> (access
   varying.data.next_update = time.map (|time| {
     accessor.create_prediction (
       time,
-      DeterministicRandomId::new (&(accessor.id(), 0x77b000b946e1ddcau64, node.center)),
+      DeterministicRandomId::hash_of (&(accessor.id(), 0x77b000b946e1ddcau64, node.center)),
       MassChange {node: node.clone()}
     )
   });
@@ -599,7 +599,7 @@ implement_vertex!(Vertex, center, slope, direction, density);
 
 fn main() {
   let mut steward: Steward = Steward::from_globals(make_globals());
-  steward.insert_fiat_event(0*TIME_UNIT, DeterministicRandomId::new(&0), Initialize{}).unwrap();
+  steward.insert_fiat_event(0*TIME_UNIT, DeterministicRandomId::hash_of(&0), Initialize{}).unwrap();
   run (steward, |_,_|());
 }
 
@@ -688,7 +688,7 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
         glium::glutin::Event::MouseInput (_,_) => {
           //if in_bounds (globals, mouse_coordinates) {
             event_index += 1;
-            stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddMass {
+            stew.insert_fiat_event (time, DeterministicRandomId::hash_of (& event_index), AddMass {
               coordinates: [mouse_coordinates [0]*LENGTH_UNIT, mouse_coordinates [1]*LENGTH_UNIT],
               amount: ((input_derivative+1)%2)*(GENERIC_MASS << input_magnitude_shift)*input_signum,
               accumulation: input_derivative*(GENERIC_MASS << input_magnitude_shift)*input_signum/(SECOND),
@@ -728,7 +728,7 @@ gl_FragColor = vec4 (vec3(0.5 - density_transfer/2.0), 1.0);
       mouse_coordinates [1] = ((0.5-y)*accessor.globals().size [0].value_unsafe as f64) as i64;
       //if in_bounds (globals, mouse_coordinates) {
         event_index += 1;
-        stew.insert_fiat_event (time, DeterministicRandomId::new (& event_index), AddMass {
+        stew.insert_fiat_event (time, DeterministicRandomId::hash_of (& event_index), AddMass {
             coordinates: [mouse_coordinates [0]*LENGTH_UNIT, mouse_coordinates [1]*LENGTH_UNIT],
             amount: ((input_derivative+1)%2)*(GENERIC_MASS*8 << input_magnitude_shift)*input_signum,
             accumulation: input_derivative*(GENERIC_MASS*8 << input_magnitude_shift)*input_signum/(SECOND),
