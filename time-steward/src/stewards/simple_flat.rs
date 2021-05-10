@@ -14,7 +14,7 @@ use crate::implementation_support::insert_only;
 use crate::type_utils::{
   DynamicPersistentlyIdentifiedType, PersistentTypeId, PersistentlyIdentifiedType,
 };
-use crate::DeterministicRandomId;
+use crate::EntityId;
 
 // ###################################################
 // ############     Handle definitions    ############
@@ -494,7 +494,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
   fn insert_fiat_event<E: Event<Self>>(
     &mut self,
     time: S::Time,
-    id: DeterministicRandomId,
+    id: EntityId,
     event: E,
   ) -> Result<(), FiatEventOperationError> {
     if self.valid_since() > time {
@@ -517,7 +517,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
   fn remove_fiat_event(
     &mut self,
     time: &S::Time,
-    id: DeterministicRandomId,
+    id: EntityId,
   ) -> Result<(), FiatEventOperationError> {
     if self.valid_since() > *time {
       return Err(FiatEventOperationError::InvalidTime);

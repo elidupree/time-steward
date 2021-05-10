@@ -10,7 +10,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use crate::api::*;
-use crate::DeterministicRandomId;
+use crate::EntityId;
 
 pub fn split_off_greater<K: Ord + Borrow<Q> + Clone, V, Q: Ord + ?Sized>(
   input: &mut BTreeMap<K, V>,
@@ -289,7 +289,7 @@ fn deserialize_dynamic_event_handle (&mut self)->DynamicEventHandle;
 
 pub fn extended_time_of_fiat_event<S: SimulationSpec>(
   time: S::Time,
-  id: DeterministicRandomId,
+  id: EntityId,
 ) -> ExtendedTime<S> {
   ExtendedTime {
     base: time,
@@ -300,7 +300,7 @@ pub fn extended_time_of_fiat_event<S: SimulationSpec>(
 
 pub fn extended_time_of_predicted_event<S: SimulationSpec>(
   event_base_time: S::Time,
-  id: DeterministicRandomId,
+  id: EntityId,
   from: &ExtendedTime<S>,
 ) -> Option<ExtendedTime<S>> {
   let iteration = match event_base_time.cmp(&from.base) {
@@ -326,7 +326,7 @@ pub fn extended_time_of_predicted_event<S: SimulationSpec>(
 
 #[derive(Debug)]
 pub struct EventChildrenIdGenerator {
-  next: Option<DeterministicRandomId>,
+  next: Option<EntityId>,
 }
 
 impl Default for EventChildrenIdGenerator {
@@ -338,12 +338,12 @@ impl EventChildrenIdGenerator {
   pub fn new() -> EventChildrenIdGenerator {
     EventChildrenIdGenerator { next: None }
   }
-  pub fn next(&mut self, this_event_id: &DeterministicRandomId) -> DeterministicRandomId {
+  pub fn next(&mut self, this_event_id: &EntityId) -> EntityId {
     let result = match self.next {
-      None => DeterministicRandomId::hash_of(this_event_id),
+      None => EntityId::hash_of(this_event_id),
       Some(next) => next,
     };
-    self.next = Some(DeterministicRandomId::from_raw([
+    self.next = Some(EntityId::from_raw([
       result.data()[0],
       result.data()[1].wrapping_add(1),
     ]));

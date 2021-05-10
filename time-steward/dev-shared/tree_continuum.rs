@@ -39,7 +39,7 @@ use std::collections::HashSet;
 
 use array_ext::*;
 
-use time_steward::{DeterministicRandomId};
+use time_steward::{EntityId};
 use time_steward::{DataHandleTrait, EntityCellTrait, QueryResult};
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::type_utils::list_of_types::{ListedType};

@@ -10,7 +10,7 @@ use std::ops::Deref;
 
 use crate::type_utils::list_of_types::ListOfTypes;
 use crate::type_utils::PersistentlyIdentifiedType;
-use crate::DeterministicRandomId;
+use crate::EntityId;
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
@@ -62,7 +62,7 @@ pub type IterationType = u32;
 pub struct ExtendedTime<S: SimulationSpec> {
   pub base: S::Time,
   pub iteration: IterationType,
-  pub id: DeterministicRandomId,
+  pub id: EntityId,
 }
 
 impl<S: SimulationSpec> ExtendedTime<S> {
@@ -70,14 +70,14 @@ impl<S: SimulationSpec> ExtendedTime<S> {
     ExtendedTime {
       base: time,
       iteration: 0,
-      id: DeterministicRandomId::MIN,
+      id: EntityId::MIN,
     }
   }
   pub fn end_of(time: S::Time) -> ExtendedTime<S> {
     ExtendedTime {
       base: time,
       iteration: S::MAX_ITERATION,
-      id: DeterministicRandomId::MAX,
+      id: EntityId::MAX,
     }
   }
 }
@@ -96,7 +96,7 @@ pub trait EventHandleTrait<S: SimulationSpec>: DataHandleTrait + Borrow<Extended
   fn time(&self) -> &S::Time {
     &self.extended_time().base
   }
-  fn id(&self) -> &DeterministicRandomId {
+  fn id(&self) -> &EntityId {
     &self.extended_time().id
   }
 }
@@ -132,7 +132,7 @@ pub trait Accessor {
   fn now(&self) -> &<<Self::Steward as TimeSteward>::SimulationSpec as SimulationSpec>::Time {
     &self.extended_now().base
   }
-  fn id(&self) -> &DeterministicRandomId {
+  fn id(&self) -> &EntityId {
     &self.extended_now().id
   }
 
@@ -217,13 +217,13 @@ pub trait TimeSteward: Any + Sized + Debug {
   fn insert_fiat_event<E: Event<Self>>(
     &mut self,
     time: <Self::SimulationSpec as SimulationSpec>::Time,
-    id: DeterministicRandomId,
+    id: EntityId,
     event: E,
   ) -> Result<(), FiatEventOperationError>;
   fn remove_fiat_event(
     &mut self,
     time: &<Self::SimulationSpec as SimulationSpec>::Time,
-    id: DeterministicRandomId,
+    id: EntityId,
   ) -> Result<(), FiatEventOperationError>;
   fn snapshot_before(
     &mut self,

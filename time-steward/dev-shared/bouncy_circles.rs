@@ -5,7 +5,7 @@ use nalgebra::Vector2;
 //use time_steward::support::integer_math::polynomial::RootSearchResult;
 use std::marker::PhantomData;
 
-use time_steward::{DeterministicRandomId};
+use time_steward::{EntityId};
 use time_steward::{DataHandleTrait, EntityCellTrait, QueryResult, SimulationSpec as SimulationSpecTrait};
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::type_utils::list_of_types::{ListedType};
@@ -253,7 +253,7 @@ pub fn update_relationship_change_prediction <Accessor: EventAccessor <Steward =
       // println!(" planned for {}", &yes);
       accessor.create_prediction (
         time,
-        DeterministicRandomId::hash_of (&(accessor.extended_now().id, circles.0.index, circles.1.index.wrapping_add (0x6515c48170b61837))),
+        EntityId::hash_of (&(accessor.extended_now().id, circles.0.index, circles.1.index.wrapping_add (0x6515c48170b61837))),
         RelationshipChange {relationship_handle: relationship_handle.clone()}
       )
     ));
@@ -304,7 +304,7 @@ pub fn update_boundary_change_prediction <Accessor: EventAccessor <Steward = Ste
       // println!(" planned for {}", &yes);
       accessor.create_prediction (
         time,
-        DeterministicRandomId::hash_of (&(accessor.extended_now().id, circle_handle.index)),
+        EntityId::hash_of (&(accessor.extended_now().id, circle_handle.index)),
         BoundaryChange {circle_handle: circle_handle.clone()}
       )
     ));
@@ -339,7 +339,7 @@ define_event!{
     set (accessor, &accessor.globals().detector, SimpleGridDetector::new (accessor, Space, (ARENA_SIZE >> 2) as collisions::Coordinate));
     let circles = &accessor.globals().circles;
     let mut varying = Vec::new();
-    let mut generator = DeterministicRandomId::hash_of (&2u8).to_rng();
+    let mut generator = EntityId::hash_of (&2u8).to_rng();
     let thingy = ARENA_SIZE as i64 / 20;
     for index in 0..HOW_MANY_CIRCLES {
       // starting with i64 and converting to i32 only matters so that the starting state will generate the same random values as the old system where SpaceCoordinate was i64
@@ -398,7 +398,7 @@ define_event!{
 
 pub fn make_globals()-> <SimulationSpec as SimulationSpecTrait>::Globals {
   let mut circles = Vec::new();
-  let mut generator = DeterministicRandomId::hash_of (&0u8).to_rng();
+  let mut generator = EntityId::hash_of (&0u8).to_rng();
   
   for index in 0..HOW_MANY_CIRCLES {
     let radius = generator.gen_range(ARENA_SIZE as i64 / 30, ARENA_SIZE as i64 / 15) as SpaceCoordinate;

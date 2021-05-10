@@ -95,18 +95,18 @@ This system – Events automatically creating Predictions, Predictions automatic
 
 Events are the only thing that can change field data, but there are two ways Events can be created. One is to be predicted in a Prediction. The other is to be inserted from the outside by fiat. We call these FiatEvents. They usually represent user input, but they can also be based on the local time, instructions from a server, or other things. To keep simulations synchronized over a network, all FiatEvents, and *only* the FiatEvents, need to be shared between all clients.
 
-### Ordering and DeterministicRandomIds
+### Ordering and EntityIds
 
 If two Events are scheduled to happen at the same time, one of them technically has to happen before the other. For the simulation to be deterministic, the order has to be deterministic as well.
 
-We accomplish this by using a cryptographic hash function. Each Event is given a DeterministicRandomId – a unique 128 bit ID. Events happen in order by ID. For both Predictions and FiatEvents, the caller has to provide a unique random id. DeterministicRandomId can easily be generated from any type that implements Serialize:
+We accomplish this by using a cryptographic hash function. Each Event is given a EntityId – a unique 128 bit ID. Events happen in order by ID. For both Predictions and FiatEvents, the caller has to provide a unique random id. EntityId can easily be generated from any type that implements Serialize:
 
 ```rust
 for time in 0..50 {
   if the user is holding down the red button {
     steward.insert_fiat_event(
       time,
-      DeterministicRandomId::hash_of(&time),
+      EntityId::hash_of(&time),
       UserContinuesHoldingdownRedButtonEvent::new());
   }
 }

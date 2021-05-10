@@ -7,7 +7,7 @@ use std::io::{self, Write};
 
 /// A 128-bit random ID used for rows and ExtendedTimes.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct DeterministicRandomId {
+pub struct EntityId {
   data: [u64; 2],
 }
 pub struct SiphashIdGenerator {
@@ -29,8 +29,8 @@ impl Default for SiphashIdGenerator {
   }
 }
 impl SiphashIdGenerator {
-  pub fn generate(&self) -> DeterministicRandomId {
-    DeterministicRandomId {
+  pub fn generate(&self) -> EntityId {
+    EntityId {
       data: [self.data[0].finish(), self.data[1].finish()],
     }
   }
@@ -43,8 +43,8 @@ impl SiphashIdGenerator {
     }
   }
 }
-impl DeterministicRandomId {
-  /// Generates a new DeterministicRandomId from any Serialize type, using a cryptographic hash function.
+impl EntityId {
+  /// Generates a new EntityId from any Serialize type, using a cryptographic hash function.
   ///
   /// Generally, calling this with unique inputs is guaranteed to give unique outputs.
   /// However, take note: the serialization doesn't generally include any representation of the
@@ -55,31 +55,31 @@ impl DeterministicRandomId {
   ///
   /// ```rust
   /// # type YourDataType = Vec<u64>;
-  /// # use time_steward::DeterministicRandomId;
-  /// let id = DeterministicRandomId::hash_of(&(0xdefacab1e_bad_1du64, YourDataType::new()));
+  /// # use time_steward::EntityId;
+  /// let id = EntityId::hash_of(&(0xdefacab1e_bad_1du64, YourDataType::new()));
   /// ```
   ///
   /// Why do we use Serialize rather than Hash?
-  /// We need to make sure that DeterministicRandomIds do not vary with CPU endianness.
+  /// We need to make sure that EntityIds do not vary with CPU endianness.
   /// The trait [Hasher](https://doc.rust-lang.org/std/hash/trait.Hasher.html) "represents the ability to hash an arbitrary stream of bytes",
   /// and typical implementations of Hash submit the bytes in the order they appear
   /// on the current system, not in a standardized order.
   /// Therefore, we generate IDs from Serialize implementors,
   /// because Serialize IS meant to be compatible between platforms.
-  pub fn hash_of<T: ser::Serialize>(data: &T) -> DeterministicRandomId {
+  pub fn hash_of<T: ser::Serialize>(data: &T) -> EntityId {
     let mut writer = SiphashIdGenerator::new();
     bincode::serialize_into(&mut writer, data, bincode::Infinite).unwrap();
     writer.generate()
   }
   /// Rather than implement Rand for this type, we make sure that it can
   /// ONLY be generated from specific RNGs known to be cryptographically secure.
-  pub fn from_rng(rng: &mut ChaChaRng) -> DeterministicRandomId {
-    DeterministicRandomId {
+  pub fn from_rng(rng: &mut ChaChaRng) -> EntityId {
+    EntityId {
       data: [rng.gen::<u64>(), rng.gen::<u64>()],
     }
   }
-  pub fn to_rng(self) -> DeterministicRandomIdRng {
-    let mut result = DeterministicRandomIdRng {
+  pub fn to_rng(self) -> EntityIdRng {
+    let mut result = EntityIdRng {
       state: self,
       index: 0,
     };
@@ -89,8 +89,8 @@ impl DeterministicRandomId {
   /// Useful for creating out-of-band values which don't identify actual
   /// events, for implementations that need them. A common usage is to have
   /// "before all other events" sentinels.
-  pub fn from_raw(data: [u64; 2]) -> DeterministicRandomId {
-    DeterministicRandomId { data }
+  pub fn from_raw(data: [u64; 2]) -> EntityId {
+    EntityId { data }
   }
   /// TimeSteward implementors use this internally to make sure fiat events have unique ids.
   ///
@@ -99,31 +99,31 @@ impl DeterministicRandomId {
   /// We use + instead of XOR so that this won't fail if the user accidentally
   /// or maliciously calls this BEFORE passing the ids in, too.
   #[doc(hidden)]
-  pub fn for_fiat_event_internal(&self) -> DeterministicRandomId {
-    DeterministicRandomId {
+  pub fn for_fiat_event_internal(&self) -> EntityId {
+    EntityId {
       data: [
         self.data[0].wrapping_add(0xc1d40daaee67461d),
         self.data[1].wrapping_add(0xb23ce1f459edefff),
       ],
     }
   }
-  /// Returns the internal data of the DeterministicRandomId.
+  /// Returns the internal data of the EntityId.
   pub fn data(&self) -> &[u64; 2] {
     &self.data
   }
-  pub const MIN: DeterministicRandomId = DeterministicRandomId {
+  pub const MIN: EntityId = EntityId {
     data: [std::u64::MIN, std::u64::MIN],
   };
-  pub const MAX: DeterministicRandomId = DeterministicRandomId {
+  pub const MAX: EntityId = EntityId {
     data: [std::u64::MAX, std::u64::MAX],
   };
 }
-impl fmt::Display for DeterministicRandomId {
+impl fmt::Display for EntityId {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "id:{:016x}{:016x}", self.data[0], self.data[1])
   }
 }
-impl fmt::Debug for DeterministicRandomId {
+impl fmt::Debug for EntityId {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "id:{:016x}{:016x}", self.data[0], self.data[1])
   }
@@ -131,7 +131,7 @@ impl fmt::Debug for DeterministicRandomId {
 
 // (this hash function is consistent with the default PartialEq)
 #[allow(clippy::derive_hash_xor_eq)]
-impl Hash for DeterministicRandomId {
+impl Hash for EntityId {
   /// Since this id is already random, we don't need to hash more than 64 bits of it.
   /// We use the lower bits to avoid the small bias created by using the ordering.
   fn hash<H: Hasher>(&self, state: &mut H) {
@@ -139,16 +139,16 @@ impl Hash for DeterministicRandomId {
   }
 }
 
-pub struct DeterministicRandomIdRng {
-  state: DeterministicRandomId,
+pub struct EntityIdRng {
+  state: EntityId,
   index: u32,
 }
-impl DeterministicRandomIdRng {
+impl EntityIdRng {
   fn reroll(&mut self) {
-    self.state = DeterministicRandomId::hash_of(&self.state);
+    self.state = EntityId::hash_of(&self.state);
   }
 }
-impl RngCore for DeterministicRandomIdRng {
+impl RngCore for EntityIdRng {
   fn next_u32(&mut self) -> u32 {
     let result = (self.state.data[(self.index >> 1) as usize] >> (32 * (self.index & 1))) as u32;
     self.index += 1;
@@ -178,16 +178,16 @@ mod tests {
 
   #[test]
   fn index_1_is_lower_bits() {
-    assert!(DeterministicRandomId { data: [1, 0] } > DeterministicRandomId { data: [0, 1] });
+    assert!(EntityId { data: [1, 0] } > EntityId { data: [0, 1] });
   }
 
-  fn test_id_endianness_impl<T: ser::Serialize + Debug>(thing: T, confirm: DeterministicRandomId) {
+  fn test_id_endianness_impl<T: ser::Serialize + Debug>(thing: T, confirm: EntityId) {
     println!(
-      "DeterministicRandomId::hash_of({:?}) = {:?}",
+      "EntityId::hash_of({:?}) = {:?}",
       thing,
-      DeterministicRandomId::hash_of(&thing)
+      EntityId::hash_of(&thing)
     );
-    assert_eq!(DeterministicRandomId::hash_of(&thing), confirm);
+    assert_eq!(EntityId::hash_of(&thing), confirm);
   }
 
   #[test]
@@ -196,26 +196,26 @@ mod tests {
     // which is the current default.
     test_id_endianness_impl(
       (),
-      DeterministicRandomId {
+      EntityId {
         data: [18033283813966546569, 10131395250899649866],
       },
     );
     test_id_endianness_impl(
       1337,
-      DeterministicRandomId {
+      EntityId {
         data: [13768737740279017279, 4442460339052638143],
       },
     );
     let a: (Option<Option<i32>>,) = (Some(None),);
     test_id_endianness_impl(
       a,
-      DeterministicRandomId {
+      EntityId {
         data: [16808472249412258235, 2826611911447572457],
       },
     );
     test_id_endianness_impl(
-      DeterministicRandomId::hash_of(&0x70f7b85b08ba4fd5u64),
-      DeterministicRandomId {
+      EntityId::hash_of(&0x70f7b85b08ba4fd5u64),
+      EntityId {
         data: [15806623539012513099, 2804789490945853517],
       },
     );

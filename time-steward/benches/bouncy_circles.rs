@@ -20,7 +20,7 @@ extern crate serde_derive;
 
 use test::Bencher;
 
-use time_steward::{DeterministicRandomId};
+use time_steward::{EntityId};
 use time_steward::{PersistentTypeId, ListedType, PersistentlyIdentifiedType, EntityCellTrait, SimulationSpec as SimulationSpecTrait};
 //use time_steward::stewards::{simple_full as steward_module};
 use steward_module::{TimeSteward, ConstructibleTimeSteward, Event, EntityCell, EventAccessor, FutureCleanupAccessor, SnapshotAccessor, simple_timeline};
@@ -33,7 +33,7 @@ use bouncy_circles::*;
 fn bouncy_circles_straightforward(bencher: &mut Bencher) {
   bencher.iter(|| {
     let mut steward: Steward = Steward::from_globals (make_globals());
-    steward.insert_fiat_event(0, DeterministicRandomId::hash_of(&0), Initialize {}).unwrap();
+    steward.insert_fiat_event(0, EntityId::hash_of(&0), Initialize {}).unwrap();
     for index in 0..1000 {
       let time = 10*SECOND*index/1000;
       steward.snapshot_before(& time).expect("steward failed to provide snapshot");
@@ -47,9 +47,9 @@ fn bouncy_circles_straightforward(bencher: &mut Bencher) {
 fn bouncy_circles_disturbed (bencher: &mut Bencher) {
   bencher.iter(|| {
     let mut steward: Steward = Steward::from_globals (make_globals());
-    steward.insert_fiat_event(0, DeterministicRandomId::hash_of(&0), Initialize {}).unwrap();
+    steward.insert_fiat_event(0, EntityId::hash_of(&0), Initialize {}).unwrap();
     for index in 1..10 {
-      steward.insert_fiat_event (index*SECOND, DeterministicRandomId::hash_of (& index), Disturb{ coordinates: [ARENA_SIZE/3,ARENA_SIZE/3]}).unwrap();
+      steward.insert_fiat_event (index*SECOND, EntityId::hash_of (& index), Disturb{ coordinates: [ARENA_SIZE/3,ARENA_SIZE/3]}).unwrap();
     }
     for index in 0..1000 {
       let time = 10*SECOND*index/1000;
@@ -63,10 +63,10 @@ fn bouncy_circles_disturbed (bencher: &mut Bencher) {
 fn bouncy_circles_disturbed_retroactive (bencher: &mut Bencher) {
   bencher.iter(|| {
     let mut steward: amortized::Steward<SimulationSpec> = amortized::Steward::from_constants(());
-    steward.insert_fiat_event(0, DeterministicRandomId::hash_of(&0), Initialize::new()).unwrap();
+    steward.insert_fiat_event(0, EntityId::hash_of(&0), Initialize::new()).unwrap();
     steward.snapshot_before(& (10*SECOND)).expect("steward failed to provide snapshot");
     for index in 1..10 {
-      steward.insert_fiat_event (index*SECOND, DeterministicRandomId::hash_of (& index), Disturb::new ([ARENA_SIZE/3,ARENA_SIZE/3])).unwrap();
+      steward.insert_fiat_event (index*SECOND, EntityId::hash_of (& index), Disturb::new ([ARENA_SIZE/3,ARENA_SIZE/3])).unwrap();
       steward.snapshot_before(& (10*SECOND)).expect("steward failed to provide snapshot");
     }
   })

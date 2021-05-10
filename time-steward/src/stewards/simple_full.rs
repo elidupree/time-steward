@@ -15,7 +15,7 @@ use std::ops::Deref;
 
 use super::super::api::*;
 use super::super::implementation_support::common::*;
-use {DeterministicRandomId};
+use {EntityId};
 use type_utils::{PersistentlyIdentifiedType, DynamicPersistentlyIdentifiedType};
 
 use implementation_support::insert_only;
@@ -267,7 +267,7 @@ impl <'a, S: SimulationSpec> EventAccessor for EventAccessorStruct <'a, S> {
     }
   }
 
-  fn create_prediction <E: Event <Steward = Self::Steward>> (&self, time: <<Self::Steward as TimeSteward>::SimulationSpec as SimulationSpec>::Time, id: DeterministicRandomId, event: E)->EventHandle <S> {
+  fn create_prediction <E: Event <Steward = Self::Steward>> (&self, time: <<Self::Steward as TimeSteward>::SimulationSpec as SimulationSpec>::Time, id: EntityId, event: E)->EventHandle <S> {
     let time = extended_time_of_predicted_event::<<Self::Steward as TimeSteward>::SimulationSpec> (time, id, self.extended_now()).expect("You can't create a prediction in the past.");
     let handle = EventHandle {
       data: Rc::new (EventInner {
@@ -426,7 +426,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
 
   fn insert_fiat_event<E: Event<Steward = Self>>(&mut self,
                                                time: S::Time,
-                                               id: DeterministicRandomId,
+                                               id: EntityId,
                                                event: E)
                                                -> Result<(), FiatEventOperationError> {
     if self.valid_since() > time {
@@ -451,7 +451,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
 
   fn remove_fiat_event(&mut self,
                        time: &S::Time,
-                       id: DeterministicRandomId)
+                       id: EntityId)
                        -> Result<(), FiatEventOperationError> {
     if self.valid_since() > *time {
       return Err(FiatEventOperationError::InvalidTime);

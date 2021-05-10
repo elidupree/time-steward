@@ -18,7 +18,7 @@ macro_rules! time_steward_define_bbox_collision_detection {
       use std::collections::HashSet;
       use type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
       use type_utils::list_of_types::{ListedType};
-      use {DeterministicRandomId, QueryResult, SimulationStateData};
+      use {EntityId, QueryResult, SimulationStateData};
 
       pub type Coordinate = u64;
       pub type NumDimensions = u32;
@@ -454,7 +454,7 @@ macro_rules! time_steward_define_bbox_collision_detection {
                 let time_id = accessor.extended_now().id;
                 accessor.create_prediction(
                   time,
-                  DeterministicRandomId::hash_of(&(
+                  EntityId::hash_of(&(
                     0xe5d3c2856ad28befu64,
                     time_id,
                     detector.space.unique_id(accessor, object),
