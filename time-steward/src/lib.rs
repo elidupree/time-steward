@@ -67,8 +67,8 @@ pub mod dynamic {
   pub mod thin_arc;
 }*/
 
-mod deterministic_random_id;
-pub use crate::deterministic_random_id::*;
+mod entity_id;
+pub use crate::entity_id::*;
 
 #[macro_use]
 mod api;
