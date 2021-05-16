@@ -287,43 +287,6 @@ fn deserialize_event_handle <T: Event> (&mut self)->EventHandle <T>;
 fn deserialize_dynamic_event_handle (&mut self)->DynamicEventHandle;
 }*/
 
-pub fn extended_time_of_fiat_event<S: SimulationSpec>(
-  time: S::Time,
-  id: EntityId,
-) -> ExtendedTime<S> {
-  ExtendedTime {
-    base: time,
-    iteration: 0,
-    id: id.for_fiat_event_internal(),
-  }
-}
-
-pub fn extended_time_of_predicted_event<S: SimulationSpec>(
-  event_base_time: S::Time,
-  id: EntityId,
-  from: &ExtendedTime<S>,
-) -> Option<ExtendedTime<S>> {
-  let iteration = match event_base_time.cmp(&from.base) {
-    Ordering::Less => return None, // short-circuit
-    Ordering::Greater => 0,
-    Ordering::Equal => {
-      if id > from.id {
-        from.iteration
-      } else {
-        if from.iteration >= S::MAX_ITERATION {
-          panic!("Too many iterations at the same base time; probably an infinite loop")
-        }
-        from.iteration + 1
-      }
-    }
-  };
-  Some(ExtendedTime {
-    base: event_base_time,
-    iteration,
-    id,
-  })
-}
-
 #[derive(Debug)]
 pub struct EventChildrenIdGenerator {
   next: Option<EntityId>,
