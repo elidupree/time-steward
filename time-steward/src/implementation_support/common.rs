@@ -301,9 +301,9 @@ impl EventChildrenIdGenerator {
   pub fn new() -> EventChildrenIdGenerator {
     EventChildrenIdGenerator { next: None }
   }
-  pub fn next(&mut self, this_event_id: &EntityId) -> EntityId {
+  pub fn next<Time: Serialize>(&mut self, waker_id: &EntityId, time: Time) -> EntityId {
     let result = match self.next {
-      None => EntityId::hash_of(this_event_id),
+      None => EntityId::hash_of(&(waker_id, time)),
       Some(next) => next,
     };
     self.next = Some(EntityId::from_raw([

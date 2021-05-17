@@ -24,6 +24,7 @@
   unboxed_closures,
   specialization,
   never_type,
+  map_first_last,
   raw,
   try_trait,
   generic_associated_types

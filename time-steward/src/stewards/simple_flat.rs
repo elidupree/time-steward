@@ -1,12 +1,27 @@
+/*!
+
+The simplest possible implementation of the TimeSteward interface.
+
+This is intended as a reference implementation of the canonical TimeSteward simulation behavior, and its goal is to be as simple as possible, sacrificing such things as "being a FullTimeSteward", "being optimized", and even "preventing memory leaks".
+
+This has 2 purposes:
+1. To help the maintainer(s) of the TimeSteward library understand the behavior that the more-optimized TimeSteward implementors are trying to replicate.
+2. To be used in automated tests of more-optimized TimeSteward implementors, to guarantee that they *do* in fact replicate the intended behavior.
+
+*/
+
 use derivative::Derivative;
+use serde::{de, ser, Deserializer, Serializer};
 use std::any::{Any, TypeId};
 use std::borrow::Borrow;
-use std::cell::{Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::io::{Read, Write};
 use std::rc::Rc;
+use std::ops::Deref;
+use std::marker::PhantomData;
 
 use crate::api::*;
 use crate::implementation_support::common::*;
@@ -19,70 +34,156 @@ use crate::EntityId;
 // ###################################################
 // ############     Handle definitions    ############
 // ###################################################
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""))]
+struct SfTypedHandle<S: SimulationSpec, E: EntityKind>(Rc<EntityInner<S, E>>);
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct SfDynHandle<S: SimulationSpec>(Rc<()>);
+pub struct SfEntityHandleKind<S>;
+impl<S> EntityHandleKind for SfEntityHandleKind<S> {
+  type TypedHandle<E: EntityKind> = SfTypedHandle<S, E>;
+  type DynHandle = SfDynHandle<S>;
+}
 
-type EventHandle<S> = DataHandle<(), EventInner<S>>;
-type EntityCell<T> = RefCell<EntityCellInner<T>>;
+struct EntityUniversal<S: SimulationSpec> {
+  id: EntityId,
+  schedule: History<S, Option<S::Time>>,
+}
+struct EntityInner<S: SimulationSpec, E: EntityKind> {
+  universal: EntityUniversal<S>,
+  immutable: ImmutableData<E, SfEntityHandleKind<S>>,
+  mutable: History<S, MutableData<E, SfEntityHandleKind<S>>>,
+}
+trait AnyEntityInner<S: SimulationSpec> {
+  fn universal(&self) -> &EntityUniversal<S>;
+  fn wake(&self, self_handle: &SfDynHandle<S>, steward: &mut Steward<S>);
+}
 
 #[derive(Debug)]
-pub struct EntityCellInner<T> {
+struct HistoryInner<S: SimulationSpec, T> {
   current_value: T,
-  history_head: HistoryIndex,
+  changes: Vec<(S::Time, Box<dyn AnyUndo<T>>)>,
 }
 
-#[derive(Derivative)]
-#[derivative(Debug(bound = ""))]
-pub struct EventInner<S: SimulationSpec> {
-  time: ExtendedTime<S>,
-  data: Box<dyn EventInnerTrait<S>>,
+struct History<S: SimulationSpec, T>(RefCell<HistoryInner<S, T>>);
+
+#[derive(Debug)]
+struct Undo<T, M: Modify<T>> {
+  data: M::UndoData,
+  _marker: PhantomData<*const T>,
 }
 
-trait EventInnerTrait<S: SimulationSpec>: Any + Debug + DynamicPersistentlyIdentifiedType {
-  fn execute(&self, self_handle: &EventHandle<S>, steward: &mut Steward<S>);
-  fn get_type_id(&self) -> TypeId;
+trait AnyUndo<T>: ::std::fmt::Debug {
+  fn undo(&self, entity: &mut T);
 }
 
-impl<S: SimulationSpec, T: Event<Steward<S>>> EventInnerTrait<S> for T {
-  fn execute(&self, self_handle: &EventHandle<S>, steward: &mut Steward<S>) {
-    let mut accessor = EventAccessorStruct {
-      handle: self_handle.clone(),
-      globals: steward.globals.clone(),
-      child_id_generator: RefCell::new(EventChildrenIdGenerator::new()),
-      steward: RefCell::new(steward),
-    };
-    <T as Event<Steward<S>>>::execute(self, &mut accessor);
-  }
-  fn get_type_id(&self) -> TypeId {
-    TypeId::of::<T>()
+impl<T: SimulationStateData, M: Modify<T>> AnyUndo<T> for Undo<T, M> {
+  fn undo(&self, entity: &mut T) {
+    M::undo(entity.downcast_mut().unwrap(), &self.data);
   }
 }
 
-impl<
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-  > EntityHandleTrait for DataHandle<ImmutableData, EntityCell<MutableData>>
-{
-  type ImmutableData = ImmutableData;
-  type MutableData = MutableData;
-}
-
-impl<
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-  > PersistentlyIdentifiedType for DataHandle<ImmutableData, EntityCell<MutableData>>
-{
-  const ID: PersistentTypeId =
-    PersistentTypeId(0x9ec13003c540d3a9 ^ ImmutableData::ID.0 ^ MutableData::ID.0);
-}
-
-impl<S: SimulationSpec> EventHandleTrait<S> for EventHandle<S> {
-  fn extended_time(&self) -> &ExtendedTime<S> {
-    &self.private().time
+impl<S: SimulationSpec, T> History<S, T> {
+  fn new(starting_value: T) -> History<S, T> {
+    History(RefCell::new(HistoryInner {
+      current_value: starting_value,
+      changes: Vec::new(),
+    }))
+  }
+  fn current_value(&self) -> Ref<T> {
+    self.0.borrow().map(|history| &history.current_value)
+  }
+  fn modify<M: Modify<T>>(&self, modification: M, time: S::Time) {
+    let history = self.0.borrow_mut();
+    history.changes.push((
+      time,
+      Box::new(modification.modify(&mut history.current_value)),
+    ));
+  }
+  fn value_before(&self, time: S::Time) -> T {
+    let history = self.0.borrow();
+    let mut value = history.current_value.clone();
+    for (time, undo) in history.changes.iter().rev() {
+      if time < self.time {
+        break;
+      }
+      undo.undo(value);
+    }
+    value
   }
 }
 
-impl<S: SimulationSpec> Borrow<ExtendedTime<S>> for EventHandle<S> {
-  fn borrow(&self) -> &ExtendedTime<S> {
-    &self.private().time
+// ###################################################
+// ############       Handle impls        ############
+// ###################################################
+
+impl<S: SimulationSpec, E: EntityKind> EntityHandle for SfTypedHandle<S, E> {
+  fn id(&self) -> EntityId {
+    self.0.universal.id
+  }
+}
+
+impl<S: SimulationSpec, E: EntityKind> AnyEntityInner<S> for EntityInner<S, E> {
+  fn universal(&self) -> &EntityUniversal<S> {
+    &self.0.universal
+  }
+
+  fn wake(&self, self_handle: &SfDynHandle<S>, accessor: &mut SfEventAccessor<S>) {
+    debug_assert_eq!(
+      &self as *const EntityInner<S, E> as *const (),
+      &*self_handle.0 as *const AnyEntityInner<S> as *const ()
+    );
+    let self_handle: SfTypedHandle<S, E> = self_handle.downcast().unwrap();
+    <T as Wake<S>>::wake(accessor, &self_handle);
+  }
+}
+
+impl<S: SimulationSpec, E: EntityKind> EntityHandle for SfDynHandle<S> {
+  fn id(&self) -> EntityId {
+    self.0.universal().id
+  }
+}
+impl<S: SimulationSpec, E: EntityKind> ser::Serialize for SfTypedHandle<S, E> {
+  fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    self.id().serialize(serializer)
+  }
+}
+impl<S: SimulationSpec> ser::Serialize for SfDynHandle<S> {
+  fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    self.id().serialize(serializer)
+  }
+}
+impl<'de, S: SimulationSpec, E: EntityKind> de::Deserialize<'de> for SfTypedHandle<S, E> {
+  fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    unimplemented!()
+  }
+}
+impl<'de, S: SimulationSpec> de::Deserialize<'de> for SfDynHandle<S> {
+  fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    unimplemented!()
+  }
+}
+
+impl<S: SimulationSpec, E: EntityKind> Debug for SfTypedHandle<S, E> {
+  fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+    thread_local! {
+      static RECURSIVE: Cell<bool> = Cell::new(false);
+    }
+    RECURSIVE.with(|recursive| {
+      if recursive.get() {
+        write!(f, "TypedHandle({})", self.id())
+      } else {
+        recursive.set(true);
+        defer! { recursive.set(false) }
+        write!(f, "TypedHandle({:?})", *self.0)
+      }
+    })
+  }
+}
+
+impl<S: SimulationSpec> Debug for SfDynHandle<S> {
+  fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+    write!(f, "DynHandle({})", self.id())
   }
 }
 
@@ -92,27 +193,34 @@ impl<S: SimulationSpec> Borrow<ExtendedTime<S>> for EventHandle<S> {
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
-pub struct EventAccessorStruct<'a, S: SimulationSpec> {
-  handle: EventHandle<S>,
-  globals: Rc<<S as SimulationSpecGATs<Steward<S>>>::Globals>,
-  // note: these are only RefCell because of the problem where modify/create_prediction can't take &mut self
+pub struct SfEventAccessor<'a, S: SimulationSpec> {
+  now: S::Time,
+  first_waker_universal: &'a EntityUniversal<S>,
+  globals: Rc<Globals<S, SfEntityHandleKind<S>>>,
   child_id_generator: RefCell<EventChildrenIdGenerator>,
+  woken_now_stack: Vec<DynHandle>,
   steward: RefCell<&'a mut Steward<S>>,
 }
 #[derive(Derivative)]
-#[derivative(Debug(bound = ""))]
-pub struct SnapshotInner<S: SimulationSpec> {
-  index: usize,
-  time: ExtendedTime<S>,
-  globals: Rc<<S as SimulationSpecGATs<Steward<S>>>::Globals>,
-  // hack: RefCell only so that we can return a Ref
-  clones: insert_only::HashMap<usize, Box<dyn Any>>,
-  shared: Rc<RefCell<StewardShared<S>>>,
-}
-#[derive(Derivative)]
 #[derivative(Debug(bound = ""), Clone(bound = ""))]
-pub struct SnapshotHandle<S: SimulationSpec> {
-  data: Rc<SnapshotInner<S>>,
+pub struct Snapshot<S: SimulationSpec> {
+  time: S::Time,
+  globals: Rc<Globals<S, SfEntityHandleKind<S>>>,
+  scheduled_events: Vec<SfDynHandle<S>>,
+}
+
+#[derive(Derivative)]
+#[derivative(
+  Debug(bound = ""),
+  Clone(bound = ""),
+  PartialEq(bound = ""),
+  Eq(bound = ""),
+  PartialOrd(bound = ""),
+  Ord(bound = "")
+)]
+struct ScheduledWake<S: SimulationSpec> {
+  entity: SfDynHandle<S>,
+  time: S::Time,
 }
 
 type SnapshotsTree<S> = BTreeMap<usize, SnapshotHandle<S>>;
@@ -120,301 +228,187 @@ type SnapshotsTree<S> = BTreeMap<usize, SnapshotHandle<S>>;
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
 pub struct Steward<S: SimulationSpec> {
-  globals: Rc<<S as SimulationSpecGATs<Steward<S>>>::Globals>,
-  invalid_before: ValidSince<S::Time>,
-  last_event: Option<ExtendedTime<S>>,
-  upcoming_fiat_events: BTreeSet<TimeOrderedEventHandle<Steward<S>>>,
-  existent_predictions: BTreeSet<TimeOrderedEventHandle<Steward<S>>>,
-  shared: Rc<RefCell<StewardShared<S>>>,
-  next_snapshot_index: usize,
-}
-
-#[derive(Derivative)]
-#[derivative(Debug(bound = ""))]
-struct StewardShared<S: SimulationSpec> {
-  snapshots: SnapshotsTree<S>,
-  history: History<S>,
+  globals: Rc<Globals<S, SfEntityHandleKind<S>>>,
+  last_event: Option<S::Time>,
+  schedule: BTreeSet<ScheduledWake<S>>,
 }
 
 // ###################################################
 // ############           History         ############
 // ###################################################
-
-mod history {
-  use super::EventHandle;
-  use crate::{EventHandleTrait, ExtendedTime, Modify, SimulationSpec, SimulationStateData};
-  use derivative::Derivative;
-  use std::any::Any;
-  use std::collections::VecDeque;
-  use std::marker::PhantomData;
-
-  #[derive(Copy, Clone, Debug, Default)]
-  pub struct HistoryIndex(usize);
-
-  #[derive(Derivative)]
-  #[derivative(Debug(bound = ""))]
-  struct HistoryItem<S: SimulationSpec> {
-    event: EventHandle<S>,
-    undo: Box<dyn AnyUndo>,
-    previous: HistoryIndex,
-  }
-
-  #[derive(Debug)]
-  struct Undo<T: SimulationStateData, M: Modify<T>> {
-    data: M::UndoData,
-    _marker: PhantomData<*const T>,
-  }
-
-  trait AnyUndo: ::std::fmt::Debug {
-    fn undo(&self, entity: &mut dyn Any);
-  }
-
-  impl<T: SimulationStateData, M: Modify<T>> AnyUndo for Undo<T, M> {
-    fn undo(&self, entity: &mut dyn Any) {
-      M::undo(entity.downcast_mut().unwrap(), &self.data);
-    }
-  }
-
-  #[derive(Derivative)]
-  #[derivative(Debug(bound = ""))]
-  pub struct History<S: SimulationSpec> {
-    items: VecDeque<HistoryItem<S>>,
-    start: usize,
-  }
-
-  impl HistoryIndex {
-    pub fn null() -> HistoryIndex {
-      HistoryIndex(0)
-    }
-  }
-
-  impl<S: SimulationSpec> History<S> {
-    pub fn new() -> History<S> {
-      History {
-        items: VecDeque::new(),
-        start: 1,
-      }
-    }
-
-    pub fn insert_modification<T: SimulationStateData, M: Modify<T>>(
-      &mut self,
-      head: &mut HistoryIndex,
-      event: EventHandle<S>,
-      undo: M::UndoData,
-    ) {
-      let undo: Undo<T, M> = Undo {
-        data: undo,
-        _marker: PhantomData,
-      };
-      let item = HistoryItem {
-        event,
-        undo: Box::new(undo),
-        previous: *head,
-      };
-      *head = HistoryIndex(self.start + self.items.len());
-      self.items.push_back(item);
-    }
-
-    fn get(&self, index: HistoryIndex) -> Option<&HistoryItem<S>> {
-      self.items.get(index.0.wrapping_sub(self.start))
-    }
-
-    pub fn forget_before(&mut self, time: ExtendedTime<S>) {
-      while let Some(first) = self.items.pop_front() {
-        if *first.event.extended_time() >= time {
-          self.items.push_front(first);
-          break;
-        }
-      }
-    }
-
-    pub fn rollback_to_before<T: SimulationStateData>(
-      &self,
-      head: HistoryIndex,
-      current_value: &T,
-      time: &ExtendedTime<S>,
-    ) -> T {
-      let mut value = current_value.clone();
-      let mut index = head;
-      while let Some(item) = self.get(index) {
-        if item.event.extended_time() < time {
-          break;
-        }
-        item.undo.undo(&mut value);
-        index = item.previous;
-      }
-      value
-    }
-  }
-}
-
-use self::history::{History, HistoryIndex};
+//
+// mod history {
+//
+//   impl<S: SimulationSpec> History<S> {
+//     pub fn rollback_to_before<T: SimulationStateData>(
+//       &self,
+//       head: HistoryIndex,
+//       current_value: &T,
+//       time: &ExtendedTime<S>,
+//     ) -> T {
+//       let mut value = current_value.clone();
+//       let mut index = head;
+//       while let Some(item) = self.get(index) {
+//         if item.event.extended_time() < time {
+//           break;
+//         }
+//         item.undo.undo(&mut value);
+//         index = item.previous;
+//       }
+//       value
+//     }
+//   }
+// }
 
 // ###################################################
 // ############      Accessor impls       ############
 // ###################################################
 
-impl<S: SimulationSpec> Drop for SnapshotHandle<S> {
-  fn drop(&mut self) {
-    assert!(Rc::strong_count(&self.data) >= 2);
-    // if we are the last one dropped, our data still exists, and so does the entry in the tree
-    if Rc::strong_count(&self.data) == 2 {
-      // when we drop the one from the map recursively, that one will also observe a strong count of 2, so short-circuit it
-      if let Ok(mut shared) = self.data.shared.try_borrow_mut() {
-        shared.snapshots.remove(&self.data.index);
+impl<'b, S: SimulationSpec> Accessor for SfEventAccessor<'b, S> {
+  type SimulationSpec = S;
+  type EntityHandleKind = SfEntityHandleKind<S>;
+
+  fn get_immutable<E: EntityKind>(
+    entity: &TypedHandle<E, Self::EntityHandleKind>,
+  ) -> &ImmutableData<E, Self::EntityHandleKind> {
+    &entity.0.immutable
+  }
+
+  type QueryGuard<'a, E: EntityKind> = Ref<'a, MutableData<E, SfEntityHandleKind<S>>>;
+  fn query<'a, E: EntityKind>(
+    &'a self,
+    entity: &'a TypedHandle<E, Self::EntityHandleKind>,
+  ) -> Self::QueryGuard<'a, E> {
+    entity.mutable.current_value()
+  }
+
+  fn query_schedule<E: Wake<Self::SimulationSpec>>(
+    &self,
+    entity: &TypedHandle<E, Self::EntityHandleKind>,
+  ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time> {
+    entity.universal.schedule.current_value()
+  }
+}
+
+impl<'b, S: SimulationSpec> InitializedAccessor for SfEventAccessor<'b, S> {
+  fn globals(&self) -> &Globals<Self::SimulationSpec, Self::EntityHandleKind> {
+    &*self.globals
+  }
+  fn now(&self) -> &<Self::SimulationSpec as SimulationSpec>::Time {
+    self.now
+  }
+}
+
+struct SnapshotQueryResult<T>(T);
+impl<T> Deref for SnapshotQueryResult<T> {
+  type Target = T;
+
+  fn deref(&self) -> &Self::Target {
+    &self.0
+  }
+}
+
+impl<S: SimulationSpec> Accessor for Snapshot<S> {
+  type SimulationSpec = S;
+  type EntityHandleKind = SfEntityHandleKind<S>;
+
+  fn get_immutable<E: EntityKind>(
+    entity: &TypedHandle<E, Self::EntityHandleKind>,
+  ) -> &ImmutableData<E, Self::EntityHandleKind> {
+    &entity.0.immutable
+  }
+
+  type QueryGuard<'a, E: EntityKind> = SnapshotQueryResult<MutableData<E, SfEntityHandleKind<S>>>;
+  fn query<'a, E: EntityKind>(
+    &'a self,
+    entity: &'a TypedHandle<E, Self::EntityHandleKind>,
+  ) -> Self::QueryGuard<'a, E> {
+    SnapshotQueryResult(entity.mutable.value_before(self.time))
+  }
+
+  fn query_schedule<E: Wake<Self::SimulationSpec>>(
+    &self,
+    entity: &TypedHandle<E, Self::EntityHandleKind>,
+  ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time> {
+    entity.universal.schedule.value_before(self.time)
+  }
+}
+
+impl<S: SimulationSpec> InitializedAccessor for Snapshot<S> {
+  fn globals(&self) -> &Globals<Self::SimulationSpec, Self::EntityHandleKind> {
+    &*self.globals
+  }
+  fn now(&self) -> &<Self::SimulationSpec as SimulationSpec>::Time {
+    self.time
+  }
+}
+
+impl<'b, S: SimulationSpec> CreateEntityAccessor for SfEventAccessor<'b, S> {
+  fn create_entity<E: EntityKind>(
+    &self,
+    immutable: ImmutableData<E, Self::EntityHandleKind>,
+    mutable: MutableData<E, Self::EntityHandleKind>,
+  ) -> TypedHandle<E, Self::EntityHandleKind> {
+    let id = self
+      .child_id_generator
+      .next(self.first_waker_universal.id, self.now);
+    TypedHandle(Rc::new(EntityInner {
+      universal: EntityUniversal {
+        id,
+        schedule: History::new(None),
+      },
+      immutable,
+      mutable: History::new(mutable),
+    }))
+  }
+}
+
+impl<'b, S: SimulationSpec> EventAccessor for SfEventAccessor<'b, S> {
+  fn modify<'a, E: EntityKind, M: Modify<MutableData<E, Self::EntityHandleKind>>>(
+    &'a self,
+    entity: &'a TypedHandle<E, Self::EntityHandleKind>,
+    modification: M,
+  ) {
+    entity.mutable.modify(modification);
+  }
+
+  fn set_schedule<E: Wake<Self::SimulationSpec>>(
+    &self,
+    entity: &TypedHandle<E, Self::EntityHandleKind>,
+    time: Option<<Self::SimulationSpec as SimulationSpec>::Time>,
+  ) {
+    let old = *entity.universal.schedule.current_value();
+    if old != time {
+      entity.schedule.modify(modification);
+      let global_schedule = self.steward.borrow_mut();
+      if let Some(old_time) = old {
+        assert!(
+          global_schedule.remove(ScheduledWake {
+            entity: entity.clone(),
+            time: old_time,
+          }),
+          "global schedule didn't match entity schedules"
+        );
       }
+      if let Some(new_time) = time {
+        assert!(
+          global_schedule.insert(ScheduledWake {
+            entity: entity.clone(),
+            time: new_time,
+          }),
+          "global schedule didn't match entity schedules"
+        );
+      }
+    }
+    if time == Some(self.now.clone()) {
+      self.woken_now_stack.push(entity);
     }
   }
 }
 
-impl<'b, S: SimulationSpec> Accessor for EventAccessorStruct<'b, S> {
-  type Steward = Steward<S>;
-  fn globals(&self) -> &<S as SimulationSpecGATs<Steward<S>>>::Globals {
-    &*self.globals
-  }
-  fn extended_now(&self) -> &ExtendedTime<<Self::Steward as TimeSteward>::SimulationSpec> {
-    self.this_event().extended_time()
-  }
-  type QueryGuard<
-    'a,
-    Immutable: SimulationStateData + PersistentlyIdentifiedType,
-    Mutable: SimulationStateData + PersistentlyIdentifiedType,
-  > = Ref<'a, Mutable>;
-  fn query<
-    'a,
-    Immutable: SimulationStateData + PersistentlyIdentifiedType,
-    Mutable: SimulationStateData + PersistentlyIdentifiedType,
-  >(
-    &'a self,
-    entity: &'a <Self::Steward as TimeSteward>::EntityHandle<Immutable, Mutable>,
-  ) -> Self::QueryGuard<'a, Immutable, Mutable> {
-    let guard = entity.private().borrow();
-    Ref::map(guard, |inner| &inner.current_value)
-  }
-}
-
-impl<S: SimulationSpec> Accessor for SnapshotHandle<S> {
-  type Steward = Steward<S>;
-  fn globals(&self) -> &<S as SimulationSpecGATs<Steward<S>>>::Globals {
-    &self.data.globals
-  }
-  fn extended_now(&self) -> &ExtendedTime<<Self::Steward as TimeSteward>::SimulationSpec> {
-    &self.data.time
-  }
-  type QueryGuard<
-    'a,
-    Immutable: SimulationStateData + PersistentlyIdentifiedType,
-    Mutable: SimulationStateData + PersistentlyIdentifiedType,
-  > = &'a Mutable;
-  fn query<
-    'a,
-    Immutable: SimulationStateData + PersistentlyIdentifiedType,
-    Mutable: SimulationStateData + PersistentlyIdentifiedType,
-  >(
-    &'a self,
-    entity: &'a <Self::Steward as TimeSteward>::EntityHandle<Immutable, Mutable>,
-  ) -> Self::QueryGuard<'a, Immutable, Mutable> {
-    let guard = entity.private().borrow();
-    Ref::map(guard, |inner| &inner.current_value);
-
-    let entity_guard = entity.private().borrow();
-
-    // hack: store a copy of the entity handle to guarantee that it doesn't get dropped so that it's valid to use its address as a unique id
-    &self.data.clones.get_default (entity.address() as usize, | | {
-      let entity: <Self::Steward as TimeSteward>::EntityHandle<Immutable, Mutable> = entity.clone();
-      let past_value: Mutable = (*self.data.shared).borrow().history.rollback_to_before (entity_guard.history_head, & entity_guard.current_value, & self.data.time);
-      Some(Box::new (
-        (entity, past_value)
-      ))
-    }).unwrap ().downcast_ref::<(<Self::Steward as TimeSteward>::EntityHandle<Immutable, Mutable>, Mutable)>().expect("A clone in a snapshot was a different type than what it was supposed to be a clone of; maybe two different timelines got the same serial number somehow").1
-  }
-}
-
-impl<'b, S: SimulationSpec> EventAccessor for EventAccessorStruct<'b, S> {
-  fn this_event(&self) -> &EventHandle<S> {
-    &self.handle
-  }
-
-  fn new_entity_handle<
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-  >(
-    &self,
-    immutable: ImmutableData,
-    mutable: MutableData,
-  ) -> <Self::Steward as TimeSteward>::EntityHandle<ImmutableData, MutableData> {
-    Self::Steward::new_entity_handle_nonreplicable(immutable, mutable)
-  }
-
-  fn modify<
-    'a,
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-    M: Modify<MutableData>,
-  >(
-    &'a self,
-    entity: &'a <Self::Steward as TimeSteward>::EntityHandle<ImmutableData, MutableData>,
-    modification: M,
-  ) {
-    let mut modify_guard = entity.private().borrow_mut();
-    let undo = modification.modify(&mut modify_guard.current_value);
-    let steward_guard = self.steward.borrow();
-    steward_guard
-      .shared
-      .borrow_mut()
-      .history
-      .insert_modification::<MutableData, M>(
-        &mut modify_guard.history_head,
-        self.handle.clone(),
-        undo,
-      );
-  }
-
-  fn create_prediction<E: Event<Self::Steward>>(
-    &self,
-    time: <<Self::Steward as TimeSteward>::SimulationSpec as SimulationSpec>::Time,
-    event: E,
-  ) -> EventHandle<S> {
-    let time = extended_time_of_predicted_event::<<Self::Steward as TimeSteward>::SimulationSpec>(
-      time,
-      self.child_id_generator.borrow_mut().next(&self.handle.id()),
-      self.extended_now(),
-    )
-    .unwrap();
-    let prediction = DataHandle::new_nonreplicable(
-      (),
-      EventInner {
-        time,
-        data: Box::new(event),
-      },
-    );
-    assert!(
-      self
-        .steward
-        .borrow_mut()
-        .existent_predictions
-        .insert(TimeOrderedEventHandle(prediction.clone())),
-      "created a prediction that already existed?!"
-    );
-    //printlnerr!("at {:?}, creating prediction at {:?}", self.extended_now(), handle.extended_time());
-    prediction
-  }
-  fn destroy_prediction(&self, prediction: &<Self::Steward as TimeSteward>::EventHandle) {
-    assert!(
-      self
-        .steward
-        .borrow_mut()
-        .existent_predictions
-        .remove(prediction.extended_time()),
-      "destroyed a prediction that didn't exist"
-    );
-  }
-}
-
-impl<S: SimulationSpec> SnapshotAccessor for SnapshotHandle<S> {
-  fn serialize_into<W: Write>(&self, _writer: &mut W) -> ::bincode::Result<()> {
-    unimplemented!() //serialize_snapshot(writer, self.clone())
-  }
+impl<S: SimulationSpec> SnapshotAccessor for Snapshot<S> {
+  type ScheduledEvents = ();
+  fn scheduled_events(&self) -> Self::ScheduledEvents {}
 }
 
 // ###################################################
@@ -429,67 +423,108 @@ impl<S: SimulationSpec> Steward<S> {
     events_iter.min().map(|a| &a.0)
   }
 
-  fn execute_event(&mut self, event: &EventHandle<S>) {
-    event.private().data.execute(event, &mut *self);
-    // clean it up:
-    self.upcoming_fiat_events.remove(event.extended_time());
-    self.existent_predictions.remove(event.extended_time());
-    self.last_event = Some(event.extended_time().clone());
-  }
-
-  fn garbage_collect(&mut self) {
-    let mut earliest_remembered_time = self.invalid_before.clone();
-    for snapshot in (*self.shared).borrow().snapshots.values() {
-      earliest_remembered_time = min(
-        earliest_remembered_time,
-        ValidSince::Before(snapshot.data.time.base.clone()),
-      );
-    }
-
-    if let ValidSince::Before(time) | ValidSince::After(time) = earliest_remembered_time {
-      self
-        .shared
-        .borrow_mut()
-        .history
-        .forget_before(ExtendedTime::beginning_of(time));
+  fn wake_entity(&mut self, entity: &DynHandle<S>) {
+    let now = entity
+        .universal()
+        .schedule
+        .current_value()
+        .clone()
+        .expect("tried to wake an entity that wasn't scheduled to wake");
+    self.last_event = Some(now.clone());
+    self.universal.schedule.modify(ReplaceWith(None));
+    assert!(
+      self.schedule.remove(ScheduledWake {
+        entity: entity.clone(),
+        time: now,
+      }),
+      "global schedule didn't match entity schedules"
+    );
+    let mut accessor = SfEventAccessor {
+      now,
+      first_waker_universal: entity.universal(),
+      globals: steward.globals.clone(),
+      child_id_generator: RefCell::new(EventChildrenIdGenerator::new()),
+      woken_now_stack: vec![entity],
+      steward: RefCell::new(steward),
+    };
+    while let Some(top) = accessor.woken_now_stack.pop() {
+      top.wake(top, &mut accessor);
     }
   }
 }
 
 impl<S: SimulationSpec> TimeSteward for Steward<S> {
   type SimulationSpec = S;
-  type SnapshotAccessor = SnapshotHandle<S>;
-  type EventHandle = EventHandle<S>;
-  type EntityHandle<
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-  > = DataHandle<ImmutableData, EntityCell<MutableData>>;
+  type EntityHandleKind = SfEntityHandleKind<S>;
+  type SnapshotAccessor = Snapshot<S>;
 
-  fn new_entity_handle_nonreplicable<
-    ImmutableData: SimulationStateData + PersistentlyIdentifiedType,
-    MutableData: SimulationStateData + PersistentlyIdentifiedType,
-  >(
-    immutable: ImmutableData,
-    mutable: MutableData,
-  ) -> Self::EntityHandle<ImmutableData, MutableData> {
-    DataHandle::new_nonreplicable(
-      immutable,
-      RefCell::new(EntityCellInner {
-        current_value: mutable,
-        history_head: HistoryIndex::null(),
-      }),
-    )
-  }
-
-  fn valid_since(&self) -> ValidSince<S::Time> {
-    max(
-      self.invalid_before.clone(),
-      match self.last_event {
-        None => ValidSince::TheBeginning,
-        Some(ref time) => ValidSince::After(time.base.clone()),
+  fn insert_fiat_event<E: Wake<Self::SimulationSpec>>(
+    &mut self,
+    time: <Self::SimulationSpec as SimulationSpec>::Time,
+    id: EntityId,
+    immutable: ImmutableData<E, Self::EntityHandleKind>,
+    mutable: MutableData<E, Self::EntityHandleKind>,
+  ) -> Result<(), FiatEventOperationError> {
+    if self.valid_since() > time {
+      return Err(FiatEventOperationError::InvalidTime);
+    }
+    let entity = TypedHandle(Rc::new(EntityInner {
+      universal: EntityUniversal {
+        id,
+        schedule: History::new(Some(time)),
       },
-    )
+      immutable,
+      mutable: History::new(mutable),
+    }));
+
+    assert!(
+      global_schedule.insert(ScheduledWake {
+        entity: entity.clone(),
+        time,
+      }),
+      "global schedule didn't match entity schedules"
+    );
   }
+  fn remove_fiat_event(
+    &mut self,
+    time: &<Self::SimulationSpec as SimulationSpec>::Time,
+    id: EntityId,
+  ) -> Result<(), FiatEventOperationError> {
+    if self.valid_since() > time {
+      return Err(FiatEventOperationError::InvalidTime);
+    }
+
+    assert!(
+      global_schedule.remove(ScheduledWake {
+        entity: entity.clone(),
+        time,
+      }),
+      "global schedule didn't match entity schedules"
+    );
+  }
+  fn snapshot_before(
+    &mut self,
+    time: &<Self::SimulationSpec as SimulationSpec>::Time,
+  ) -> Option<Self::SnapshotAccessor> {
+    // since this TimeSteward never discards history, it can always return Some for snapshots
+    while let Some(updated) = self.updated_until_before() {
+      if updated >= *time {
+        break;
+      }
+      self.step();
+    }
+    Some(Snapshot {time, globals: self.globals.clone(), scheduled_events: self.schedule.iter().map(|s| s.entity).collect()})
+  }
+
+  fn valid_since(&self) -> ValidSince<<Self::SimulationSpec as SimulationSpec>::Time>{
+    match self.last_event {
+        None => ValidSince::TheBeginning,
+        Some(time) => ValidSince::After(time)),
+      }
+  }
+  fn forget_before(&mut self, time: &<Self::SimulationSpec as SimulationSpec>::Time){}
+
+
 
   fn insert_fiat_event<E: Event<Self>>(
     &mut self,
@@ -530,63 +565,27 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
       true => Ok(()),
     }
   }
-
-  fn snapshot_before(&mut self, time: &S::Time) -> Option<Self::SnapshotAccessor> {
-    // NOT self.valid_since(); this Steward can continue recording snapshots from earlier than the earliest time it can accept fiat event input
-    if self.invalid_before > *time {
-      return None;
-    }
-    while let Some(updated) = self.updated_until_before() {
-      if updated >= *time {
-        break;
-      }
-      self.step();
-    }
-    let handle = SnapshotHandle {
-      data: Rc::new(SnapshotInner {
-        index: self.next_snapshot_index,
-        globals: self.globals.clone(),
-        time: ExtendedTime::beginning_of(time.clone()),
-        clones: insert_only::HashMap::new(),
-        shared: self.shared.clone(),
-      }),
-    };
-    self
-      .shared
-      .borrow_mut()
-      .snapshots
-      .insert(self.next_snapshot_index, handle.clone());
-    self.next_snapshot_index += 1;
-    Some(handle)
-  }
-
-  fn forget_before(&mut self, time: &S::Time) {
-    self.invalid_before = max(
-      self.invalid_before.clone(),
-      ValidSince::Before(time.clone()),
-    );
-    self.garbage_collect();
-  }
 }
 
 impl<S: SimulationSpec> ConstructibleTimeSteward for Steward<S> {
-  fn from_globals(globals: <Self::SimulationSpec as SimulationSpecGATs<Self>>::Globals) -> Self {
+  fn from_globals(
+    metadata: (),
+    globals: Globals<Self::SimulationSpec, Self::EntityHandleKind>,
+  ) -> Self{
     Steward {
       globals: Rc::new(globals),
-      invalid_before: ValidSince::TheBeginning,
       last_event: None,
-      upcoming_fiat_events: BTreeSet::new(),
-      existent_predictions: BTreeSet::new(),
-      shared: Rc::new(RefCell::new(StewardShared {
-        snapshots: BTreeMap::new(),
-        history: History::new(),
-      })),
-      next_snapshot_index: 0,
+      schedule: BTreeSet::new()
     }
   }
 
-  fn deserialize_from<R: Read>(_data: &mut R) -> ::bincode::Result<Self> {
-    unimplemented!() //deserialize_something(data)
+  fn from_construct_globals<G: ConstructGlobals<Self::SimulationSpec>>(
+    metadata: (),
+    construct_globals: G,
+  ) -> Self {}
+
+  fn from_serialized<R: Read>(metadata: Metadata, data: &mut R) -> ::bincode::Result<Self> {
+    unimplemented!()
   }
 }
 
@@ -597,27 +596,8 @@ impl<S: SimulationSpec> IncrementalTimeSteward for Steward<S> {
     }
   }
   fn updated_until_before(&self) -> Option<S::Time> {
-    self
-      .next_event()
-      .map(|event| event.extended_time().base.clone())
+    self.schedule.first()
+      .map(|s| s.time)
   }
 }
 impl<S: SimulationSpec> CanonicalTimeSteward for Steward<S> {}
-
-/*
-fn deserialization_create_event_inner<S: SimulationSpec, T: Event<Steward = Steward<S>>>(
-  time: ExtendedTime<S>,
-  data: T,
-  _in_future: bool,
-) -> EventInner<S> {
-  EventInner {
-    time: time,
-    data: Box::new(data),
-  }
-}
-fn deserialization_create_prediction<S: SimulationSpec>(
-  steward: &mut Steward<S>,
-  prediction: EventHandle<S>,
-) {
-  steward.existent_predictions.insert(prediction);
-}*/
