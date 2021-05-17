@@ -1,13 +1,9 @@
-use derivative::Derivative;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::Serialize;
 use std::any::{Any, TypeId};
 use std::borrow::Borrow;
 use std::cell::RefCell;
-use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Debug;
-use std::ops::Deref;
-use std::rc::Rc;
 
 use crate::api::*;
 use crate::EntityId;
@@ -50,42 +46,6 @@ pub fn split_off_greater_set<K: Ord + Borrow<Q>, Q: Ord + ?Sized>(
   result
 }
 
-/*macro_rules! downcast_rc {
-  ($input: expr, $T: ty, $($Trait:tt)*) => {{
-    let result: Result <Rc<$T>, Rc<$($Trait)*>> = {
-      let input = $input;
-      if (*input).get_type_id() == ::std::any::TypeId::of::<$T>() {
-        //println!( "succeeded");
-        unsafe {
-          let raw: ::std::raw::TraitObject = ::std::mem::transmute (input);
-          Ok(::std::mem::transmute (raw.data))
-        }
-      }
-      else {
-        Err (input)
-      }
-    };
-    result
-  }}
-}*//*
-macro_rules! downcast_ref {
-  ($input: expr, $T: ty, $($Trait:tt)*) => {{
-    let result: Option<&$T> = {
-      let input = $input;
-      if (*input).get_type_id() == ::std::any::TypeId::of::<$T>() {
-        //println!( "succeeded");
-        unsafe {
-          let raw: ::std::raw::TraitObject = ::std::mem::transmute(input);
-          Some(::std::mem::transmute(raw.data))
-        }
-      } else {
-        None
-      }
-    };
-    result
-  }};
-}*/
-
 #[doc(hidden)]
 #[macro_export]
 macro_rules! delegate {
@@ -127,76 +87,22 @@ macro_rules! delegate {
       }
     }
   };
-  ($Trait1: tt, $Trait2: tt, [$this: ident => $target: expr], [$($bounds:tt)*], [$($concrete:tt)*]) => {
-    delegate! ($Trait1, $this => $target, [$($bounds)*], [$($concrete)*]);
-    delegate! ($Trait2, $this => $target, [$($bounds)*], [$($concrete)*]);
+  (Serialize, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
+    impl<$($bounds)*> ::serde::ser::Serialize for $($concrete)* {
+      fn serialize<Ser: ::serde::ser::Serializer>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error> {
+        let my_target = { let $this = self; $target };
+        my_target.serialize(serializer)
+      }
+    }
   };
-  ($Trait1: tt, $Trait2: tt, $Trait3: tt, [$this: ident => $target: expr], [$($bounds:tt)*], [$($concrete:tt)*]) => {
+  ([$($bounds:tt)*] [$Trait1: tt, $($Traits:tt),*$(,)*] for [$($concrete:tt)*] to [$this: ident => $target: expr]) => {
     delegate! ($Trait1, $this => $target, [$($bounds)*], [$($concrete)*]);
-    delegate! ($Trait2, $this => $target, [$($bounds)*], [$($concrete)*]);
-    delegate! ($Trait3, $this => $target, [$($bounds)*], [$($concrete)*]);
+    delegate! ([$($bounds)*] [$($Traits,)*] for [$($concrete)*] to [$this => $target]);
   };
-  ($Trait1: tt, $Trait2: tt, $Trait3: tt, $Trait4: tt, [$this: ident => $target: expr], [$($bounds:tt)*], [$($concrete:tt)*]) => {
-    delegate! ($Trait1, $this => $target, [$($bounds)*], [$($concrete)*]);
-    delegate! ($Trait2, $this => $target, [$($bounds)*], [$($concrete)*]);
-    delegate! ($Trait3, $this => $target, [$($bounds)*], [$($concrete)*]);
-    delegate! ($Trait4, $this => $target, [$($bounds)*], [$($concrete)*]);
-  };
-  ($Trait1: tt, $Trait2: tt, $Trait3: tt, $Trait4: tt, $Trait5: tt, [$this: ident => $target: expr], [$($bounds:tt)*], [$($concrete:tt)*]) => {
-    delegate! ($Trait1, $this => $target, [$($bounds)*], [$($concrete)*]);
-    delegate! ($Trait2, $this => $target, [$($bounds)*], [$($concrete)*]);
-    delegate! ($Trait3, $this => $target, [$($bounds)*], [$($concrete)*]);
-    delegate! ($Trait4, $this => $target, [$($bounds)*], [$($concrete)*]);
-    delegate! ($Trait5, $this => $target, [$($bounds)*], [$($concrete)*]);
-  };
+  ([$($bounds:tt)*] [] for [$($concrete:tt)*] to [$this: ident => $target: expr]) => {};
 }
 
-pub trait PrivateTimeStewardDataTrait: Any + Debug {}
-impl<T: Any + Debug> PrivateTimeStewardDataTrait for T {}
-
-#[derive(Derivative)]
-#[derivative(Clone(bound = ""))]
-pub struct DataHandle<PublicImmutableData, PrivateTimeStewardData>(
-  Rc<(PublicImmutableData, PrivateTimeStewardData)>,
-);
-
-impl<
-    PublicImmutableData: SimulationStateData,
-    PrivateTimeStewardData: PrivateTimeStewardDataTrait,
-  > DataHandle<PublicImmutableData, PrivateTimeStewardData>
-{
-  pub fn new_nonreplicable(public: PublicImmutableData, private: PrivateTimeStewardData) -> Self {
-    DataHandle(Rc::new((public, private)))
-  }
-  pub fn public(&self) -> &PublicImmutableData {
-    &(self.0).0
-  }
-  pub fn private(&self) -> &PrivateTimeStewardData {
-    &(self.0).1
-  }
-  pub fn address(&self) -> *const () {
-    (&*self.0) as *const (PublicImmutableData, PrivateTimeStewardData) as *const ()
-  }
-}
-
-impl<
-    PublicImmutableData: SimulationStateData,
-    PrivateTimeStewardData: PrivateTimeStewardDataTrait,
-  > DataHandleTrait for DataHandle<PublicImmutableData, PrivateTimeStewardData>
-{
-}
-
-impl<
-    PublicImmutableData: SimulationStateData,
-    PrivateTimeStewardData: PrivateTimeStewardDataTrait,
-  > Deref for DataHandle<PublicImmutableData, PrivateTimeStewardData>
-{
-  type Target = PublicImmutableData;
-  fn deref(&self) -> &Self::Target {
-    &(self.0).0
-  }
-}
-
+/*
 impl<
     PublicImmutableData: SimulationStateData + Default,
     PrivateTimeStewardData: PrivateTimeStewardDataTrait + Default,
@@ -232,52 +138,7 @@ impl<
     })
   }
 }
-
-delegate! (PartialEq, Eq, Hash, [this => &(&*this as *const _ as usize)], [PublicImmutableData: SimulationStateData, PrivateTimeStewardData: PrivateTimeStewardDataTrait], [DataHandle<PublicImmutableData, PrivateTimeStewardData>]);
-
-#[derive(Clone, Debug)]
-pub struct TimeOrderedEventHandle<Steward: TimeSteward>(pub Steward::EventHandle);
-
-delegate! (PartialEq, Eq, PartialOrd, Ord, Hash, [this => this.0.extended_time()], [Steward: TimeSteward], [TimeOrderedEventHandle <Steward>]);
-
-impl<Steward: TimeSteward> Borrow<ExtendedTime<Steward::SimulationSpec>>
-  for TimeOrderedEventHandle<Steward>
-{
-  fn borrow(&self) -> &ExtendedTime<Steward::SimulationSpec> {
-    self.0.extended_time()
-  }
-}
-
-impl<
-    PublicImmutableData: SimulationStateData,
-    PrivateTimeStewardData: PrivateTimeStewardDataTrait,
-  > Debug for DataHandle<PublicImmutableData, PrivateTimeStewardData>
-{
-  fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-    write!(f, "DataHandle(@{:p})", self.0)
-  }
-}
-
-impl<
-    PublicImmutableData: SimulationStateData,
-    PrivateTimeStewardData: PrivateTimeStewardDataTrait,
-  > Serialize for DataHandle<PublicImmutableData, PrivateTimeStewardData>
-{
-  fn serialize<S: Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
-    unimplemented!()
-  }
-}
-
-impl<
-    'a,
-    PublicImmutableData: SimulationStateData,
-    PrivateTimeStewardData: PrivateTimeStewardDataTrait,
-  > Deserialize<'a> for DataHandle<PublicImmutableData, PrivateTimeStewardData>
-{
-  fn deserialize<D: Deserializer<'a>>(_deserializer: D) -> Result<Self, D::Error> {
-    unimplemented!()
-  }
-}
+ */
 
 /*pub trait DeserializationContext {
 fn deserialize_data <T: DeserializeOwned> (&mut self)->T;

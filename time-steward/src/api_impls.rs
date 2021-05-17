@@ -2,6 +2,13 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use super::api::*;
+use crate::EntityId;
+
+impl EntityHandle for EntityId {
+  fn id(&self) -> EntityId {
+    *self
+  }
+}
 
 impl<T: SimulationStateData> Modify<T> for ReplaceWith<T> {
   type UndoData = T;

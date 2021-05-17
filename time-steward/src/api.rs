@@ -1,11 +1,8 @@
+use serde::{de::DeserializeOwned, ser, Deserialize, Serialize};
 use std::any::Any;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::io::{Read, Write};
-//use std::cmp::Ordering;
-use derivative::Derivative;
-use serde::{de::DeserializeOwned, ser, Deserialize, Serialize};
-use std::borrow::Borrow;
+use std::io::Read;
 use std::ops::Deref;
 
 use crate::type_utils::list_of_types::ListOfTypes;
@@ -29,17 +26,11 @@ impl<T: Any + Clone + Eq + Hash + ser::Serialize + DeserializeOwned + Debug> Sim
 }
 
 /// Data handles where clones point to the same data, and Eq and Hash by object identity, and Serialize by id.
-pub trait EntityHandle: SimulationStateData {
+pub trait EntityHandle: SimulationStateData + Ord {
   fn id(&self) -> EntityId;
 }
 
-impl EntityHandle for EntityId {
-  fn id(&self) -> EntityId {
-    *self
-  }
-}
-
-pub trait EntityKind: Sized + PersistentlyIdentifiedType {
+pub trait EntityKind: Any + Sized + PersistentlyIdentifiedType {
   type ImmutableData: SimulationStateDataKind;
   type MutableData: SimulationStateDataKind;
 }
@@ -67,7 +58,7 @@ pub trait SimulationStateDataKind {
 This is intended to be implemented on an empty struct.
 */
 pub trait SimulationSpec: Any {
-  type Time: SimulationStateData + Send + Sync + Clone + Ord + Hash;
+  type Time: SimulationStateData + Send + Sync + Ord;
   type Globals: SimulationStateDataKind;
   type Types: ListOfTypes;
 }
@@ -212,7 +203,7 @@ pub trait TimeSteward: Any + Sized + Debug {
   ) -> Result<(), FiatEventOperationError>;
   fn snapshot_before(
     &mut self,
-    time: &<Self::SimulationSpec as SimulationSpec>::Time,
+    time: <Self::SimulationSpec as SimulationSpec>::Time,
   ) -> Option<Self::SnapshotAccessor>;
 
   fn valid_since(&self) -> ValidSince<<Self::SimulationSpec as SimulationSpec>::Time>;
