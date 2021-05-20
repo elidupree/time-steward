@@ -24,6 +24,8 @@ num = "0.2"
 failure = "0.1.1"
 smallvec = "0.6.1"
 scopeguard = "1.1.0"
+triomphe = { git = "https://github.com/elidupree/triomphe", features = ["unsize"]}
+unsize = "1.1.0"
 time_steward_integer_math = {path="../integer-math"}
 time_steward_type_utils = {path="../type-utils"}
 

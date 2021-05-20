@@ -21,12 +21,14 @@
 //
 
 #![feature(
+  arbitrary_self_types,
   unboxed_closures,
   specialization,
   never_type,
   map_first_last,
   raw,
   try_trait,
+  min_type_alias_impl_trait,
   generic_associated_types
 )]
 

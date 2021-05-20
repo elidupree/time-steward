@@ -1,11 +1,11 @@
 use serde::Serialize;
-use std::any::{Any, TypeId};
+//use std::any::{Any, TypeId};
 use std::borrow::Borrow;
-use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+//use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet /*, HashMap*/};
 use std::fmt::Debug;
 
-use crate::api::*;
+//use crate::api::*;
 use crate::EntityId;
 
 pub fn split_off_greater<K: Ord + Borrow<Q> + Clone, V, Q: Ord + ?Sized>(
@@ -162,7 +162,7 @@ impl EventChildrenIdGenerator {
   pub fn new() -> EventChildrenIdGenerator {
     EventChildrenIdGenerator { next: None }
   }
-  pub fn next<Time: Serialize>(&mut self, waker_id: &EntityId, time: Time) -> EntityId {
+  pub fn next<Time: Serialize>(&mut self, waker_id: &EntityId, time: &Time) -> EntityId {
     let result = match self.next {
       None => EntityId::hash_of(&(waker_id, time)),
       Some(next) => next,

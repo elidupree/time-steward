@@ -26,8 +26,49 @@ impl<T: Any + Clone + Eq + Hash + ser::Serialize + DeserializeOwned + Debug> Sim
 }
 
 /// Data handles where clones point to the same data, and Eq and Hash by object identity, and Serialize by id.
-pub trait EntityHandle: SimulationStateData + Ord {
+pub trait EntityHandle: Clone + Ord + Hash + ser::Serialize + Debug {
   fn id(&self) -> EntityId;
+}
+pub trait TypedEntityHandle<E: EntityKind, H: EntityHandleKind>: EntityHandle {
+  fn get_immutable(&self) -> &ImmutableData<E, H>
+  where
+    H: EntityHandleKindDeref;
+}
+pub trait OwnedEntityHandle: EntityHandle + SimulationStateData {}
+impl<E: EntityHandle + SimulationStateData> OwnedEntityHandle for E {}
+pub trait BorrowedEntityHandle: EntityHandle + Copy {}
+impl<E: EntityHandle + Copy> BorrowedEntityHandle for E {}
+pub trait OwnedTypedEntityHandle<E: EntityKind, H: EntityHandleKind>:
+  OwnedEntityHandle + TypedEntityHandle<E, H>
+{
+  fn erase(self) -> DynHandle<H>;
+  fn borrow(&self) -> TypedHandleRef<E, H>
+  where
+    H: EntityHandleKindDeref;
+  fn query<'a, A: Accessor<EntityHandleKind = H>>(&'a self, accessor: &'a A) -> A::QueryGuard<'a, E>
+  where
+    H: EntityHandleKindDeref,
+  {
+    accessor.query(self.borrow())
+  }
+}
+pub trait OwnedDynEntityHandle<H: EntityHandleKind>: OwnedEntityHandle {
+  // fn downcast<E: EntityKind>(self) -> Result<TypedHandle<E, H>, Self>
+  // where
+  //   H: EntityHandleKindDeref;
+  fn borrow(&self) -> DynHandleRef<H>
+  where
+    H: EntityHandleKindDeref;
+}
+pub trait BorrowedTypedEntityHandle<'a, E: EntityKind, H: EntityHandleKindDeref>:
+  BorrowedEntityHandle + TypedEntityHandle<E, H>
+{
+  fn erase(self) -> DynHandleRef<'a, H>;
+  fn to_owned(self) -> TypedHandle<E, H>;
+}
+pub trait BorrowedDynEntityHandle<'a, H: EntityHandleKindDeref>: BorrowedEntityHandle {
+  // fn downcast<E: EntityKind>(self) -> Option<TypedHandleRef<'a, E, H>>;
+  // fn to_owned(self) -> DynHandle<H>;
 }
 
 pub trait EntityKind: Any + Sized + PersistentlyIdentifiedType {
@@ -40,13 +81,19 @@ pub type ImmutableData<E, H> =
 pub type MutableData<E, H> = <<E as EntityKind>::MutableData as SimulationStateDataKind>::Data<H>;
 pub type Globals<S, H> = <<S as SimulationSpec>::Globals as SimulationStateDataKind>::Data<H>;
 
-pub trait EntityHandleKind {
-  type TypedHandle<E: EntityKind>: EntityHandle;
-  type DynHandle: EntityHandle;
+pub trait EntityHandleKind: Sized {
+  type TypedHandle<E: EntityKind>: OwnedTypedEntityHandle<E, Self>;
+  type DynHandle: OwnedDynEntityHandle<Self>;
+}
+pub trait EntityHandleKindDeref: EntityHandleKind {
+  type TypedHandleRef<'a, E: EntityKind>: BorrowedTypedEntityHandle<'a, E, Self>;
+  type DynHandleRef<'a>: BorrowedDynEntityHandle<'a, Self>;
 }
 
 pub type TypedHandle<E, H> = <H as EntityHandleKind>::TypedHandle<E>;
 pub type DynHandle<H> = <H as EntityHandleKind>::DynHandle;
+pub type TypedHandleRef<'a, E, H> = <H as EntityHandleKindDeref>::TypedHandleRef<'a, E>;
+pub type DynHandleRef<'a, H> = <H as EntityHandleKindDeref>::DynHandleRef<'a>;
 
 pub trait SimulationStateDataKind {
   type Data<E: EntityHandleKind>: SimulationStateData;
@@ -73,7 +120,7 @@ pub trait ConstructGlobals<S: SimulationSpec> {
 pub trait Wake<S: SimulationSpec>: EntityKind {
   fn wake<Accessor: EventAccessor<SimulationSpec = S>>(
     accessor: &mut Accessor,
-    this: TypedHandle<Self, Accessor::EntityHandleKind>,
+    this: TypedHandleRef<Self, Accessor::EntityHandleKind>,
   );
 }
 
@@ -98,23 +145,18 @@ pub enum ValidSince<BaseTime> {
 
 pub trait Accessor {
   type SimulationSpec: SimulationSpec;
-  type EntityHandleKind: EntityHandleKind;
-
-  // this would prefer to be a method of the EntityHandle types, but I can't make the traits work for that
-  fn get_immutable<E: EntityKind>(
-    entity: &TypedHandle<E, Self::EntityHandleKind>,
-  ) -> &ImmutableData<E, Self::EntityHandleKind>;
+  type EntityHandleKind: EntityHandleKindDeref;
 
   type QueryGuard<'a, E: EntityKind>: Deref<Target = MutableData<E, Self::EntityHandleKind>>;
   // TODO: see if I can change the lifetimes here to make it more practical for accessors to have mutable methods. Perhaps by giving the accessor trait a lifetime?
   fn query<'a, E: EntityKind>(
     &'a self,
-    entity: &'a TypedHandle<E, Self::EntityHandleKind>,
+    entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
   ) -> Self::QueryGuard<'a, E>;
 
   fn query_schedule<E: Wake<Self::SimulationSpec>>(
     &self,
-    entity: &TypedHandle<E, Self::EntityHandleKind>,
+    entity: TypedHandleRef<E, Self::EntityHandleKind>,
   ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
 }
 
@@ -145,13 +187,13 @@ pub struct ReplaceWith<T>(pub T);
 pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
   fn modify<'a, E: EntityKind, M: Modify<MutableData<E, Self::EntityHandleKind>>>(
     &'a self,
-    entity: &'a TypedHandle<E, Self::EntityHandleKind>,
+    entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
     modification: M,
   );
 
   fn schedule<E: Wake<Self::SimulationSpec>>(
     &self,
-    entity: &TypedHandle<E, Self::EntityHandleKind>,
+    entity: TypedHandleRef<E, Self::EntityHandleKind>,
     time: <Self::SimulationSpec as SimulationSpec>::Time,
   ) {
     self.set_schedule(entity, Some(time))
@@ -159,14 +201,14 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
 
   fn unschedule<E: Wake<Self::SimulationSpec>>(
     &self,
-    entity: &TypedHandle<E, Self::EntityHandleKind>,
+    entity: TypedHandleRef<E, Self::EntityHandleKind>,
   ) {
     self.set_schedule(entity, None)
   }
 
   fn set_schedule<E: Wake<Self::SimulationSpec>>(
     &self,
-    entity: &TypedHandle<E, Self::EntityHandleKind>,
+    entity: TypedHandleRef<E, Self::EntityHandleKind>,
     time: Option<<Self::SimulationSpec as SimulationSpec>::Time>,
   ) {
     match time {
@@ -177,13 +219,13 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
 }
 
 pub trait SnapshotAccessor: Accessor {
-  type ScheduledEvents: Iterator<Item = DynHandle<Self::EntityHandleKind>>;
-  fn scheduled_events(&self) -> Self::ScheduledEvents;
+  type ScheduledEvents<'a>: Iterator<Item = DynHandle<Self::EntityHandleKind>> + 'a;
+  fn scheduled_events(&self) -> Self::ScheduledEvents<'_>;
 }
 
 pub trait TimeSteward: Any + Sized + Debug {
   type SimulationSpec: SimulationSpec;
-  type EntityHandleKind: EntityHandleKind;
+  type EntityHandleKind: EntityHandleKindDeref;
   type SnapshotAccessor: SnapshotAccessor<
     SimulationSpec = Self::SimulationSpec,
     EntityHandleKind = Self::EntityHandleKind,
