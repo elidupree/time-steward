@@ -1,24 +1,8 @@
 #![feature(array_map, array_methods, try_trait)]
 
-#[macro_use]
-extern crate failure;
-extern crate nalgebra;
-extern crate num;
 #[cfg(test)]
 #[macro_use]
 extern crate proptest;
-#[cfg(test)]
-#[macro_use]
-extern crate quickcheck;
-#[macro_use]
-extern crate smallvec;
-extern crate array_ext;
-extern crate arrayvec;
-#[cfg(test)]
-extern crate rand;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
 
 use num::traits::{CheckedShl, CheckedShr, Signed, WrappingAdd, WrappingMul, WrappingSub, Zero};
 use std::mem;
@@ -419,7 +403,7 @@ pub fn saturating_downcast<T: Integer + From<U> + TryInto<U>, U: Integer>(a: T) 
 }
 
 pub mod array;
-pub mod polynomial;
+//pub mod polynomial;
 pub mod polynomial2;
 #[cfg(test)]
 pub mod polynomial2_tests;

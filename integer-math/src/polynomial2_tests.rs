@@ -2,19 +2,17 @@
 use crate::array::{Array, ReplaceItemType};
 use array_ext::{Array as ArrayExtArray, *};
 use arrayvec::{self, ArrayVec};
+use num::{BigInt, BigRational};
 use num::{
   Bounded, CheckedAdd, CheckedMul, CheckedSub, FromPrimitive, Integer as NumInteger, One, Signed,
 };
-#[allow(unused_imports)]
+use proptest::prelude::*;
 use serde::Serialize;
 use std::cmp::{max, min, Ordering};
 
-use super::*;
-
 use super::polynomial2::*;
 use super::range_search::*;
-use num::{BigInt, BigRational};
-use proptest::prelude::*;
+use super::*;
 
 fn naive_perfect_evaluate<Coefficient: Integer>(
   coefficients: &[Coefficient],

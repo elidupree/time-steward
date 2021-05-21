@@ -302,7 +302,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     let mut coefficients = [T::Coordinate::zero(); $degree + $degree + 1];
     for dimension in 0..T::DIMENSIONS {
       let coordinate_coefficients = self.coordinate_coefficients (dimension);
-      polynomial::add_product_into (& coordinate_coefficients, & coordinate_coefficients, &mut coefficients).ok()?;
+      polynomial2::add_product_into (& coordinate_coefficients, & coordinate_coefficients, &mut coefficients)?;
     }
     Some($ProductTrajectory {
       origin: self.origin, coefficients
