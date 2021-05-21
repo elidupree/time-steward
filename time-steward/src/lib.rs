@@ -31,6 +31,7 @@
   min_type_alias_impl_trait,
   generic_associated_types
 )]
+#![warn(unsafe_op_in_unsafe_fn)]
 
 #[cfg_attr(test, macro_use)]
 extern crate proptest;

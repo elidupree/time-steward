@@ -45,7 +45,7 @@ pub trait OwnedTypedEntityHandle<E: EntityKind, H: EntityHandleKind>:
   fn borrow(&self) -> TypedHandleRef<E, H>
   where
     H: EntityHandleKindDeref;
-  fn query<'a, A: Accessor<EntityHandleKind = H>>(&'a self, accessor: &'a A) -> A::QueryGuard<'a, E>
+  fn query<A: Accessor<EntityHandleKind = H>>(&self, accessor: &mut A) -> A::QueryGuard<'_, E>
   where
     H: EntityHandleKindDeref,
   {
@@ -148,14 +148,15 @@ pub trait Accessor {
   type EntityHandleKind: EntityHandleKindDeref;
 
   type QueryGuard<'a, E: EntityKind>: Deref<Target = MutableData<E, Self::EntityHandleKind>>;
-  // TODO: see if I can change the lifetimes here to make it more practical for accessors to have mutable methods. Perhaps by giving the accessor trait a lifetime?
   fn query<'a, E: EntityKind>(
-    &'a self,
-    entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
+    &mut self,
+    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
+    // https://github.com/rust-lang/rust/issues/85533
+    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'a, E>,
   ) -> Self::QueryGuard<'a, E>;
 
   fn query_schedule<E: Wake<Self::SimulationSpec>>(
-    &self,
+    &mut self,
     entity: TypedHandleRef<E, Self::EntityHandleKind>,
   ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
 }
@@ -167,7 +168,7 @@ pub trait InitializedAccessor: Accessor {
 
 pub trait CreateEntityAccessor: Accessor {
   fn create_entity<E: EntityKind>(
-    &self,
+    &mut self,
     immutable: ImmutableData<E, Self::EntityHandleKind>,
     mutable: MutableData<E, Self::EntityHandleKind>,
   ) -> TypedHandle<E, Self::EntityHandleKind>;
@@ -185,14 +186,14 @@ pub trait Modify<T>: SimulationStateData {
 pub struct ReplaceWith<T>(pub T);
 
 pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
-  fn modify<'a, E: EntityKind, M: Modify<MutableData<E, Self::EntityHandleKind>>>(
-    &'a self,
-    entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
+  fn modify<E: EntityKind, M: Modify<MutableData<E, Self::EntityHandleKind>>>(
+    &mut self,
+    entity: TypedHandleRef<E, Self::EntityHandleKind>,
     modification: M,
   );
 
   fn schedule<E: Wake<Self::SimulationSpec>>(
-    &self,
+    &mut self,
     entity: TypedHandleRef<E, Self::EntityHandleKind>,
     time: <Self::SimulationSpec as SimulationSpec>::Time,
   ) {
@@ -200,14 +201,14 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
   }
 
   fn unschedule<E: Wake<Self::SimulationSpec>>(
-    &self,
+    &mut self,
     entity: TypedHandleRef<E, Self::EntityHandleKind>,
   ) {
     self.set_schedule(entity, None)
   }
 
   fn set_schedule<E: Wake<Self::SimulationSpec>>(
-    &self,
+    &mut self,
     entity: TypedHandleRef<E, Self::EntityHandleKind>,
     time: Option<<Self::SimulationSpec as SimulationSpec>::Time>,
   ) {
