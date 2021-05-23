@@ -372,7 +372,7 @@ impl<'b, S: SimulationSpec> Accessor for SfEventAccessor<'b, S> {
 
   type QueryGuard<'a, E: EntityKind> = Ref<'a, MutableData<E, SfEntityHandleKind<S>>>;
   fn query<'a, E: EntityKind>(
-    &mut self,
+    &'a self,
     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
     // https://github.com/rust-lang/rust/issues/85533
     entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'a, E>,
@@ -381,7 +381,7 @@ impl<'b, S: SimulationSpec> Accessor for SfEventAccessor<'b, S> {
   }
 
   fn query_schedule<E: Wake<Self::SimulationSpec>>(
-    &mut self,
+    &self,
     entity: TypedHandleRef<E, Self::EntityHandleKind>,
   ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time> {
     entity.0.universal.schedule.current_value().clone()
@@ -412,7 +412,7 @@ impl<S: SimulationSpec> Accessor for Snapshot<S> {
 
   type QueryGuard<'a, E: EntityKind> = SnapshotQueryResult<MutableData<E, SfEntityHandleKind<S>>>;
   fn query<'a, E: EntityKind>(
-    &mut self,
+    &'a self,
     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
     // https://github.com/rust-lang/rust/issues/85533
     entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'a, E>,
@@ -421,7 +421,7 @@ impl<S: SimulationSpec> Accessor for Snapshot<S> {
   }
 
   fn query_schedule<E: Wake<Self::SimulationSpec>>(
-    &mut self,
+    &self,
     entity: TypedHandleRef<E, Self::EntityHandleKind>,
   ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time> {
     entity.0.universal.schedule.value_before(&self.time)
@@ -630,7 +630,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
       Some(time) => ValidSince::After(time.clone()),
     }
   }
-  fn forget_before(&mut self, time: &<Self::SimulationSpec as SimulationSpec>::Time) {}
+  fn forget_before(&mut self, _time: &<Self::SimulationSpec as SimulationSpec>::Time) {}
 }
 
 impl<S: SimulationSpec> ConstructibleTimeSteward for Steward<S> {

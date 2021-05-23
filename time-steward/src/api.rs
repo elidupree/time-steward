@@ -45,11 +45,20 @@ pub trait OwnedTypedEntityHandle<E: EntityKind, H: EntityHandleKind>:
   fn borrow(&self) -> TypedHandleRef<E, H>
   where
     H: EntityHandleKindDeref;
-  fn query<A: Accessor<EntityHandleKind = H>>(&self, accessor: &mut A) -> A::QueryGuard<'_, E>
+  fn query<'a, A: Accessor<EntityHandleKind = H>>(&'a self, accessor: &'a A) -> A::QueryGuard<'a, E>
   where
     H: EntityHandleKindDeref,
   {
     accessor.query(self.borrow())
+  }
+  fn modify<A: EventAccessor<EntityHandleKind = H>, M: Modify<MutableData<E, H>>>(
+    &self,
+    accessor: &mut A,
+    modification: M,
+  ) where
+    H: EntityHandleKindDeref,
+  {
+    accessor.modify(self.borrow(), modification)
   }
 }
 pub trait OwnedDynEntityHandle<H: EntityHandleKind>: OwnedEntityHandle {
@@ -65,6 +74,21 @@ pub trait BorrowedTypedEntityHandle<'a, E: EntityKind, H: EntityHandleKindDeref>
 {
   fn erase(self) -> DynHandleRef<'a, H>;
   fn to_owned(self) -> TypedHandle<E, H>;
+  fn query<A: Accessor<EntityHandleKind = H>>(self, accessor: &mut A) -> A::QueryGuard<'a, E>
+  where
+    H: EntityHandleKindDeref,
+  {
+    todo!() //accessor.query(self)
+  }
+  fn modify<A: EventAccessor<EntityHandleKind = H>, M: Modify<MutableData<E, H>>>(
+    self,
+    accessor: &mut A,
+    modification: M,
+  ) where
+    H: EntityHandleKindDeref,
+  {
+    todo!() //accessor.modify(self, modification)
+  }
 }
 pub trait BorrowedDynEntityHandle<'a, H: EntityHandleKindDeref>: BorrowedEntityHandle {
   // fn downcast<E: EntityKind>(self) -> Option<TypedHandleRef<'a, E, H>>;
@@ -147,16 +171,21 @@ pub trait Accessor {
   type SimulationSpec: SimulationSpec;
   type EntityHandleKind: EntityHandleKindDeref;
 
+  // maybe a &, maybe a cell::Ref, maybe something else...
   type QueryGuard<'a, E: EntityKind>: Deref<Target = MutableData<E, Self::EntityHandleKind>>;
+
+  // requires &'a self as well as 'a entity, so that we can statically guarantee
+  // no overlap with modify (hypothetically allowing TimeSteward implementors to use UnsafeCell
+  // and return & instead of RefCell and return Ref)
   fn query<'a, E: EntityKind>(
-    &mut self,
+    &'a self,
     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
     // https://github.com/rust-lang/rust/issues/85533
     entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'a, E>,
   ) -> Self::QueryGuard<'a, E>;
 
   fn query_schedule<E: Wake<Self::SimulationSpec>>(
-    &mut self,
+    &self,
     entity: TypedHandleRef<E, Self::EntityHandleKind>,
   ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
 }
@@ -219,7 +248,7 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
   }
 }
 
-pub trait SnapshotAccessor: Accessor {
+pub trait SnapshotAccessor: InitializedAccessor {
   type ScheduledEvents<'a>: Iterator<Item = DynHandle<Self::EntityHandleKind>> + 'a;
   fn scheduled_events(&self) -> Self::ScheduledEvents<'_>;
 }
