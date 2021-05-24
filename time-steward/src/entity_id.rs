@@ -1,4 +1,4 @@
-use rand::{self, ChaChaRng, Rng, RngCore};
+use rand::{self, Rng};
 use serde::{ser, Deserialize, Serialize};
 use siphasher::sip::SipHasher;
 use std::fmt;
@@ -71,21 +71,6 @@ impl EntityId {
     bincode::serialize_into(&mut writer, data, bincode::Infinite).unwrap();
     writer.generate()
   }
-  /// Rather than implement Rand for this type, we make sure that it can
-  /// ONLY be generated from specific RNGs known to be cryptographically secure.
-  pub fn from_rng(rng: &mut ChaChaRng) -> EntityId {
-    EntityId {
-      data: [rng.gen::<u64>(), rng.gen::<u64>()],
-    }
-  }
-  pub fn to_rng(self) -> EntityIdRng {
-    let mut result = EntityIdRng {
-      state: self,
-      index: 0,
-    };
-    result.reroll();
-    result
-  }
   /// Useful for creating out-of-band values which don't identify actual
   /// events, for implementations that need them. A common usage is to have
   /// "before all other events" sentinels.
@@ -139,36 +124,36 @@ impl Hash for EntityId {
   }
 }
 
-pub struct EntityIdRng {
-  state: EntityId,
-  index: u32,
-}
-impl EntityIdRng {
-  fn reroll(&mut self) {
-    self.state = EntityId::hash_of(&self.state);
-  }
-}
-impl RngCore for EntityIdRng {
-  fn next_u32(&mut self) -> u32 {
-    let result = (self.state.data[(self.index >> 1) as usize] >> (32 * (self.index & 1))) as u32;
-    self.index += 1;
-    if self.index >= 4 {
-      self.reroll();
-      self.index = 0;
-    }
-    result
-  }
-  fn next_u64(&mut self) -> u64 {
-    rand_core::impls::next_u64_via_u32(self)
-  }
-  fn fill_bytes(&mut self, destination: &mut [u8]) {
-    rand_core::impls::fill_bytes_via_next(self, destination)
-  }
-  fn try_fill_bytes(&mut self, destination: &mut [u8]) -> Result<(), rand::Error> {
-    self.fill_bytes(destination);
-    Ok(())
-  }
-}
+// pub struct EntityIdRng {
+//   state: EntityId,
+//   index: u32,
+// }
+// impl EntityIdRng {
+//   fn reroll(&mut self) {
+//     self.state = EntityId::hash_of(&self.state);
+//   }
+// }
+// impl RngCore for EntityIdRng {
+//   fn next_u32(&mut self) -> u32 {
+//     let result = (self.state.data[(self.index >> 1) as usize] >> (32 * (self.index & 1))) as u32;
+//     self.index += 1;
+//     if self.index >= 4 {
+//       self.reroll();
+//       self.index = 0;
+//     }
+//     result
+//   }
+//   fn next_u64(&mut self) -> u64 {
+//     rand_core::impls::next_u64_via_u32(self)
+//   }
+//   fn fill_bytes(&mut self, destination: &mut [u8]) {
+//     rand_core::impls::fill_bytes_via_next(self, destination)
+//   }
+//   fn try_fill_bytes(&mut self, destination: &mut [u8]) -> Result<(), rand::Error> {
+//     self.fill_bytes(destination);
+//     Ok(())
+//   }
+// }
 
 #[cfg(test)]
 mod tests {

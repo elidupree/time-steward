@@ -18,13 +18,10 @@ use type_utils::GetContained;
 ///  information; the current approach is a hack where Deserialize
 /// uses a thread-local context for that; it may later be replaced with a proper custom derive of my own.
 pub trait SimulationStateData:
-  Any + Clone + Eq + Hash + ser::Serialize + DeserializeOwned + Debug
+  Any + Clone + Eq + ser::Serialize + DeserializeOwned + Debug
 {
 }
-impl<T: Any + Clone + Eq + Hash + ser::Serialize + DeserializeOwned + Debug> SimulationStateData
-  for T
-{
-}
+impl<T: Any + Clone + Eq + ser::Serialize + DeserializeOwned + Debug> SimulationStateData for T {}
 
 /// Data handles where clones point to the same data, and Eq and Hash by object identity, and Serialize by id.
 pub trait EntityHandle: Clone + Ord + Hash + ser::Serialize + Debug {
@@ -49,7 +46,7 @@ pub trait OwnedTypedEntityHandle<E: EntityKind, H: EntityHandleKind>:
   fn raw_read<'a, A: Accessor<EntityHandleKind = H>>(
     &'a self,
     accessor: &'a A,
-  ) -> A::ReadGuard<'a, E>
+  ) -> A::ReadGuard<'a, MutableData<E, A::EntityHandleKind>>
   where
     H: EntityHandleKindDeref,
   {
@@ -69,7 +66,10 @@ pub trait BorrowedTypedEntityHandle<'a, E: EntityKind, H: EntityHandleKindDeref>
 {
   fn erase(self) -> DynHandleRef<'a, H>;
   fn to_owned(self) -> TypedHandle<E, H>;
-  fn query<A: Accessor<EntityHandleKind = H>>(self, accessor: &mut A) -> A::ReadGuard<'a, E>
+  fn query<A: Accessor<EntityHandleKind = H>>(
+    self,
+    accessor: &mut A,
+  ) -> A::ReadGuard<'a, MutableData<E, A::EntityHandleKind>>
   where
     H: EntityHandleKindDeref,
   {
@@ -158,7 +158,7 @@ pub trait Accessor {
   type EntityHandleKind: EntityHandleKindDeref;
 
   // maybe a &, maybe a cell::Ref, maybe something else...
-  type ReadGuard<'a, E: EntityKind>: Deref<Target = MutableData<E, Self::EntityHandleKind>>;
+  type ReadGuard<'a, T: 'a>: Deref<Target = T>;
 
   // requires &'a self as well as 'a entity, so that we can statically guarantee
   // no overlap with writes (hypothetically allowing TimeSteward implementors to use UnsafeCell
@@ -170,7 +170,7 @@ pub trait Accessor {
     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
     // https://github.com/rust-lang/rust/issues/85533
     entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
-  ) -> Self::ReadGuard<'a, E>;
+  ) -> Self::ReadGuard<'a, MutableData<E, Self::EntityHandleKind>>;
 
   // record that we accessed this entity; raw_read is undo-safe if record_read is called
   // anywhere within the same event, either before or after it
@@ -190,29 +190,6 @@ pub trait Accessor {
     entity: TypedHandleRef<E, Self::EntityHandleKind>,
   ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
 }
-
-pub trait AccessorExt: Accessor {
-  // read undo-safely by explicitly recording an access
-  fn read<'a, E: EntityKind>(
-    &'a self,
-    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
-    // https://github.com/rust-lang/rust/issues/85533
-    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'a, E>,
-  ) -> Self::ReadGuard<'a, E> {
-    self.record_read(entity);
-    self.raw_read(entity)
-  }
-
-  // read undo-safely by explicitly recording an access
-  fn read_schedule<E: Wake<Self::SimulationSpec>>(
-    &self,
-    entity: TypedHandleRef<E, Self::EntityHandleKind>,
-  ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time> {
-    self.record_read(entity);
-    self.raw_read_schedule(entity)
-  }
-}
-impl<A: Accessor> AccessorExt for A {}
 
 pub trait InitializedAccessor: Accessor {
   fn globals(&self) -> &Globals<Self::SimulationSpec, Self::EntityHandleKind>;
@@ -292,39 +269,6 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
     }
   }
 }
-pub trait EventAccessorExt: EventAccessor {
-  // undo-safe write by recording the full old state before returning mutable reference
-  fn write<'a, 'b: 'a, E: EntityKind>(
-    &'a mut self,
-    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
-    // https://github.com/rust-lang/rust/issues/85533
-    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
-  ) -> Self::WriteGuard<'a, MutableData<E, Self::EntityHandleKind>> {
-    let old_value = self.raw_read(entity).clone();
-    self.record_undo(entity, move |m| *m = old_value.clone());
-    self.raw_write(entity)
-  }
-  fn write_contained<
-    'a,
-    'b: 'a,
-    E: EntityKind,
-    U: SimulationStateData,
-    Choice: ChoiceOfObjectContainedIn<MutableData<E, Self::EntityHandleKind>, Target = U>,
-  >(
-    &'a mut self,
-    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
-    // https://github.com/rust-lang/rust/issues/85533
-    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
-    choice: Choice,
-  ) -> Self::WriteGuard<'a, U> {
-    let old_value = (*self.raw_read(entity)).get_contained(choice).clone();
-    self.record_undo(entity, move |m| {
-      *m.get_contained_mut(choice) = old_value.clone()
-    });
-    Self::map_write_guard(self.raw_write(entity), |t| t.get_contained_mut(choice))
-  }
-}
-impl<A: EventAccessor> EventAccessorExt for A {}
 
 pub trait SnapshotAccessor: InitializedAccessor {
   type ScheduledEvents<'a>: Iterator<Item = DynHandle<Self::EntityHandleKind>> + 'a;

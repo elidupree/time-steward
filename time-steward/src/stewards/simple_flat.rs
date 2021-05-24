@@ -371,13 +371,13 @@ impl<'c, S: SimulationSpec> Accessor for SfEventAccessor<'c, S> {
   type SimulationSpec = S;
   type EntityHandleKind = SfEntityHandleKind<S>;
 
-  type ReadGuard<'a, E: EntityKind> = Ref<'a, MutableData<E, SfEntityHandleKind<S>>>;
+  type ReadGuard<'a, T: 'a> = Ref<'a, T>;
   fn raw_read<'a, 'b: 'a, E: EntityKind>(
     &'a self,
     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
     // https://github.com/rust-lang/rust/issues/85533
     entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
-  ) -> Self::ReadGuard<'a, E> {
+  ) -> Self::ReadGuard<'a, MutableData<E, SfEntityHandleKind<S>>> {
     entity.0.get().mutable.current_value()
   }
 
@@ -411,13 +411,13 @@ impl<S: SimulationSpec> Accessor for Snapshot<S> {
   type SimulationSpec = S;
   type EntityHandleKind = SfEntityHandleKind<S>;
 
-  type ReadGuard<'a, E: EntityKind> = SnapshotQueryResult<MutableData<E, SfEntityHandleKind<S>>>;
+  type ReadGuard<'a, T: 'a> = SnapshotQueryResult<T>;
   fn raw_read<'a, 'b: 'a, E: EntityKind>(
     &'a self,
     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
     // https://github.com/rust-lang/rust/issues/85533
     entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
-  ) -> Self::ReadGuard<'a, E> {
+  ) -> Self::ReadGuard<'a, MutableData<E, Self::EntityHandleKind>> {
     SnapshotQueryResult(entity.0.mutable.value_before(&self.time))
   }
 

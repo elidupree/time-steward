@@ -472,7 +472,7 @@ pub fn quadratic_move_origin_rounding_change_towards_0(
   let mut between_time = 0;
   let mut confirm = [Range::exactly(0); 3];
   if DO_TESTS {
-    between_time = rand::thread_rng().gen_range(0, origin + 1);
+    between_time = rand::thread_rng().gen_range(0..origin + 1);
     confirm =
       quadratic_future_proxy_minimizing_error(terms, between_time, input_scale_shift, max_error);
   }
@@ -682,9 +682,9 @@ pub fn quadratic_trajectories_possible_distance_crossing_intervals(
     let sample_points: Vec<i64> = vec![
       start,
       stop,
-      rand::thread_rng().gen_range(start, stop),
-      rand::thread_rng().gen_range(start, stop),
-      rand::thread_rng().gen_range(start, stop),
+      rand::thread_rng().gen_range(start..stop),
+      rand::thread_rng().gen_range(start..stop),
+      rand::thread_rng().gen_range(start..stop),
     ];
     let sample_values: Vec<Range> = sample_points.iter().map(|input| test(*input)).collect();
     let signum = sample_values[0].internal_min().signum();

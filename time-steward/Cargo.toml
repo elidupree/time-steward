@@ -9,8 +9,8 @@ license = "MIT"
 edition = "2018"
 
 [dependencies]
-rand = "0.5"
-rand_core = "0.2"
+rand = "0.8.3"
+#rand_core = "0.6.2"
 serde = {version = "1.0", features = ["derive"]}
 quickcheck = "0.6.2"
 proptest = "0.7.1"
@@ -42,6 +42,7 @@ glium = "0.15"
 docopt = "0.8"
 fnv = "1.0"
 boolinator = "2.4"
+rand_pcg = {version = "0.3.0", features = ["serde1"]}
 
 [replace]
 #"backtrace:0.2.3" = { git = "https://github.com/elidupree/backtrace-rs", branch = "emscripten-fix" }

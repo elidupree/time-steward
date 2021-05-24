@@ -76,6 +76,8 @@ pub use crate::entity_id::*;
 
 #[macro_use]
 mod api;
+mod access;
+pub use crate::access::*;
 pub use crate::api::*;
 pub mod api_impls;
 

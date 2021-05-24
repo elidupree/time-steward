@@ -1,5 +1,7 @@
 #![feature(specialization, generic_associated_types)]
 
+use rand::{Rng, SeedableRng};
+use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
 use std::cell::Cell;
 
@@ -7,9 +9,10 @@ use time_steward::stewards::simple_flat;
 use time_steward::type_utils::list_of_types::ListedType;
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::{
-  ConstructGlobals, ConstructibleTimeSteward, EntityHandleKind, EntityId, EntityKind,
-  EventAccessor, Globals, GlobalsConstructionAccessor, OwnedTypedEntityHandle, SimulationSpec,
-  SimulationStateDataKind, SnapshotAccessor, TimeSteward, TypedHandle, TypedHandleRef, Wake,
+  ConstructGlobals, ConstructibleTimeSteward, EntityHandle, EntityHandleKind, EntityId, EntityKind,
+  EventAccessor, Globals, GlobalsConstructionAccessor, OwnedTypedEntityHandle, ReadAccess,
+  SimulationSpec, SimulationStateDataKind, SnapshotAccessor, TimeSteward, TypedHandle,
+  TypedHandleRef, Wake, WriteAccess,
 };
 
 type Time = i64;
@@ -33,10 +36,14 @@ impl SimulationStateDataKind for PhilosophersGlobals {
 }
 
 struct Philosopher;
+struct PhilosopherMutable;
+impl SimulationStateDataKind for PhilosopherMutable {
+  type Data<H: EntityHandleKind> = Pcg64Mcg;
+}
 
 impl EntityKind for Philosopher {
   type ImmutableData = ();
-  type MutableData = ();
+  type MutableData = PhilosopherMutable;
 }
 
 impl PersistentlyIdentifiedType for Philosopher {
@@ -65,7 +72,7 @@ type TimeStewardTypes = (
 );
 
 fn display_snapshot<Accessor: SnapshotAccessor<SimulationSpec = PhilosophersSpec>>(
-  accessor: &mut Accessor,
+  accessor: &Accessor,
 ) {
   println!("snapshot for {}", accessor.now());
   for handle in accessor.globals() {
@@ -74,7 +81,7 @@ fn display_snapshot<Accessor: SnapshotAccessor<SimulationSpec = PhilosophersSpec
 }
 
 fn dump_snapshot<Accessor: SnapshotAccessor<SimulationSpec = PhilosophersSpec>>(
-  accessor: &mut Accessor,
+  accessor: &Accessor,
 ) -> Vec<Option<Time>> {
   let mut result = Vec::new();
   for handle in accessor.globals() {
@@ -89,16 +96,16 @@ impl Wake<PhilosophersSpec> for Philosopher {
     this: TypedHandleRef<Self, Accessor::EntityHandleKind>,
   ) {
     let now = *accessor.now();
-    let mut rng = accessor.id().to_rng();
-    let friend_id = rng.gen_range(0, HOW_MANY_PHILOSOPHERS);
-    let awaken_time_1 = now + rng.gen_range(-1, 4);
-    let awaken_time_2 = now + rng.gen_range(-1, 7);
+    let mut rng = this.write(accessor);
+    let friend_id = rng.gen_range(0..HOW_MANY_PHILOSOPHERS);
+    let awaken_time_1 = now + rng.gen_range(-1..4);
+    let awaken_time_2 = now + rng.gen_range(-1..7);
     let philosophers = accessor.globals();
     //println!("SHAKE!!! @{:?}. {}={}; {}={}", accessor.extended_now(), self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
     // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
     // IN THE SECOND TIME APPARENTLY
     let friend = philosophers[friend_id].borrow();
-    if friend != this {
+    if friend.id() != this.id() {
       change_next_handshake_time(accessor, friend, awaken_time_1);
     }
     change_next_handshake_time(accessor, this, awaken_time_2);
@@ -139,13 +146,13 @@ impl PersistentlyIdentifiedType for Tweak {
 impl Wake<PhilosophersSpec> for Tweak {
   fn wake<Accessor: EventAccessor<SimulationSpec = PhilosophersSpec>>(
     accessor: &mut Accessor,
-    _this: TypedHandleRef<Self, Accessor::EntityHandleKind>,
+    this: TypedHandleRef<Self, Accessor::EntityHandleKind>,
   ) {
     let now = *accessor.now();
-    let mut rng = accessor.id().to_rng();
-    let friend_id = rng.gen_range(0, HOW_MANY_PHILOSOPHERS);
-    let awaken_time = now + rng.gen_range(-1, 7);
     let philosophers = accessor.globals();
+    let mut rng = philosophers[0].borrow().write(accessor);
+    let friend_id = rng.gen_range(0..HOW_MANY_PHILOSOPHERS);
+    let awaken_time = now + rng.gen_range(-1..7);
     println!(
       " Tweak !!!!! @{:?}. {}={}",
       accessor.now(),
@@ -155,8 +162,6 @@ impl Wake<PhilosophersSpec> for Tweak {
     change_next_handshake_time(accessor, philosophers[friend_id].borrow(), awaken_time);
   }
 }
-
-use rand::{ChaChaRng, Rng, SeedableRng};
 
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 struct TweakUnsafe;
@@ -177,11 +182,11 @@ impl Wake<PhilosophersSpec> for TweakUnsafe {
       value.set(value.get() + 1);
       value.get()
     });
-    let mut rng = ChaChaRng::from_seed([inconsistent as u8; 32]);
+    let mut rng = Pcg64Mcg::from_seed([inconsistent as u8; 16]);
 
     let now = *accessor.now();
-    let friend_id = rng.gen_range(0, HOW_MANY_PHILOSOPHERS);
-    let awaken_time = now + rng.gen_range(-1, 7);
+    let friend_id = rng.gen_range(0..HOW_MANY_PHILOSOPHERS);
+    let awaken_time = now + rng.gen_range(-1..7);
     let philosophers = accessor.globals();
     change_next_handshake_time(accessor, philosophers[friend_id].borrow(), awaken_time);
   }
@@ -193,7 +198,7 @@ impl ConstructGlobals<PhilosophersSpec> for PhilosophersSpec {
     accessor: &mut Accessor,
   ) -> Globals<PhilosophersSpec, Accessor::EntityHandleKind> {
     (0..HOW_MANY_PHILOSOPHERS)
-      .map(|_| accessor.create_entity::<Philosopher>((), ()))
+      .map(|_| accessor.create_entity::<Philosopher>((), Pcg64Mcg::new(0xbad)))
       .collect()
   }
 }
@@ -219,7 +224,7 @@ fn handshakes_simple_generic<
   for increment in 1..21 {
     let snapshot: <Steward as TimeSteward>::SnapshotAccessor =
       steward.snapshot_before(increment * 100i64).unwrap();
-    display_snapshot(&mut snapshot);
+    display_snapshot(&snapshot);
   }
 }
 
@@ -249,12 +254,12 @@ fn handshakes_snapshot_consistency_generic<
     dumps_2.push(dump_snapshot(&mut steward_2.snapshot_before(time).unwrap()));
     snapshots_3.push(steward_3.snapshot_before(time).unwrap());
     let snapshot = steward_4.snapshot_before(time).unwrap();
-    dump_snapshot(&mut snapshot);
+    dump_snapshot(&snapshot);
     snapshots_4.push(snapshot);
   }
 
-  let dumps_3: Vec<_> = snapshots_3.iter_mut().map(dump_snapshot).collect();
-  let dumps_4: Vec<_> = snapshots_4.iter_mut().map(dump_snapshot).collect();
+  let dumps_3: Vec<_> = snapshots_3.iter().map(dump_snapshot).collect();
+  let dumps_4: Vec<_> = snapshots_4.iter().map(dump_snapshot).collect();
 
   assert_eq!(dumps_1, dumps_2);
   assert_eq!(dumps_1, dumps_3);
@@ -274,8 +279,8 @@ fn handshakes_retroactive_generic<
   let first_dump;
   {
     let snapshot = steward.snapshot_before(2000i64).unwrap();
-    first_dump = dump_snapshot(&mut snapshot);
-    display_snapshot(&mut snapshot);
+    first_dump = dump_snapshot(&snapshot);
+    display_snapshot(&snapshot);
   }
   for increment in 1..21 {
     steward
@@ -283,7 +288,7 @@ fn handshakes_retroactive_generic<
       .unwrap();
     let snapshot: <Steward as TimeSteward>::SnapshotAccessor =
       steward.snapshot_before(2000i64).unwrap();
-    display_snapshot(&mut snapshot);
+    display_snapshot(&snapshot);
   }
   for increment in 1..21 {
     steward
@@ -291,12 +296,12 @@ fn handshakes_retroactive_generic<
       .unwrap();
     let snapshot: <Steward as TimeSteward>::SnapshotAccessor =
       steward.snapshot_before(2000i64).unwrap();
-    display_snapshot(&mut snapshot);
+    display_snapshot(&snapshot);
   }
   let last_dump;
   {
     let snapshot = steward.snapshot_before(2000i64).unwrap();
-    last_dump = dump_snapshot(&mut snapshot);
+    last_dump = dump_snapshot(&snapshot);
   }
   assert_eq!(first_dump, last_dump);
 }
@@ -314,8 +319,8 @@ fn handshakes_reloading_generic<
   let first_dump;
   {
     let snapshot = steward.snapshot_before(2000i64).unwrap();
-    first_dump = dump_snapshot(&mut snapshot);
-    display_snapshot(&mut snapshot);
+    first_dump = dump_snapshot(&snapshot);
+    display_snapshot(&snapshot);
   }
 
   for increment in 1..21 {
@@ -325,14 +330,14 @@ fn handshakes_reloading_generic<
     let earlier_snapshot: <Steward as TimeSteward>::SnapshotAccessor =
       steward.snapshot_before(increment * 100i64).unwrap();
     let mut serialized = Vec::new();
-    earlier_snapshot.serialize_into(&mut serialized).unwrap();
+    //earlier_snapshot.serialize_into(&mut serialized).unwrap();
     use std::io::Cursor;
     let mut reader = Cursor::new(serialized);
     steward = Steward::from_serialized((), &mut reader).unwrap();
     let ending_snapshot: <Steward as TimeSteward>::SnapshotAccessor =
       steward.snapshot_before(2000i64).unwrap();
-    let dump = dump_snapshot(&mut ending_snapshot);
-    display_snapshot(&mut earlier_snapshot);
+    let dump = dump_snapshot(&ending_snapshot);
+    display_snapshot(&earlier_snapshot);
     assert_eq!(first_dump, dump);
   }
 }
