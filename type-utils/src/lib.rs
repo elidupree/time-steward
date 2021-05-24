@@ -24,11 +24,13 @@ trait TryIdentity<T> {
   fn try_identity(self) -> Option<T>;
 }
 impl<T> TryIdentity<T> for T {
+  #[inline(always)]
   fn try_identity(self) -> Option<T> {
     Some(self)
   }
 }
 impl<T, U> TryIdentity<T> for U {
+  #[inline(always)]
   default fn try_identity(self) -> Option<T> {
     None
   }
@@ -38,9 +40,11 @@ impl<T, U> TryIdentity<T> for U {
 ///
 ///
 #[deprecated]
+#[inline(always)]
 pub fn static_downcast<T, U>(input: T) -> Option<U> {
   TryIdentity::<U>::try_identity(input)
 }
+#[inline(always)]
 pub fn try_identity<T, U>(input: T) -> Option<U> {
   TryIdentity::<U>::try_identity(input)
 }
