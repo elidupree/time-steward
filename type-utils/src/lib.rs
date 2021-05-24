@@ -52,10 +52,26 @@ pub fn try_identity<T, U>(input: T) -> Option<U> {
   TryIdentity::<U>::try_identity(input)
 }
 
-pub trait ChoiceOfObjectContainedIn<T>: Copy {
+pub trait ChoiceOfObjectContainedIn<T>: Copy + 'static {
   type Target;
   fn get(self, object: &T) -> &Self::Target;
   fn get_mut(self, object: &mut T) -> &mut Self::Target;
+}
+
+pub trait GetContained<Choice> {
+  type Target;
+  fn get_contained(&self, choice: Choice) -> &Self::Target;
+  fn get_contained_mut(&mut self, choice: Choice) -> &mut Self::Target;
+}
+
+impl<T, C: ChoiceOfObjectContainedIn<T>> GetContained<C> for T {
+  type Target = C::Target;
+  fn get_contained(&self, choice: C) -> &Self::Target {
+    choice.get(self)
+  }
+  fn get_contained_mut(&mut self, choice: C) -> &mut Self::Target {
+    choice.get_mut(self)
+  }
 }
 
 // macro for implementing n-ary tuple functions and operations, adapted from libcore

@@ -459,14 +459,20 @@ impl<'b, S: SimulationSpec> CreateEntityAccessor for SfEventAccessor<'b, S> {
 }
 
 impl<'c, S: SimulationSpec> EventAccessor for SfEventAccessor<'c, S> {
-  type WriteGuard<'a, E: EntityKind> = RefMut<'a, MutableData<E, Self::EntityHandleKind>>;
+  type WriteGuard<'a, T: 'a> = RefMut<'a, T>;
+  fn map_write_guard<'a, T, U>(
+    guard: Self::WriteGuard<'a, T>,
+    f: impl FnOnce(&mut T) -> &mut U,
+  ) -> Self::WriteGuard<'a, U> {
+    RefMut::map(guard, f)
+  }
 
   fn raw_write<'a, 'b: 'a, E: EntityKind>(
     &'a mut self,
     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
     // https://github.com/rust-lang/rust/issues/85533
     entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
-  ) -> Self::WriteGuard<'a, E> {
+  ) -> Self::WriteGuard<'a, MutableData<E, Self::EntityHandleKind>> {
     entity.0.get().mutable.raw_write()
   }
 

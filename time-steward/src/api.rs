@@ -8,6 +8,7 @@ use std::ops::{Deref, DerefMut};
 use crate::type_utils::list_of_types::ListOfTypes;
 use crate::type_utils::{ChoiceOfObjectContainedIn, PersistentlyIdentifiedType};
 use crate::EntityId;
+use type_utils::GetContained;
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
@@ -171,7 +172,8 @@ pub trait Accessor {
     entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
   ) -> Self::ReadGuard<'a, E>;
 
-  // record that we accessed this entity; if record_read has been called for an entity, raw_read is undo-safe
+  // record that we accessed this entity; raw_read is undo-safe if record_read is called
+  // anywhere within the same event, either before or after it
   //
   // calling record_read is always undo-safe because false positives aren't a problem
   fn record_read<E: EntityKind>(
@@ -238,7 +240,7 @@ pub struct ReplaceWith<T>(pub T);
 
 pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
   // maybe a &mut, maybe a cell::RefMut, maybe something else...
-  type WriteGuard<'a, T>: DerefMut<Target = T>;
+  type WriteGuard<'a, T: 'a>: DerefMut<Target = T>;
   fn map_write_guard<'a, T, U>(
     guard: Self::WriteGuard<'a, T>,
     f: impl FnOnce(&mut T) -> &mut U,
@@ -306,16 +308,20 @@ pub trait EventAccessorExt: EventAccessor {
     'a,
     'b: 'a,
     E: EntityKind,
-    C: ChoiceOfObjectContainedIn<MutableData<E, Self::EntityHandleKind>>,
+    U: SimulationStateData,
+    Choice: ChoiceOfObjectContainedIn<MutableData<E, Self::EntityHandleKind>, Target = U>,
   >(
     &'a mut self,
     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
     // https://github.com/rust-lang/rust/issues/85533
     entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
-    choice: C,
-  ) -> Self::WriteGuard<'a, C::Target> {
-    let old_value = self.raw_read(entity).clone();
-    Self::map_write_guard(self.write(entity), |t| choice.get_mut(t))
+    choice: Choice,
+  ) -> Self::WriteGuard<'a, U> {
+    let old_value = (*self.raw_read(entity)).get_contained(choice).clone();
+    self.record_undo(entity, move |m| {
+      *m.get_contained_mut(choice) = old_value.clone()
+    });
+    Self::map_write_guard(self.raw_write(entity), |t| t.get_contained_mut(choice))
   }
 }
 impl<A: EventAccessor> EventAccessorExt for A {}
