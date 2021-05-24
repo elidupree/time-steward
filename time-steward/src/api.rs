@@ -6,7 +6,7 @@ use std::io::Read;
 use std::ops::{Deref, DerefMut};
 
 use crate::type_utils::list_of_types::ListOfTypes;
-use crate::type_utils::PersistentlyIdentifiedType;
+use crate::type_utils::{ChoiceOfObjectContainedIn, PersistentlyIdentifiedType};
 use crate::EntityId;
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
@@ -238,7 +238,11 @@ pub struct ReplaceWith<T>(pub T);
 
 pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
   // maybe a &mut, maybe a cell::RefMut, maybe something else...
-  type WriteGuard<'a, E: EntityKind>: DerefMut<Target = MutableData<E, Self::EntityHandleKind>>;
+  type WriteGuard<'a, T>: DerefMut<Target = T>;
+  fn map_write_guard<'a, T, U>(
+    guard: Self::WriteGuard<'a, T>,
+    f: impl FnOnce(&mut T) -> &mut U,
+  ) -> Self::WriteGuard<'a, U>;
 
   // this function isn't undo-safe, it's to build undo-safe wrappers around; you need to record_undo
   fn raw_write<'a, 'b: 'a, E: EntityKind>(
@@ -246,7 +250,7 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
     // https://github.com/rust-lang/rust/issues/85533
     entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
-  ) -> Self::WriteGuard<'a, E>;
+  ) -> Self::WriteGuard<'a, MutableData<E, Self::EntityHandleKind>>;
 
   // record a way to undo something we did in this event; undo operations may later be run in reverse order
   //
@@ -293,10 +297,25 @@ pub trait EventAccessorExt: EventAccessor {
     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
     // https://github.com/rust-lang/rust/issues/85533
     entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
-  ) -> Self::WriteGuard<'a, E> {
+  ) -> Self::WriteGuard<'a, MutableData<E, Self::EntityHandleKind>> {
     let old_value = self.raw_read(entity).clone();
     self.record_undo(entity, move |m| *m = old_value.clone());
     self.raw_write(entity)
+  }
+  fn write_contained<
+    'a,
+    'b: 'a,
+    E: EntityKind,
+    C: ChoiceOfObjectContainedIn<MutableData<E, Self::EntityHandleKind>>,
+  >(
+    &'a mut self,
+    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
+    // https://github.com/rust-lang/rust/issues/85533
+    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
+    choice: C,
+  ) -> Self::WriteGuard<'a, C::Target> {
+    let old_value = self.raw_read(entity).clone();
+    Self::map_write_guard(self.write(entity), |t| choice.get_mut(t))
   }
 }
 impl<A: EventAccessor> EventAccessorExt for A {}

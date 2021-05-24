@@ -2,6 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod list_of_types;
+pub mod visit_serialized;
+
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug)]
 pub struct PersistentTypeId(pub u64);
 pub trait PersistentlyIdentifiedType {
@@ -49,16 +52,76 @@ pub fn try_identity<T, U>(input: T) -> Option<U> {
   TryIdentity::<U>::try_identity(input)
 }
 
+pub trait ChoiceOfObjectContainedIn<T>: Copy {
+  type Target;
+  fn get(self, object: &T) -> &Self::Target;
+  fn get_mut(self, object: &mut T) -> &mut Self::Target;
+}
+
+// macro for implementing n-ary tuple functions and operations, adapted from libcore
+macro_rules! tuple_impls {
+    ($(
+        $Tuple:ident {
+            $First: ident
+            ($($T:ident $Choice:ident $U:ident,)*)
+            $Last: ident
+        }
+    )+) => {
+        $(
+            #[allow(non_snake_case)]
+            impl<$($T: 'static,)* $Last: 'static, $($Choice: ChoiceOfObjectContainedIn<$T, Target=$U>,)* > ChoiceOfObjectContainedIn<$First> for ($($Choice,)*) {
+              type Target= $Last;
+              fn get(self, object: &T) -> &Self::Target {
+                let $First = object;
+                let ($($Choice,)*) = self;
+                $(let $U = $Choice.get($T);)*
+                $Last
+              }
+              fn get_mut(self, object: &mut T) -> &mut Self::Target {
+                let $First = object;
+                let ($($Choice,)*) = self;
+                $(let $U = $Choice.get_mut($T);)*
+                $Last
+              }
+            }
+        )+
+    }
+}
+
+tuple_impls! {
+    Tuple1 {
+        T (T TU U,) U
+    }
+    Tuple2 {
+        T (T TU U, U UV V,) V
+    }
+    Tuple3 {
+        T (T TU U, U UV V, V VW W,) W
+    }
+    Tuple4 {
+        T (T TU U, U UV V, V VW W, W WX X,) X
+    }
+    Tuple5 {
+        T (T TU U, U UV V, V VW W, W WX X, X XY Z,) Z
+    }
+    Tuple6 {
+        T (T TU U, U UV V, V VW W, W WX X, X XY Z, Z ZA A,) A
+    }
+    Tuple7 {
+        T (T TU U, U UV V, V VW W, W WX X, X XY Z, Z ZA A, A AB B,) B
+    }
+    Tuple8 {
+        T (T TU U, U UV V, V VW W, W WX X, X XY Z, Z ZA A, A AB B, B BC C,) C
+    }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
 
   #[test]
-  fn test_static_downcast() {
+  fn test_try_identity() {
     assert_eq!(try_identity::<i32, i32>(5i32), Some(5i32));
     assert_eq!(try_identity::<i32, i16>(5i32), None);
   }
 }
-
-pub mod list_of_types;
-pub mod visit_serialized;
