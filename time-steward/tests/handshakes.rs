@@ -69,7 +69,7 @@ fn display_snapshot<Accessor: SnapshotAccessor<SimulationSpec = PhilosophersSpec
 ) {
   println!("snapshot for {}", accessor.now());
   for handle in accessor.globals() {
-    println!("{:?}", accessor.query_schedule(handle.borrow()));
+    println!("{:?}", accessor.raw_read_schedule(handle.borrow()));
   }
 }
 
@@ -78,7 +78,7 @@ fn dump_snapshot<Accessor: SnapshotAccessor<SimulationSpec = PhilosophersSpec>>(
 ) -> Vec<Option<Time>> {
   let mut result = Vec::new();
   for handle in accessor.globals() {
-    result.push(accessor.query_schedule(handle.borrow()));
+    result.push(accessor.raw_read_schedule(handle.borrow()));
   }
   result
 }

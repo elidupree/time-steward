@@ -3,7 +3,7 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::Read;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use crate::type_utils::list_of_types::ListOfTypes;
 use crate::type_utils::PersistentlyIdentifiedType;
@@ -45,20 +45,14 @@ pub trait OwnedTypedEntityHandle<E: EntityKind, H: EntityHandleKind>:
   fn borrow(&self) -> TypedHandleRef<E, H>
   where
     H: EntityHandleKindDeref;
-  fn query<'a, A: Accessor<EntityHandleKind = H>>(&'a self, accessor: &'a A) -> A::QueryGuard<'a, E>
+  fn raw_read<'a, A: Accessor<EntityHandleKind = H>>(
+    &'a self,
+    accessor: &'a A,
+  ) -> A::ReadGuard<'a, E>
   where
     H: EntityHandleKindDeref,
   {
-    accessor.query(self.borrow())
-  }
-  fn modify<A: EventAccessor<EntityHandleKind = H>, M: Modify<MutableData<E, H>>>(
-    &self,
-    accessor: &mut A,
-    modification: M,
-  ) where
-    H: EntityHandleKindDeref,
-  {
-    accessor.modify(self.borrow(), modification)
+    accessor.raw_read(self.borrow())
   }
 }
 pub trait OwnedDynEntityHandle<H: EntityHandleKind>: OwnedEntityHandle {
@@ -74,20 +68,11 @@ pub trait BorrowedTypedEntityHandle<'a, E: EntityKind, H: EntityHandleKindDeref>
 {
   fn erase(self) -> DynHandleRef<'a, H>;
   fn to_owned(self) -> TypedHandle<E, H>;
-  fn query<A: Accessor<EntityHandleKind = H>>(self, accessor: &mut A) -> A::QueryGuard<'a, E>
+  fn query<A: Accessor<EntityHandleKind = H>>(self, accessor: &mut A) -> A::ReadGuard<'a, E>
   where
     H: EntityHandleKindDeref,
   {
     todo!() //accessor.query(self)
-  }
-  fn modify<A: EventAccessor<EntityHandleKind = H>, M: Modify<MutableData<E, H>>>(
-    self,
-    accessor: &mut A,
-    modification: M,
-  ) where
-    H: EntityHandleKindDeref,
-  {
-    todo!() //accessor.modify(self, modification)
   }
 }
 pub trait BorrowedDynEntityHandle<'a, H: EntityHandleKindDeref>: BorrowedEntityHandle {
@@ -172,23 +157,60 @@ pub trait Accessor {
   type EntityHandleKind: EntityHandleKindDeref;
 
   // maybe a &, maybe a cell::Ref, maybe something else...
-  type QueryGuard<'a, E: EntityKind>: Deref<Target = MutableData<E, Self::EntityHandleKind>>;
+  type ReadGuard<'a, E: EntityKind>: Deref<Target = MutableData<E, Self::EntityHandleKind>>;
 
   // requires &'a self as well as 'a entity, so that we can statically guarantee
-  // no overlap with modify (hypothetically allowing TimeSteward implementors to use UnsafeCell
+  // no overlap with writes (hypothetically allowing TimeSteward implementors to use UnsafeCell
   // and return & instead of RefCell and return Ref)
-  fn query<'a, E: EntityKind>(
+  //
+  // this function isn't undo-safe, it's to build undo-safe wrappers around
+  fn raw_read<'a, 'b: 'a, E: EntityKind>(
     &'a self,
     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
     // https://github.com/rust-lang/rust/issues/85533
-    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'a, E>,
-  ) -> Self::QueryGuard<'a, E>;
+    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
+  ) -> Self::ReadGuard<'a, E>;
 
-  fn query_schedule<E: Wake<Self::SimulationSpec>>(
+  // record that we accessed this entity; if record_read has been called for an entity, raw_read is undo-safe
+  //
+  // calling record_read is always undo-safe because false positives aren't a problem
+  fn record_read<E: EntityKind>(
+    &self,
+    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
+    // https://github.com/rust-lang/rust/issues/85533
+    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'_, E>,
+  ) {
+  }
+
+  // this function isn't undo-safe, it's to build undo-safe wrappers around
+  fn raw_read_schedule<E: Wake<Self::SimulationSpec>>(
     &self,
     entity: TypedHandleRef<E, Self::EntityHandleKind>,
   ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
 }
+
+pub trait AccessorExt: Accessor {
+  // read undo-safely by explicitly recording an access
+  fn read<'a, E: EntityKind>(
+    &'a self,
+    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
+    // https://github.com/rust-lang/rust/issues/85533
+    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'a, E>,
+  ) -> Self::ReadGuard<'a, E> {
+    self.record_read(entity);
+    self.raw_read(entity)
+  }
+
+  // read undo-safely by explicitly recording an access
+  fn read_schedule<E: Wake<Self::SimulationSpec>>(
+    &self,
+    entity: TypedHandleRef<E, Self::EntityHandleKind>,
+  ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time> {
+    self.record_read(entity);
+    self.raw_read_schedule(entity)
+  }
+}
+impl<A: Accessor> AccessorExt for A {}
 
 pub trait InitializedAccessor: Accessor {
   fn globals(&self) -> &Globals<Self::SimulationSpec, Self::EntityHandleKind>;
@@ -215,10 +237,27 @@ pub trait Modify<T>: SimulationStateData {
 pub struct ReplaceWith<T>(pub T);
 
 pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
-  fn modify<E: EntityKind, M: Modify<MutableData<E, Self::EntityHandleKind>>>(
-    &mut self,
-    entity: TypedHandleRef<E, Self::EntityHandleKind>,
-    modification: M,
+  // maybe a &mut, maybe a cell::RefMut, maybe something else...
+  type WriteGuard<'a, E: EntityKind>: DerefMut<Target = MutableData<E, Self::EntityHandleKind>>;
+
+  // this function isn't undo-safe, it's to build undo-safe wrappers around; you need to record_undo
+  fn raw_write<'a, 'b: 'a, E: EntityKind>(
+    &'a mut self,
+    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
+    // https://github.com/rust-lang/rust/issues/85533
+    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
+  ) -> Self::WriteGuard<'a, E>;
+
+  // record a way to undo something we did in this event; undo operations may later be run in reverse order
+  //
+  // calling record_undo isn't undo-safe because things are broken if you undo wrong
+  // record_undo also serves the purpose of record_read?
+  fn record_undo<E: EntityKind>(
+    &self,
+    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
+    // https://github.com/rust-lang/rust/issues/85533
+    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'_, E>,
+    undo: impl Fn(&mut MutableData<E, Self::EntityHandleKind>) + 'static,
   );
 
   fn schedule<E: Wake<Self::SimulationSpec>>(
@@ -247,6 +286,20 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
     }
   }
 }
+pub trait EventAccessorExt: EventAccessor {
+  // undo-safe write by recording the full old state before returning mutable reference
+  fn write<'a, 'b: 'a, E: EntityKind>(
+    &'a mut self,
+    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
+    // https://github.com/rust-lang/rust/issues/85533
+    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
+  ) -> Self::WriteGuard<'a, E> {
+    let old_value = self.raw_read(entity).clone();
+    self.record_undo(entity, move |m| *m = old_value.clone());
+    self.raw_write(entity)
+  }
+}
+impl<A: EventAccessor> EventAccessorExt for A {}
 
 pub trait SnapshotAccessor: InitializedAccessor {
   type ScheduledEvents<'a>: Iterator<Item = DynHandle<Self::EntityHandleKind>> + 'a;

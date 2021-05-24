@@ -13,7 +13,7 @@ This has 2 purposes:
 use derivative::Derivative;
 use scopeguard::defer;
 use serde::{de, Deserializer};
-use std::cell::{Cell, Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::io::Read;
@@ -73,32 +73,23 @@ trait AnyEntityInner<S: SimulationSpec>: Debug {
 }
 
 #[derive(Derivative)]
+#[derivative(Debug(bound = ""))]
+struct UndoEntry<S: SimulationSpec, T> {
+  time: S::Time,
+  #[derivative(Debug = "ignore")]
+  undo: Box<dyn Fn(&mut T)>,
+}
+
+#[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 struct HistoryInner<S: SimulationSpec, T> {
   current_value: T,
-  changes: Vec<(S::Time, Box<dyn AnyUndo<T>>)>,
+  changes: Vec<UndoEntry<S, T>>,
 }
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
 struct History<S: SimulationSpec, T>(RefCell<HistoryInner<S, T>>);
-
-#[derive(Derivative)]
-#[derivative(Debug(bound = "T: Debug"))]
-struct Undo<T, M: Modify<T>> {
-  data: M::UndoData,
-  _marker: PhantomData<*const T>,
-}
-
-trait AnyUndo<T>: Debug {
-  fn undo(&self, entity: &mut T);
-}
-
-impl<T: Debug, M: Modify<T>> AnyUndo<T> for Undo<T, M> {
-  fn undo(&self, entity: &mut T) {
-    M::undo(entity, &self.data);
-  }
-}
 
 impl<S: SimulationSpec, T: SimulationStateData> History<S, T> {
   fn new(starting_value: T) -> History<S, T> {
@@ -110,13 +101,19 @@ impl<S: SimulationSpec, T: SimulationStateData> History<S, T> {
   fn current_value(&self) -> Ref<T> {
     Ref::map(self.0.borrow(), |history| &history.current_value)
   }
-  fn modify<M: Modify<T>>(&self, modification: M, time: S::Time) {
-    let mut history = self.0.borrow_mut();
-    let undo = Box::new(Undo::<T, M> {
-      data: modification.modify(&mut history.current_value),
-      _marker: PhantomData,
+  fn raw_write(&self) -> RefMut<T> {
+    RefMut::map(self.0.borrow_mut(), |history| &mut history.current_value)
+  }
+  fn record_undo(&self, time: S::Time, undo: impl Fn(&mut T) + 'static) {
+    self.0.borrow_mut().changes.push(UndoEntry {
+      time,
+      undo: Box::new(undo),
     });
-    history.changes.push((time, undo));
+  }
+  fn replace(&self, time: S::Time, new_value: T) {
+    let old_value = self.current_value().clone();
+    self.record_undo(time, move |m| *m = old_value.clone());
+    *self.raw_write() = new_value;
   }
   fn value_before(&self, time: &S::Time) -> T
   where
@@ -124,11 +121,15 @@ impl<S: SimulationSpec, T: SimulationStateData> History<S, T> {
   {
     let history = self.0.borrow();
     let mut value = history.current_value.clone();
-    for (change_time, undo) in history.changes.iter().rev() {
+    for UndoEntry {
+      time: change_time,
+      undo,
+    } in history.changes.iter().rev()
+    {
       if change_time < time {
         break;
       }
-      undo.undo(&mut value);
+      (undo)(&mut value);
     }
     value
   }
@@ -366,21 +367,21 @@ pub struct Steward<S: SimulationSpec> {
 // ############      Accessor impls       ############
 // ###################################################
 
-impl<'b, S: SimulationSpec> Accessor for SfEventAccessor<'b, S> {
+impl<'c, S: SimulationSpec> Accessor for SfEventAccessor<'c, S> {
   type SimulationSpec = S;
   type EntityHandleKind = SfEntityHandleKind<S>;
 
-  type QueryGuard<'a, E: EntityKind> = Ref<'a, MutableData<E, SfEntityHandleKind<S>>>;
-  fn query<'a, E: EntityKind>(
+  type ReadGuard<'a, E: EntityKind> = Ref<'a, MutableData<E, SfEntityHandleKind<S>>>;
+  fn raw_read<'a, 'b: 'a, E: EntityKind>(
     &'a self,
     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
     // https://github.com/rust-lang/rust/issues/85533
-    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'a, E>,
-  ) -> Self::QueryGuard<'a, E> {
+    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
+  ) -> Self::ReadGuard<'a, E> {
     entity.0.get().mutable.current_value()
   }
 
-  fn query_schedule<E: Wake<Self::SimulationSpec>>(
+  fn raw_read_schedule<E: Wake<Self::SimulationSpec>>(
     &self,
     entity: TypedHandleRef<E, Self::EntityHandleKind>,
   ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time> {
@@ -410,17 +411,17 @@ impl<S: SimulationSpec> Accessor for Snapshot<S> {
   type SimulationSpec = S;
   type EntityHandleKind = SfEntityHandleKind<S>;
 
-  type QueryGuard<'a, E: EntityKind> = SnapshotQueryResult<MutableData<E, SfEntityHandleKind<S>>>;
-  fn query<'a, E: EntityKind>(
+  type ReadGuard<'a, E: EntityKind> = SnapshotQueryResult<MutableData<E, SfEntityHandleKind<S>>>;
+  fn raw_read<'a, 'b: 'a, E: EntityKind>(
     &'a self,
     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
     // https://github.com/rust-lang/rust/issues/85533
-    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'a, E>,
-  ) -> Self::QueryGuard<'a, E> {
+    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
+  ) -> Self::ReadGuard<'a, E> {
     SnapshotQueryResult(entity.0.mutable.value_before(&self.time))
   }
 
-  fn query_schedule<E: Wake<Self::SimulationSpec>>(
+  fn raw_read_schedule<E: Wake<Self::SimulationSpec>>(
     &self,
     entity: TypedHandleRef<E, Self::EntityHandleKind>,
   ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time> {
@@ -457,13 +458,30 @@ impl<'b, S: SimulationSpec> CreateEntityAccessor for SfEventAccessor<'b, S> {
   }
 }
 
-impl<'b, S: SimulationSpec> EventAccessor for SfEventAccessor<'b, S> {
-  fn modify<E: EntityKind, M: Modify<MutableData<E, Self::EntityHandleKind>>>(
-    &mut self,
-    entity: TypedHandleRef<E, Self::EntityHandleKind>,
-    modification: M,
+impl<'c, S: SimulationSpec> EventAccessor for SfEventAccessor<'c, S> {
+  type WriteGuard<'a, E: EntityKind> = RefMut<'a, MutableData<E, Self::EntityHandleKind>>;
+
+  fn raw_write<'a, 'b: 'a, E: EntityKind>(
+    &'a mut self,
+    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
+    // https://github.com/rust-lang/rust/issues/85533
+    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
+  ) -> Self::WriteGuard<'a, E> {
+    entity.0.get().mutable.raw_write()
+  }
+
+  // record a way to undo something we did in this event; undo operations may later be run in reverse order
+  //
+  // calling record_undo isn't undo-safe because things are broken if you undo wrong
+  // record_undo also serves the purpose of record_read?
+  fn record_undo<E: EntityKind>(
+    &self,
+    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
+    // https://github.com/rust-lang/rust/issues/85533
+    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'_, E>,
+    undo: impl Fn(&mut MutableData<E, Self::EntityHandleKind>) + 'static,
   ) {
-    entity.0.mutable.modify(modification, self.now.clone());
+    entity.0.mutable.record_undo(self.now.clone(), undo);
   }
 
   fn set_schedule<E: Wake<Self::SimulationSpec>>(
@@ -477,7 +495,7 @@ impl<'b, S: SimulationSpec> EventAccessor for SfEventAccessor<'b, S> {
         .0
         .universal
         .schedule
-        .modify(ReplaceWith(time.clone()), self.now.clone());
+        .replace(self.now.clone(), time.clone());
       if let Some(old_time) = old {
         assert!(
           self.steward.schedule.remove(&ScheduledWake {
@@ -539,7 +557,7 @@ impl<S: SimulationSpec> Steward<S> {
         .0
         .universal()
         .schedule
-        .modify(ReplaceWith(None), accessor.now.clone());
+        .replace(accessor.now.clone(), None);
       assert!(
         accessor.steward.schedule.remove(&ScheduledWake {
           entity: top.clone(),
