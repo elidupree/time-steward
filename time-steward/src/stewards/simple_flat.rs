@@ -712,13 +712,23 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
       if ready_time >= time {
         break;
       }
-      self.step();
+      self.step(Some(time.clone()));
     }
     Some(Snapshot {
       time,
       globals: self.globals.clone(),
       scheduled_events: self.schedule.iter().map(|s| s.entity.clone()).collect(),
     })
+  }
+  fn step(&mut self, limit: Option<<Self::SimulationSpec as SimulationSpec>::Time>) {
+    if let Some(event) = self.schedule.first().cloned() {
+      if limit.as_ref().map_or(true, |limit| event.time < *limit) {
+        self.wake_entity(event.entity);
+      }
+    }
+  }
+  fn latest_time_ready_for_snapshot(&self) -> Option<S::Time> {
+    self.schedule.first().map(|s| s.time.clone())
   }
 
   fn freeze_before(&mut self, _time: <Self::SimulationSpec as SimulationSpec>::Time) {}
@@ -762,14 +772,4 @@ impl<S: SimulationSpec> ConstructibleTimeSteward for Steward<S> {
   }
 }
 
-impl<S: SimulationSpec> IncrementalTimeSteward for Steward<S> {
-  fn step(&mut self) {
-    if let Some(event) = self.schedule.first().cloned() {
-      self.wake_entity(event.entity);
-    }
-  }
-  fn latest_time_ready_for_snapshot(&self) -> Option<S::Time> {
-    self.schedule.first().map(|s| s.time.clone())
-  }
-}
 impl<S: SimulationSpec> CanonicalTimeSteward for Steward<S> {}

@@ -398,14 +398,81 @@ pub trait TimeSteward: Any + Sized + Debug {
     time: &<Self::SimulationSpec as SimulationSpec>::Time,
     id: EntityId,
   ) -> Result<(), FiatEventOperationError>;
+
+  /**
+  Obtain a snapshot of the current state of all entities at a specific time.
+
+  This is based on whatever fiat events currently exist. If you obtain a snapshot and then change fiat events while holding onto the snapshot, the snapshot will still report the
+
+  The "before" denotes that from the perspective of the snapshot, events whose time is *exactly* the snapshot time have not been run yet.
+
+  In flat TimeStewards, this may prevent you from adding or removing any fiat events before the time of the snapshot, i.e. this may increase `earliest_mutable_time` to the time specified. In full TimeStewards, it does not have such side effects.
+
+  # Runtime cost
+
+  A call to `snapshot_before` will immediately run the full simulation all the way to the given time. If the TimeSteward has already run the simulation up to the given time (or further), `snapshot_before` can return immediately.
+
+  Calling `snapshot_before` does *not* immediately copy all of the entity data. It *may* eventually incur the full cost of copying all the entity data lazily, as copies become needed due the entity data changing, but it doesn't introduce any high worst-case time costs.
+  */
   fn snapshot_before(
     &mut self,
     time: <Self::SimulationSpec as SimulationSpec>::Time,
   ) -> Option<Self::SnapshotAccessor>;
 
+  /**
+  Do a small amount of simulation work.
+
+  This trait doesn't impose any particular real-time requirements on the implementor. Simple TimeStewards may implement this by running one event at a time, but may still use amortized data structures like `Vec` and `HashMap`, leading to high worst-case time costs. Optimized TimeStewards should avoid high worst-case time costs in `step`. Regardless of optimization level, a step involves calling user-defined `wake` implementations, so if there is a slow `wake` method, the TimeSteward can't preempt that.
+
+  This function won't run any events at or after `limit`. Thus, even in a flat TimeSteward, a call to `step` cannot increase `earliest_mutable_time` further than `limit`.
+  */
+  fn step(&mut self, limit: Option<<Self::SimulationSpec as SimulationSpec>::Time>);
+
+  /**
+  Gets the latest time when a snapshot can be returned without doing more work.
+
+  `None` means that we can immediately take a snapshot at any time for the entire future. This only happens if the simulation has become completely static (no more events are scheduled).
+
+  Calls to `snapshot_before` necessarily increase `latest_time_ready_for_snapshot` to at least the snapshot time.
+  */
+  fn latest_time_ready_for_snapshot(
+    &self,
+  ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
+
+  /**
+  Inform the TimeSteward that you will not add or remove any more fiat events before the given time.
+
+  This may increase `earliest_mutable_time` to the time specified.
+  */
   fn freeze_before(&mut self, time: <Self::SimulationSpec as SimulationSpec>::Time);
+
+  /**
+  Gets the earliest time when fiat events may be added or removed.
+
+  `None` means that fiat events may be added or removed at any time.
+
+  In a full TimeSteward, this may only increase when explicitly increased by `freeze_before` (or `forget_before`, which implies `freeze_before`). In a flat TimeSteward, it may also increase up to the time specified in a call to `snapshot_before` or `step`.
+  */
   fn earliest_mutable_time(&self) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
+
+  /**
+  Allow the TimeSteward to save memory by discarding old data.
+
+  This call informs the TimeSteward that you will not request any new snapshots before times less than the given time. This may increase `earliest_remembered_time` to the time specified. If you never call this function, then any TimeSteward (even a flat TimeSteward) must retain the entire history indefinitely.
+
+  Snapshots obtained before calling `forget_before` are still required to work.
+
+  `forget_before` also implies `freeze_before`
+  */
   fn forget_before(&mut self, time: <Self::SimulationSpec as SimulationSpec>::Time);
+
+  /**
+  Gets the earliest time for which `snapshot_before` can be called.
+
+  `None` means that we currently remember the entire history.
+
+  This may only increase when explicitly increased by `forget_before`.
+  */
   fn earliest_remembered_time(&self) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
 }
 
@@ -423,13 +490,6 @@ pub trait ConstructibleTimeSteward<Metadata = ()>: TimeSteward {
   ) -> Self;
 
   fn from_serialized<R: Read>(metadata: Metadata, data: &mut R) -> ::bincode::Result<Self>;
-}
-
-pub trait IncrementalTimeSteward: TimeSteward {
-  fn step(&mut self);
-  fn latest_time_ready_for_snapshot(
-    &self,
-  ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
 }
 
 /// A marker trait indicating a TimeSteward that implements the canonical behavior.
