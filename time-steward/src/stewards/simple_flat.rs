@@ -622,21 +622,23 @@ impl<S: SimulationSpec> Steward<S> {
       steward: self,
     };
     while let Some(top) = accessor.woken_now_stack.pop() {
-      top
-        .0
-        .universal()
-        .schedule
-        .replace(accessor.now.clone(), None);
-      assert!(
-        accessor.steward.schedule.remove(&ScheduledWake {
-          entity: top.clone(),
-          time: accessor.now.clone(),
-        }),
-        "global schedule didn't match entity schedules"
-      );
-      // Safety: `top` is known to be stored in a triomphe Arc
-      unsafe {
-        top.0.wake(&mut accessor);
+      if top.0.universal().schedule.current_value().as_ref() == Some(&accessor.now) {
+        top
+          .0
+          .universal()
+          .schedule
+          .replace(accessor.now.clone(), None);
+        assert!(
+          accessor.steward.schedule.remove(&ScheduledWake {
+            entity: top.clone(),
+            time: accessor.now.clone(),
+          }),
+          "global schedule didn't match entity schedules"
+        );
+        // Safety: `top` is known to be stored in a triomphe Arc
+        unsafe {
+          top.0.wake(&mut accessor);
+        }
       }
     }
   }
