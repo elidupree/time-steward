@@ -100,13 +100,13 @@ impl Wake<PhilosophersSpec> for Philosopher {
     let friend_id = rng.gen_range(0..HOW_MANY_PHILOSOPHERS);
     let awaken_time_1 = now + rng.gen_range(-1..4);
     let awaken_time_2 = now + rng.gen_range(-1..7);
-    let philosophers = accessor.globals();
+    std::mem::drop(rng);
     //println!("SHAKE!!! @{:?}. {}={}; {}={}", accessor.extended_now(), self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
     // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
     // IN THE SECOND TIME APPARENTLY
-    let friend = philosophers[friend_id].borrow();
+    let friend = accessor.globals()[friend_id].clone();
     if friend.id() != this.id() {
-      change_next_handshake_time(accessor, friend, awaken_time_1);
+      change_next_handshake_time(accessor, friend.borrow(), awaken_time_1);
     }
     change_next_handshake_time(accessor, this, awaken_time_2);
   }
@@ -127,9 +127,9 @@ impl Wake<PhilosophersSpec> for Initialize {
     _this: TypedHandleRef<Self, Accessor::EntityHandleKind>,
   ) {
     println!("FIAT!!!!!");
-    let philosophers = accessor.globals();
     for i in 0..HOW_MANY_PHILOSOPHERS {
-      change_next_handshake_time(accessor, philosophers[i].borrow(), (i + 1) as Time);
+      let philosopher = accessor.globals()[i].clone();
+      change_next_handshake_time(accessor, philosopher.borrow(), (i + 1) as Time);
     }
   }
 }
@@ -149,17 +149,19 @@ impl Wake<PhilosophersSpec> for Tweak {
     this: TypedHandleRef<Self, Accessor::EntityHandleKind>,
   ) {
     let now = *accessor.now();
-    let philosophers = accessor.globals();
-    let mut rng = philosophers[0].borrow().write(accessor);
+    let first_philosopher = accessor.globals()[0].clone();
+    let mut rng = first_philosopher.borrow().write(accessor);
     let friend_id = rng.gen_range(0..HOW_MANY_PHILOSOPHERS);
     let awaken_time = now + rng.gen_range(-1..7);
+    std::mem::drop(rng);
     println!(
       " Tweak !!!!! @{:?}. {}={}",
       accessor.now(),
       friend_id,
       awaken_time
     );
-    change_next_handshake_time(accessor, philosophers[friend_id].borrow(), awaken_time);
+    let friend = accessor.globals()[friend_id].clone();
+    change_next_handshake_time(accessor, friend.borrow(), awaken_time);
   }
 }
 
@@ -187,8 +189,8 @@ impl Wake<PhilosophersSpec> for TweakUnsafe {
     let now = *accessor.now();
     let friend_id = rng.gen_range(0..HOW_MANY_PHILOSOPHERS);
     let awaken_time = now + rng.gen_range(-1..7);
-    let philosophers = accessor.globals();
-    change_next_handshake_time(accessor, philosophers[friend_id].borrow(), awaken_time);
+    let friend = accessor.globals()[friend_id].clone();
+    change_next_handshake_time(accessor, friend.borrow(), awaken_time);
   }
 }
 

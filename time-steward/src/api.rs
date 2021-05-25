@@ -283,6 +283,7 @@ pub trait TimeSteward: Any + Sized + Debug {
     EntityHandleKind = Self::EntityHandleKind,
   >;
 
+  // audit: the client can't smuggle actual EntityHandles into this
   fn insert_fiat_event<E: Wake<Self::SimulationSpec>>(
     &mut self,
     time: <Self::SimulationSpec as SimulationSpec>::Time,
