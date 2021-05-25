@@ -26,6 +26,7 @@ use triomphe::{Arc, ArcBorrow};
 use crate::api::*;
 use crate::implementation_support::common::*;
 use crate::EntityId;
+use unsize::CoerceUnsize;
 
 // ###################################################
 // ############     Handle definitions    ############
@@ -183,7 +184,19 @@ impl<S: SimulationSpec, E: EntityKind> OwnedTypedEntityHandle<E, SfEntityHandleK
   for SfTypedHandle<S, E>
 {
   fn erase(self) -> DynHandle<SfEntityHandleKind<S>> {
-    todo!() // SfDynHandle(self.0.unsize(Coercion!(to dyn AnyEntityInner<S>))
+    SfDynHandle(self.0.unsize(
+      // Safety: this is exactly the output of the Coercion macro from `unsize`, except only that I added the type parameter (the original macro doesn't support generic traits).
+      unsafe {
+        unsize::Coercion::new({
+          fn coerce<'lt, S: SimulationSpec>(
+            p: *const (impl AnyEntityInner<S> + 'lt),
+          ) -> *const (dyn AnyEntityInner<S> + 'lt) {
+            p
+          }
+          coerce
+        })
+      },
+    ))
   }
   fn borrow(&self) -> TypedHandleRef<E, SfEntityHandleKind<S>> {
     SfTypedHandleRef(self.0.borrow_arc())
