@@ -165,7 +165,7 @@ pub trait Accessor {
 
   /**
   Raw read access for entities, perhaps simply taking a reference to the entity contents. This is not undo-safe, but is a building block for building undo-safe wrappers.
-  
+
   This requires `&'a self` as well as `'a` entity, so that we can statically guarantee that there is no overlap with mutable access to entities. As a result, you can't hold a reference to *any* entity while any other entity is being modified. This restriction could theoretically be relaxed, but it is the simplest way uphold "shared XOR mutable" without runtime checks.
   */
   fn raw_read<'a, 'b: 'a, E: EntityKind>(
@@ -174,14 +174,14 @@ pub trait Accessor {
     // https://github.com/rust-lang/rust/issues/85533
     entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
   ) -> Self::ReadGuard<'a, MutableData<E, Self::EntityHandleKind>>;
-  
+
   /**
   Store a record that the current event (if any) accessed this entity.
-  
+
   `raw_read` and `raw_read_schedule` are undo-safe if `record_read` is called for the same entity at any time within the same event, regardless of which call happened first.
-  
+
   This is a no-op in accessors that are not EventAccessors, but it's part of this trait so that code can be generic over whether it is happening within an event or not.
-  
+
   `record_read` is always undo-safe to call. The only downside of false-positives is a runtime cost.
   */
   fn record_read<E: EntityKind>(
@@ -217,9 +217,9 @@ An Accessor that can create entities.
 pub trait CreateEntityAccessor: Accessor {
   /**
   Create a new entity with the given initial data.
-  
+
   Newly created entities are given a unique id by the system.
-  
+
   Newly created entities are not scheduled to wake yet, but can be scheduled later with `EventAccessor::schedule`.
   */
   fn create_entity<E: EntityKind>(
@@ -251,16 +251,16 @@ EventAccessors can create and modify entities, and modify entity schedules.
 pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
   /// The guard type returned by `raw_write`. In EventAccessors for optimized TimeStewards, you can assume that this is equivalent to `&'a mut T`. Simpler implementations may use `std::cell::RefMut`.
   type WriteGuard<'a, T: 'a>: DerefMut<Target = T>;
-  
+
   /// Make a new WriteGuard for a component of the borrowed data, similar to `std::cell::RefMut::map`. If the WriteGuard type is `&mut T`, this is a trivial application of `f`.
   fn map_write_guard<'a, T, U>(
     guard: Self::WriteGuard<'a, T>,
     f: impl FnOnce(&mut T) -> &mut U,
   ) -> Self::WriteGuard<'a, U>;
-  
+
   /**
   Raw write access for entities, perhaps simply taking a mutable reference to the entity contents. This is not undo-safe, but is a building block for building undo-safe wrappers.
-  
+
   This requires `&'a mut self` as well as `'a` entity, so that we can statically guarantee that there is no overlap with shared access to entities. As a result, you can't hold a reference to *any* entity while any other entity is being modified. This restriction could theoretically be relaxed, but it is the simplest way uphold "shared XOR mutable" without runtime checks.
   */
   fn raw_write<'a, 'b: 'a, E: EntityKind>(
@@ -269,12 +269,12 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
     // https://github.com/rust-lang/rust/issues/85533
     entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
   ) -> Self::WriteGuard<'a, MutableData<E, Self::EntityHandleKind>>;
-  
+
   /**
   Store a record of how to undo a modification we made to this entity in this event. This is not undo-safe, but is a building block for building undo-safe wrappers.
-  
+
   `raw_write` and `record_undo` are undo-safe if, at the end of the event, running all of the undo functions for this entity in reverse order leaves you with the same mutable data the entity started with at the beginning of the event. The simplest way to fulfill this condition is to begin by copying the original state of the entity and recording an undo function that overwrites the entity with a copy of that copy.
-  
+
   Any call to `record_undo` also makes `Accessor::raw_read` undo-safe in the same way as `Accessor::record_read` does.
   */
   fn record_undo<E: EntityKind>(
@@ -284,10 +284,10 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
     entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'_, E>,
     undo: impl Fn(&mut MutableData<E, Self::EntityHandleKind>) + 'static,
   );
-  
+
   /**
   Schedule this entity to wake at the given time.
-  
+
   This is equivalent to `set_schedule` with Some as the argument.
   */
   fn schedule<E: Wake<Self::SimulationSpec>>(
@@ -297,10 +297,10 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
   ) {
     self.set_schedule(entity, Some(time))
   }
-  
+
   /**
   Cancel any current scheduled for this entity to wake.
-  
+
   This is equivalent to `set_schedule` with None as the argument.
   */
   fn unschedule<E: Wake<Self::SimulationSpec>>(
@@ -312,9 +312,9 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
 
   /**
   Schedule this entity to wake at the given time.
-  
+
   This is always undo-safe, and always has some runtime overhead. (Unlike with `raw_write`, it's not worth complicating the API to optimize this. Any such optimization would be tiny at best.)
-  
+
   Any call to `set_schedule` also makes `Accessor::raw_read` undo-safe in the same way as `Accessor::record_read` does.
   */
   fn set_schedule<E: Wake<Self::SimulationSpec>>(
@@ -335,10 +335,10 @@ An Accessor representing a snapshot of a complete simulation state.
 pub trait SnapshotAccessor: InitializedAccessor {
   /// The iterator type returned by `scheduled_events`.
   type ScheduledEvents<'a>: Iterator<Item = DynHandle<Self::EntityHandleKind>> + 'a;
-  
+
   /**
   Take an iterator over all entities that are currently scheduled to wake in the future.
-  
+
   Library users usually won't call this explicitly, but it's necessary for serializing a complete snapshot, because it's possible for there to be scheduled entities that are not accessible the following other entity handles starting at the globals. The globals and scheduled_events taken together provide all of the "roots" from which other entities can be observed.
   */
   fn scheduled_events(&self) -> Self::ScheduledEvents<'_>;
@@ -350,31 +350,31 @@ The core TimeSteward trait: An object that can run simulations.
 pub trait TimeSteward: Any + Sized + Debug {
   /**
   The SimulationSpec this TimeSteward is for.
-  
+
   A typical TimeSteward implementor will be generic over all possible SimulationSpecs, but the concrete type is associated with a specific one.
   */
   type SimulationSpec: SimulationSpec;
-  
+
   /// The kind of EntityHandles used by this TimeSteward.
   type EntityHandleKind: EntityHandleKindDeref;
-  
+
   /// The Accessor type returned by `snapshot_before`.
   type SnapshotAccessor: SnapshotAccessor<
     SimulationSpec = Self::SimulationSpec,
     EntityHandleKind = Self::EntityHandleKind,
   >;
-  
+
   /**
   Create an event by fiat.
 
   A fiat event is an entity that is postulated to have existed since the beginning of the simulation, and to have always been scheduled to wake at the given time.
-  
+
   (TODO: notes about what times you can alter fiat events at)
-  
+
   Each fiat event must have a unique id. These ids must be globally unique across all fiat events that exist within the TimeSteward. Attempting to insert a second fiat event with the same id will return `Err(FiatEventOperationError::InvalidInput)`.
-  
+
   Fiat event ids are also forbidden from colliding with the ids of other entities within the simulation. This isn't something you normally have to worry about, because the ids of other entities are generated by hashing with keys internal to `time_steward`, so ids will only collide if you explicitly use those keys or copy the id of an entity that was generated that way. However, it is trivial to construct a colliding id maliciously, and TimeSteward implementors are not required to detect this situation (meaning a malicious id may result in incorrect behavior or panics rather than a simple Err). Thus, simulations that accept untrusted inputs over a network may not accept arbitrary ids, but must require inputs that are used to *generate* ids.
-  
+
   A fiat event cannot contain handles to any other entity. (Thus, when it wakes, it can only act upon entities accessible through the simulation globals.) This isn't a specific restriction on fiat events, but simply a consequence of the fact that it is a logic error to use any entity handle outside of the Accessor you received it from.
   */
   fn insert_fiat_event<E: Wake<Self::SimulationSpec>>(
@@ -383,15 +383,15 @@ pub trait TimeSteward: Any + Sized + Debug {
     id: EntityId,
     immutable: ImmutableData<E, Self::EntityHandleKind>,
     mutable: MutableData<E, Self::EntityHandleKind>,
-  ) -> Result<(), FiatEventOperationError>;  
-  
+  ) -> Result<(), FiatEventOperationError>;
+
   /**
   Remove a fiat event that was previously created.
-  
+
   After removing a fiat event, you can create another with the same id. Attempting to remove a fiat event that doesn't currently exist will return `Err(FiatEventOperationError::InvalidInput)`.
-    
+
   (TODO: notes about what times you can alter fiat events at)
-  
+
   */
   fn remove_fiat_event(
     &mut self,
@@ -403,8 +403,10 @@ pub trait TimeSteward: Any + Sized + Debug {
     time: <Self::SimulationSpec as SimulationSpec>::Time,
   ) -> Option<Self::SnapshotAccessor>;
 
-  fn valid_since(&self) -> ValidSince<<Self::SimulationSpec as SimulationSpec>::Time>;
-  fn forget_before(&mut self, time: &<Self::SimulationSpec as SimulationSpec>::Time);
+  fn freeze_before(&mut self, time: <Self::SimulationSpec as SimulationSpec>::Time);
+  fn earliest_mutable_time(&self) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
+  fn forget_before(&mut self, time: <Self::SimulationSpec as SimulationSpec>::Time);
+  fn earliest_remembered_time(&self) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
 }
 
 /// A trait for TimeSteward types that can be initialized from just the initial physics data.
@@ -425,7 +427,9 @@ pub trait ConstructibleTimeSteward<Metadata = ()>: TimeSteward {
 
 pub trait IncrementalTimeSteward: TimeSteward {
   fn step(&mut self);
-  fn updated_until_before(&self) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
+  fn latest_time_ready_for_snapshot(
+    &self,
+  ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time>;
 }
 
 /// A marker trait indicating a TimeSteward that implements the canonical behavior.

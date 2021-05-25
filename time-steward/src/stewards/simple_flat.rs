@@ -656,7 +656,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
     immutable: ImmutableData<E, Self::EntityHandleKind>,
     mutable: MutableData<E, Self::EntityHandleKind>,
   ) -> Result<(), FiatEventOperationError> {
-    if self.valid_since() > time {
+    if matches!(self.earliest_mutable_time(), Some(earliest_mutable) if time < earliest_mutable) {
       return Err(FiatEventOperationError::InvalidTime);
     }
     let entity = SfTypedHandle::<_, E>(Arc::new(EntityInner {
@@ -685,7 +685,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
     time: &<Self::SimulationSpec as SimulationSpec>::Time,
     id: EntityId,
   ) -> Result<(), FiatEventOperationError> {
-    if self.valid_since() > *time {
+    if matches!(self.earliest_mutable_time(), Some(earliest_mutable) if *time < earliest_mutable) {
       return Err(FiatEventOperationError::InvalidTime);
     }
 
@@ -708,8 +708,8 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
     time: <Self::SimulationSpec as SimulationSpec>::Time,
   ) -> Option<Self::SnapshotAccessor> {
     // since this TimeSteward never discards history, it can always return Some for snapshots
-    while let Some(updated) = self.updated_until_before() {
-      if updated >= time {
+    while let Some(ready_time) = self.latest_time_ready_for_snapshot() {
+      if ready_time >= time {
         break;
       }
       self.step();
@@ -721,13 +721,14 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
     })
   }
 
-  fn valid_since(&self) -> ValidSince<<Self::SimulationSpec as SimulationSpec>::Time> {
-    match &self.last_event {
-      None => ValidSince::TheBeginning,
-      Some(time) => ValidSince::After(time.clone()),
-    }
+  fn freeze_before(&mut self, _time: <Self::SimulationSpec as SimulationSpec>::Time) {}
+  fn earliest_mutable_time(&self) -> Option<<Self::SimulationSpec as SimulationSpec>::Time> {
+    self.last_event.clone()
   }
-  fn forget_before(&mut self, _time: &<Self::SimulationSpec as SimulationSpec>::Time) {}
+  fn forget_before(&mut self, _time: <Self::SimulationSpec as SimulationSpec>::Time) {}
+  fn earliest_remembered_time(&self) -> Option<<Self::SimulationSpec as SimulationSpec>::Time> {
+    None
+  }
 }
 
 impl<S: SimulationSpec> ConstructibleTimeSteward for Steward<S> {
@@ -767,7 +768,7 @@ impl<S: SimulationSpec> IncrementalTimeSteward for Steward<S> {
       self.wake_entity(event.entity);
     }
   }
-  fn updated_until_before(&self) -> Option<S::Time> {
+  fn latest_time_ready_for_snapshot(&self) -> Option<S::Time> {
     self.schedule.first().map(|s| s.time.clone())
   }
 }
