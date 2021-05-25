@@ -315,6 +315,13 @@ pub struct Snapshot<S: SimulationSpec> {
 }
 
 #[derive(Derivative)]
+#[derivative(Debug(bound = ""))]
+pub struct SfGlobalsConstructionAccessor<S: SimulationSpec> {
+  child_id_generator: GlobalsConstructionIdGenerator,
+  _marker: PhantomData<*const S>,
+}
+
+#[derive(Derivative)]
 #[derivative(
   Debug(bound = ""),
   Clone(bound = ""),
@@ -390,15 +397,6 @@ impl<'c, S: SimulationSpec> Accessor for SfEventAccessor<'c, S> {
   }
 }
 
-impl<'b, S: SimulationSpec> InitializedAccessor for SfEventAccessor<'b, S> {
-  fn globals(&self) -> &Globals<Self::SimulationSpec, Self::EntityHandleKind> {
-    &*self.globals
-  }
-  fn now(&self) -> &<Self::SimulationSpec as SimulationSpec>::Time {
-    &self.now
-  }
-}
-
 pub struct SnapshotQueryResult<T>(T);
 impl<T> Deref for SnapshotQueryResult<T> {
   type Target = T;
@@ -430,6 +428,37 @@ impl<S: SimulationSpec> Accessor for Snapshot<S> {
   }
 }
 
+impl<S: SimulationSpec> Accessor for SfGlobalsConstructionAccessor<S> {
+  type SimulationSpec = S;
+  type EntityHandleKind = SfEntityHandleKind<S>;
+
+  type ReadGuard<'a, T: 'a> = Ref<'a, T>;
+  fn raw_read<'a, 'b: 'a, E: EntityKind>(
+    &'a self,
+    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
+    // https://github.com/rust-lang/rust/issues/85533
+    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
+  ) -> Self::ReadGuard<'a, MutableData<E, SfEntityHandleKind<S>>> {
+    entity.0.get().mutable.current_value()
+  }
+
+  fn raw_read_schedule<E: Wake<Self::SimulationSpec>>(
+    &self,
+    entity: TypedHandleRef<E, Self::EntityHandleKind>,
+  ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time> {
+    entity.0.universal.schedule.current_value().clone()
+  }
+}
+
+impl<'b, S: SimulationSpec> InitializedAccessor for SfEventAccessor<'b, S> {
+  fn globals(&self) -> &Globals<Self::SimulationSpec, Self::EntityHandleKind> {
+    &*self.globals
+  }
+  fn now(&self) -> &<Self::SimulationSpec as SimulationSpec>::Time {
+    &self.now
+  }
+}
+
 impl<S: SimulationSpec> InitializedAccessor for Snapshot<S> {
   fn globals(&self) -> &Globals<Self::SimulationSpec, Self::EntityHandleKind> {
     &*self.globals
@@ -448,6 +477,24 @@ impl<'b, S: SimulationSpec> CreateEntityAccessor for SfEventAccessor<'b, S> {
     let id = self
       .child_id_generator
       .next(&self.first_waker_universal.id, &self.now);
+    SfTypedHandle(Arc::new(EntityInner {
+      universal: EntityUniversal {
+        id,
+        schedule: History::new(None),
+      },
+      immutable,
+      mutable: History::new(mutable),
+    }))
+  }
+}
+
+impl<S: SimulationSpec> CreateEntityAccessor for SfGlobalsConstructionAccessor<S> {
+  fn create_entity<E: EntityKind>(
+    &mut self,
+    immutable: ImmutableData<E, Self::EntityHandleKind>,
+    mutable: MutableData<E, Self::EntityHandleKind>,
+  ) -> TypedHandle<E, Self::EntityHandleKind> {
+    let id = self.child_id_generator.next();
     SfTypedHandle(Arc::new(EntityInner {
       universal: EntityUniversal {
         id,
@@ -536,6 +583,8 @@ impl<S: SimulationSpec> SnapshotAccessor for Snapshot<S> {
     self.scheduled_events.iter().cloned()
   }
 }
+
+impl<S: SimulationSpec> GlobalsConstructionAccessor for SfGlobalsConstructionAccessor<S> {}
 
 // ###################################################
 // ############       Steward impls       ############
@@ -680,10 +729,16 @@ impl<S: SimulationSpec> ConstructibleTimeSteward for Steward<S> {
   }
 
   fn from_construct_globals<G: ConstructGlobals<Self::SimulationSpec>>(
-    _metadata: (),
-    _construct_globals: G,
+    metadata: (),
+    construct_globals: G,
   ) -> Self {
-    unimplemented!()
+    Self::from_globals(
+      metadata,
+      construct_globals.construct_globals(&mut SfGlobalsConstructionAccessor {
+        child_id_generator: GlobalsConstructionIdGenerator::new(),
+        _marker: PhantomData,
+      }),
+    )
   }
 
   fn from_serialized<R: Read>(_metadata: (), _data: &mut R) -> ::bincode::Result<Self> {

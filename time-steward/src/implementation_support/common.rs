@@ -174,3 +174,27 @@ impl EventChildrenIdGenerator {
     result
   }
 }
+#[derive(Debug)]
+pub struct GlobalsConstructionIdGenerator {
+  previous: EntityId,
+}
+
+impl Default for GlobalsConstructionIdGenerator {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+impl GlobalsConstructionIdGenerator {
+  pub fn new() -> GlobalsConstructionIdGenerator {
+    GlobalsConstructionIdGenerator {
+      previous: EntityId::from_raw([0xbad_c0de, 0xbad_c0de]),
+    }
+  }
+  pub fn next(&mut self) -> EntityId {
+    self.previous = EntityId::from_raw([
+      self.previous.data()[0],
+      self.previous.data()[1].wrapping_add(1),
+    ]);
+    self.previous
+  }
+}
