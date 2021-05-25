@@ -14,7 +14,7 @@ use derivative::Derivative;
 use scopeguard::defer;
 use serde::{de, Deserializer};
 use std::cell::{Cell, Ref, RefCell, RefMut};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::Debug;
 use std::io::Read;
 use std::marker::PhantomData;
@@ -334,6 +334,7 @@ pub struct Steward<S: SimulationSpec> {
   globals: Rc<Globals<S, SfEntityHandleKind<S>>>,
   last_event: Option<S::Time>,
   schedule: BTreeSet<ScheduledWake<S>>,
+  fiat_events: HashMap<EntityId, SfDynHandle<S>>,
 }
 
 // ###################################################
@@ -601,13 +602,16 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
       },
       immutable,
       mutable: History::new(mutable),
-    }));
+    }))
+    .erase();
+
+    self
+      .fiat_events
+      .try_insert(id, entity.clone())
+      .map_err(|_| FiatEventOperationError::InvalidInput)?;
 
     assert!(
-      self.schedule.insert(ScheduledWake {
-        entity: entity.erase(),
-        time,
-      }),
+      self.schedule.insert(ScheduledWake { entity, time }),
       "global schedule didn't match entity schedules"
     );
     Ok(())
@@ -621,9 +625,14 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
       return Err(FiatEventOperationError::InvalidTime);
     }
 
+    let entity = self
+      .fiat_events
+      .remove(&id)
+      .ok_or(FiatEventOperationError::InvalidInput)?;
+
     assert!(
       self.schedule.remove(&ScheduledWake {
-        entity: todo!(), //entity.clone(),
+        entity,
         time: time.clone(),
       }),
       "global schedule didn't match entity schedules"
@@ -666,6 +675,7 @@ impl<S: SimulationSpec> ConstructibleTimeSteward for Steward<S> {
       globals: Rc::new(globals),
       last_event: None,
       schedule: BTreeSet::new(),
+      fiat_events: HashMap::new(),
     }
   }
 

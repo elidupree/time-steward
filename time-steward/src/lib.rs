@@ -26,6 +26,7 @@
   specialization,
   never_type,
   map_first_last,
+  map_try_insert,
   raw,
   try_trait,
   min_type_alias_impl_trait,
