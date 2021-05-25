@@ -99,7 +99,7 @@ impl Wake<PhilosophersSpec> for Philosopher {
     let mut rng = this.write(accessor);
     let friend_id = rng.gen_range(0..HOW_MANY_PHILOSOPHERS);
     let awaken_time_1 = now + rng.gen_range(-1..4);
-    let awaken_time_2 = now + rng.gen_range(-1..7);
+    let awaken_time_2 = now + rng.gen_range(0..7);
     std::mem::drop(rng);
     //println!("SHAKE!!! @{:?}. {}={}; {}={}", accessor.extended_now(), self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
     // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
@@ -152,7 +152,7 @@ impl Wake<PhilosophersSpec> for Tweak {
     let first_philosopher = accessor.globals()[0].clone();
     let mut rng = first_philosopher.borrow().write(accessor);
     let friend_id = rng.gen_range(0..HOW_MANY_PHILOSOPHERS);
-    let awaken_time = now + rng.gen_range(-1..7);
+    let awaken_time = now + rng.gen_range(0..7);
     std::mem::drop(rng);
     println!(
       " Tweak !!!!! @{:?}. {}={}",
@@ -188,7 +188,7 @@ impl Wake<PhilosophersSpec> for TweakUnsafe {
 
     let now = *accessor.now();
     let friend_id = rng.gen_range(0..HOW_MANY_PHILOSOPHERS);
-    let awaken_time = now + rng.gen_range(-1..7);
+    let awaken_time = now + rng.gen_range(0..7);
     let friend = accessor.globals()[friend_id].clone();
     change_next_handshake_time(accessor, friend.borrow(), awaken_time);
   }
