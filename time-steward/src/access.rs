@@ -6,16 +6,20 @@ use crate::{
 
 /// types that allow undo-safe access to entity data in some way; this is about undo safety, not memory safety,
 /// and the read method needs an accessor to actually be allowed to view the data
-pub trait ReadAccess<'b, A: Accessor, E: EntityKind> {
+pub trait ReadAccess<'b, E: EntityKind, A: Accessor>: Copy {
   type Target;
+  fn entity(self) -> TypedHandleRef<'b, E, A::EntityHandleKind>;
   fn read<'a>(self, accessor: &'a A) -> A::ReadGuard<'a, Self::Target>
   where
     'b: 'a;
 }
-impl<'b, A: Accessor, E: EntityKind> ReadAccess<'b, A, E>
+impl<'b, E: EntityKind, A: Accessor> ReadAccess<'b, E, A>
   for TypedHandleRef<'b, E, A::EntityHandleKind>
 {
   type Target = MutableData<E, A::EntityHandleKind>;
+  fn entity(self) -> TypedHandleRef<'b, E, A::EntityHandleKind> {
+    self
+  }
   // when you just have a TypedHandleRef, read undo-safely by explicitly recording an access
   fn read<'a>(self, accessor: &'a A) -> A::ReadGuard<'a, Self::Target>
   where
@@ -25,16 +29,28 @@ impl<'b, A: Accessor, E: EntityKind> ReadAccess<'b, A, E>
     accessor.raw_read(self)
   }
 }
+pub trait EntityReadAccess<'b, E: EntityKind, A: Accessor>:
+  ReadAccess<'b, E, A, Target = MutableData<Self::EntityKind, A::EntityHandleKind>>
+{
+}
+impl<
+    'b,
+    A: Accessor,
+    E: EntityKind,
+    RA: ReadAccess<'b, E, A, Target = MutableData<Self::EntityKind, A::EntityHandleKind>>,
+  > EntityReadAccess<'b, E, A> for RA
+{
+}
 
 /// types that allow undo-safe mutable access to entity data in some way; this is about undo safety, not memory safety,
 /// and the write method needs an accessor to actually be allowed to view the data
-pub trait WriteAccess<'b, A: EventAccessor, E: EntityKind> {
+pub trait WriteAccess<'b, A: EventAccessor, E: EntityKind>: ReadAccess<'b, E, A> {
   type Target;
   fn write<'a>(self, accessor: &'a mut A) -> A::WriteGuard<'a, Self::Target>
   where
     'b: 'a;
 }
-impl<'b, A: EventAccessor, E: EntityKind> WriteAccess<'b, A, E>
+impl<'b, A: EventAccessor, E: EntityKind> WriteAccess<'b, E, A>
   for TypedHandleRef<'b, E, A::EntityHandleKind>
 {
   type Target = MutableData<E, A::EntityHandleKind>;
@@ -46,6 +62,55 @@ impl<'b, A: EventAccessor, E: EntityKind> WriteAccess<'b, A, E>
     let old_value = accessor.raw_read(self).clone();
     accessor.record_undo(self, move |m| *m = old_value.clone());
     accessor.raw_write(self)
+  }
+}
+pub trait EntityWriteAccess<'b, E: EntityKind, A: Accessor>:
+  WriteAccess<'b, E, A, Target = MutableData<Self::EntityKind, A::EntityHandleKind>>
+{
+}
+impl<
+    'b,
+    A: Accessor,
+    E: EntityKind,
+    RA: WriteAccess<'b, E, A, Target = MutableData<Self::EntityKind, A::EntityHandleKind>>,
+  > EntityWriteAccess<'b, E, A> for RA
+{
+}
+
+#[derive(Derivative)]
+#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+pub struct ReadRecordedRef<'b, E: EntityKind, A: Accessor>(
+  TypedHandleRef<'b, E, A::EntityHandleKind>,
+);
+delegate! (
+  ['b, E: EntityKind, A: Accessor]
+  [PartialEq, Eq, PartialOrd, Ord, Hash, Serialize]
+  for [ReadRecordedRef<'b, E, A>]
+  to [this => &this.0]
+);
+impl<'b, E: EntityKind, A: Accessor> ReadRecordedRef<'b, E, A> {
+  fn new_by_recording<'a>(
+    entity: TypedHandleRef<'b, E, A::EntityHandleKind>,
+    accessor: &'a A,
+  ) -> Self
+  where
+    'b: 'a,
+  {
+    accessor.record_read(entity);
+    Self(entity)
+  }
+}
+impl<'b, E: EntityKind, A: Accessor> ReadAccess<'b, E, A> for ReadRecordedRef<'b, E, A> {
+  type Target = MutableData<E, A::EntityHandleKind>;
+  fn entity(self) -> TypedHandleRef<'b, E, A::EntityHandleKind> {
+    self.0
+  }
+  // read undo-safely because we know an access has already been recorded
+  fn read<'a>(self, accessor: &'a A) -> A::ReadGuard<'a, Self::Target>
+  where
+    'b: 'a,
+  {
+    accessor.raw_read(self.0)
   }
 }
 

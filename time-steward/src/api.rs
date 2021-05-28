@@ -121,16 +121,16 @@ pub trait SimulationSpec: Any {
 }
 
 pub trait ConstructGlobals<S: SimulationSpec> {
-  fn construct_globals<Accessor: GlobalsConstructionAccessor<SimulationSpec = S>>(
+  fn construct_globals<A: GlobalsConstructionAccessor<SimulationSpec = S>>(
     self,
-    accessor: &mut Accessor,
-  ) -> Globals<S, Accessor::EntityHandleKind>;
+    accessor: &mut A,
+  ) -> Globals<S, A::EntityHandleKind>;
 }
 
 pub trait Wake<S: SimulationSpec>: EntityKind {
-  fn wake<Accessor: EventAccessor<SimulationSpec = S>>(
-    accessor: &mut Accessor,
-    this: TypedHandleRef<Self, Accessor::EntityHandleKind>,
+  fn wake<A: EventAccessor<SimulationSpec = S>>(
+    accessor: &mut A,
+    this: TypedHandleRef<Self, A::EntityHandleKind>,
   );
 }
 
@@ -273,7 +273,11 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
   /**
   Store a record of how to undo a modification we made to this entity in this event. This is not undo-safe, but is a building block for building undo-safe wrappers.
 
-  `raw_write` and `record_undo` are undo-safe if, at the end of the event, running all of the undo functions for this entity in reverse order leaves you with the same mutable data the entity started with at the beginning of the event. The simplest way to fulfill this condition is to begin by copying the original state of the entity and recording an undo function that overwrites the entity with a copy of that copy.
+  `raw_write` and `record_undo` are undo-safe if, at the end of the event, running all of the undo functions for this entity in reverse order leaves you with the same mutable data the entity started with at the beginning of the event.
+
+  The simplest way to fulfill this condition is to begin by copying the original state of the entity (or something contained in the entity) and recording an undo function that overwrites that data with a copy of that copy. This allows arbitrary mutable access after that point.
+
+  A second way to fulfill this condition would be to always pair "performing a mutating operation" with "record_undo with exactly the inverse of that operation". Unfortunately, these don't play nicely together: "overwrite a subset, then do an invertible operation on the whole entity, then arbitrarily modify the subset" would end up passing the wrong input to the inversion function. We have not yet defined a clear set of rules for writing undo-safe wrappers.
 
   Any call to `record_undo` also makes `Accessor::raw_read` undo-safe in the same way as `Accessor::record_read` does.
   */
