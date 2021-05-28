@@ -22,6 +22,7 @@
 
 #![feature(
   arbitrary_self_types,
+  array_map,
   unboxed_closures,
   specialization,
   never_type,
