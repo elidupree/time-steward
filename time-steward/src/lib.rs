@@ -89,9 +89,6 @@ pub mod support {
   pub mod time_functions;
   pub use time_steward_integer_math as integer_math;
   pub mod trajectories;
-  //#[macro_use]
-  //pub mod simple_timeline;
-  //#[macro_use]
   //pub mod bbox_collision_detection;
 }
 
