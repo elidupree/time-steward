@@ -6,7 +6,6 @@ use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
 use std::cell::Cell;
 
-use time_steward::stewards::simple_flat;
 use time_steward::type_utils::list_of_types::ListedType;
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::{
@@ -15,6 +14,7 @@ use time_steward::{
   SimulationStateDataKind, SnapshotAccessor, TimeSteward, TypedHandle, TypedHandleRef, Wake,
   WriteAccess,
 };
+use time_steward_simple_flat as simple_flat;
 
 type Time = i64;
 

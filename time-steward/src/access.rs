@@ -4,6 +4,7 @@ use crate::{
   SimulationStateData, TypedHandleRef, Wake,
 };
 use derivative::Derivative;
+use time_steward_type_utils::delegate;
 
 /// types that allow undo-safe access to entity data in some way; this is about undo safety, not memory safety,
 /// and the read method needs an accessor to actually be allowed to view the data

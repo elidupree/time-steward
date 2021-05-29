@@ -1,10 +1,12 @@
 [workspace]
 
 members = [
-  "time-steward-api",
-  "time-steward",
   "integer-math",
   "type-utils",
+  "time-steward-api",
+  "time-steward-implementation-support",
+  "time-steward-simple-flat",
+  "time-steward",
 ]
 
 [profile.bench]

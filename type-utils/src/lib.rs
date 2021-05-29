@@ -132,6 +132,61 @@ tuple_impls! {
     }
 }
 
+#[macro_export]
+macro_rules! delegate {
+  (Ord, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
+    impl<$($bounds)*> Ord for $($concrete)* {
+      fn cmp(&self, other: &Self) -> ::std::cmp::Ordering {
+        let my_target = { let $this = self; $target };
+        let other_target = { let $this = other; $target };
+        my_target.cmp(other_target)
+      }
+    }
+  };
+  (PartialOrd, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
+    impl<$($bounds)*> PartialOrd for $($concrete)* {
+      fn partial_cmp(&self, other: &Self) ->Option <::std::cmp::Ordering> {
+        let my_target = { let $this = self; $target };
+        let other_target = { let $this = other; $target };
+        my_target.partial_cmp(other_target)
+      }
+    }
+  };
+  (Eq, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
+    impl<$($bounds)*> Eq for $($concrete)* {}
+  };
+  (PartialEq, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
+    impl<$($bounds)*> PartialEq for $($concrete)* {
+      fn eq(&self, other: &Self) -> bool {
+        let my_target = { let $this = self; $target };
+        let other_target = { let $this = other; $target };
+        my_target.eq(other_target)
+      }
+    }
+  };
+  (Hash, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
+    impl<$($bounds)*> ::std::hash::Hash for $($concrete)* {
+      fn hash <H: ::std::hash::Hasher> (&self, state: &mut H) {
+        let my_target = { let $this = self; $target };
+        my_target.hash (state);
+      }
+    }
+  };
+  (Serialize, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
+    impl<$($bounds)*> ::serde::ser::Serialize for $($concrete)* {
+      fn serialize<Ser: ::serde::ser::Serializer>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error> {
+        let my_target = { let $this = self; $target };
+        my_target.serialize(serializer)
+      }
+    }
+  };
+  ([$($bounds:tt)*] [$Trait1: tt, $($Traits:tt),*$(,)*] for [$($concrete:tt)*] to [$this: ident => $target: expr]) => {
+    delegate! ($Trait1, $this => $target, [$($bounds)*], [$($concrete)*]);
+    delegate! ([$($bounds)*] [$($Traits,)*] for [$($concrete)*] to [$this => $target]);
+  };
+  ([$($bounds:tt)*] [] for [$($concrete:tt)*] to [$this: ident => $target: expr]) => {};
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;

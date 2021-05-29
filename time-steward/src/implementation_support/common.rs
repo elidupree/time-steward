@@ -1,12 +1,6 @@
-use serde::Serialize;
-//use std::any::{Any, TypeId};
 use std::borrow::Borrow;
-//use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet /*, HashMap*/};
-use std::fmt::Debug;
+use std::collections::{BTreeMap, BTreeSet};
 
-//use crate::api::*;
-use crate::EntityId;
 
 pub fn split_off_greater<K: Ord + Borrow<Q> + Clone, V, Q: Ord + ?Sized>(
   input: &mut BTreeMap<K, V>,
@@ -44,62 +38,6 @@ pub fn split_off_greater_set<K: Ord + Borrow<Q>, Q: Ord + ?Sized>(
     }
   }
   result
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! delegate {
-  (Ord, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
-    impl<$($bounds)*> Ord for $($concrete)* {
-      fn cmp(&self, other: &Self) -> ::std::cmp::Ordering {
-        let my_target = { let $this = self; $target };
-        let other_target = { let $this = other; $target };
-        my_target.cmp(other_target)
-      }
-    }
-  };
-  (PartialOrd, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
-    impl<$($bounds)*> PartialOrd for $($concrete)* {
-      fn partial_cmp(&self, other: &Self) ->Option <::std::cmp::Ordering> {
-        let my_target = { let $this = self; $target };
-        let other_target = { let $this = other; $target };
-        my_target.partial_cmp(other_target)
-      }
-    }
-  };
-  (Eq, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
-    impl<$($bounds)*> Eq for $($concrete)* {}
-  };
-  (PartialEq, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
-    impl<$($bounds)*> PartialEq for $($concrete)* {
-      fn eq(&self, other: &Self) -> bool {
-        let my_target = { let $this = self; $target };
-        let other_target = { let $this = other; $target };
-        my_target.eq(other_target)
-      }
-    }
-  };
-  (Hash, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
-    impl<$($bounds)*> ::std::hash::Hash for $($concrete)* {
-      fn hash <H: ::std::hash::Hasher> (&self, state: &mut H) {
-        let my_target = { let $this = self; $target };
-        my_target.hash (state);
-      }
-    }
-  };
-  (Serialize, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
-    impl<$($bounds)*> ::serde::ser::Serialize for $($concrete)* {
-      fn serialize<Ser: ::serde::ser::Serializer>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error> {
-        let my_target = { let $this = self; $target };
-        my_target.serialize(serializer)
-      }
-    }
-  };
-  ([$($bounds:tt)*] [$Trait1: tt, $($Traits:tt),*$(,)*] for [$($concrete:tt)*] to [$this: ident => $target: expr]) => {
-    delegate! ($Trait1, $this => $target, [$($bounds)*], [$($concrete)*]);
-    delegate! ([$($bounds)*] [$($Traits,)*] for [$($concrete)*] to [$this => $target]);
-  };
-  ([$($bounds:tt)*] [] for [$($concrete:tt)*] to [$this: ident => $target: expr]) => {};
 }
 
 /*
@@ -147,54 +85,3 @@ fn deserialize_prediction_handle <T: Event> (&mut self)->PredictionHandle <T>;
 fn deserialize_event_handle <T: Event> (&mut self)->EventHandle <T>;
 fn deserialize_dynamic_event_handle (&mut self)->DynamicEventHandle;
 }*/
-
-#[derive(Debug)]
-pub struct EventChildrenIdGenerator {
-  next: Option<EntityId>,
-}
-
-impl Default for EventChildrenIdGenerator {
-  fn default() -> Self {
-    Self::new()
-  }
-}
-impl EventChildrenIdGenerator {
-  pub fn new() -> EventChildrenIdGenerator {
-    EventChildrenIdGenerator { next: None }
-  }
-  pub fn generate_id<Time: Serialize>(&mut self, waker_id: &EntityId, time: &Time) -> EntityId {
-    let result = match self.next {
-      None => EntityId::hash_of(&(waker_id, time)),
-      Some(next) => next,
-    };
-    self.next = Some(EntityId::from_raw([
-      result.data()[0],
-      result.data()[1].wrapping_add(1),
-    ]));
-    result
-  }
-}
-#[derive(Debug)]
-pub struct GlobalsConstructionIdGenerator {
-  previous: EntityId,
-}
-
-impl Default for GlobalsConstructionIdGenerator {
-  fn default() -> Self {
-    Self::new()
-  }
-}
-impl GlobalsConstructionIdGenerator {
-  pub fn new() -> GlobalsConstructionIdGenerator {
-    GlobalsConstructionIdGenerator {
-      previous: EntityId::from_raw([0xbad_c0de, 0xbad_c0de]),
-    }
-  }
-  pub fn generate_id(&mut self) -> EntityId {
-    self.previous = EntityId::from_raw([
-      self.previous.data()[0],
-      self.previous.data()[1].wrapping_add(1),
-    ]);
-    self.previous
-  }
-}

@@ -24,8 +24,6 @@ num = "0.2"
 failure = "0.1.1"
 smallvec = "0.6.1"
 scopeguard = "1.1.0"
-triomphe = { git = "https://github.com/elidupree/triomphe", features = ["unsize"]}
-unsize = "1.1.0"
 time_steward_integer_math = {path="../integer-math"}
 time_steward_type_utils = {path="../type-utils"}
 time_steward_api = {path="../time-steward-api"}
@@ -44,6 +42,7 @@ docopt = "0.8"
 fnv = "1.0"
 boolinator = "2.4"
 rand_pcg = {version = "0.3.0", features = ["serde1"]}
+time_steward_simple_flat = {path="../time-steward-simple-flat"}
 
 [replace]
 #"backtrace:0.2.3" = { git = "https://github.com/elidupree/backtrace-rs", branch = "emscripten-fix" }
