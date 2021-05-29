@@ -41,9 +41,9 @@ impl PersistentlyIdentifiedType for Philosopher {
   const ID: PersistentTypeId = PersistentTypeId(0x28c7f7c2007af71f);
 }
 
-fn change_next_handshake_time<Accessor: EventAccessor<SimulationSpec = PhilosophersSpec>>(
-  accessor: &mut Accessor,
-  handle: TypedHandleRef<Philosopher, Accessor::EntityHandleKind>,
+fn change_next_handshake_time<A: EventAccessor<SimulationSpec = PhilosophersSpec>>(
+  accessor: &mut A,
+  handle: TypedHandleRef<Philosopher, A::EntityHandleKind>,
   time: Time,
 ) {
   accessor.set_schedule(
@@ -62,17 +62,15 @@ type TimeStewardTypes = (
   ListedType<TweakUnsafe>,
 );
 
-fn display_snapshot<Accessor: SnapshotAccessor<SimulationSpec = PhilosophersSpec>>(
-  accessor: &Accessor,
-) {
+fn display_snapshot<A: SnapshotAccessor<SimulationSpec = PhilosophersSpec>>(accessor: &A) {
   println!("snapshot for {}", accessor.now());
   for handle in accessor.globals() {
     println!("{:?}", accessor.raw_read_schedule(handle.borrow()));
   }
 }
 
-fn dump_snapshot<Accessor: SnapshotAccessor<SimulationSpec = PhilosophersSpec>>(
-  accessor: &Accessor,
+fn dump_snapshot<A: SnapshotAccessor<SimulationSpec = PhilosophersSpec>>(
+  accessor: &A,
 ) -> Vec<Option<Time>> {
   let mut result = Vec::new();
   for handle in accessor.globals() {
@@ -82,9 +80,9 @@ fn dump_snapshot<Accessor: SnapshotAccessor<SimulationSpec = PhilosophersSpec>>(
 }
 
 impl Wake<PhilosophersSpec> for Philosopher {
-  fn wake<Accessor: EventAccessor<SimulationSpec = PhilosophersSpec>>(
-    accessor: &mut Accessor,
-    this: TypedHandleRef<Self, Accessor::EntityHandleKind>,
+  fn wake<A: EventAccessor<SimulationSpec = PhilosophersSpec>>(
+    accessor: &mut A,
+    this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
     let now = *accessor.now();
     let mut rng = this.write(accessor);
@@ -113,9 +111,9 @@ impl PersistentlyIdentifiedType for Initialize {
   const ID: PersistentTypeId = PersistentTypeId(0xd5e73d8ba6ec59a2);
 }
 impl Wake<PhilosophersSpec> for Initialize {
-  fn wake<Accessor: EventAccessor<SimulationSpec = PhilosophersSpec>>(
-    accessor: &mut Accessor,
-    _this: TypedHandleRef<Self, Accessor::EntityHandleKind>,
+  fn wake<A: EventAccessor<SimulationSpec = PhilosophersSpec>>(
+    accessor: &mut A,
+    _this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
     println!("FIAT!!!!!");
     for i in 0..HOW_MANY_PHILOSOPHERS {
@@ -135,9 +133,9 @@ impl PersistentlyIdentifiedType for Tweak {
   const ID: PersistentTypeId = PersistentTypeId(0xfe9ff3047f9a9552);
 }
 impl Wake<PhilosophersSpec> for Tweak {
-  fn wake<Accessor: EventAccessor<SimulationSpec = PhilosophersSpec>>(
-    accessor: &mut Accessor,
-    _this: TypedHandleRef<Self, Accessor::EntityHandleKind>,
+  fn wake<A: EventAccessor<SimulationSpec = PhilosophersSpec>>(
+    accessor: &mut A,
+    _this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
     let now = *accessor.now();
     let first_philosopher = accessor.globals()[0].clone();
@@ -166,9 +164,9 @@ impl PersistentlyIdentifiedType for TweakUnsafe {
   const ID: PersistentTypeId = PersistentTypeId(0xa1618440808703da);
 }
 impl Wake<PhilosophersSpec> for TweakUnsafe {
-  fn wake<Accessor: EventAccessor<SimulationSpec = PhilosophersSpec>>(
-    accessor: &mut Accessor,
-    _this: TypedHandleRef<Self, Accessor::EntityHandleKind>,
+  fn wake<A: EventAccessor<SimulationSpec = PhilosophersSpec>>(
+    accessor: &mut A,
+    _this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
     thread_local! {static INCONSISTENT: Cell<u32> = Cell::new(0);}
     let inconsistent = INCONSISTENT.with(|value| {
@@ -186,10 +184,10 @@ impl Wake<PhilosophersSpec> for TweakUnsafe {
 }
 
 impl ConstructGlobals<PhilosophersSpec> for PhilosophersSpec {
-  fn construct_globals<Accessor: GlobalsConstructionAccessor<SimulationSpec = PhilosophersSpec>>(
+  fn construct_globals<A: GlobalsConstructionAccessor<SimulationSpec = PhilosophersSpec>>(
     self,
-    accessor: &mut Accessor,
-  ) -> Globals<PhilosophersSpec, Accessor::EntityHandleKind> {
+    accessor: &mut A,
+  ) -> Globals<PhilosophersSpec, A::EntityHandleKind> {
     (0..HOW_MANY_PHILOSOPHERS)
       .map(|_| accessor.create_entity::<Philosopher>((), Pcg64Mcg::new(0xbad)))
       .collect()
