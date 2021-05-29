@@ -3,6 +3,7 @@ use crate::{
   Accessor, EntityHandleKindDeref, EntityKind, EventAccessor, MutableData, SimulationSpec,
   SimulationStateData, TypedHandleRef, Wake,
 };
+use derivative::Derivative;
 
 /// types that allow undo-safe access to entity data in some way; this is about undo safety, not memory safety,
 /// and the read method needs an accessor to actually be allowed to view the data
@@ -30,30 +31,28 @@ impl<'b, E: EntityKind, A: Accessor> ReadAccess<'b, E, A>
   }
 }
 pub trait EntityReadAccess<'b, E: EntityKind, A: Accessor>:
-  ReadAccess<'b, E, A, Target = MutableData<Self::EntityKind, A::EntityHandleKind>>
+  ReadAccess<'b, E, A, Target = MutableData<E, A::EntityHandleKind>>
 {
 }
 impl<
     'b,
-    A: Accessor,
     E: EntityKind,
-    RA: ReadAccess<'b, E, A, Target = MutableData<Self::EntityKind, A::EntityHandleKind>>,
+    A: Accessor,
+    RA: ReadAccess<'b, E, A, Target = MutableData<E, A::EntityHandleKind>>,
   > EntityReadAccess<'b, E, A> for RA
 {
 }
 
 /// types that allow undo-safe mutable access to entity data in some way; this is about undo safety, not memory safety,
 /// and the write method needs an accessor to actually be allowed to view the data
-pub trait WriteAccess<'b, A: EventAccessor, E: EntityKind>: ReadAccess<'b, E, A> {
-  type Target;
+pub trait WriteAccess<'b, E: EntityKind, A: EventAccessor>: ReadAccess<'b, E, A> {
   fn write<'a>(self, accessor: &'a mut A) -> A::WriteGuard<'a, Self::Target>
   where
     'b: 'a;
 }
-impl<'b, A: EventAccessor, E: EntityKind> WriteAccess<'b, E, A>
+impl<'b, E: EntityKind, A: EventAccessor> WriteAccess<'b, E, A>
   for TypedHandleRef<'b, E, A::EntityHandleKind>
 {
-  type Target = MutableData<E, A::EntityHandleKind>;
   // when you just have a TypedHandleRef, write undo-safely by recording the full old state before returning mutable reference
   fn write<'a>(self, accessor: &'a mut A) -> A::WriteGuard<'a, Self::Target>
   where
@@ -64,15 +63,15 @@ impl<'b, A: EventAccessor, E: EntityKind> WriteAccess<'b, E, A>
     accessor.raw_write(self)
   }
 }
-pub trait EntityWriteAccess<'b, E: EntityKind, A: Accessor>:
-  WriteAccess<'b, E, A, Target = MutableData<Self::EntityKind, A::EntityHandleKind>>
+pub trait EntityWriteAccess<'b, E: EntityKind, A: EventAccessor>:
+  WriteAccess<'b, E, A, Target = MutableData<E, A::EntityHandleKind>>
 {
 }
 impl<
     'b,
-    A: Accessor,
     E: EntityKind,
-    RA: WriteAccess<'b, E, A, Target = MutableData<Self::EntityKind, A::EntityHandleKind>>,
+    A: EventAccessor,
+    RA: WriteAccess<'b, E, A, Target = MutableData<E, A::EntityHandleKind>>,
   > EntityWriteAccess<'b, E, A> for RA
 {
 }
@@ -100,19 +99,19 @@ impl<'b, E: EntityKind, A: Accessor> ReadRecordedRef<'b, E, A> {
     Self(entity)
   }
 }
-impl<'b, E: EntityKind, A: Accessor> ReadAccess<'b, E, A> for ReadRecordedRef<'b, E, A> {
-  type Target = MutableData<E, A::EntityHandleKind>;
-  fn entity(self) -> TypedHandleRef<'b, E, A::EntityHandleKind> {
-    self.0
-  }
-  // read undo-safely because we know an access has already been recorded
-  fn read<'a>(self, accessor: &'a A) -> A::ReadGuard<'a, Self::Target>
-  where
-    'b: 'a,
-  {
-    accessor.raw_read(self.0)
-  }
-}
+// impl<'b, E: EntityKind, A: Accessor> ReadAccess<'b, E, A> for ReadRecordedRef<'b, E, A> {
+//   type Target = MutableData<E, A::EntityHandleKind>;
+//   fn entity(self) -> TypedHandleRef<'b, E, A::EntityHandleKind> {
+//     self.0
+//   }
+//   // read undo-safely because we know an access has already been recorded
+//   fn read<'a>(self, accessor: &'a A) -> A::ReadGuard<'a, Self::Target>
+//   where
+//     'b: 'a,
+//   {
+//     accessor.raw_read(self.0)
+//   }
+// }
 
 pub trait AccessorExt: Accessor {
   // read undo-safely by explicitly recording an access
