@@ -63,14 +63,13 @@ pub trait BorrowedDynEntityHandle<'a, H: EntityHandleKindDeref>: BorrowedEntityH
 }
 
 pub trait EntityKind: Any + Sized + PersistentlyIdentifiedType {
-  type ImmutableData: SimulationStateDataKind;
-  type MutableData: SimulationStateDataKind;
+  type ImmutableData<E: EntityHandleKind>: SimulationStateData;
+  type MutableData<E: EntityHandleKind>: SimulationStateData;
 }
 
-pub type ImmutableData<E, H> =
-  <<E as EntityKind>::ImmutableData as SimulationStateDataKind>::Data<H>;
-pub type MutableData<E, H> = <<E as EntityKind>::MutableData as SimulationStateDataKind>::Data<H>;
-pub type Globals<S, H> = <<S as SimulationSpec>::Globals as SimulationStateDataKind>::Data<H>;
+pub type ImmutableData<E, H> = <E as EntityKind>::ImmutableData<H>;
+pub type MutableData<E, H> = <E as EntityKind>::MutableData<H>;
+pub type Globals<S, H> = <S as SimulationSpec>::Globals<H>;
 
 pub trait EntityHandleKind: Sized {
   type TypedHandle<E: EntityKind>: OwnedTypedEntityHandle<E, Self>;
@@ -86,10 +85,6 @@ pub type DynHandle<H> = <H as EntityHandleKind>::DynHandle;
 pub type TypedHandleRef<'a, E, H> = <H as EntityHandleKindDeref>::TypedHandleRef<'a, E>;
 pub type DynHandleRef<'a, H> = <H as EntityHandleKindDeref>::DynHandleRef<'a>;
 
-pub trait SimulationStateDataKind {
-  type Data<E: EntityHandleKind>: SimulationStateData;
-}
-
 // Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time.
 
 /**
@@ -97,7 +92,7 @@ This is intended to be implemented on an empty struct.
 */
 pub trait SimulationSpec: Any {
   type Time: SimulationStateData + Send + Sync + Ord;
-  type Globals: SimulationStateDataKind;
+  type Globals<E: EntityHandleKind>: SimulationStateData;
   type Types: ListOfTypes;
 }
 

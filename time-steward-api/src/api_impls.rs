@@ -10,10 +10,6 @@ impl EntityHandle for EntityId {
   }
 }
 
-impl SimulationStateDataKind for () {
-  type Data<E: EntityHandleKind> = ();
-}
-
 impl<T: SimulationStateData> Modify<T> for ReplaceWith<T> {
   type UndoData = T;
   fn modify(self, entity: &mut T) -> Self::UndoData {

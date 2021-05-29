@@ -11,8 +11,7 @@ use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::{
   ConstructGlobals, ConstructibleTimeSteward, EntityHandle, EntityHandleKind, EntityId, EntityKind,
   EventAccessor, Globals, GlobalsConstructionAccessor, OwnedTypedEntityHandle, SimulationSpec,
-  SimulationStateDataKind, SnapshotAccessor, TimeSteward, TypedHandle, TypedHandleRef, Wake,
-  WriteAccess,
+  SnapshotAccessor, TimeSteward, TypedHandle, TypedHandleRef, Wake, WriteAccess,
 };
 use time_steward_simple_flat as simple_flat;
 
@@ -24,27 +23,18 @@ const HOW_MANY_PHILOSOPHERS: usize = 7;
   Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug, Default,
 )]
 struct PhilosophersSpec;
-struct PhilosophersGlobals;
 //delegate!(PartialEq, Eq, PartialOrd, Ord, [this => &()], [Steward: TimeSteward], [SimulationSpec]);
 impl SimulationSpec for PhilosophersSpec {
   type Time = Time;
-  type Globals = PhilosophersGlobals;
+  type Globals<H: EntityHandleKind> = Vec<TypedHandle<Philosopher, H>>;
   type Types = TimeStewardTypes;
 }
 
-impl SimulationStateDataKind for PhilosophersGlobals {
-  type Data<H: EntityHandleKind> = Vec<TypedHandle<Philosopher, H>>;
-}
-
 struct Philosopher;
-struct PhilosopherMutable;
-impl SimulationStateDataKind for PhilosopherMutable {
-  type Data<H: EntityHandleKind> = Pcg64Mcg;
-}
 
 impl EntityKind for Philosopher {
-  type ImmutableData = ();
-  type MutableData = PhilosopherMutable;
+  type ImmutableData<H: EntityHandleKind> = ();
+  type MutableData<H: EntityHandleKind> = Pcg64Mcg;
 }
 
 impl PersistentlyIdentifiedType for Philosopher {
@@ -116,8 +106,8 @@ impl Wake<PhilosophersSpec> for Philosopher {
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 struct Initialize;
 impl EntityKind for Initialize {
-  type ImmutableData = ();
-  type MutableData = ();
+  type ImmutableData<H: EntityHandleKind> = ();
+  type MutableData<H: EntityHandleKind> = ();
 }
 impl PersistentlyIdentifiedType for Initialize {
   const ID: PersistentTypeId = PersistentTypeId(0xd5e73d8ba6ec59a2);
@@ -138,8 +128,8 @@ impl Wake<PhilosophersSpec> for Initialize {
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 struct Tweak;
 impl EntityKind for Tweak {
-  type ImmutableData = ();
-  type MutableData = ();
+  type ImmutableData<H: EntityHandleKind> = ();
+  type MutableData<H: EntityHandleKind> = ();
 }
 impl PersistentlyIdentifiedType for Tweak {
   const ID: PersistentTypeId = PersistentTypeId(0xfe9ff3047f9a9552);
@@ -169,8 +159,8 @@ impl Wake<PhilosophersSpec> for Tweak {
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
 struct TweakUnsafe;
 impl EntityKind for TweakUnsafe {
-  type ImmutableData = ();
-  type MutableData = ();
+  type ImmutableData<H: EntityHandleKind> = ();
+  type MutableData<H: EntityHandleKind> = ();
 }
 impl PersistentlyIdentifiedType for TweakUnsafe {
   const ID: PersistentTypeId = PersistentTypeId(0xa1618440808703da);
