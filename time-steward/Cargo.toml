@@ -28,6 +28,7 @@ triomphe = { git = "https://github.com/elidupree/triomphe", features = ["unsize"
 unsize = "1.1.0"
 time_steward_integer_math = {path="../integer-math"}
 time_steward_type_utils = {path="../type-utils"}
+time_steward_api = {path="../time-steward-api"}
 
 [dependencies.nalgebra]
 version = "0.18"

@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+  "time-steward-api",
   "time-steward",
   "integer-math",
   "type-utils",
