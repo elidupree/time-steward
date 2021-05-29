@@ -88,7 +88,7 @@ delegate! (
   to [this => &this.0]
 );
 impl<'b, E: EntityKind, A: Accessor> ReadRecordedRef<'b, E, A> {
-  fn new_by_recording<'a>(
+  pub fn new_by_recording<'a>(
     entity: TypedHandleRef<'b, E, A::EntityHandleKind>,
     accessor: &'a A,
   ) -> Self

@@ -489,7 +489,7 @@ impl<'b, S: SimulationSpec> CreateEntityAccessor for SfEventAccessor<'b, S> {
   ) -> TypedHandle<E, Self::EntityHandleKind> {
     let id = self
       .child_id_generator
-      .next(&self.first_waker_universal.id, &self.now);
+      .generate_id(&self.first_waker_universal.id, &self.now);
     SfTypedHandle(Arc::new(EntityInner {
       universal: EntityUniversal {
         id,
@@ -507,7 +507,7 @@ impl<S: SimulationSpec> CreateEntityAccessor for SfGlobalsConstructionAccessor<S
     immutable: ImmutableData<E, Self::EntityHandleKind>,
     mutable: MutableData<E, Self::EntityHandleKind>,
   ) -> TypedHandle<E, Self::EntityHandleKind> {
-    let id = self.child_id_generator.next();
+    let id = self.child_id_generator.generate_id();
     SfTypedHandle(Arc::new(EntityInner {
       universal: EntityUniversal {
         id,
@@ -521,6 +521,7 @@ impl<S: SimulationSpec> CreateEntityAccessor for SfGlobalsConstructionAccessor<S
 
 impl<'c, S: SimulationSpec> EventAccessor for SfEventAccessor<'c, S> {
   type WriteGuard<'a, T: 'a> = RefMut<'a, T>;
+  #[allow(clippy::needless_lifetimes)] // Clippy is currently wrong about GATs
   fn map_write_guard<'a, T, U>(
     guard: Self::WriteGuard<'a, T>,
     f: impl FnOnce(&mut T) -> &mut U,

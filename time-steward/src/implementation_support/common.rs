@@ -162,7 +162,7 @@ impl EventChildrenIdGenerator {
   pub fn new() -> EventChildrenIdGenerator {
     EventChildrenIdGenerator { next: None }
   }
-  pub fn next<Time: Serialize>(&mut self, waker_id: &EntityId, time: &Time) -> EntityId {
+  pub fn generate_id<Time: Serialize>(&mut self, waker_id: &EntityId, time: &Time) -> EntityId {
     let result = match self.next {
       None => EntityId::hash_of(&(waker_id, time)),
       Some(next) => next,
@@ -190,7 +190,7 @@ impl GlobalsConstructionIdGenerator {
       previous: EntityId::from_raw([0xbad_c0de, 0xbad_c0de]),
     }
   }
-  pub fn next(&mut self) -> EntityId {
+  pub fn generate_id(&mut self) -> EntityId {
     self.previous = EntityId::from_raw([
       self.previous.data()[0],
       self.previous.data()[1].wrapping_add(1),

@@ -1,4 +1,5 @@
 #![feature(specialization, generic_associated_types)]
+#![allow(incomplete_features)]
 
 use rand::{Rng, SeedableRng};
 use rand_pcg::Pcg64Mcg;
@@ -10,9 +11,9 @@ use time_steward::type_utils::list_of_types::ListedType;
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::{
   ConstructGlobals, ConstructibleTimeSteward, EntityHandle, EntityHandleKind, EntityId, EntityKind,
-  EventAccessor, Globals, GlobalsConstructionAccessor, OwnedTypedEntityHandle, ReadAccess,
-  SimulationSpec, SimulationStateDataKind, SnapshotAccessor, TimeSteward, TypedHandle,
-  TypedHandleRef, Wake, WriteAccess,
+  EventAccessor, Globals, GlobalsConstructionAccessor, OwnedTypedEntityHandle, SimulationSpec,
+  SimulationStateDataKind, SnapshotAccessor, TimeSteward, TypedHandle, TypedHandleRef, Wake,
+  WriteAccess,
 };
 
 type Time = i64;
@@ -146,7 +147,7 @@ impl PersistentlyIdentifiedType for Tweak {
 impl Wake<PhilosophersSpec> for Tweak {
   fn wake<Accessor: EventAccessor<SimulationSpec = PhilosophersSpec>>(
     accessor: &mut Accessor,
-    this: TypedHandleRef<Self, Accessor::EntityHandleKind>,
+    _this: TypedHandleRef<Self, Accessor::EntityHandleKind>,
   ) {
     let now = *accessor.now();
     let first_philosopher = accessor.globals()[0].clone();
@@ -331,7 +332,7 @@ fn handshakes_reloading_generic<
       .unwrap();
     let earlier_snapshot: <Steward as TimeSteward>::SnapshotAccessor =
       steward.snapshot_before(increment * 100i64).unwrap();
-    let mut serialized = Vec::new();
+    let /*mut*/ serialized = Vec::new();
     //earlier_snapshot.serialize_into(&mut serialized).unwrap();
     use std::io::Cursor;
     let mut reader = Cursor::new(serialized);

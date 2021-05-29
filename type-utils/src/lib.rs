@@ -1,4 +1,5 @@
 #![feature(never_type, specialization)]
+#![allow(incomplete_features)]
 
 use serde::{Deserialize, Serialize};
 

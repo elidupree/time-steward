@@ -6,9 +6,8 @@ use std::io::Read;
 use std::ops::{Deref, DerefMut};
 
 use crate::type_utils::list_of_types::ListOfTypes;
-use crate::type_utils::{ChoiceOfObjectContainedIn, PersistentlyIdentifiedType};
+use crate::type_utils::PersistentlyIdentifiedType;
 use crate::EntityId;
-use type_utils::GetContained;
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
@@ -43,15 +42,6 @@ pub trait OwnedTypedEntityHandle<E: EntityKind, H: EntityHandleKind>:
   fn borrow(&self) -> TypedHandleRef<E, H>
   where
     H: EntityHandleKindDeref;
-  fn raw_read<'a, A: Accessor<EntityHandleKind = H>>(
-    &'a self,
-    accessor: &'a A,
-  ) -> A::ReadGuard<'a, MutableData<E, A::EntityHandleKind>>
-  where
-    H: EntityHandleKindDeref,
-  {
-    accessor.raw_read(self.borrow())
-  }
 }
 pub trait OwnedDynEntityHandle<H: EntityHandleKind>: OwnedEntityHandle {
   // fn downcast<E: EntityKind>(self) -> Result<TypedHandle<E, H>, Self>
@@ -66,15 +56,6 @@ pub trait BorrowedTypedEntityHandle<'a, E: EntityKind, H: EntityHandleKindDeref>
 {
   fn erase(self) -> DynHandleRef<'a, H>;
   fn to_owned(self) -> TypedHandle<E, H>;
-  fn query<A: Accessor<EntityHandleKind = H>>(
-    self,
-    accessor: &mut A,
-  ) -> A::ReadGuard<'a, MutableData<E, A::EntityHandleKind>>
-  where
-    H: EntityHandleKindDeref,
-  {
-    todo!() //accessor.query(self)
-  }
 }
 pub trait BorrowedDynEntityHandle<'a, H: EntityHandleKindDeref>: BorrowedEntityHandle {
   // fn downcast<E: EntityKind>(self) -> Option<TypedHandleRef<'a, E, H>>;
@@ -184,6 +165,7 @@ pub trait Accessor {
 
   `record_read` is always undo-safe to call. The only downside of false-positives is a runtime cost.
   */
+  #[allow(unused)]
   fn record_read<E: EntityKind>(
     &self,
     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
@@ -253,6 +235,7 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
   type WriteGuard<'a, T: 'a>: DerefMut<Target = T>;
 
   /// Make a new WriteGuard for a component of the borrowed data, similar to `std::cell::RefMut::map`. If the WriteGuard type is `&mut T`, this is a trivial application of `f`.
+  #[allow(clippy::needless_lifetimes)] // Clippy is currently wrong about GATs
   fn map_write_guard<'a, T, U>(
     guard: Self::WriteGuard<'a, T>,
     f: impl FnOnce(&mut T) -> &mut U,

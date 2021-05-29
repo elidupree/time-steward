@@ -1,5 +1,6 @@
 #![feature(generic_associated_types)]
 #![warn(unsafe_op_in_unsafe_fn)]
+#![allow(incomplete_features)]
 
 extern crate time_steward_type_utils as type_utils;
 

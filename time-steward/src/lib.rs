@@ -34,6 +34,7 @@
   generic_associated_types
 )]
 #![warn(unsafe_op_in_unsafe_fn)]
+#![allow(incomplete_features)]
 
 #[cfg_attr(test, macro_use)]
 extern crate proptest;

@@ -1,4 +1,3 @@
-use rand::{self, Rng};
 use serde::{ser, Deserialize, Serialize};
 use siphasher::sip::SipHasher;
 use std::fmt;

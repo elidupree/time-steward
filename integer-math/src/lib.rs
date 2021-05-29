@@ -276,6 +276,9 @@ pub fn mean_round_to_even<T: Integer>(first: T, second: T) -> T {
   floor + ((first ^ second) & floor & T::one())
 }
 
+// Clippy is right; TODO refactor this;
+// however I don't want to get into it right now, and the warning is giving me alert fatigue
+#[allow(clippy::too_many_arguments)]
 fn mul_shr_round<
   T: Integer + Signed,
   ShiftAmount: Copy + Into<u32>,
