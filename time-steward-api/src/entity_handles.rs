@@ -60,8 +60,7 @@ pub trait EntityHandleKind: Sized + 'static {
 }
 /// # Safety
 ///
-/// The implementor must guarantee that the associated types are covariant in their lifetime argument,
-/// and exactly the size of *const () and *const dyn Any, respectively.
+/// The implementor must guarantee that the associated types are covariant in their lifetime argument.
 pub unsafe trait EntityHandleKindDeref: EntityHandleKind {
   type TypedHandleRef<'a, E: EntityKind>: BorrowedTypedEntityHandle<'a, E, Self>;
   type DynHandleRef<'a>: BorrowedDynEntityHandle<'a, Self>;
