@@ -6,8 +6,10 @@ use std::io::Read;
 use std::ops::{Deref, DerefMut};
 
 use crate::type_utils::list_of_types::ListOfTypes;
-use crate::type_utils::PersistentlyIdentifiedType;
-use crate::EntityId;
+use crate::{
+  DynHandle, EntityHandleKind, EntityHandleKindDeref, EntityId, EntityKind, Globals, ImmutableData,
+  MutableData, TypedHandle, TypedHandleRef,
+};
 
 /// Data used for a TimeSteward simulation, such as times, entities, and events.
 ///
@@ -21,69 +23,6 @@ pub trait SimulationStateData:
 {
 }
 impl<T: Any + Clone + Eq + ser::Serialize + DeserializeOwned + Debug> SimulationStateData for T {}
-
-/// Data handles where clones point to the same data, and Eq and Hash by object identity, and Serialize by id.
-pub trait EntityHandle: Clone + Ord + Hash + ser::Serialize + Debug {
-  fn id(&self) -> EntityId;
-}
-pub trait TypedEntityHandle<E: EntityKind, H: EntityHandleKind>: EntityHandle {
-  fn get_immutable(&self) -> &ImmutableData<E, H>
-  where
-    H: EntityHandleKindDeref;
-}
-pub trait OwnedEntityHandle: EntityHandle + SimulationStateData {}
-impl<E: EntityHandle + SimulationStateData> OwnedEntityHandle for E {}
-pub trait BorrowedEntityHandle: EntityHandle + Copy {}
-impl<E: EntityHandle + Copy> BorrowedEntityHandle for E {}
-pub trait OwnedTypedEntityHandle<E: EntityKind, H: EntityHandleKind>:
-  OwnedEntityHandle + TypedEntityHandle<E, H>
-{
-  fn erase(self) -> DynHandle<H>;
-  fn borrow(&self) -> TypedHandleRef<E, H>
-  where
-    H: EntityHandleKindDeref;
-}
-pub trait OwnedDynEntityHandle<H: EntityHandleKind>: OwnedEntityHandle {
-  // fn downcast<E: EntityKind>(self) -> Result<TypedHandle<E, H>, Self>
-  // where
-  //   H: EntityHandleKindDeref;
-  fn borrow(&self) -> DynHandleRef<H>
-  where
-    H: EntityHandleKindDeref;
-}
-pub trait BorrowedTypedEntityHandle<'a, E: EntityKind, H: EntityHandleKindDeref>:
-  BorrowedEntityHandle + TypedEntityHandle<E, H>
-{
-  fn erase(self) -> DynHandleRef<'a, H>;
-  fn to_owned(self) -> TypedHandle<E, H>;
-}
-pub trait BorrowedDynEntityHandle<'a, H: EntityHandleKindDeref>: BorrowedEntityHandle {
-  // fn downcast<E: EntityKind>(self) -> Option<TypedHandleRef<'a, E, H>>;
-  // fn to_owned(self) -> DynHandle<H>;
-}
-
-pub trait EntityKind: Any + Sized + PersistentlyIdentifiedType {
-  type ImmutableData<E: EntityHandleKind>: SimulationStateData;
-  type MutableData<E: EntityHandleKind>: SimulationStateData;
-}
-
-pub type ImmutableData<E, H> = <E as EntityKind>::ImmutableData<H>;
-pub type MutableData<E, H> = <E as EntityKind>::MutableData<H>;
-pub type Globals<S, H> = <S as SimulationSpec>::Globals<H>;
-
-pub trait EntityHandleKind: Sized {
-  type TypedHandle<E: EntityKind>: OwnedTypedEntityHandle<E, Self>;
-  type DynHandle: OwnedDynEntityHandle<Self>;
-}
-pub trait EntityHandleKindDeref: EntityHandleKind {
-  type TypedHandleRef<'a, E: EntityKind>: BorrowedTypedEntityHandle<'a, E, Self>;
-  type DynHandleRef<'a>: BorrowedDynEntityHandle<'a, Self>;
-}
-
-pub type TypedHandle<E, H> = <H as EntityHandleKind>::TypedHandle<E>;
-pub type DynHandle<H> = <H as EntityHandleKind>::DynHandle;
-pub type TypedHandleRef<'a, E, H> = <H as EntityHandleKindDeref>::TypedHandleRef<'a, E>;
-pub type DynHandleRef<'a, H> = <H as EntityHandleKindDeref>::DynHandleRef<'a>;
 
 // Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time.
 
@@ -144,11 +83,9 @@ pub trait Accessor {
 
   This requires `&'a self` as well as `'a` entity, so that we can statically guarantee that there is no overlap with mutable access to entities. As a result, you can't hold a reference to *any* entity while any other entity is being modified. This restriction could theoretically be relaxed, but it is the simplest way uphold "shared XOR mutable" without runtime checks.
   */
-  fn raw_read<'a, 'b: 'a, E: EntityKind>(
+  fn raw_read<'a, E: EntityKind>(
     &'a self,
-    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
-    // https://github.com/rust-lang/rust/issues/85533
-    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
+    entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
   ) -> Self::ReadGuard<'a, MutableData<E, Self::EntityHandleKind>>;
 
   /**
@@ -161,13 +98,7 @@ pub trait Accessor {
   `record_read` is always undo-safe to call. The only downside of false-positives is a runtime cost.
   */
   #[allow(unused)]
-  fn record_read<E: EntityKind>(
-    &self,
-    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
-    // https://github.com/rust-lang/rust/issues/85533
-    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'_, E>,
-  ) {
-  }
+  fn record_read<E: EntityKind>(&self, entity: TypedHandleRef<E, Self::EntityHandleKind>) {}
 
   /**
   Raw read access for an entity's current schedule, perhaps simply copying the value. This is not undo-safe, but is a building block for building undo-safe wrappers.
@@ -241,11 +172,9 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
 
   This requires `&'a mut self` as well as `'a` entity, so that we can statically guarantee that there is no overlap with shared access to entities. As a result, you can't hold a reference to *any* entity while any other entity is being modified. This restriction could theoretically be relaxed, but it is the simplest way uphold "shared XOR mutable" without runtime checks.
   */
-  fn raw_write<'a, 'b: 'a, E: EntityKind>(
+  fn raw_write<'a, E: EntityKind>(
     &'a mut self,
-    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
-    // https://github.com/rust-lang/rust/issues/85533
-    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'b, E>,
+    entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
   ) -> Self::WriteGuard<'a, MutableData<E, Self::EntityHandleKind>>;
 
   /**
@@ -261,9 +190,7 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
   */
   fn record_undo<E: EntityKind>(
     &self,
-    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
-    // https://github.com/rust-lang/rust/issues/85533
-    entity: <Self::EntityHandleKind as EntityHandleKindDeref>::TypedHandleRef<'_, E>,
+    entity: TypedHandleRef<E, Self::EntityHandleKind>,
     undo: impl Fn(&mut MutableData<E, Self::EntityHandleKind>) + 'static,
   );
 

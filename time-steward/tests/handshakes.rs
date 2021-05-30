@@ -9,9 +9,9 @@ use std::cell::Cell;
 use time_steward::type_utils::list_of_types::ListedType;
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::{
-  ConstructGlobals, ConstructibleTimeSteward, EntityHandle, EntityHandleKind, EntityId, EntityKind,
-  EventAccessor, Globals, GlobalsConstructionAccessor, OwnedTypedEntityHandle, SimulationSpec,
-  SnapshotAccessor, TimeSteward, TypedHandle, TypedHandleRef, Wake, WriteAccess,
+  ConstructGlobals, ConstructibleTimeSteward, EntityHandleKind, EntityId, EntityKind,
+  EventAccessor, Globals, GlobalsConstructionAccessor, SimulationSpec, SnapshotAccessor,
+  TimeSteward, TypedHandle, TypedHandleRef, Wake, WriteAccess,
 };
 use time_steward_simple_flat as simple_flat;
 
@@ -94,7 +94,7 @@ impl Wake<PhilosophersSpec> for Philosopher {
     // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
     // IN THE SECOND TIME APPARENTLY
     let friend = accessor.globals()[friend_id].clone();
-    if friend.id() != this.id() {
+    if friend != this {
       change_next_handshake_time(accessor, friend.borrow(), awaken_time_1);
     }
     change_next_handshake_time(accessor, this, awaken_time_2);

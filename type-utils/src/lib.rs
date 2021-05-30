@@ -166,7 +166,7 @@ macro_rules! delegate {
   };
   (Hash, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
     impl<$($bounds)*> ::std::hash::Hash for $($concrete)* {
-      fn hash <H: ::std::hash::Hasher> (&self, state: &mut H) {
+      fn hash <__DELEGATE_HASHER: ::std::hash::Hasher> (&self, state: &mut __DELEGATE_HASHER) {
         let my_target = { let $this = self; $target };
         my_target.hash (state);
       }
@@ -174,7 +174,7 @@ macro_rules! delegate {
   };
   (Serialize, $this: ident => $target: expr, [$($bounds:tt)*], [$($concrete:tt)*]) => {
     impl<$($bounds)*> ::serde::ser::Serialize for $($concrete)* {
-      fn serialize<Ser: ::serde::ser::Serializer>(&self, serializer: Ser) -> Result<Ser::Ok, Ser::Error> {
+      fn serialize<__DELEGATE_SERIALIZER: ::serde::ser::Serializer>(&self, serializer: __DELEGATE_SERIALIZER) -> Result<__DELEGATE_SERIALIZER::Ok, __DELEGATE_SERIALIZER::Error> {
         let my_target = { let $this = self; $target };
         my_target.serialize(serializer)
       }
