@@ -22,8 +22,7 @@ This has 2 purposes:
 */
 
 use derivative::Derivative;
-use scopeguard::defer;
-use std::cell::{Cell, Ref, RefCell, RefMut};
+use std::cell::{Ref, RefCell, RefMut};
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Debug;
 use std::io::Read;
@@ -43,10 +42,10 @@ use time_steward_implementation_support::{
 // ############     Handle definitions    ############
 // ###################################################
 #[derive(Derivative)]
-#[derivative(Clone(bound = ""))]
+#[derivative(Clone(bound = ""), Debug(bound = ""))]
 pub struct SfTypedHandle<S: SimulationSpec, E: EntityKind>(Arc<EntityInner<S, E>>);
 #[derive(Derivative)]
-#[derivative(Clone(bound = ""))]
+#[derivative(Clone(bound = ""), Debug(bound = ""))]
 pub struct SfDynHandle<S: SimulationSpec>(Arc<dyn AnyEntityInner<S>>);
 #[repr(transparent)]
 #[derive(Derivative)]
@@ -258,29 +257,6 @@ impl<S: SimulationSpec, E: Wake<S>> AnyEntityInner<S> for EntityInner<S, E> {
       accessor,
       TypedHandleRef::from_wrapped_gat(SfTypedHandleRef(unsafe { ArcBorrow::from_ref(self) })),
     );
-  }
-}
-
-impl<S: SimulationSpec, E: EntityKind> Debug for SfTypedHandle<S, E> {
-  fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-    thread_local! {
-      static RECURSIVE: Cell<bool> = Cell::new(false);
-    }
-    RECURSIVE.with(|recursive| {
-      if recursive.get() {
-        write!(f, "TypedHandle({})", self.id())
-      } else {
-        recursive.set(true);
-        defer! { recursive.set(false) }
-        write!(f, "TypedHandle({:?})", *self.0)
-      }
-    })
-  }
-}
-
-impl<S: SimulationSpec> Debug for SfDynHandle<S> {
-  fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-    write!(f, "DynHandle({})", self.id())
   }
 }
 

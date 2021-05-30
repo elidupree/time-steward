@@ -1,6 +1,9 @@
 use crate::entity_handles::*;
 use crate::EntityId;
+use scopeguard::defer;
 use serde::{Deserialize, Deserializer};
+use std::cell::Cell;
+use std::fmt::Debug;
 use time_steward_type_utils::delegate;
 
 impl EntityHandle for EntityId {
@@ -42,6 +45,41 @@ impl<'de, E: EntityKind, H: EntityHandleKind> Deserialize<'de> for TypedHandle<E
 impl<'de, H: EntityHandleKind> Deserialize<'de> for DynHandle<H> {
   fn deserialize<D: Deserializer<'de>>(_deserializer: D) -> Result<Self, D::Error> {
     todo!()
+  }
+}
+
+impl<E: EntityKind, H: EntityHandleKind> Debug for TypedHandle<E, H> {
+  fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+    thread_local! {
+      static RECURSIVE: Cell<bool> = Cell::new(false);
+    }
+    RECURSIVE.with(|recursive| {
+      if recursive.get() {
+        write!(f, "TypedHandle({})", self.id())
+      } else {
+        recursive.set(true);
+        defer! { recursive.set(false) }
+        write!(f, "TypedHandle({:?})", self.wrapped_gat())
+      }
+    })
+  }
+}
+
+impl<H: EntityHandleKind> Debug for DynHandle<H> {
+  fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+    write!(f, "DynHandle({})", self.id())
+  }
+}
+
+impl<'a, E: EntityKind, H: EntityHandleKindDeref> Debug for TypedHandleRef<'a, E, H> {
+  fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+    write!(f, "TypedHandleRef({:?})", self.into_wrapped_gat())
+  }
+}
+
+impl<'a, H: EntityHandleKindDeref> Debug for DynHandleRef<'a, H> {
+  fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+    write!(f, "DynHandleRef({})", self.id())
   }
 }
 

@@ -13,6 +13,7 @@ rand = "0.8.3"
 serde = {version = "1.0", features = ["derive"]}
 siphasher = "0.2.2"
 bincode = "0.8"
+scopeguard = "1.1.0"
 derivative = {git="https://github.com/mcarton/rust-derivative"}
 time_steward_type_utils = {path="../type-utils"}
 

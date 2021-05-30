@@ -69,12 +69,12 @@ pub unsafe trait EntityHandleKindDeref: EntityHandleKind {
 
 #[repr(transparent)]
 #[derive(Derivative)]
-#[derivative(Clone(bound = ""), Debug(bound = ""))]
+#[derivative(Clone(bound = ""))]
 pub struct TypedHandle<E: EntityKind, H: EntityHandleKind>(H::TypedHandle<E>);
 
 #[repr(transparent)]
 #[derive(Derivative)]
-#[derivative(Clone(bound = ""), Debug(bound = ""))]
+#[derivative(Clone(bound = ""))]
 pub struct DynHandle<H: EntityHandleKind>(H::DynHandle);
 
 // a hacky wrapper to export covariance
@@ -82,7 +82,7 @@ pub struct DynHandle<H: EntityHandleKind>(H::DynHandle);
 // and (via the BorrowedEntityHandle trait) guarantees that it is Copy.
 // the `&'a ()` enforces covariance (as opposed to bivariance)
 #[derive(Derivative)]
-#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+#[derivative(Copy(bound = ""), Clone(bound = ""))]
 pub struct TypedHandleRef<'a, E: EntityKind, H: EntityHandleKindDeref> {
   wrapped_gat: H::TypedHandleRef<'static, E>,
   _marker: PhantomData<&'a ()>,
@@ -93,7 +93,7 @@ pub struct TypedHandleRef<'a, E: EntityKind, H: EntityHandleKindDeref> {
 // and (via the BorrowedEntityHandle trait) guarantees that it is Copy.
 // the `&'a ()` enforces covariance (as opposed to bivariance)
 #[derive(Derivative)]
-#[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
+#[derivative(Copy(bound = ""), Clone(bound = ""))]
 pub struct DynHandleRef<'a, H: EntityHandleKindDeref> {
   wrapped_gat: H::DynHandleRef<'static>,
   _marker: PhantomData<&'a ()>,
