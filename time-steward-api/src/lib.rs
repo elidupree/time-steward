@@ -10,7 +10,10 @@ pub use crate::entity_id::*;
 #[macro_use]
 mod api;
 pub use crate::api::*;
-mod entity_handles;
-pub use crate::entity_handles::*;
+pub mod entity_handles;
+pub use crate::entity_handles::{
+  DynHandle, DynHandleRef, EntityHandleKind, EntityHandleKindDeref, EntityKind, Globals,
+  ImmutableData, MutableData, TypedHandle, TypedHandleRef,
+};
 mod api_impls;
 mod entity_handle_impls;

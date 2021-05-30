@@ -33,6 +33,7 @@ use std::rc::Rc;
 use triomphe::{Arc, ArcBorrow};
 use unsize::CoerceUnsize;
 
+use time_steward_api::entity_handles::*;
 use time_steward_api::*;
 use time_steward_implementation_support::{
   EventChildrenIdGenerator, GlobalsConstructionIdGenerator,
