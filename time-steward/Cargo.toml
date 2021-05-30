@@ -17,7 +17,7 @@ proptest = "0.7.1"
 bincode = "0.8"
 #crossbeam = "0.2"
 siphasher = "0.2.2"
-derivative = {git="https://github.com/mcarton/rust-derivative"}
+derivative = "2.2.0"
 dimensioned = "0.6"
 array_ext = "0.2"
 num = "0.2"

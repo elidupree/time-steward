@@ -13,7 +13,7 @@ serde = {version = "1.0", features = ["derive"]}
 bincode = "0.8"
 triomphe = { git = "https://github.com/elidupree/triomphe", features = ["unsize"]}
 unsize = "1.1.0"
-derivative = {git="https://github.com/mcarton/rust-derivative"}
+derivative = "2.2.0"
 time_steward_type_utils = {path="../type-utils"}
 time_steward_api = {path="../time-steward-api"}
 time_steward_implementation_support = {path="../time-steward-implementation-support"}
