@@ -4,6 +4,7 @@ use scopeguard::defer;
 use serde::{Deserialize, Deserializer};
 use std::cell::Cell;
 use std::fmt::Debug;
+use std::ops::Deref;
 use time_steward_type_utils::delegate;
 
 impl EntityHandle for EntityId {
@@ -36,6 +37,21 @@ delegate! (
   for [DynHandleRef<'a, H>]
   to [this => &this.into_wrapped_gat().id()]
 );
+
+impl<E: EntityKind, H: EntityHandleKindDeref> Deref for TypedHandle<E, H> {
+  type Target = ImmutableData<E, H>;
+
+  fn deref(&self) -> &Self::Target {
+    self.wrapped_gat().get_immutable()
+  }
+}
+impl<'a, E: EntityKind, H: EntityHandleKindDeref> Deref for TypedHandleRef<'a, E, H> {
+  type Target = ImmutableData<E, H>;
+
+  fn deref(&self) -> &Self::Target {
+    self.wrapped_gat().get_immutable()
+  }
+}
 
 impl<'de, E: EntityKind, H: EntityHandleKind> Deserialize<'de> for TypedHandle<E, H> {
   fn deserialize<D: Deserializer<'de>>(_deserializer: D) -> Result<Self, D::Error> {

@@ -644,15 +644,16 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
     if matches!(self.earliest_mutable_time(), Some(earliest_mutable) if time < earliest_mutable) {
       return Err(FiatEventOperationError::InvalidTime);
     }
-    let entity = TypedHandle::from_wrapped_gat(SfTypedHandle::<_, E>(Arc::new(EntityInner {
-      universal: EntityUniversal {
-        id,
-        schedule: History::new(Some(time.clone())),
-      },
-      immutable,
-      mutable: History::new(mutable),
-    })))
-    .erase();
+    let entity: TypedHandle<E, SfEntityHandleKind<S>> =
+      TypedHandle::from_wrapped_gat(SfTypedHandle::<_, E>(Arc::new(EntityInner {
+        universal: EntityUniversal {
+          id,
+          schedule: History::new(Some(time.clone())),
+        },
+        immutable,
+        mutable: History::new(mutable),
+      })));
+    let entity: DynHandle<SfEntityHandleKind<S>> = entity.erase();
 
     self
       .fiat_events

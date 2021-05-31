@@ -80,6 +80,7 @@ pub struct DynHandle<H: EntityHandleKind>(H::DynHandle);
 // safety: the EntityHandleKindDeref trait guarantees that the wrapped GAT is covariant,
 // and (via the BorrowedEntityHandle trait) guarantees that it is Copy.
 // the `&'a ()` enforces covariance (as opposed to bivariance)
+#[repr(transparent)]
 #[derive(Derivative)]
 #[derivative(Copy(bound = ""), Clone(bound = ""))]
 pub struct TypedHandleRef<'a, E: EntityKind, H: EntityHandleKindDeref> {
@@ -91,6 +92,7 @@ pub struct TypedHandleRef<'a, E: EntityKind, H: EntityHandleKindDeref> {
 // safety: the EntityHandleKindDeref trait guarantees that the wrapped GAT is covariant,
 // and (via the BorrowedEntityHandle trait) guarantees that it is Copy.
 // the `&'a ()` enforces covariance (as opposed to bivariance)
+#[repr(transparent)]
 #[derive(Derivative)]
 #[derivative(Copy(bound = ""), Clone(bound = ""))]
 pub struct DynHandleRef<'a, H: EntityHandleKindDeref> {
@@ -108,12 +110,12 @@ impl<E: EntityKind, H: EntityHandleKind> TypedHandle<E, H> {
     &self.0
   }
   #[inline(always)]
-  pub fn id(&self) -> EntityId {
-    self.0.id()
-  }
-  #[inline(always)]
   pub fn into_wrapped_gat(self) -> H::TypedHandle<E> {
     self.0
+  }
+  #[inline(always)]
+  pub fn id(&self) -> EntityId {
+    self.0.id()
   }
   #[inline(always)]
   pub fn erase(self) -> DynHandle<H> {
@@ -156,6 +158,10 @@ impl<'a, E: EntityKind, H: EntityHandleKindDeref> TypedHandleRef<'a, E, H> {
     }
   }
   #[inline(always)]
+  pub fn wrapped_gat(&self) -> &H::TypedHandleRef<'a, E> {
+    unsafe { mem::transmute(self) }
+  }
+  #[inline(always)]
   pub fn into_wrapped_gat(self) -> H::TypedHandleRef<'a, E> {
     unsafe { mem::transmute_copy(&self.wrapped_gat) }
   }
@@ -180,6 +186,10 @@ impl<'a, H: EntityHandleKindDeref> DynHandleRef<'a, H> {
   #[inline(always)]
   pub fn id(&self) -> EntityId {
     self.into_wrapped_gat().id()
+  }
+  #[inline(always)]
+  pub fn wrapped_gat(&self) -> &H::DynHandleRef<'a> {
+    unsafe { mem::transmute(self) }
   }
   #[inline(always)]
   pub fn into_wrapped_gat(self) -> H::DynHandleRef<'a> {
