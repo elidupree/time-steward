@@ -1,0 +1,508 @@
+use nalgebra::Vector2;
+use std::marker::PhantomData;
+
+use time_steward::support::trajectories;
+use time_steward::type_utils::list_of_types::ListedType;
+use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
+use time_steward::{
+  EntityHandleKind, EntityId, EntityKind, EventAccessor, ReadAccess, TypedHandleRef, Wake,
+  WriteAccess,
+};
+use time_steward::{SimulationSpec, TypedHandle};
+
+use boolinator::Boolinator;
+use rand::Rng;
+use time_steward_api::EventAccessor;
+
+pub type Time = i64;
+pub type SpaceCoordinate = i32;
+pub type QuadraticTrajectory = trajectories::QuadraticTrajectory<Vector2<SpaceCoordinate>>;
+
+pub const HOW_MANY_CIRCLES: usize = 20;
+pub const ARENA_SIZE_SHIFT: u32 = 20;
+pub const ARENA_SIZE: SpaceCoordinate = 1 << ARENA_SIZE_SHIFT;
+// pub const GRID_SIZE_SHIFT: u32 = ARENA_SIZE_SHIFT - 3;
+// pub const GRID_SIZE: SpaceCoordinate = 1 << GRID_SIZE_SHIFT;
+pub const TIME_SHIFT: u32 = 20;
+pub const STATIC_TIME_SHIFT: u32 = TIME_SHIFT;
+pub const SECOND: Time = 1 << TIME_SHIFT;
+
+#[derive(
+  Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug, Default,
+)]
+pub struct BouncyCirclesSpec {}
+impl SimulationSpec for BouncyCirclesSpec {
+  type Time = Time;
+  type Globals<H: EntityHandleKind> = Globals<H>;
+  type Types = (
+    ListedType<RelationshipChange>,
+    ListedType<BoundaryChange>,
+    ListedType<Initialize>,
+    ListedType<Disturb>,
+    collisions::simple_grid::Types<Space>,
+  );
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub struct Globals<H: EntityHandleKind> {
+  pub circles: Vec<TypedHandle<Circle, H>>,
+  //pub detector: EntityCell<SimpleTimeline<DataHandle<SimpleGridDetector<Space>>, Steward>>,
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub struct CircleImmutable {
+  pub index: usize,
+  pub radius: SpaceCoordinate,
+}
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub struct CircleMutable<H: EntityHandleKind> {
+  pub position: QuadraticTrajectory,
+  pub relationships: Vec<TypedHandle<Relationship, H>>,
+  pub boundary_induced_acceleration: Option<Vector2<SpaceCoordinate>>,
+  //pub collision_data: Option<collisions::simple_grid::DetectorDataPerObject<Space>>,
+}
+pub struct Circle;
+impl PersistentlyIdentifiedType for Circle {
+  const ID: PersistentTypeId = PersistentTypeId(0xd711cc7240c71607);
+}
+impl EntityKind for Circle {
+  type ImmutableData<H: EntityHandleKind> = CircleImmutable;
+  type MutableData<H: EntityHandleKind> = CircleMutable<H>;
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub struct RelationshipImmutable<H: EntityHandleKind> {
+  pub circles: [TypedHandle<Circle, H>; 2],
+}
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub struct RelationshipMutable {
+  pub induced_acceleration: Option<Vector2<SpaceCoordinate>>,
+}
+pub struct Relationship;
+impl PersistentlyIdentifiedType for Relationship {
+  const ID: PersistentTypeId = PersistentTypeId(0xa1010b5e80c3465a);
+}
+impl EntityKind for Relationship {
+  type ImmutableData<H: EntityHandleKind> = RelationshipImmutable;
+  type MutableData<H: EntityHandleKind> = RelationshipMutable<H>;
+}
+
+impl Wake<PhilosophersSpec> for Circle {
+  fn wake<A: EventAccessor<SimulationSpec = BouncyCirclesSpec>>(
+    accessor: &mut A,
+    this: TypedHandleRef<Self, A::EntityHandleKind>,
+  ) {
+    let new = this.write(accessor);
+    if let Some(induced_acceleration) = new.boundary_induced_acceleration {
+      new
+        .position
+        .add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, -induced_acceleration)
+        .unwrap();
+      new.boundary_induced_acceleration = None;
+    } else {
+      let acceleration = -(new
+        .position
+        .value(*accessor.now(), STATIC_TIME_SHIFT)
+        .unwrap()
+        - Vector2::new(ARENA_SIZE / 2, ARENA_SIZE / 2))
+        * (ARENA_SIZE * 1600 / (ARENA_SIZE - self.circle_handle.radius));
+      new
+        .position
+        .add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, acceleration)
+        .unwrap();
+      new.boundary_induced_acceleration = Some(acceleration);
+    }
+    trajectory_changed(accessor, this);
+  }
+}
+
+impl Wake<PhilosophersSpec> for Relationship {
+  fn wake<A: EventAccessor<SimulationSpec = BouncyCirclesSpec>>(
+    accessor: &mut A,
+    this: TypedHandleRef<Self, A::EntityHandleKind>,
+  ) {
+    let circles = &this.circles;
+    let new = circles.map(|c| c.read(accessor).position.clone());
+    //let new_difference = new.0.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap()-new.1.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap();
+    //println!("event with error {:?}", (new_difference.dot(&new_difference) as f64).sqrt() - (circles.0.radius+circles.1.radius)  as f64);
+    if let Some(induced_acceleration) = relationship_varying.induced_acceleration {
+      new[0]
+        .add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, -induced_acceleration)
+        .unwrap();
+      new[1]
+        .add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, induced_acceleration)
+        .unwrap();
+      this.write(accessor).induced_acceleration = None;
+      //println!("Parted {} At {}", self.id, mutator.now());
+    } else {
+      let acceleration = (new[0].value(*accessor.now(), STATIC_TIME_SHIFT).unwrap()
+        - new[1].value(*accessor.now(), STATIC_TIME_SHIFT).unwrap())
+        * (ARENA_SIZE * 16 / (circles.0.radius + circles.1.radius));
+      new[0]
+        .add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, acceleration)
+        .unwrap();
+      new[1]
+        .add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, -acceleration)
+        .unwrap();
+      this.write(accessor).induced_acceleration = Some(acceleration);
+      //println!("Joined {} At {}", self.id, mutator.now());
+    }
+
+    for (circle, new_position) in circles.iter().zip(new) {
+      circle.write(accessor).position = new_position;
+    }
+    for circle in circles {
+      trajectory_changed(accessor, circle);
+    }
+  }
+}
+
+fn trajectory_changed<A: EventAccessor<SimulationSpec = BouncyCirclesSpec>>(
+  accessor: &mut A,
+  circle: TypedHandleRef<Circle, A::EntityHandleKind>,
+) {
+  for relationship in circle.read(accessor).relationships.clone() {
+    update_relationship_change_schedule(accessor, relationship);
+  }
+  update_boundary_change_schedule(accessor, circle);
+  // SimpleGridDetector::changed_course(
+  //   accessor,
+  //   &query(accessor, &accessor.globals().detector),
+  //   circle,
+  // );
+}
+
+fn update_relationship_change_schedule<A: EventAccessor<SimulationSpec = BouncyCirclesSpec>>(
+  accessor: &mut A,
+  relationship: TypedHandleRef<Relationship, A::EntityHandleKind>,
+) {
+  let circles = &relationship.circles;
+  let us = circles.map(|circle| circle.read(accessor));
+
+  let difference = &us[1].position - &us[0].position;
+  let radius = circles[0].radius + circles[1].radius;
+  let change_time = if relationship_varying.induced_acceleration.is_none() {
+    difference.next_time_magnitude_significantly_lt(
+      [*accessor.now(), Time::MAX],
+      STATIC_TIME_SHIFT,
+      radius - 2,
+    )
+  } else {
+    difference.next_time_magnitude_significantly_gt(
+      [*accessor.now(), Time::MAX],
+      STATIC_TIME_SHIFT,
+      radius + 2,
+    )
+  };
+
+  if change_time.is_none() && relationship_varying.induced_acceleration.is_some() {
+    panic!(
+      " fail {:?} {:?} {:?}",
+      relationship_handle, relationship_varying, us
+    )
+  }
+
+  accessor.set_schedule(relationship, change_time);
+}
+
+fn update_boundary_change_schedule<A: EventAccessor<SimulationSpec = BouncyCirclesSpec>>(
+  accessor: &mut A,
+  circle: TypedHandleRef<Circle, A::EntityHandleKind>,
+) {
+  let arena_center = QuadraticTrajectory::constant(Vector2::new(ARENA_SIZE / 2, ARENA_SIZE / 2));
+  let circle_mutable = circle.read(accessor);
+
+  let difference = &circle_mutable.position - arena_center;
+  let radius = ARENA_SIZE - circle_handle.radius;
+  let change_time = if circle_mutable.boundary_induced_acceleration.is_some() {
+    difference.next_time_magnitude_significantly_lt(
+      [*accessor.now(), Time::max_value()],
+      STATIC_TIME_SHIFT,
+      radius - 2,
+    )
+  } else {
+    difference.next_time_magnitude_significantly_gt(
+      [*accessor.now(), Time::max_value()],
+      STATIC_TIME_SHIFT,
+      radius + 2,
+    )
+  };
+
+  accessor.set_schedule(circle, change_time);
+}
+
+fn modify<
+  A: EventAccessor<SimulationSpec = BouncyCirclesSpec>,
+  T: QueryResult,
+  F: FnOnce(&mut T),
+>(
+  accessor: &A,
+  cell: &EntityCell<SimpleTimeline<T, Steward>>,
+  f: F,
+) {
+  let mut data = query(accessor, cell);
+  (f)(&mut data);
+  set(accessor, cell, data);
+}
+fn modify_trajectory<
+  A: EventAccessor<SimulationSpec = BouncyCirclesSpec>,
+  F: FnOnce(&mut CircleVarying),
+>(
+  accessor: &A,
+  circle: &CircleHandle,
+  f: F,
+) {
+  modify(accessor, &circle.varying, |varying| (f)(varying));
+  trajectory_changed(accessor, circle);
+}
+fn modify_trajectories<
+  A: EventAccessor<SimulationSpec = BouncyCirclesSpec>,
+  F: FnOnce(&mut RelationshipVarying, (&mut CircleVarying, &mut CircleVarying)),
+>(
+  accessor: &A,
+  relationship: &RelationshipHandle,
+  f: F,
+) {
+  modify(accessor, &relationship.varying, |relationship_varying| {
+    modify(accessor, &relationship.circles.0.varying, |circle_0| {
+      modify(accessor, &relationship.circles.1.varying, |circle_1| {
+        (f)(relationship_varying, (circle_0, circle_1));
+      });
+    });
+  });
+  trajectory_changed(accessor, &relationship.circles.0);
+  trajectory_changed(accessor, &relationship.circles.1);
+}
+
+// fn to_collision_space(coordinate: SpaceCoordinate) -> collisions::Coordinate {
+//   (coordinate as collisions::Coordinate).wrapping_sub(1u64 << 63)
+// }
+// fn from_collision_space(coordinate: collisions::Coordinate) -> SpaceCoordinate {
+//   (coordinate.wrapping_add(1u64 << 63)) as SpaceCoordinate
+// }
+//
+// #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+// pub struct Space;
+// impl PersistentlyIdentifiedType for Space {
+//   const ID: PersistentTypeId = PersistentTypeId(0x879511343e48addd);
+// }
+// impl collisions::Space for Space {
+//   type SimulationSpec = BouncyCirclesSpec;
+//   type Object = Circle;
+//   type DetectorDataPerObject = collisions::simple_grid::DetectorDataPerObject<Self>;
+//   type UniqueId = usize;
+//
+//   const DIMENSIONS: NumDimensions = 2;
+//
+//   // An Object generally has to store some opaque data for the collision detector.
+//   // It would normally include a DataHandle to a tree node.
+//   // These are getter and setter methods for that data.
+//   fn get_detector_data<A: Accessor<Steward = Self::Steward>>(
+//     &self,
+//     accessor: &A,
+//     object: &DataHandle<Self::Object>,
+//   ) -> Option<Self::DetectorDataPerObject> {
+//     query(accessor, &object.varying).collision_data
+//   }
+//   fn set_detector_data<A: EventAccessor<Steward = Self::Steward>>(
+//     &self,
+//     accessor: &A,
+//     object: &DataHandle<Self::Object>,
+//     data: Option<Self::DetectorDataPerObject>,
+//   ) {
+//     modify(accessor, &object.varying, |varying| {
+//       varying.collision_data = data
+//     });
+//   }
+//   fn unique_id<A: EventAccessor<Steward = Self::Steward>>(
+//     &self,
+//     _accessor: &A,
+//     object: &DataHandle<Self::Object>,
+//   ) -> Self::UniqueId {
+//     object.index
+//   }
+//
+//   fn current_bounding_box<A: EventAccessor<Steward = Self::Steward>>(
+//     &self,
+//     accessor: &A,
+//     object: &DataHandle<Self::Object>,
+//   ) -> BoundingBox<Self> {
+//     let varying = tracking_query(accessor, &object.varying);
+//     let center = varying
+//       .position
+//       .value(*accessor.now(), STATIC_TIME_SHIFT)
+//       .unwrap();
+//     let effective_radius = object.radius + 16; // just correcting for leeway in next_time_possibly_outside_bounds
+//     BoundingBox {
+//       bounds: [
+//         [
+//           to_collision_space(center[0] - effective_radius),
+//           to_collision_space(center[0] + effective_radius),
+//         ],
+//         [
+//           to_collision_space(center[1] - effective_radius),
+//           to_collision_space(center[1] + effective_radius),
+//         ],
+//       ],
+//       _marker: PhantomData,
+//     }
+//   }
+//   fn when_escapes<A: EventAccessor<Steward = Self::Steward>>(
+//     &self,
+//     accessor: &A,
+//     object: &DataHandle<Self::Object>,
+//     bounds: BoundingBox<Self>,
+//   ) -> Option<<<Self::Steward as TimeSteward>::SimulationSpec as SimulationSpecTrait>::Time> {
+//     let varying = tracking_query(accessor, &object.varying);
+//     varying.position.next_time_possibly_outside_bounds(
+//       [*accessor.now(), Time::max_value()],
+//       STATIC_TIME_SHIFT,
+//       [
+//         Vector2::new(
+//           from_collision_space(bounds.bounds[0][0]) + object.radius,
+//           from_collision_space(bounds.bounds[1][0]) + object.radius,
+//         ),
+//         Vector2::new(
+//           from_collision_space(bounds.bounds[0][1]) - object.radius,
+//           from_collision_space(bounds.bounds[1][1]) - object.radius,
+//         ),
+//       ],
+//     )
+//   }
+//
+//   fn become_neighbors<A: EventAccessor<Steward = Self::Steward>>(
+//     &self,
+//     accessor: &A,
+//     objects: [&DataHandle<Self::Object>; 2],
+//   ) {
+//     //println!("become {:?}", (objects [0].index, objects [1].index));
+//     let relationship = accessor.new_handle(Relationship {
+//       circles: (objects[0].clone(), objects[1].clone()),
+//       varying: EntityCell::new(SimpleTimeline::new()),
+//     });
+//     set(
+//       accessor,
+//       &relationship.varying,
+//       RelationshipVarying {
+//         induced_acceleration: None,
+//         next_change: None,
+//       },
+//     );
+//     for object in objects.iter() {
+//       modify(accessor, &object.varying, |varying| {
+//         varying.relationships.push(relationship.clone())
+//       });
+//     }
+//     update_relationship_change_prediction(accessor, &relationship);
+//   }
+//   fn stop_being_neighbors<A: EventAccessor<Steward = Self::Steward>>(
+//     &self,
+//     accessor: &A,
+//     objects: [&DataHandle<Self::Object>; 2],
+//   ) {
+//     //println!("stop {:?}", (objects [0].index, objects [1].index));
+//     let varying = tracking_query(accessor, &objects[0].varying);
+//     let relationship = varying
+//       .relationships
+//       .iter()
+//       .find(|relationship| {
+//         ([&relationship.circles.0, &relationship.circles.1] == objects
+//           || [&relationship.circles.1, &relationship.circles.0] == objects)
+//       })
+//       .unwrap()
+//       .clone();
+//     destroy(accessor, &relationship.varying);
+//     for object in objects.iter() {
+//       modify(accessor, &object.varying, |varying| {
+//         varying.relationships.retain(|relationship| {
+//           !([&relationship.circles.0, &relationship.circles.1] == objects
+//             || [&relationship.circles.1, &relationship.circles.0] == objects)
+//         })
+//       });
+//     }
+//   }
+// }
+
+define_event! {
+  pub struct Initialize {},
+  PersistentTypeId(0xbf7ba1ff2ab76640),
+  fn execute (&self, accessor: &mut A) {
+    set (accessor, &accessor.globals().detector, SimpleGridDetector::new (accessor, Space, (ARENA_SIZE >> 2) as collisions::Coordinate));
+    let circles = &accessor.globals().circles;
+    let mut varying = Vec::new();
+    let mut generator = EntityId::hash_of (&2u8).to_rng();
+    let thingy = ARENA_SIZE as i64 / 20;
+    for index in 0..HOW_MANY_CIRCLES {
+      // starting with i64 and converting to i32 only matters so that the starting state will generate the same random values as the old system where SpaceCoordinate was i64
+      let mut position = QuadraticTrajectory::constant (Vector2::new (
+        generator.gen_range(0, ARENA_SIZE as i64) as SpaceCoordinate,
+        generator.gen_range(0, ARENA_SIZE as i64) as SpaceCoordinate,
+      ));
+      position.set_velocity (*accessor.now(), STATIC_TIME_SHIFT, Vector2::new (
+        generator.gen_range(-thingy, thingy) as SpaceCoordinate,
+        generator.gen_range(-thingy, thingy) as SpaceCoordinate,
+      )).unwrap();
+      varying.push (CircleVarying {
+        position: position,
+        relationships: Vec::new(),
+        boundary_induced_acceleration: None,
+        next_boundary_change: None,
+        collision_data: None,
+      });
+      set (accessor, & circles [index].varying, varying [index].clone());
+    }
+    for index in 0..HOW_MANY_CIRCLES {
+      SimpleGridDetector::insert (accessor, &query(accessor, &accessor.globals().detector), & circles [index], None);
+    }
+  }
+}
+
+define_event! {
+  pub struct Disturb {pub coordinates: [SpaceCoordinate; 2]},
+  PersistentTypeId(0xb8bbf65eaaf08d0e),
+  fn execute (&self, accessor: &mut A) {
+    let circles = &accessor.globals().circles;
+    let mut best_handle = None;
+    {
+      let mut best_distance_squared = i64::max_value();
+      for circle in circles.iter() {
+        let varying = tracking_query_ref (accessor, &circle.varying);
+        let position = varying.position.value (*accessor.now(), STATIC_TIME_SHIFT).unwrap();
+        let distance_squared = (self.coordinates [0] as i64 - position [0] as i64) * (self.coordinates [0] as i64 - position [0] as i64) + (self.coordinates [1] as i64 - position [1] as i64) * (self.coordinates [1] as i64 - position [1] as i64);
+        if distance_squared <best_distance_squared {
+          best_distance_squared = distance_squared;
+          best_handle = Some (circle.clone());
+        }
+      }
+    }
+
+    let best_handle = best_handle.unwrap() ;
+    modify_trajectory (accessor, & best_handle, | new | {
+      let impulse = -(new.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap() -
+                            Vector2::new(ARENA_SIZE / 2,
+                                         ARENA_SIZE / 2)) *
+                          (ARENA_SIZE * 4 / (ARENA_SIZE ));
+      new.position.add_velocity(*accessor.now(), TIME_SHIFT, impulse).unwrap();
+    });
+  }
+}
+
+pub fn make_globals() -> <BouncyCirclesSpec as SimulationSpecTrait>::Globals {
+  let mut circles = Vec::new();
+  let mut generator = EntityId::hash_of(&0u8).to_rng();
+
+  for index in 0..HOW_MANY_CIRCLES {
+    let radius =
+      generator.gen_range(ARENA_SIZE as i64 / 30, ARENA_SIZE as i64 / 15) as SpaceCoordinate;
+
+    circles.push(DataHandle::new_for_globals(Circle {
+      index: index,
+      radius: radius,
+      varying: EntityCell::new(SimpleTimeline::new()),
+    }));
+  }
+  Globals {
+    circles: circles,
+    detector: EntityCell::new(SimpleTimeline::new()),
+  }
+}
