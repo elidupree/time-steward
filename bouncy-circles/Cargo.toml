@@ -10,5 +10,6 @@ edition = "2018"
 
 [dependencies]
 serde = {version = "1.0", features = ["derive"]}
+rand_pcg = {version = "0.3.0", features = ["serde1"]}
 time_steward = {path="../time-steward"}
 
