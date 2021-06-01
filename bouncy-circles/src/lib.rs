@@ -1,19 +1,19 @@
+#![feature(generic_associated_types, array_map, array_methods)]
+#![allow(incomplete_features)]
+
 use nalgebra::Vector2;
-use std::marker::PhantomData;
+use rand::Rng;
+use rand_pcg::Pcg64Mcg;
+use serde::{Deserialize, Serialize};
 
 use time_steward::support::trajectories;
 use time_steward::type_utils::list_of_types::ListedType;
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::{
-  ConstructGlobals, EntityHandleKind, EntityId, EntityKind, EventAccessor,
+  ConstructGlobals, EntityHandleKind, EntityKind, EventAccessor, Globals,
   GlobalsConstructionAccessor, ReadAccess, TypedHandleRef, Wake, WriteAccess,
 };
 use time_steward::{SimulationSpec, TypedHandle};
-
-use boolinator::Boolinator;
-use rand::Rng;
-use rand_pcg::Pcg64Mcg;
-use time_steward_api::EventAccessor;
 
 pub type Time = i64;
 pub type SpaceCoordinate = i32;
@@ -28,23 +28,21 @@ pub const TIME_SHIFT: u32 = 20;
 pub const STATIC_TIME_SHIFT: u32 = TIME_SHIFT;
 pub const SECOND: Time = 1 << TIME_SHIFT;
 
-#[derive(
-  Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug, Default,
-)]
 pub struct BouncyCirclesSpec {}
 impl SimulationSpec for BouncyCirclesSpec {
   type Time = Time;
   type Globals<H: EntityHandleKind> = BouncyCirclesGlobals<H>;
   type Types = (
-    ListedType<RelationshipChange>,
-    ListedType<BoundaryChange>,
+    ListedType<Circle>,
+    ListedType<Relationship>,
     ListedType<Initialize>,
     ListedType<Disturb>,
-    collisions::simple_grid::Types<Space>,
+    //collisions::simple_grid::Types<Space>,
   );
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[serde(bound = "")]
 pub struct BouncyCirclesGlobals<H: EntityHandleKind> {
   pub circles: Vec<TypedHandle<Circle, H>>,
   //pub detector: EntityCell<SimpleTimeline<DataHandle<SimpleGridDetector<Space>>, Steward>>,
@@ -56,6 +54,7 @@ pub struct CircleImmutable {
   pub radius: SpaceCoordinate,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[serde(bound = "")]
 pub struct CircleMutable<H: EntityHandleKind> {
   pub position: QuadraticTrajectory,
   pub relationships: Vec<TypedHandle<Relationship, H>>,
@@ -72,6 +71,7 @@ impl EntityKind for Circle {
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[serde(bound = "")]
 pub struct RelationshipImmutable<H: EntityHandleKind> {
   pub circles: [TypedHandle<Circle, H>; 2],
 }
@@ -84,8 +84,8 @@ impl PersistentlyIdentifiedType for Relationship {
   const ID: PersistentTypeId = PersistentTypeId(0xa1010b5e80c3465a);
 }
 impl EntityKind for Relationship {
-  type ImmutableData<H: EntityHandleKind> = RelationshipImmutable;
-  type MutableData<H: EntityHandleKind> = RelationshipMutable<H>;
+  type ImmutableData<H: EntityHandleKind> = RelationshipImmutable<H>;
+  type MutableData<H: EntityHandleKind> = RelationshipMutable;
 }
 
 impl Wake<BouncyCirclesSpec> for Circle {
@@ -93,26 +93,25 @@ impl Wake<BouncyCirclesSpec> for Circle {
     accessor: &mut A,
     this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
-    let new = this.write(accessor);
+    let now = *accessor.now();
+    let mut new = this.write(accessor);
     if let Some(induced_acceleration) = new.boundary_induced_acceleration {
       new
         .position
-        .add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, -induced_acceleration)
+        .add_acceleration(now, STATIC_TIME_SHIFT, -induced_acceleration)
         .unwrap();
       new.boundary_induced_acceleration = None;
     } else {
-      let acceleration = -(new
-        .position
-        .value(*accessor.now(), STATIC_TIME_SHIFT)
-        .unwrap()
+      let acceleration = -(new.position.value(now, STATIC_TIME_SHIFT).unwrap()
         - Vector2::new(ARENA_SIZE / 2, ARENA_SIZE / 2))
-        * (ARENA_SIZE * 1600 / (ARENA_SIZE - self.circle_handle.radius));
+        * (ARENA_SIZE * 1600 / (ARENA_SIZE - this.radius));
       new
         .position
-        .add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, acceleration)
+        .add_acceleration(now, STATIC_TIME_SHIFT, acceleration)
         .unwrap();
       new.boundary_induced_acceleration = Some(acceleration);
     }
+    drop(new);
     trajectory_changed(accessor, this);
   }
 }
@@ -123,37 +122,42 @@ impl Wake<BouncyCirclesSpec> for Relationship {
     this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
     let circles = &this.circles;
-    let new = circles.map(|c| c.read(accessor).position.clone());
+    let now = *accessor.now();
+    let mut new = circles
+      .each_ref()
+      .map(|c| c.read(accessor).position.clone());
     //let new_difference = new.0.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap()-new.1.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap();
     //println!("event with error {:?}", (new_difference.dot(&new_difference) as f64).sqrt() - (circles.0.radius+circles.1.radius)  as f64);
-    if let Some(induced_acceleration) = relationship_varying.induced_acceleration {
+    let mut this_mutable = this.write(accessor);
+    if let Some(induced_acceleration) = this_mutable.induced_acceleration {
       new[0]
-        .add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, -induced_acceleration)
+        .add_acceleration(now, STATIC_TIME_SHIFT, -induced_acceleration)
         .unwrap();
       new[1]
-        .add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, induced_acceleration)
+        .add_acceleration(now, STATIC_TIME_SHIFT, induced_acceleration)
         .unwrap();
-      this.write(accessor).induced_acceleration = None;
+      this_mutable.induced_acceleration = None;
       //println!("Parted {} At {}", self.id, mutator.now());
     } else {
-      let acceleration = (new[0].value(*accessor.now(), STATIC_TIME_SHIFT).unwrap()
-        - new[1].value(*accessor.now(), STATIC_TIME_SHIFT).unwrap())
-        * (ARENA_SIZE * 16 / (circles.0.radius + circles.1.radius));
+      let acceleration = (new[0].value(now, STATIC_TIME_SHIFT).unwrap()
+        - new[1].value(now, STATIC_TIME_SHIFT).unwrap())
+        * (ARENA_SIZE * 16 / (circles[0].radius + circles[1].radius));
       new[0]
-        .add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, acceleration)
+        .add_acceleration(now, STATIC_TIME_SHIFT, acceleration)
         .unwrap();
       new[1]
-        .add_acceleration(*accessor.now(), STATIC_TIME_SHIFT, -acceleration)
+        .add_acceleration(now, STATIC_TIME_SHIFT, -acceleration)
         .unwrap();
-      this.write(accessor).induced_acceleration = Some(acceleration);
+      this_mutable.induced_acceleration = Some(acceleration);
       //println!("Joined {} At {}", self.id, mutator.now());
     }
 
+    drop(this_mutable);
     for (circle, new_position) in circles.iter().zip(new) {
       circle.write(accessor).position = new_position;
     }
     for circle in circles {
-      trajectory_changed(accessor, circle);
+      trajectory_changed(accessor, circle.borrow());
     }
   }
 }
@@ -162,8 +166,9 @@ fn trajectory_changed<A: EventAccessor<SimulationSpec = BouncyCirclesSpec>>(
   accessor: &mut A,
   circle: TypedHandleRef<Circle, A::EntityHandleKind>,
 ) {
-  for relationship in circle.read(accessor).relationships.clone() {
-    update_relationship_change_schedule(accessor, relationship);
+  let relationships = circle.read(accessor).relationships.clone();
+  for relationship in relationships {
+    update_relationship_change_schedule(accessor, relationship.borrow());
   }
   update_boundary_change_schedule(accessor, circle);
   // SimpleGridDetector::changed_course(
@@ -178,11 +183,12 @@ fn update_relationship_change_schedule<A: EventAccessor<SimulationSpec = BouncyC
   relationship: TypedHandleRef<Relationship, A::EntityHandleKind>,
 ) {
   let circles = &relationship.circles;
-  let us = circles.map(|circle| circle.read(accessor));
+  let us = circles.each_ref().map(|circle| circle.read(accessor));
 
   let difference = &us[1].position - &us[0].position;
   let radius = circles[0].radius + circles[1].radius;
-  let change_time = if relationship_varying.induced_acceleration.is_none() {
+  let relationship_mutable = relationship.read(accessor);
+  let change_time = if relationship_mutable.induced_acceleration.is_none() {
     difference.next_time_magnitude_significantly_lt(
       [*accessor.now(), Time::MAX],
       STATIC_TIME_SHIFT,
@@ -196,13 +202,16 @@ fn update_relationship_change_schedule<A: EventAccessor<SimulationSpec = BouncyC
     )
   };
 
-  if change_time.is_none() && relationship_varying.induced_acceleration.is_some() {
+  if change_time.is_none() && relationship_mutable.induced_acceleration.is_some() {
     panic!(
       " fail {:?} {:?} {:?}",
-      relationship_handle, relationship_varying, us
+      relationship,
+      *relationship_mutable,
+      us.each_ref().map(|c| &**c)
     )
   }
 
+  drop((us, relationship_mutable));
   accessor.set_schedule(relationship, change_time);
 }
 
@@ -214,7 +223,7 @@ fn update_boundary_change_schedule<A: EventAccessor<SimulationSpec = BouncyCircl
   let circle_mutable = circle.read(accessor);
 
   let difference = &circle_mutable.position - arena_center;
-  let radius = ARENA_SIZE - circle_handle.radius;
+  let radius = ARENA_SIZE - circle.radius;
   let change_time = if circle_mutable.boundary_induced_acceleration.is_some() {
     difference.next_time_magnitude_significantly_lt(
       [*accessor.now(), Time::max_value()],
@@ -229,6 +238,7 @@ fn update_boundary_change_schedule<A: EventAccessor<SimulationSpec = BouncyCircl
     )
   };
 
+  drop(circle_mutable);
   accessor.set_schedule(circle, change_time);
 }
 
@@ -237,25 +247,23 @@ impl ConstructGlobals<BouncyCirclesSpec> for BouncyCirclesSpec {
     self,
     accessor: &mut A,
   ) -> Globals<BouncyCirclesSpec, A::EntityHandleKind> {
-    let mut circles = Vec::new();
     let mut generator = Pcg64Mcg::new(0x0);
-    let thingy = ARENA_SIZE as i64 / 20;
+    let thingy = ARENA_SIZE / 20;
 
     let circles = (0..HOW_MANY_CIRCLES)
       .map(|index| {
-        let radius =
-          generator.gen_range(ARENA_SIZE as i64 / 30, ARENA_SIZE as i64 / 15) as SpaceCoordinate;
+        let radius = generator.gen_range(ARENA_SIZE / 30..ARENA_SIZE / 15);
         let mut position = QuadraticTrajectory::constant(Vector2::new(
-          generator.gen_range(0, ARENA_SIZE as i64) as SpaceCoordinate,
-          generator.gen_range(0, ARENA_SIZE as i64) as SpaceCoordinate,
+          generator.gen_range(0..ARENA_SIZE),
+          generator.gen_range(0..ARENA_SIZE),
         ));
         position
           .set_velocity(
             0,
             STATIC_TIME_SHIFT,
             Vector2::new(
-              generator.gen_range(-thingy, thingy) as SpaceCoordinate,
-              generator.gen_range(-thingy, thingy) as SpaceCoordinate,
+              generator.gen_range(-thingy..=thingy),
+              generator.gen_range(-thingy..=thingy),
             ),
           )
           .unwrap();
@@ -275,7 +283,8 @@ impl ConstructGlobals<BouncyCirclesSpec> for BouncyCirclesSpec {
   }
 }
 
-struct Initialize;
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub struct Initialize;
 impl EntityKind for Initialize {
   type ImmutableData<H: EntityHandleKind> = ();
   type MutableData<H: EntityHandleKind> = ();
@@ -302,14 +311,20 @@ impl Wake<BouncyCirclesSpec> for Initialize {
         if first < second {
           let relationship = accessor.create_entity::<Relationship>(
             RelationshipImmutable {
-              circles: [first, second],
+              circles: [first.clone(), second.clone()],
             },
             RelationshipMutable {
-              induced_acceleration: None,
+              induced_acceleration: None::<Vector2<SpaceCoordinate>>,
             },
           );
-          first.write().relationships.push(relationship.clone());
-          second.write().relationships.push(relationship.clone());
+          first
+            .write(accessor)
+            .relationships
+            .push(relationship.clone());
+          second
+            .write(accessor)
+            .relationships
+            .push(relationship.clone());
           update_relationship_change_schedule(accessor, relationship.borrow());
         }
       }
@@ -325,7 +340,8 @@ impl Wake<BouncyCirclesSpec> for Initialize {
   }
 }
 
-struct Disturb {
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub struct Disturb {
   coordinates: [SpaceCoordinate; 2],
 }
 impl EntityKind for Disturb {
@@ -341,15 +357,13 @@ impl Wake<BouncyCirclesSpec> for Disturb {
     accessor: &mut A,
     this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
+    let now = *accessor.now();
     let circles = accessor.globals().circles.clone();
     let best_circle = circles
       .into_iter()
       .min_by_key(|circle| {
-        let mutable = circles.read();
-        let position = mutable
-          .position
-          .value(*accessor.now(), STATIC_TIME_SHIFT)
-          .unwrap();
+        let mutable = circle.read(accessor);
+        let position = mutable.position.value(now, STATIC_TIME_SHIFT).unwrap();
         let [dx, dy] = [
           (this.coordinates[0] - position[0]) as i64,
           (this.coordinates[1] - position[1]) as i64,
@@ -359,19 +373,19 @@ impl Wake<BouncyCirclesSpec> for Disturb {
       .unwrap();
 
     let impulse = -(best_circle
-      .read()
+      .read(accessor)
       .position
-      .value(*accessor.now(), STATIC_TIME_SHIFT)
+      .value(now, STATIC_TIME_SHIFT)
       .unwrap()
       - Vector2::new(ARENA_SIZE / 2, ARENA_SIZE / 2))
       * (ARENA_SIZE * 4 / (ARENA_SIZE));
 
     best_circle
-      .write()
+      .write(accessor)
       .position
-      .add_velocity(*accessor.now(), TIME_SHIFT, impulse)
+      .add_velocity(now, TIME_SHIFT, impulse)
       .unwrap();
-    trajectory_changed(accessor, best_circle);
+    trajectory_changed(accessor, best_circle.borrow());
   }
 }
 

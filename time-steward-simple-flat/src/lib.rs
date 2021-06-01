@@ -56,7 +56,19 @@ pub struct SfTypedHandleRef<'a, S: SimulationSpec, E: EntityKind>(ArcBorrow<'a, 
 #[derivative(Copy(bound = ""), Clone(bound = ""), Debug(bound = ""))]
 pub struct SfDynHandleRef<'a, S: SimulationSpec>(ArcBorrow<'a, dyn AnyEntityInner<S>>);
 
-pub struct SfEntityHandleKind<S>(PhantomData<*const S>, !);
+#[derive(Derivative)]
+#[derivative(
+  Copy(bound = ""),
+  Clone(bound = ""),
+  PartialEq(bound = ""),
+  Eq(bound = ""),
+  PartialOrd(bound = ""),
+  Ord(bound = ""),
+  Hash(bound = ""),
+  Debug(bound = ""),
+  Default(bound = "")
+)]
+pub struct SfEntityHandleKind<S>(PhantomData<*const S>);
 impl<S: SimulationSpec> EntityHandleKind for SfEntityHandleKind<S> {
   type TypedHandle<E: EntityKind> = SfTypedHandle<S, E>;
   type DynHandle = SfDynHandle<S>;

@@ -5,6 +5,7 @@ use std::mem;
 
 use crate::type_utils::PersistentlyIdentifiedType;
 use crate::{EntityId, SimulationSpec, SimulationStateData};
+use std::hash::Hash;
 
 pub trait EntityHandle: Clone + Debug {
   fn id(&self) -> EntityId;
@@ -54,7 +55,14 @@ pub type ImmutableData<E, H> = <E as EntityKind>::ImmutableData<H>;
 pub type MutableData<E, H> = <E as EntityKind>::MutableData<H>;
 pub type Globals<S, H> = <S as SimulationSpec>::Globals<H>;
 
-pub trait EntityHandleKind: Sized + 'static {
+/// This is intended to be implemented on a trivial struct.
+/// The supertraits are only required for the convenience of client code,
+/// which otherwise could not use the builtin derive macros because of
+/// https://github.com/rust-lang/rust/issues/26925.
+/// Serialize and DeserializeOwned aren't included because (as of Jun 01 2021)
+/// #[derive(Deserialize)] has an inscrutable compile error if you do that,
+/// so you need to say #[serde(bound = "")] anyway.
+pub trait EntityHandleKind: Copy + Clone + Ord + Hash + Debug + Default + 'static {
   type TypedHandle<E: EntityKind>: OwnedTypedEntityHandle<E, Self>;
   type DynHandle: OwnedDynEntityHandle<Self>;
 }
