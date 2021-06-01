@@ -22,7 +22,7 @@ This has 2 purposes:
 */
 
 use derivative::Derivative;
-use std::cell::{Ref, RefCell, RefMut};
+use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Debug;
 use std::io::Read;
@@ -34,8 +34,9 @@ use unsize::CoerceUnsize;
 
 use time_steward_api::entity_handles::*;
 use time_steward_api::*;
+use time_steward_implementation_support::accessor_cell::AccessorCell;
 use time_steward_implementation_support::{
-  EventChildrenIdGenerator, GlobalsConstructionIdGenerator,
+  accessor_cell, EventChildrenIdGenerator, GlobalsConstructionIdGenerator,
 };
 
 // ###################################################
@@ -116,42 +117,44 @@ struct HistoryInner<S: SimulationSpec, T> {
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "T: Debug"))]
-struct History<S: SimulationSpec, T>(RefCell<HistoryInner<S, T>>);
+struct History<S: SimulationSpec, T> {
+  current_value: AccessorCell<T>,
+  changes: RefCell<Vec<UndoEntry<S, T>>>,
+}
 
 impl<S: SimulationSpec, T: SimulationStateData> History<S, T> {
   fn new(starting_value: T) -> History<S, T> {
-    History(RefCell::new(HistoryInner {
-      current_value: starting_value,
-      changes: Vec::new(),
-    }))
+    History {
+      current_value: AccessorCell::new(starting_value),
+      changes: RefCell::new(Vec::new()),
+    }
   }
-  fn current_value(&self) -> Ref<T> {
-    Ref::map(self.0.borrow(), |history| &history.current_value)
+  fn current_value<'a>(&'a self, guard: &'a impl accessor_cell::ReadAccess) -> &'a T {
+    guard.read(&self.current_value)
   }
-  fn raw_write(&self) -> RefMut<T> {
-    RefMut::map(self.0.borrow_mut(), |history| &mut history.current_value)
+  fn raw_write<'a>(&'a self, guard: &'a mut accessor_cell::WriteGuard) -> &'a mut T {
+    guard.write(&self.current_value)
   }
   fn record_undo(&self, time: S::Time, undo: impl Fn(&mut T) + 'static) {
-    self.0.borrow_mut().changes.push(UndoEntry {
+    self.changes.borrow_mut().push(UndoEntry {
       time,
       undo: Box::new(undo),
     });
   }
-  fn replace(&self, time: S::Time, new_value: T) {
-    let old_value = self.current_value().clone();
+  fn replace(&self, guard: &mut accessor_cell::WriteGuard, time: S::Time, new_value: T) {
+    let old_value = self.current_value(guard).clone();
     self.record_undo(time, move |m| *m = old_value.clone());
-    *self.raw_write() = new_value;
+    *self.raw_write(guard) = new_value;
   }
-  fn value_before(&self, time: &S::Time) -> T
+  fn value_before(&self, guard: &impl accessor_cell::ReadAccess, time: &S::Time) -> T
   where
     T: Clone,
   {
-    let history = self.0.borrow();
-    let mut value = history.current_value.clone();
+    let mut value = self.current_value(guard).clone();
     for UndoEntry {
       time: change_time,
       undo,
-    } in history.changes.iter().rev()
+    } in self.changes.borrow().iter().rev()
     {
       if change_time < time {
         break;
@@ -279,6 +282,7 @@ impl<S: SimulationSpec, E: Wake<S>> AnyEntityInner<S> for EntityInner<S, E> {
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
 pub struct SfEventAccessor<'a, S: SimulationSpec> {
+  guard: accessor_cell::WriteGuard,
   now: S::Time,
   first_waker_universal: &'a EntityUniversal<S>,
   globals: Rc<Globals<S, SfEntityHandleKind<S>>>,
@@ -287,8 +291,9 @@ pub struct SfEventAccessor<'a, S: SimulationSpec> {
   steward: &'a mut Steward<S>,
 }
 #[derive(Derivative)]
-#[derivative(Debug(bound = ""), Clone(bound = ""))]
+#[derivative(Debug(bound = ""))]
 pub struct Snapshot<S: SimulationSpec> {
+  guard: accessor_cell::ReadGuard,
   time: S::Time,
   globals: Rc<Globals<S, SfEntityHandleKind<S>>>,
   scheduled_events: Vec<DynHandle<SfEntityHandleKind<S>>>,
@@ -297,6 +302,7 @@ pub struct Snapshot<S: SimulationSpec> {
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
 pub struct SfGlobalsConstructionAccessor<S: SimulationSpec> {
+  guard: accessor_cell::WriteGuard,
   child_id_generator: GlobalsConstructionIdGenerator,
   _marker: PhantomData<*const S>,
 }
@@ -359,12 +365,17 @@ impl<'c, S: SimulationSpec> Accessor for SfEventAccessor<'c, S> {
   type SimulationSpec = S;
   type EntityHandleKind = SfEntityHandleKind<S>;
 
-  type ReadGuard<'a, T: 'a> = Ref<'a, T>;
+  type ReadGuard<'a, T: 'a> = &'a T;
   fn raw_read<'a, E: EntityKind>(
     &'a self,
     entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
   ) -> Self::ReadGuard<'a, MutableData<E, Self::EntityHandleKind>> {
-    entity.into_wrapped_gat().0.get().mutable.current_value()
+    entity
+      .into_wrapped_gat()
+      .0
+      .get()
+      .mutable
+      .current_value(&self.guard)
   }
 
   fn raw_read_schedule<E: Wake<Self::SimulationSpec>>(
@@ -376,7 +387,7 @@ impl<'c, S: SimulationSpec> Accessor for SfEventAccessor<'c, S> {
       .0
       .universal
       .schedule
-      .current_value()
+      .current_value(&self.guard)
       .clone()
   }
 }
@@ -399,7 +410,13 @@ impl<S: SimulationSpec> Accessor for Snapshot<S> {
     &'a self,
     entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
   ) -> Self::ReadGuard<'a, MutableData<E, Self::EntityHandleKind>> {
-    SnapshotQueryResult(entity.into_wrapped_gat().0.mutable.value_before(&self.time))
+    SnapshotQueryResult(
+      entity
+        .into_wrapped_gat()
+        .0
+        .mutable
+        .value_before(&self.guard, &self.time),
+    )
   }
 
   fn raw_read_schedule<E: Wake<Self::SimulationSpec>>(
@@ -411,7 +428,7 @@ impl<S: SimulationSpec> Accessor for Snapshot<S> {
       .0
       .universal
       .schedule
-      .value_before(&self.time)
+      .value_before(&self.guard, &self.time)
   }
 }
 
@@ -419,12 +436,17 @@ impl<S: SimulationSpec> Accessor for SfGlobalsConstructionAccessor<S> {
   type SimulationSpec = S;
   type EntityHandleKind = SfEntityHandleKind<S>;
 
-  type ReadGuard<'a, T: 'a> = Ref<'a, T>;
+  type ReadGuard<'a, T: 'a> = &'a T;
   fn raw_read<'a, E: EntityKind>(
     &'a self,
     entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
   ) -> Self::ReadGuard<'a, MutableData<E, SfEntityHandleKind<S>>> {
-    entity.into_wrapped_gat().0.get().mutable.current_value()
+    entity
+      .into_wrapped_gat()
+      .0
+      .get()
+      .mutable
+      .current_value(&self.guard)
   }
 
   fn raw_read_schedule<E: Wake<Self::SimulationSpec>>(
@@ -436,7 +458,7 @@ impl<S: SimulationSpec> Accessor for SfGlobalsConstructionAccessor<S> {
       .0
       .universal
       .schedule
-      .current_value()
+      .current_value(&self.guard)
       .clone()
   }
 }
@@ -498,20 +520,25 @@ impl<S: SimulationSpec> CreateEntityAccessor for SfGlobalsConstructionAccessor<S
 }
 
 impl<'c, S: SimulationSpec> EventAccessor for SfEventAccessor<'c, S> {
-  type WriteGuard<'a, T: 'a> = RefMut<'a, T>;
+  type WriteGuard<'a, T: 'a> = &'a mut T;
   #[allow(clippy::needless_lifetimes)] // Clippy is currently wrong about GATs
   fn map_write_guard<'a, T, U>(
     guard: Self::WriteGuard<'a, T>,
     f: impl FnOnce(&mut T) -> &mut U,
   ) -> Self::WriteGuard<'a, U> {
-    RefMut::map(guard, f)
+    f(guard)
   }
 
   fn raw_write<'a, E: EntityKind>(
     &'a mut self,
     entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
   ) -> Self::WriteGuard<'a, MutableData<E, Self::EntityHandleKind>> {
-    entity.into_wrapped_gat().0.get().mutable.raw_write()
+    entity
+      .into_wrapped_gat()
+      .0
+      .get()
+      .mutable
+      .raw_write(&mut self.guard)
   }
 
   // record a way to undo something we did in this event; undo operations may later be run in reverse order
@@ -540,15 +567,14 @@ impl<'c, S: SimulationSpec> EventAccessor for SfEventAccessor<'c, S> {
       .0
       .universal
       .schedule
-      .current_value()
+      .current_value(&self.guard)
       .clone();
     if old != time {
-      entity
-        .into_wrapped_gat()
-        .0
-        .universal
-        .schedule
-        .replace(self.now.clone(), time.clone());
+      entity.into_wrapped_gat().0.universal.schedule.replace(
+        &mut self.guard,
+        self.now.clone(),
+        time.clone(),
+      );
       if let Some(old_time) = old {
         assert!(
           self.steward.schedule.remove(&ScheduledWake {
@@ -592,16 +618,18 @@ impl<S: SimulationSpec> GlobalsConstructionAccessor for SfGlobalsConstructionAcc
 
 impl<S: SimulationSpec> Steward<S> {
   fn wake_entity(&mut self, entity: DynHandle<SfEntityHandleKind<S>>) {
+    let guard = accessor_cell::WriteGuard::claim();
     let now = entity
       .wrapped_gat()
       .0
       .universal()
       .schedule
-      .current_value()
+      .current_value(&guard)
       .clone()
       .expect("tried to wake an entity that wasn't scheduled to wake");
     self.last_event = Some(now.clone());
     let mut accessor = SfEventAccessor {
+      guard,
       now,
       first_waker_universal: entity.wrapped_gat().0.universal(),
       globals: self.globals.clone(),
@@ -615,16 +643,15 @@ impl<S: SimulationSpec> Steward<S> {
         .0
         .universal()
         .schedule
-        .current_value()
+        .current_value(&accessor.guard)
         .as_ref()
         == Some(&accessor.now)
       {
-        top
-          .wrapped_gat()
-          .0
-          .universal()
-          .schedule
-          .replace(accessor.now.clone(), None);
+        top.wrapped_gat().0.universal().schedule.replace(
+          &mut accessor.guard,
+          accessor.now.clone(),
+          None,
+        );
         assert!(
           accessor.steward.schedule.remove(&ScheduledWake {
             entity: top.clone(),
@@ -715,6 +742,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
       self.step(Some(time.clone()));
     }
     Some(Snapshot {
+      guard: accessor_cell::ReadGuard::claim(),
       time,
       globals: self.globals.clone(),
       scheduled_events: self.schedule.iter().map(|s| s.entity.clone()).collect(),
@@ -764,6 +792,7 @@ impl<S: SimulationSpec> ConstructibleTimeSteward for Steward<S> {
     Self::from_globals(
       metadata,
       construct_globals.construct_globals(&mut SfGlobalsConstructionAccessor {
+        guard: accessor_cell::WriteGuard::claim(),
         child_id_generator: GlobalsConstructionIdGenerator::new(),
         _marker: PhantomData,
       }),

@@ -1,6 +1,8 @@
 use serde::Serialize;
 use time_steward_api::EntityId;
 
+pub mod accessor_cell;
+
 #[derive(Debug)]
 pub struct EventChildrenIdGenerator {
   next: Option<EntityId>,
