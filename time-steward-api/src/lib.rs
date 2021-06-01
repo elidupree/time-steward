@@ -15,5 +15,4 @@ pub use crate::entity_handles::{
   DynHandle, DynHandleRef, EntityHandleKind, EntityHandleKindDeref, EntityKind, Globals,
   ImmutableData, MutableData, TypedHandle, TypedHandleRef,
 };
-mod api_impls;
 mod entity_handle_impls;

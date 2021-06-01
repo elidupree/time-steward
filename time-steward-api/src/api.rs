@@ -1,7 +1,6 @@
-use serde::{de::DeserializeOwned, ser, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 use std::any::Any;
 use std::fmt::Debug;
-use std::hash::Hash;
 use std::io::Read;
 use std::ops::{Deref, DerefMut};
 
@@ -18,11 +17,8 @@ use crate::{
 /// Requiring DeserializeOwned is improper because you can't deserialize EntityHandles without more
 ///  information; the current approach is a hack where Deserialize
 /// uses a thread-local context for that; it may later be replaced with a proper custom derive of my own.
-pub trait SimulationStateData:
-  Any + Clone + Eq + ser::Serialize + DeserializeOwned + Debug
-{
-}
-impl<T: Any + Clone + Eq + ser::Serialize + DeserializeOwned + Debug> SimulationStateData for T {}
+pub trait SimulationStateData: Any + Clone + Eq + Serialize + DeserializeOwned + Debug {}
+impl<T: Any + Clone + Eq + Serialize + DeserializeOwned + Debug> SimulationStateData for T {}
 
 // Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time.
 
@@ -53,19 +49,6 @@ pub trait Wake<S: SimulationSpec>: EntityKind {
 pub enum FiatEventOperationError {
   InvalidInput,
   InvalidTime,
-}
-
-// This exists to support a variety of time stewards
-// along with allowing BaseTime to be dense (e.g. a
-// rational number rather than an integer).
-// It is an acceptable peculiarity that even for integer times,
-// After(2) < Before(3).
-// #[derive (Copy, Clone, PartialEq, Eq, Hash)]
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
-pub enum ValidSince<BaseTime> {
-  TheBeginning,
-  Before(BaseTime),
-  After(BaseTime),
 }
 
 /**
@@ -141,15 +124,6 @@ pub trait CreateEntityAccessor: Accessor {
 An Accessor with all abilities that can be used during the construction of the globals. This allows creating entities, but currently does not allow scheduling them.
 */
 pub trait GlobalsConstructionAccessor: CreateEntityAccessor {}
-
-pub trait Modify<T>: SimulationStateData {
-  type UndoData: SimulationStateData;
-  fn modify(self, entity: &mut T) -> Self::UndoData;
-  fn undo(entity: &mut T, undo_data: &Self::UndoData);
-}
-
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug, Default)]
-pub struct ReplaceWith<T>(pub T);
 
 /**
 An Accessor with all abilities that can be used during an event.
