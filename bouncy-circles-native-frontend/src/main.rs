@@ -172,12 +172,13 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
           }
           glutin::event::WindowEvent::MouseInput { .. } => {
             event_index += 1;
+            //println!("Sending Disturb at {}: {:?}", time, mouse_coordinates);
             stew
               .insert_fiat_event::<Disturb>(
                 time,
                 EntityId::hash_of(&event_index),
                 Disturb {
-                  coordinates: [mouse_coordinates[0], mouse_coordinates[1]],
+                  coordinates: mouse_coordinates,
                 },
                 (),
               )

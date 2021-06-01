@@ -123,8 +123,13 @@ impl Wake<BouncyCirclesSpec> for Relationship {
     let mut new = circles
       .each_ref()
       .map(|c| c.read(accessor).position.clone());
-    //let new_difference = new.0.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap()-new.1.position.value(*accessor.now(), STATIC_TIME_SHIFT).unwrap();
-    //println!("event with error {:?}", (new_difference.dot(&new_difference) as f64).sqrt() - (circles.0.radius+circles.1.radius)  as f64);
+    // let new_difference =
+    //   new[0].value(now, STATIC_TIME_SHIFT).unwrap() - new[0].value(now, STATIC_TIME_SHIFT).unwrap();
+    // println!(
+    //   "event with error {:?}",
+    //   (new_difference.dot(&new_difference) as f64).sqrt()
+    //     - (circles[0].radius + circles[1].radius) as f64
+    // );
     let mut this_mutable = this.write(accessor);
     if let Some(induced_acceleration) = this_mutable.induced_acceleration {
       new[0]
@@ -354,6 +359,7 @@ impl Wake<BouncyCirclesSpec> for Disturb {
     accessor: &mut A,
     this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
+    //println!("Disturb {:?}", this.coordinates);
     let now = *accessor.now();
     let circles = accessor.globals().circles.clone();
     let best_circle = circles

@@ -311,8 +311,8 @@ pub struct SfGlobalsConstructionAccessor<S: SimulationSpec> {
   Ord(bound = "")
 )]
 struct ScheduledWake<S: SimulationSpec> {
-  entity: DynHandle<SfEntityHandleKind<S>>,
   time: S::Time,
+  entity: DynHandle<SfEntityHandleKind<S>>,
 }
 
 #[derive(Derivative)]
@@ -673,7 +673,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
       .map_err(|_| FiatEventOperationError::InvalidInput)?;
 
     assert!(
-      self.schedule.insert(ScheduledWake { entity, time }),
+      self.schedule.insert(ScheduledWake { time, entity }),
       "global schedule didn't match entity schedules"
     );
     Ok(())
@@ -705,8 +705,10 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
     &mut self,
     time: <Self::SimulationSpec as SimulationSpec>::Time,
   ) -> Option<Self::SnapshotAccessor> {
+    //println!("Getting snapshot at {:?}", time);
     // since this TimeSteward never discards history, it can always return Some for snapshots
     while let Some(ready_time) = self.latest_time_ready_for_snapshot() {
+      //println!("Ready time is {:?}", ready_time);
       if ready_time >= time {
         break;
       }
@@ -719,8 +721,11 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
     })
   }
   fn step(&mut self, limit: Option<<Self::SimulationSpec as SimulationSpec>::Time>) {
+    //println!("Step with limit {:?}", limit);
     if let Some(event) = self.schedule.first().cloned() {
+      //println!("Considering event {:?}", event);
       if limit.as_ref().map_or(true, |limit| event.time < *limit) {
+        //println!("Running event {:?}", event);
         self.wake_entity(event.entity);
       }
     }
