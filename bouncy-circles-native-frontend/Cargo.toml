@@ -1,0 +1,17 @@
+[package]
+name = "bouncy_circles_native_frontend"
+version = "0.1.0"
+authors = ["Eli Dupree <vcs@elidupree.com>"]
+repository = "https://github.com/elidupree/time-steward"
+readme = "README.md"
+license = "MIT"
+
+edition = "2018"
+
+[dependencies]
+serde = {version = "1.0", features = ["derive"]}
+glium = "0.29.1"
+time_steward = {path="../time-steward"}
+bouncy_circles = {path="../bouncy-circles"}
+time_steward_simple_flat = {path="../time-steward-simple-flat"}
+

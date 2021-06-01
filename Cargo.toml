@@ -8,6 +8,7 @@ members = [
   "time-steward-simple-flat",
   "time-steward",
   "bouncy-circles",
+  "bouncy-circles-native-frontend",
 ]
 
 [profile.bench]
