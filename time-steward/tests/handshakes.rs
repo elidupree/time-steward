@@ -10,7 +10,7 @@ use time_steward::type_utils::list_of_types::ListedType;
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
 use time_steward::{
   ConstructGlobals, ConstructibleTimeSteward, EntityHandleKind, EntityId, EntityKind,
-  EventAccessor, Globals, GlobalsConstructionAccessor, SimulationSpec, SnapshotAccessor,
+  EventAccessor, Globals, GlobalsConstructionAccessor, SimulationSpec, Snapshot, SnapshotAccessor,
   TimeSteward, TypedHandle, TypedHandleRef, Wake, WriteAccess,
 };
 use time_steward_simple_flat as simple_flat;
@@ -213,9 +213,9 @@ fn handshakes_simple_generic<
   let mut steward = make_steward::<Steward>();
 
   for increment in 1..21 {
-    let snapshot: <Steward as TimeSteward>::SnapshotAccessor =
+    let snapshot: <Steward as TimeSteward>::Snapshot =
       steward.snapshot_before(increment * 100i64).unwrap();
-    display_snapshot(&snapshot);
+    snapshot.with_accessor(display_snapshot);
   }
 }
 
@@ -241,16 +241,32 @@ fn handshakes_snapshot_consistency_generic<
 
   for increment in 1..21 {
     let time = increment * 100i64;
-    dumps_1.push(dump_snapshot(&mut steward_1.snapshot_before(time).unwrap()));
-    dumps_2.push(dump_snapshot(&mut steward_2.snapshot_before(time).unwrap()));
+    dumps_1.push(
+      steward_1
+        .snapshot_before(time)
+        .unwrap()
+        .with_accessor(dump_snapshot),
+    );
+    dumps_2.push(
+      steward_2
+        .snapshot_before(time)
+        .unwrap()
+        .with_accessor(dump_snapshot),
+    );
     snapshots_3.push(steward_3.snapshot_before(time).unwrap());
     let snapshot = steward_4.snapshot_before(time).unwrap();
-    dump_snapshot(&snapshot);
+    snapshot.with_accessor(dump_snapshot);
     snapshots_4.push(snapshot);
   }
 
-  let dumps_3: Vec<_> = snapshots_3.iter().map(dump_snapshot).collect();
-  let dumps_4: Vec<_> = snapshots_4.iter().map(dump_snapshot).collect();
+  let dumps_3: Vec<_> = snapshots_3
+    .iter()
+    .map(|s| s.with_accessor(dump_snapshot))
+    .collect();
+  let dumps_4: Vec<_> = snapshots_4
+    .iter()
+    .map(|s| s.with_accessor(dump_snapshot))
+    .collect();
 
   assert_eq!(dumps_1, dumps_2);
   assert_eq!(dumps_1, dumps_3);
@@ -270,29 +286,27 @@ fn handshakes_retroactive_generic<
   let first_dump;
   {
     let snapshot = steward.snapshot_before(2000i64).unwrap();
-    first_dump = dump_snapshot(&snapshot);
-    display_snapshot(&snapshot);
+    first_dump = snapshot.with_accessor(dump_snapshot);
+    snapshot.with_accessor(display_snapshot);
   }
   for increment in 1..21 {
     steward
       .insert_fiat_event::<Tweak>(increment * 100i64, EntityId::hash_of(&increment), (), ())
       .unwrap();
-    let snapshot: <Steward as TimeSteward>::SnapshotAccessor =
-      steward.snapshot_before(2000i64).unwrap();
-    display_snapshot(&snapshot);
+    let snapshot: <Steward as TimeSteward>::Snapshot = steward.snapshot_before(2000i64).unwrap();
+    snapshot.with_accessor(display_snapshot);
   }
   for increment in 1..21 {
     steward
       .remove_fiat_event(&(increment * 100i64), EntityId::hash_of(&increment))
       .unwrap();
-    let snapshot: <Steward as TimeSteward>::SnapshotAccessor =
-      steward.snapshot_before(2000i64).unwrap();
-    display_snapshot(&snapshot);
+    let snapshot: <Steward as TimeSteward>::Snapshot = steward.snapshot_before(2000i64).unwrap();
+    snapshot.with_accessor(display_snapshot);
   }
   let last_dump;
   {
     let snapshot = steward.snapshot_before(2000i64).unwrap();
-    last_dump = dump_snapshot(&snapshot);
+    last_dump = snapshot.with_accessor(dump_snapshot);
   }
   assert_eq!(first_dump, last_dump);
 }
@@ -310,25 +324,25 @@ fn handshakes_reloading_generic<
   let first_dump;
   {
     let snapshot = steward.snapshot_before(2000i64).unwrap();
-    first_dump = dump_snapshot(&snapshot);
-    display_snapshot(&snapshot);
+    first_dump = snapshot.with_accessor(dump_snapshot);
+    snapshot.with_accessor(display_snapshot);
   }
 
   for increment in 1..21 {
     steward
       .insert_fiat_event::<Tweak>(increment * 100i64, EntityId::hash_of(&increment), (), ())
       .unwrap();
-    let earlier_snapshot: <Steward as TimeSteward>::SnapshotAccessor =
+    let earlier_snapshot: <Steward as TimeSteward>::Snapshot =
       steward.snapshot_before(increment * 100i64).unwrap();
     let /*mut*/ serialized = Vec::new();
     //earlier_snapshot.serialize_into(&mut serialized).unwrap();
     use std::io::Cursor;
     let mut reader = Cursor::new(serialized);
     steward = Steward::from_serialized((), &mut reader).unwrap();
-    let ending_snapshot: <Steward as TimeSteward>::SnapshotAccessor =
+    let ending_snapshot: <Steward as TimeSteward>::Snapshot =
       steward.snapshot_before(2000i64).unwrap();
-    let dump = dump_snapshot(&ending_snapshot);
-    display_snapshot(&earlier_snapshot);
+    let dump = ending_snapshot.with_accessor(dump_snapshot);
+    earlier_snapshot.with_accessor(display_snapshot);
     assert_eq!(first_dump, dump);
   }
 }

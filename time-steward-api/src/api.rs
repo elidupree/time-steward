@@ -227,6 +227,17 @@ pub trait SnapshotAccessor: InitializedAccessor {
   fn scheduled_events(&self) -> Self::ScheduledEvents<'_>;
 }
 
+pub trait Snapshot {
+  type SimulationSpec: SimulationSpec;
+  type EntityHandleKind: EntityHandleKindDeref;
+  type SnapshotAccessor<'a>: SnapshotAccessor<
+    SimulationSpec = Self::SimulationSpec,
+    EntityHandleKind = Self::EntityHandleKind,
+  >;
+
+  fn with_accessor<'a, R>(&'a self, f: impl FnOnce(&Self::SnapshotAccessor<'a>) -> R) -> R;
+}
+
 /**
 The core TimeSteward trait: An object that can run simulations.
 */
@@ -242,7 +253,7 @@ pub trait TimeSteward: Any + Sized + Debug {
   type EntityHandleKind: EntityHandleKindDeref;
 
   /// The Accessor type returned by `snapshot_before`.
-  type SnapshotAccessor: SnapshotAccessor<
+  type Snapshot: Snapshot<
     SimulationSpec = Self::SimulationSpec,
     EntityHandleKind = Self::EntityHandleKind,
   >;
@@ -300,7 +311,7 @@ pub trait TimeSteward: Any + Sized + Debug {
   fn snapshot_before(
     &mut self,
     time: <Self::SimulationSpec as SimulationSpec>::Time,
-  ) -> Option<Self::SnapshotAccessor>;
+  ) -> Option<Self::Snapshot>;
 
   /**
   Do a small amount of simulation work.

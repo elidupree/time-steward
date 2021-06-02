@@ -290,10 +290,17 @@ pub struct SfEventAccessor<'a, S: SimulationSpec> {
   woken_now_stack: Vec<DynHandle<SfEntityHandleKind<S>>>,
   steward: &'a mut Steward<S>,
 }
+
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
-pub struct Snapshot<S: SimulationSpec> {
+pub struct SfSnapshotAccessor<'a, S: SimulationSpec> {
   guard: accessor_cell::ReadGuard,
+  snapshot: &'a SfSnapshot<S>,
+}
+
+#[derive(Derivative)]
+#[derivative(Debug(bound = ""))]
+pub struct SfSnapshot<S: SimulationSpec> {
   time: S::Time,
   globals: Rc<Globals<S, SfEntityHandleKind<S>>>,
   scheduled_events: Vec<DynHandle<SfEntityHandleKind<S>>>,
@@ -401,7 +408,7 @@ impl<T> Deref for SnapshotQueryResult<T> {
   }
 }
 
-impl<S: SimulationSpec> Accessor for Snapshot<S> {
+impl<'b, S: SimulationSpec> Accessor for SfSnapshotAccessor<'b, S> {
   type SimulationSpec = S;
   type EntityHandleKind = SfEntityHandleKind<S>;
 
@@ -415,7 +422,7 @@ impl<S: SimulationSpec> Accessor for Snapshot<S> {
         .into_wrapped_gat()
         .0
         .mutable
-        .value_before(&self.guard, &self.time),
+        .value_before(&self.guard, &self.snapshot.time),
     )
   }
 
@@ -428,7 +435,7 @@ impl<S: SimulationSpec> Accessor for Snapshot<S> {
       .0
       .universal
       .schedule
-      .value_before(&self.guard, &self.time)
+      .value_before(&self.guard, &self.snapshot.time)
   }
 }
 
@@ -472,12 +479,12 @@ impl<'b, S: SimulationSpec> InitializedAccessor for SfEventAccessor<'b, S> {
   }
 }
 
-impl<S: SimulationSpec> InitializedAccessor for Snapshot<S> {
+impl<'b, S: SimulationSpec> InitializedAccessor for SfSnapshotAccessor<'b, S> {
   fn globals(&self) -> &Globals<Self::SimulationSpec, Self::EntityHandleKind> {
-    &*self.globals
+    &*self.snapshot.globals
   }
   fn now(&self) -> &<Self::SimulationSpec as SimulationSpec>::Time {
-    &self.time
+    &self.snapshot.time
   }
 }
 
@@ -603,14 +610,28 @@ impl<'c, S: SimulationSpec> EventAccessor for SfEventAccessor<'c, S> {
 type ScheduledEvents<'a, S: SimulationSpec> =
   impl Iterator<Item = DynHandle<SfEntityHandleKind<S>>> + 'a;
 
-impl<S: SimulationSpec> SnapshotAccessor for Snapshot<S> {
+impl<'b, S: SimulationSpec> SnapshotAccessor for SfSnapshotAccessor<'b, S> {
   type ScheduledEvents<'a> = ScheduledEvents<'a, S>;
   fn scheduled_events(&self) -> Self::ScheduledEvents<'_> {
-    self.scheduled_events.iter().cloned()
+    self.snapshot.scheduled_events.iter().cloned()
   }
 }
 
 impl<S: SimulationSpec> GlobalsConstructionAccessor for SfGlobalsConstructionAccessor<S> {}
+
+impl<S: SimulationSpec> Snapshot for SfSnapshot<S> {
+  type SimulationSpec = S;
+  type EntityHandleKind = SfEntityHandleKind<S>;
+  type SnapshotAccessor<'a> = SfSnapshotAccessor<'a, S>;
+
+  fn with_accessor<'a, R>(&'a self, f: impl FnOnce(&Self::SnapshotAccessor<'a>) -> R) -> R {
+    let accessor: Self::SnapshotAccessor<'_> = SfSnapshotAccessor {
+      guard: accessor_cell::ReadGuard::claim(),
+      snapshot: self,
+    };
+    f(&accessor)
+  }
+}
 
 // ###################################################
 // ############       Steward impls       ############
@@ -671,7 +692,7 @@ impl<S: SimulationSpec> Steward<S> {
 impl<S: SimulationSpec> TimeSteward for Steward<S> {
   type SimulationSpec = S;
   type EntityHandleKind = SfEntityHandleKind<S>;
-  type SnapshotAccessor = Snapshot<S>;
+  type Snapshot = SfSnapshot<S>;
 
   fn insert_fiat_event<E: Wake<Self::SimulationSpec>>(
     &mut self,
@@ -731,7 +752,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
   fn snapshot_before(
     &mut self,
     time: <Self::SimulationSpec as SimulationSpec>::Time,
-  ) -> Option<Self::SnapshotAccessor> {
+  ) -> Option<Self::Snapshot> {
     //println!("Getting snapshot at {:?}", time);
     // since this TimeSteward never discards history, it can always return Some for snapshots
     while let Some(ready_time) = self.latest_time_ready_for_snapshot() {
@@ -741,8 +762,7 @@ impl<S: SimulationSpec> TimeSteward for Steward<S> {
       }
       self.step(Some(time.clone()));
     }
-    Some(Snapshot {
-      guard: accessor_cell::ReadGuard::claim(),
+    Some(SfSnapshot {
       time,
       globals: self.globals.clone(),
       scheduled_events: self.schedule.iter().map(|s| s.entity.clone()).collect(),
