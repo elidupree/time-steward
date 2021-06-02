@@ -39,7 +39,7 @@ pub trait ConstructGlobals<S: SimulationSpec> {
 }
 
 pub trait Wake<S: SimulationSpec>: EntityKind {
-  fn wake<A: EventAccessor<SimulationSpec = S>>(
+  fn wake<'a, A: EventAccessor<'a, SimulationSpec = S>>(
     accessor: &mut A,
     this: TypedHandleRef<Self, A::EntityHandleKind>,
   );
@@ -97,9 +97,9 @@ An Accessor that exists at a specific time, after the globals have been construc
 
 Most Accessors are InitializedAccessors. The exception are GlobalsConstructionAccessors, which are used to construct the globals and thus exist before the globals are available, and don't happen at a specific time.
 */
-pub trait InitializedAccessor: Accessor {
-  fn globals(&self) -> &Globals<Self::SimulationSpec, Self::EntityHandleKind>;
-  fn now(&self) -> &<Self::SimulationSpec as SimulationSpec>::Time;
+pub trait InitializedAccessor<'acc>: Accessor {
+  fn globals(&self) -> &'acc Globals<Self::SimulationSpec, Self::EntityHandleKind>;
+  fn now(&self) -> &'acc <Self::SimulationSpec as SimulationSpec>::Time;
 }
 
 /**
@@ -130,7 +130,7 @@ An Accessor with all abilities that can be used during an event.
 
 EventAccessors can create and modify entities, and modify entity schedules.
 */
-pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
+pub trait EventAccessor<'acc>: InitializedAccessor<'acc> + CreateEntityAccessor {
   /// The guard type returned by `raw_write`. In EventAccessors for optimized TimeStewards, you can assume that this is equivalent to `&'a mut T`. Simpler implementations may use `std::cell::RefMut`.
   type WriteGuard<'a, T: 'a>: DerefMut<Target = T>;
 
@@ -215,7 +215,7 @@ pub trait EventAccessor: InitializedAccessor + CreateEntityAccessor {
 /**
 An Accessor representing a snapshot of a complete simulation state.
 */
-pub trait SnapshotAccessor: InitializedAccessor {
+pub trait SnapshotAccessor<'acc>: InitializedAccessor<'acc> {
   /// The iterator type returned by `scheduled_events`.
   type ScheduledEvents<'a>: Iterator<Item = DynHandle<Self::EntityHandleKind>> + 'a;
 
@@ -230,7 +230,8 @@ pub trait SnapshotAccessor: InitializedAccessor {
 pub trait Snapshot {
   type SimulationSpec: SimulationSpec;
   type EntityHandleKind: EntityHandleKindDeref;
-  type SnapshotAccessor<'a>: SnapshotAccessor<
+  type SnapshotAccessor<'acc>: SnapshotAccessor<
+    'acc,
     SimulationSpec = Self::SimulationSpec,
     EntityHandleKind = Self::EntityHandleKind,
   >;

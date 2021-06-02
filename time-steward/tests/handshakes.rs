@@ -41,7 +41,7 @@ impl PersistentlyIdentifiedType for Philosopher {
   const ID: PersistentTypeId = PersistentTypeId(0x28c7f7c2007af71f);
 }
 
-fn change_next_handshake_time<A: EventAccessor<SimulationSpec = PhilosophersSpec>>(
+fn change_next_handshake_time<'a, A: EventAccessor<'a, SimulationSpec = PhilosophersSpec>>(
   accessor: &mut A,
   handle: TypedHandleRef<Philosopher, A::EntityHandleKind>,
   time: Time,
@@ -62,14 +62,14 @@ type TimeStewardTypes = (
   ListedType<TweakUnsafe>,
 );
 
-fn display_snapshot<A: SnapshotAccessor<SimulationSpec = PhilosophersSpec>>(accessor: &A) {
+fn display_snapshot<'a, A: SnapshotAccessor<'a, SimulationSpec = PhilosophersSpec>>(accessor: &A) {
   println!("snapshot for {}", accessor.now());
   for handle in accessor.globals() {
     println!("{:?}", accessor.raw_read_schedule(handle.borrow()));
   }
 }
 
-fn dump_snapshot<A: SnapshotAccessor<SimulationSpec = PhilosophersSpec>>(
+fn dump_snapshot<'a, A: SnapshotAccessor<'a, SimulationSpec = PhilosophersSpec>>(
   accessor: &A,
 ) -> Vec<Option<Time>> {
   let mut result = Vec::new();
@@ -80,7 +80,7 @@ fn dump_snapshot<A: SnapshotAccessor<SimulationSpec = PhilosophersSpec>>(
 }
 
 impl Wake<PhilosophersSpec> for Philosopher {
-  fn wake<A: EventAccessor<SimulationSpec = PhilosophersSpec>>(
+  fn wake<'a, A: EventAccessor<'a, SimulationSpec = PhilosophersSpec>>(
     accessor: &mut A,
     this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
@@ -111,7 +111,7 @@ impl PersistentlyIdentifiedType for Initialize {
   const ID: PersistentTypeId = PersistentTypeId(0xd5e73d8ba6ec59a2);
 }
 impl Wake<PhilosophersSpec> for Initialize {
-  fn wake<A: EventAccessor<SimulationSpec = PhilosophersSpec>>(
+  fn wake<'a, A: EventAccessor<'a, SimulationSpec = PhilosophersSpec>>(
     accessor: &mut A,
     _this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
@@ -133,7 +133,7 @@ impl PersistentlyIdentifiedType for Tweak {
   const ID: PersistentTypeId = PersistentTypeId(0xfe9ff3047f9a9552);
 }
 impl Wake<PhilosophersSpec> for Tweak {
-  fn wake<A: EventAccessor<SimulationSpec = PhilosophersSpec>>(
+  fn wake<'a, A: EventAccessor<'a, SimulationSpec = PhilosophersSpec>>(
     accessor: &mut A,
     _this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
@@ -164,7 +164,7 @@ impl PersistentlyIdentifiedType for TweakUnsafe {
   const ID: PersistentTypeId = PersistentTypeId(0xa1618440808703da);
 }
 impl Wake<PhilosophersSpec> for TweakUnsafe {
-  fn wake<A: EventAccessor<SimulationSpec = PhilosophersSpec>>(
+  fn wake<'a, A: EventAccessor<'a, SimulationSpec = PhilosophersSpec>>(
     accessor: &mut A,
     _this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {

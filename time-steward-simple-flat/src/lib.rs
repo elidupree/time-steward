@@ -283,9 +283,9 @@ impl<S: SimulationSpec, E: Wake<S>> AnyEntityInner<S> for EntityInner<S, E> {
 #[derivative(Debug(bound = ""))]
 pub struct SfEventAccessor<'a, S: SimulationSpec> {
   guard: accessor_cell::WriteGuard,
-  now: S::Time,
+  now: &'a S::Time,
   first_waker_universal: &'a EntityUniversal<S>,
-  globals: Rc<Globals<S, SfEntityHandleKind<S>>>,
+  globals: &'a Globals<S, SfEntityHandleKind<S>>,
   child_id_generator: EventChildrenIdGenerator,
   woken_now_stack: Vec<DynHandle<SfEntityHandleKind<S>>>,
   steward: &'a mut Steward<S>,
@@ -368,7 +368,7 @@ pub struct Steward<S: SimulationSpec> {
 // ############      Accessor impls       ############
 // ###################################################
 
-impl<'c, S: SimulationSpec> Accessor for SfEventAccessor<'c, S> {
+impl<'acc, S: SimulationSpec> Accessor for SfEventAccessor<'acc, S> {
   type SimulationSpec = S;
   type EntityHandleKind = SfEntityHandleKind<S>;
 
@@ -408,7 +408,7 @@ impl<T> Deref for SnapshotQueryResult<T> {
   }
 }
 
-impl<'b, S: SimulationSpec> Accessor for SfSnapshotAccessor<'b, S> {
+impl<'acc, S: SimulationSpec> Accessor for SfSnapshotAccessor<'acc, S> {
   type SimulationSpec = S;
   type EntityHandleKind = SfEntityHandleKind<S>;
 
@@ -470,25 +470,25 @@ impl<S: SimulationSpec> Accessor for SfGlobalsConstructionAccessor<S> {
   }
 }
 
-impl<'b, S: SimulationSpec> InitializedAccessor for SfEventAccessor<'b, S> {
-  fn globals(&self) -> &Globals<Self::SimulationSpec, Self::EntityHandleKind> {
-    &*self.globals
+impl<'acc, S: SimulationSpec> InitializedAccessor<'acc> for SfEventAccessor<'acc, S> {
+  fn globals(&self) -> &'acc Globals<Self::SimulationSpec, Self::EntityHandleKind> {
+    self.globals
   }
-  fn now(&self) -> &<Self::SimulationSpec as SimulationSpec>::Time {
-    &self.now
+  fn now(&self) -> &'acc <Self::SimulationSpec as SimulationSpec>::Time {
+    self.now
   }
 }
 
-impl<'b, S: SimulationSpec> InitializedAccessor for SfSnapshotAccessor<'b, S> {
-  fn globals(&self) -> &Globals<Self::SimulationSpec, Self::EntityHandleKind> {
+impl<'acc, S: SimulationSpec> InitializedAccessor<'acc> for SfSnapshotAccessor<'acc, S> {
+  fn globals(&self) -> &'acc Globals<Self::SimulationSpec, Self::EntityHandleKind> {
     &*self.snapshot.globals
   }
-  fn now(&self) -> &<Self::SimulationSpec as SimulationSpec>::Time {
+  fn now(&self) -> &'acc <Self::SimulationSpec as SimulationSpec>::Time {
     &self.snapshot.time
   }
 }
 
-impl<'b, S: SimulationSpec> CreateEntityAccessor for SfEventAccessor<'b, S> {
+impl<'acc, S: SimulationSpec> CreateEntityAccessor for SfEventAccessor<'acc, S> {
   fn create_entity<E: EntityKind>(
     &mut self,
     immutable: ImmutableData<E, Self::EntityHandleKind>,
@@ -526,7 +526,7 @@ impl<S: SimulationSpec> CreateEntityAccessor for SfGlobalsConstructionAccessor<S
   }
 }
 
-impl<'c, S: SimulationSpec> EventAccessor for SfEventAccessor<'c, S> {
+impl<'acc, S: SimulationSpec> EventAccessor<'acc> for SfEventAccessor<'acc, S> {
   type WriteGuard<'a, T: 'a> = &'a mut T;
   #[allow(clippy::needless_lifetimes)] // Clippy is currently wrong about GATs
   fn map_write_guard<'a, T, U>(
@@ -610,7 +610,7 @@ impl<'c, S: SimulationSpec> EventAccessor for SfEventAccessor<'c, S> {
 type ScheduledEvents<'a, S: SimulationSpec> =
   impl Iterator<Item = DynHandle<SfEntityHandleKind<S>>> + 'a;
 
-impl<'b, S: SimulationSpec> SnapshotAccessor for SfSnapshotAccessor<'b, S> {
+impl<'acc, S: SimulationSpec> SnapshotAccessor<'acc> for SfSnapshotAccessor<'acc, S> {
   type ScheduledEvents<'a> = ScheduledEvents<'a, S>;
   fn scheduled_events(&self) -> Self::ScheduledEvents<'_> {
     self.snapshot.scheduled_events.iter().cloned()
@@ -649,11 +649,12 @@ impl<S: SimulationSpec> Steward<S> {
       .clone()
       .expect("tried to wake an entity that wasn't scheduled to wake");
     self.last_event = Some(now.clone());
+    let globals = self.globals.clone();
     let mut accessor = SfEventAccessor {
       guard,
-      now,
+      now: &now,
       first_waker_universal: entity.wrapped_gat().0.universal(),
-      globals: self.globals.clone(),
+      globals: &*globals,
       child_id_generator: EventChildrenIdGenerator::new(),
       woken_now_stack: vec![entity.clone()],
       steward: self,
@@ -666,7 +667,7 @@ impl<S: SimulationSpec> Steward<S> {
         .schedule
         .current_value(&accessor.guard)
         .as_ref()
-        == Some(&accessor.now)
+        == Some(accessor.now)
       {
         top.wrapped_gat().0.universal().schedule.replace(
           &mut accessor.guard,

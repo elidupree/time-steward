@@ -86,7 +86,7 @@ impl EntityKind for Relationship {
 }
 
 impl Wake<BouncyCirclesSpec> for Circle {
-  fn wake<A: EventAccessor<SimulationSpec = BouncyCirclesSpec>>(
+  fn wake<'a, A: EventAccessor<'a, SimulationSpec = BouncyCirclesSpec>>(
     accessor: &mut A,
     this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
@@ -114,7 +114,7 @@ impl Wake<BouncyCirclesSpec> for Circle {
 }
 
 impl Wake<BouncyCirclesSpec> for Relationship {
-  fn wake<A: EventAccessor<SimulationSpec = BouncyCirclesSpec>>(
+  fn wake<'a, A: EventAccessor<'a, SimulationSpec = BouncyCirclesSpec>>(
     accessor: &mut A,
     this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
@@ -164,7 +164,7 @@ impl Wake<BouncyCirclesSpec> for Relationship {
   }
 }
 
-fn trajectory_changed<A: EventAccessor<SimulationSpec = BouncyCirclesSpec>>(
+fn trajectory_changed<'a, A: EventAccessor<'a, SimulationSpec = BouncyCirclesSpec>>(
   accessor: &mut A,
   circle: TypedHandleRef<Circle, A::EntityHandleKind>,
 ) {
@@ -180,7 +180,10 @@ fn trajectory_changed<A: EventAccessor<SimulationSpec = BouncyCirclesSpec>>(
   // );
 }
 
-fn update_relationship_change_schedule<A: EventAccessor<SimulationSpec = BouncyCirclesSpec>>(
+fn update_relationship_change_schedule<
+  'a,
+  A: EventAccessor<'a, SimulationSpec = BouncyCirclesSpec>,
+>(
   accessor: &mut A,
   relationship: TypedHandleRef<Relationship, A::EntityHandleKind>,
 ) {
@@ -217,7 +220,7 @@ fn update_relationship_change_schedule<A: EventAccessor<SimulationSpec = BouncyC
   accessor.set_schedule(relationship, change_time);
 }
 
-fn update_boundary_change_schedule<A: EventAccessor<SimulationSpec = BouncyCirclesSpec>>(
+fn update_boundary_change_schedule<'a, A: EventAccessor<'a, SimulationSpec = BouncyCirclesSpec>>(
   accessor: &mut A,
   circle: TypedHandleRef<Circle, A::EntityHandleKind>,
 ) {
@@ -296,7 +299,7 @@ impl PersistentlyIdentifiedType for Initialize {
 }
 
 impl Wake<BouncyCirclesSpec> for Initialize {
-  fn wake<A: EventAccessor<SimulationSpec = BouncyCirclesSpec>>(
+  fn wake<'a, A: EventAccessor<'a, SimulationSpec = BouncyCirclesSpec>>(
     accessor: &mut A,
     _this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
@@ -355,7 +358,7 @@ impl PersistentlyIdentifiedType for Disturb {
 }
 
 impl Wake<BouncyCirclesSpec> for Disturb {
-  fn wake<A: EventAccessor<SimulationSpec = BouncyCirclesSpec>>(
+  fn wake<'a, A: EventAccessor<'a, SimulationSpec = BouncyCirclesSpec>>(
     accessor: &mut A,
     this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {

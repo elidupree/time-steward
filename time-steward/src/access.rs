@@ -1,8 +1,5 @@
-use crate::type_utils::{ChoiceOfObjectContainedIn, GetContained};
-use crate::{
-  Accessor, EntityKind, EventAccessor, MutableData, SimulationSpec, SimulationStateData,
-  TypedHandle, TypedHandleRef, Wake,
-};
+//use crate::type_utils::{ChoiceOfObjectContainedIn, GetContained};
+use crate::{Accessor, EntityKind, EventAccessor, MutableData, TypedHandle, TypedHandleRef};
 use derivative::Derivative;
 use time_steward_type_utils::delegate;
 
@@ -28,19 +25,22 @@ impl<
 
 /// types that allow undo-safe mutable access to entity data in some way; this is about undo safety, not memory safety,
 /// and the write method needs an accessor to actually be allowed to view the data
-pub trait WriteAccess<'a, E: EntityKind, A: EventAccessor>: ReadAccess<'a, E, A> {
+pub trait WriteAccess<'a, 'acc, E: EntityKind, A: EventAccessor<'acc>>:
+  ReadAccess<'a, E, A>
+{
   fn write(self, accessor: &'a mut A) -> A::WriteGuard<'a, Self::Target>;
 }
-pub trait EntityWriteAccess<'a, E: EntityKind, A: EventAccessor>:
-  WriteAccess<'a, E, A, Target = MutableData<E, A::EntityHandleKind>>
+pub trait EntityWriteAccess<'a, 'acc, E: EntityKind, A: EventAccessor<'acc>>:
+  WriteAccess<'a, 'acc, E, A, Target = MutableData<E, A::EntityHandleKind>>
 {
 }
 impl<
     'a,
+    'acc,
     E: EntityKind,
-    A: EventAccessor,
-    RA: WriteAccess<'a, E, A, Target = MutableData<E, A::EntityHandleKind>>,
-  > EntityWriteAccess<'a, E, A> for RA
+    A: EventAccessor<'acc>,
+    RA: WriteAccess<'a, 'acc, E, A, Target = MutableData<E, A::EntityHandleKind>>,
+  > EntityWriteAccess<'a, 'acc, E, A> for RA
 {
 }
 
@@ -59,7 +59,7 @@ impl<'a, E: EntityKind, A: Accessor> ReadAccess<'a, E, A>
 }
 
 // when you just have a TypedHandleRef, write undo-safely by storing a clone of the entire old state
-impl<'a, E: EntityKind, A: EventAccessor> WriteAccess<'a, E, A>
+impl<'a, 'acc, E: EntityKind, A: EventAccessor<'acc>> WriteAccess<'a, 'acc, E, A>
   for TypedHandleRef<'a, E, A::EntityHandleKind>
 {
   fn write(self, accessor: &'a mut A) -> A::WriteGuard<'a, Self::Target> {
@@ -81,7 +81,7 @@ impl<'a, E: EntityKind, A: Accessor> ReadAccess<'a, E, A>
     self.borrow().read(accessor)
   }
 }
-impl<'a, E: EntityKind, A: EventAccessor> WriteAccess<'a, E, A>
+impl<'a, 'acc, E: EntityKind, A: EventAccessor<'acc>> WriteAccess<'a, 'acc, E, A>
   for &'a TypedHandle<E, A::EntityHandleKind>
 {
   fn write(self, accessor: &'a mut A) -> A::WriteGuard<'a, Self::Target> {
@@ -120,36 +120,36 @@ impl<'a, E: EntityKind, A: Accessor> ReadAccess<'a, E, A> for ReadRecordedRef<'a
   }
 }
 
-pub trait AccessorExt: Accessor {
-  // read undo-safely by explicitly recording an access
-  fn read_schedule<E: Wake<Self::SimulationSpec>>(
-    &self,
-    entity: TypedHandleRef<E, Self::EntityHandleKind>,
-  ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time> {
-    self.record_read(entity);
-    self.raw_read_schedule(entity)
-  }
-}
-impl<A: Accessor> AccessorExt for A {}
-
-pub trait EventAccessorExt: EventAccessor {
-  fn write_contained<
-    'a,
-    E: EntityKind,
-    U: SimulationStateData,
-    Choice: ChoiceOfObjectContainedIn<MutableData<E, Self::EntityHandleKind>, Target = U>,
-  >(
-    &'a mut self,
-    // at the time of this writing, we cannot use the type alias TypedHandleRef due to
-    // https://github.com/rust-lang/rust/issues/85533
-    entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
-    choice: Choice,
-  ) -> Self::WriteGuard<'a, U> {
-    let old_value = (*self.raw_read(entity)).get_contained(choice).clone();
-    self.record_undo(entity, move |m| {
-      *m.get_contained_mut(choice) = old_value.clone()
-    });
-    Self::map_write_guard(self.raw_write(entity), |t| t.get_contained_mut(choice))
-  }
-}
-impl<A: EventAccessor> EventAccessorExt for A {}
+// pub trait AccessorExt: Accessor {
+//   // read undo-safely by explicitly recording an access
+//   fn read_schedule<E: Wake<Self::SimulationSpec>>(
+//     &self,
+//     entity: TypedHandleRef<E, Self::EntityHandleKind>,
+//   ) -> Option<<Self::SimulationSpec as SimulationSpec>::Time> {
+//     self.record_read(entity);
+//     self.raw_read_schedule(entity)
+//   }
+// }
+// impl<A: Accessor> AccessorExt for A {}
+//
+// pub trait EventAccessorExt: EventAccessor {
+//   fn write_contained<
+//     'a,
+//     E: EntityKind,
+//     U: SimulationStateData,
+//     Choice: ChoiceOfObjectContainedIn<MutableData<E, Self::EntityHandleKind>, Target = U>,
+//   >(
+//     &'a mut self,
+//     // at the time of this writing, we cannot use the type alias TypedHandleRef due to
+//     // https://github.com/rust-lang/rust/issues/85533
+//     entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
+//     choice: Choice,
+//   ) -> Self::WriteGuard<'a, U> {
+//     let old_value = (*self.raw_read(entity)).get_contained(choice).clone();
+//     self.record_undo(entity, move |m| {
+//       *m.get_contained_mut(choice) = old_value.clone()
+//     });
+//     Self::map_write_guard(self.raw_write(entity), |t| t.get_contained_mut(choice))
+//   }
+// }
+// impl<A: EventAccessor> EventAccessorExt for A {}
