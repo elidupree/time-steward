@@ -3,7 +3,7 @@ use serde::Deserialize;
 use std::time::{Duration, Instant};
 
 use time_steward::{
-  ConstructibleTimeSteward, EntityId, InitializedAccessor, ReadAccess, TimeSteward,
+  ConstructibleTimeSteward, EntityId, InitializedAccessor, ReadAccess, Snapshot, TimeSteward,
 };
 
 use bouncy_circles::physics::*;
@@ -193,56 +193,58 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
       target.clear_color(0.0, 0.0, 0.0, 1.0);
       let mut vertices = Vec::<Vertex>::new();
 
-      let accessor = stew
+      let snapshot = stew
         .snapshot_before(time)
         .expect("steward failed to provide snapshot");
       stew.forget_before(time);
       settle(&mut stew, time);
-      for handle in accessor.globals().circles.iter() {
-        let circle = handle.read(&accessor);
-        let position = circle
-          .position
-          .value(*accessor.now(), STATIC_TIME_SHIFT)
-          .unwrap();
-        let center = [
-          position[0] as f32 / ARENA_SIZE as f32 - 0.5,
-          position[1] as f32 / ARENA_SIZE as f32 - 0.5,
-        ];
-        let radius = handle.radius as f32 / ARENA_SIZE as f32;
-        // println!("drawing circ at {}, {}", center[0],center[1]);
-        vertices.extend(&[
-          Vertex {
-            center,
-            radius,
-            direction: [1.0, 0.0],
-          },
-          Vertex {
-            center,
-            radius,
-            direction: [-1.0, 0.0],
-          },
-          Vertex {
-            center,
-            radius,
-            direction: [0.0, 1.0],
-          },
-          Vertex {
-            center,
-            radius,
-            direction: [1.0, 0.0],
-          },
-          Vertex {
-            center,
-            radius,
-            direction: [-1.0, 0.0],
-          },
-          Vertex {
-            center,
-            radius,
-            direction: [0.0, -1.0],
-          },
-        ]);
-      }
+      snapshot.with_accessor(|accessor| {
+        for handle in accessor.globals().circles.iter() {
+          let circle = handle.read(accessor);
+          let position = circle
+            .position
+            .value(*accessor.now(), STATIC_TIME_SHIFT)
+            .unwrap();
+          let center = [
+            position[0] as f32 / ARENA_SIZE as f32 - 0.5,
+            position[1] as f32 / ARENA_SIZE as f32 - 0.5,
+          ];
+          let radius = handle.radius as f32 / ARENA_SIZE as f32;
+          // println!("drawing circ at {}, {}", center[0],center[1]);
+          vertices.extend(&[
+            Vertex {
+              center,
+              radius,
+              direction: [1.0, 0.0],
+            },
+            Vertex {
+              center,
+              radius,
+              direction: [-1.0, 0.0],
+            },
+            Vertex {
+              center,
+              radius,
+              direction: [0.0, 1.0],
+            },
+            Vertex {
+              center,
+              radius,
+              direction: [1.0, 0.0],
+            },
+            Vertex {
+              center,
+              radius,
+              direction: [-1.0, 0.0],
+            },
+            Vertex {
+              center,
+              radius,
+              direction: [0.0, -1.0],
+            },
+          ]);
+        }
+      });
       target
         .draw(
           &glium::VertexBuffer::new(&display, &vertices)
