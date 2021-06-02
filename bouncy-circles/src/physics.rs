@@ -308,11 +308,11 @@ impl Wake<BouncyCirclesSpec> for Initialize {
     //   &accessor.globals().detector,
     //   SimpleGridDetector::new(accessor, Space, (ARENA_SIZE >> 2) as collisions::Coordinate),
     // );
-    let circles = accessor.globals().circles.clone();
+    let circles = &accessor.globals().circles;
 
-    for first in &circles {
+    for first in circles {
       update_boundary_change_schedule(accessor, first.borrow());
-      for second in &circles {
+      for second in circles {
         if first < second {
           let relationship = accessor.create_entity::<Relationship>(
             RelationshipImmutable {
@@ -364,9 +364,9 @@ impl Wake<BouncyCirclesSpec> for Disturb {
   ) {
     //println!("Disturb {:?}", this.coordinates);
     let now = *accessor.now();
-    let circles = accessor.globals().circles.clone();
+    let circles = &accessor.globals().circles;
     let best_circle = circles
-      .into_iter()
+      .iter()
       .min_by_key(|circle| {
         let mutable = circle.read(accessor);
         let position = mutable.position.value(now, STATIC_TIME_SHIFT).unwrap();

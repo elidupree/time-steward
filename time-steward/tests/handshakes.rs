@@ -93,9 +93,9 @@ impl Wake<PhilosophersSpec> for Philosopher {
     //println!("SHAKE!!! @{:?}. {}={}; {}={}", accessor.extended_now(), self.whodunnit, awaken_time_2, friend_id, awaken_time_1);
     // IF YOU SHAKE YOUR OWN HAND YOU RECOVER
     // IN THE SECOND TIME APPARENTLY
-    let friend = accessor.globals()[friend_id].clone();
+    let friend = accessor.globals()[friend_id].borrow();
     if friend != this {
-      change_next_handshake_time(accessor, friend.borrow(), awaken_time_1);
+      change_next_handshake_time(accessor, friend, awaken_time_1);
     }
     change_next_handshake_time(accessor, this, awaken_time_2);
   }
@@ -117,8 +117,8 @@ impl Wake<PhilosophersSpec> for Initialize {
   ) {
     println!("FIAT!!!!!");
     for i in 0..HOW_MANY_PHILOSOPHERS {
-      let philosopher = accessor.globals()[i].clone();
-      change_next_handshake_time(accessor, philosopher.borrow(), (i + 1) as Time);
+      let philosopher = accessor.globals()[i].borrow();
+      change_next_handshake_time(accessor, philosopher, (i + 1) as Time);
     }
   }
 }
@@ -138,8 +138,8 @@ impl Wake<PhilosophersSpec> for Tweak {
     _this: TypedHandleRef<Self, A::EntityHandleKind>,
   ) {
     let now = *accessor.now();
-    let first_philosopher = accessor.globals()[0].clone();
-    let mut rng = first_philosopher.borrow().write(accessor);
+    let first_philosopher = accessor.globals()[0].borrow();
+    let mut rng = first_philosopher.write(accessor);
     let friend_id = rng.gen_range(0..HOW_MANY_PHILOSOPHERS);
     let awaken_time = now + rng.gen_range(0..7);
     std::mem::drop(rng);
@@ -149,8 +149,8 @@ impl Wake<PhilosophersSpec> for Tweak {
       friend_id,
       awaken_time
     );
-    let friend = accessor.globals()[friend_id].clone();
-    change_next_handshake_time(accessor, friend.borrow(), awaken_time);
+    let friend = accessor.globals()[friend_id].borrow();
+    change_next_handshake_time(accessor, friend, awaken_time);
   }
 }
 
@@ -178,8 +178,8 @@ impl Wake<PhilosophersSpec> for TweakUnsafe {
     let now = *accessor.now();
     let friend_id = rng.gen_range(0..HOW_MANY_PHILOSOPHERS);
     let awaken_time = now + rng.gen_range(0..7);
-    let friend = accessor.globals()[friend_id].clone();
-    change_next_handshake_time(accessor, friend.borrow(), awaken_time);
+    let friend = accessor.globals()[friend_id].borrow();
+    change_next_handshake_time(accessor, friend, awaken_time);
   }
 }
 
