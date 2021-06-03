@@ -14,4 +14,11 @@ rand = "0.8.3"
 rand_pcg = {version = "0.3.0", features = ["serde1"]}
 nalgebra = {version = "0.26.2", features = ["serde-serialize"]}
 time_steward = {path="../time-steward"}
+time_steward_simple_flat = {path="../time-steward-simple-flat"}
 
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "bouncy_circles"
+harness = false
