@@ -123,23 +123,37 @@ fn probe_max_total_shift<
   }
 }
 
-macro_rules! test_polynomials {
-  ($($coefficients: expr, $integer: ident, $double: ident, $uniform: ident, $name: ident,)*) => {
-$(
+macro_rules! test_nontrivial_polynomial {
+  ($coefficients: expr, $integer: ident, $double: ident, $uniform: ident, $name: ident $(,)*) => {
+    mod $name {
+      use super::*;
+
+      test_polynomial!($coefficients, $integer, $double, $uniform, $name);
+
+      #[test]
+      #[should_panic(expected = "overflow")]
+      fn max_total_shift_tight() {
+        probe_max_total_shift::<$integer, $double, $coefficients>(1);
+      }
+    }
+  };
+}
+
+macro_rules! test_polynomial {
+  ($coefficients: expr, $integer: ident, $double: ident, $uniform: ident, $name: ident $(,)*) => {
+
   mod $name {
+    test_polynomial!($coefficients, $integer, $double, $uniform);
     use super::*;
     //use super::super::*;
     //use proptest::prelude::*;
+  }
+  };
+  ($coefficients: expr, $integer: ident, $double: ident, $uniform: ident $(,)*) => {
 
     #[test]
     fn max_total_shift_works() {
       probe_max_total_shift::<$integer, $double, $coefficients>(0);
-    }
-
-    #[test]
-    #[should_panic(expected = "overflow")]
-    fn max_total_shift_tight() {
-      probe_max_total_shift::<$integer, $double, $coefficients>(1);
     }
 
     proptest! {
@@ -316,8 +330,6 @@ $(
         prop_assert!(BigRational::from(BigInt::from(bounds [1])) >= exact);
       }
   }
-  }
-)*
 }}
 macro_rules! test_squarable_polynomials {
   ($($coefficients: expr, $integer: ident, $double: ident, $uniform: ident, $name: ident,)*) => {
@@ -372,33 +384,11 @@ $(
   }
 }
 
-test_polynomials!(
-  1,
-  i32,
-  i64,
-  uniform1,
-  polynomial_tests_1,
-  2,
-  i32,
-  i64,
-  uniform2,
-  polynomial_tests_2,
-  3,
-  i32,
-  i64,
-  uniform3,
-  polynomial_tests_3,
-  4,
-  i32,
-  i64,
-  uniform4,
-  polynomial_tests_4,
-  5,
-  i32,
-  i64,
-  uniform5,
-  polynomial_tests_5,
-);
+test_polynomial!(1, i32, i64, uniform1, polynomial_tests_1,);
+test_nontrivial_polynomial!(2, i32, i64, uniform2, polynomial_tests_2,);
+test_nontrivial_polynomial!(3, i32, i64, uniform3, polynomial_tests_3,);
+test_nontrivial_polynomial!(4, i32, i64, uniform4, polynomial_tests_4,);
+test_nontrivial_polynomial!(5, i32, i64, uniform5, polynomial_tests_5,);
 
 test_squarable_polynomials!(
   /*1,
