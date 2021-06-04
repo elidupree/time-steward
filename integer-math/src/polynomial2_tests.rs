@@ -113,13 +113,27 @@ fn probe_max_total_shift<
     WorkingType,
   >>::max_total_shift()
     + overflow;
+  let all_pos = [Coefficient::max_value(); COEFFICIENTS];
+  let all_neg = [Coefficient::min_value(); COEFFICIENTS];
+  let mut one_neg = [Coefficient::max_value(); COEFFICIENTS];
+  one_neg[COEFFICIENTS - 1] = Coefficient::min_value();
+  let mut one_pos = [Coefficient::min_value(); COEFFICIENTS];
+  one_pos[COEFFICIENTS - 1] = Coefficient::max_value();
   for input_shift in 1..max_total_shift {
-    all_taylor_coefficients_bounds_within_half_unchecked::<Coefficient, WorkingType, COEFFICIENTS>(
-      &[Coefficient::max_value(); COEFFICIENTS],
-      WorkingType::one() << (input_shift - 1),
-      input_shift,
-      max_total_shift - input_shift,
-    );
+    for input in [WorkingType::one(), -WorkingType::one()] {
+      for polynomial in &[all_pos, all_neg, one_pos, one_neg] {
+        all_taylor_coefficients_bounds_within_half_unchecked::<
+          Coefficient,
+          WorkingType,
+          COEFFICIENTS,
+        >(
+          polynomial,
+          input << (input_shift - 1),
+          input_shift,
+          max_total_shift - input_shift,
+        );
+      }
+    }
   }
 }
 
@@ -129,6 +143,11 @@ macro_rules! test_nontrivial_polynomial {
       use super::*;
 
       test_polynomial!($coefficients, $integer, $double, $uniform, $name);
+
+      #[test]
+      fn max_total_shift_works() {
+        probe_max_total_shift::<$integer, $double, $coefficients>(0);
+      }
 
       #[test]
       #[should_panic(expected = "overflow")]
@@ -150,11 +169,6 @@ macro_rules! test_polynomial {
   }
   };
   ($coefficients: expr, $integer: ident, $double: ident, $uniform: ident $(,)*) => {
-
-    #[test]
-    fn max_total_shift_works() {
-      probe_max_total_shift::<$integer, $double, $coefficients>(0);
-    }
 
     proptest! {
       #[test]
