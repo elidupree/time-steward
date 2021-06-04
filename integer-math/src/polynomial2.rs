@@ -384,6 +384,7 @@ pub trait SetNthTaylorCoefficientAtFractionalInput<WorkingType>: PolynomialBase 
   This can fail due to overflow; we don't currently have a rigorous definition of when that can happen. We also don't have a definition of how bad the rounding error can be.
   */
   // TODO: define the overflow and error size rules, make tests, refactor this function, etc.
+  // Possible approach: split off a SetNthTaylorCoefficientWithinHalf, and from that, also split off a AddNthTaylorCoefficientWithinHalf. AddNthTaylorCoefficientWithinHalf can be the one with the rigorous guarantees; the first two can be documented as compositions of the others.
   fn set_nth_taylor_coefficient_at_fractional_input(
     &mut self,
     which_coefficient: usize,
