@@ -111,7 +111,12 @@ $(
     //use proptest::prelude::*;
 
     fn test_max_total_shift_generic<WorkingType: Integer+Signed+From<$integer>+TryInto<$integer>>() {
-      let accumulated_error_shift = <[$integer; $coefficients] as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::accumulated_error_shift();
+      // TODO: this previously used the definition of accumulated_error_shift
+      // from AllTaylorCoefficientsBoundsWithinHalf, but I later made that private because it's
+      // an implementation detail. So now, this is a hardcoded duplicate of the definition.
+      // That's tolerable since this is a test, but I should rethink the purpose of this test and
+      // either change it or write a better explanatory comment.
+      let accumulated_error_shift = $coefficients;
       let max_total_shift = <[$integer; $coefficients] as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::max_total_shift();
       for input_shift in 1..$integer::total_bits() {
         for precision_shift in (input_shift..max_total_shift).map(|a| a-input_shift) {
