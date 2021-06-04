@@ -52,8 +52,10 @@ pub trait AllTaylorCoefficients<WorkingType>: Sized {
   /// Calculate the Taylor coefficients of the polynomial `self` at the input `input`.
   ///
   /// Returns None if any of the coefficients do not fit in the type.
-  // TODO: should we just return [WorkingType; COEFFICIENTS] and have a convenient TryInto-like conversion to apply afterwards?
-  // this would require an additional note in the docs for all_taylor_coefficients_bounds below
+  /// (We can't just return [WorkingType; COEFFICIENTS], because it could overflow WorkingType too.
+  /// By restricting it to the original type, we can at least guarantee that we always return Some
+  /// if the results are in-bounds; if we returned WorkingType, there would also be failures due
+  /// to internal overflow.)
   fn all_taylor_coefficients(&self, input: impl Copy + Into<WorkingType>) -> Option<Self>;
 }
 
@@ -98,7 +100,11 @@ pub trait AllTaylorCoefficientsBoundsWithinHalf<WorkingType> {
   The true outputs won't necessarily be integers, so we can't return them exactly.
   Instead, for each coefficient, we return bounds of the form [WorkingType; 2],
   representing an inclusive range that is guaranteed to include the true answer.
-  The min and max of that range are also guaranteed to be within 2 units of each other.
+  The min and max of that range are also guaranteed to be < 1.5 units away from the true answer.
+  Since they're integers, this also implies all of the following:
+  * They will be <= 2 units away from each other.
+  * Their mean will be <= 0.5 units away from the true answer.
+  * Their mean rounded to the nearest integer will be <= 1 units away from the true answer.
 
   The idea of precision_shift is to let you calculate the answer with a smaller amount of error,
   by scaling up the numbers while guaranteeing the same absolute range of <=2 in the answers.
