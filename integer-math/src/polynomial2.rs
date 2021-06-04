@@ -37,6 +37,16 @@ pub fn add_product_into<Coefficient: Integer, T: Integer + Signed + From<Coeffic
   Some(())
 }
 
+pub trait PolynomialBase {
+  type Coefficient: Integer + Signed;
+}
+
+impl<Coefficient: Integer + Signed, const COEFFICIENTS: usize> PolynomialBase
+  for [Coefficient; COEFFICIENTS]
+{
+  type Coefficient = Coefficient;
+}
+
 /// Evaluate all Taylor coefficients of a polynomial at a given integer input.
 pub trait AllTaylorCoefficients<WorkingType>: Sized {
   /// Calculate the Taylor coefficients of the polynomial `self` at the input `input`.
@@ -238,6 +248,59 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
   }
 }
 
+/**
+Modify a specific Taylor coefficient at a fractional input.
+*/
+pub trait SetNthTaylorCoefficientAtFractionalInput<WorkingType>: PolynomialBase {
+  /**
+  Modify `self` so that its `which_coefficient`th Taylor coefficient will be approximately equal to `target_value` at the input (`input` / 2^`input_shift`), while its other Taylor coefficients at that input will be approximately the same as they were before.
+
+  This can fail due to overflow; we don't currently have a rigorous definition of when that can happen. We also don't have a definition of how bad the rounding error can be.
+  */
+  // TODO: define the overflow and error size rules, make tests, refactor this function, etc.
+  fn set_nth_taylor_coefficient_at_fractional_input(
+    &mut self,
+    which_coefficient: usize,
+    input: WorkingType,
+    input_shift: u32,
+    target_value: Self::Coefficient,
+  ) -> Option<()>;
+}
+
+impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
+  SetNthTaylorCoefficientAtFractionalInput<DoubleSized<Coefficient>>
+  for [Coefficient; COEFFICIENTS]
+{
+  fn set_nth_taylor_coefficient_at_fractional_input(
+    &mut self,
+    which_coefficient: usize,
+    input: DoubleSized<Coefficient>,
+    input_shift: u32,
+    target_value: Coefficient,
+  ) -> Option<()> {
+    let mut target_values: ::smallvec::SmallVec<[DoubleSized<Coefficient>; 8]> =
+      ::smallvec::SmallVec::with_capacity(which_coefficient + 1);
+    let bounds = self.all_taylor_coefficients_bounds(input, input_shift, 0u32)?;
+    for index in 0..which_coefficient {
+      target_values.push(mean_round_to_even(
+        bounds.as_slice()[index][0],
+        bounds.as_slice()[index][1],
+      ));
+    }
+    target_values.push(target_value.into());
+    for (index, target_value) in target_values.iter().enumerate().rev() {
+      let current_bounds = self
+        .all_taylor_coefficients_bounds(input, input_shift, 0u32)?
+        .as_slice()[index];
+      let current_value = mean_round_to_even(current_bounds[0], current_bounds[1]);
+      let change_size = target_value.checked_sub(&current_value)?;
+      self.as_mut_slice()[index] =
+        self.as_slice()[index].checked_add(&change_size.try_into().ok()?)?;
+    }
+    Some(())
+  }
+}
+
 /*pub trait PolynomialBoundsGenerator<Input, Output> {
 fn generate_bounds(&self, input: FractionalInput<Input>) -> Option<Output>;
 }*/
@@ -276,17 +339,6 @@ impl_filter!(LessThanEqualToFilter, <=, 0, 1, <, -Coefficient::one());
 impl_filter!(GreaterThanFilter, >, 1, 0, >, Coefficient::one());
 impl_filter!(GreaterThanEqualToFilter, >=, 1, 0, >, Coefficient::one());
 
-pub trait PolynomialBase {
-  type Coefficient: Integer + Signed;
-}
-
-impl<Coefficient: Integer + Signed, const COEFFICIENTS: usize> PolynomialBase
-  for [Coefficient; COEFFICIENTS]
-{
-  type Coefficient = Coefficient;
-}
-
-pub type Coefficient<T> = <T as PolynomialBase>::Coefficient;
 pub trait PolynomialRangeSearch<Coefficient, WorkingType>: PolynomialBase {
   fn next_time_value_passes<Filter: PolynomialBoundsFilter<Coefficient>>(
     &self,
@@ -302,16 +354,6 @@ pub trait PolynomialMagnitudeSquaredRangeSearch<WorkingType>: PolynomialBase + S
     input_shift: u32,
     filter: Filter,
   ) -> Option<WorkingType>;
-}
-
-pub trait SetNthTaylorCoefficientAtFractionalInput<WorkingType>: PolynomialBase {
-  fn set_nth_taylor_coefficient_at_fractional_input(
-    &mut self,
-    which_derivative: usize,
-    input: WorkingType,
-    input_shift: u32,
-    target_value: Self::Coefficient,
-  ) -> Option<()>;
 }
 
 pub trait Polynomial<Coefficient: DoubleSizedSignedInteger>:
@@ -387,37 +429,6 @@ fn next_time_value_passes<
   }, start_input, input_shift)
 }
 }
-impl <Coefficient: DoubleSizedSignedInteger> SetNthTaylorCoefficientAtFractionalInput<DoubleSized<Coefficient>> for [Coefficient; $coefficients] {
-fn set_nth_taylor_coefficient_at_fractional_input(
-&mut self,
-which_derivative: usize,
-input: DoubleSized<Coefficient>,
-input_shift: u32,
-target_value: Coefficient,
-) -> Option<()> {
-let mut target_values: ::smallvec::SmallVec<[DoubleSized<Coefficient>; 8]> =
-  ::smallvec::SmallVec::with_capacity(which_derivative + 1);
-let bounds = self.all_taylor_coefficients_bounds(input, input_shift, 0u32)?;
-for index in 0..which_derivative {
-  target_values.push(mean_round_to_even(
-    bounds.as_slice()[index][0],
-    bounds.as_slice()[index][1],
-  ));
-}
-target_values.push(target_value.into());
-for (index, target_value) in target_values.iter().enumerate().rev() {
-  let current_bounds = self
-    .all_taylor_coefficients_bounds(input, input_shift, 0u32)?
-    .as_slice()[index];
-  let current_value = mean_round_to_even(current_bounds[0], current_bounds[1]);
-  let change_size = target_value.checked_sub(&current_value)?;
-  self.as_mut_slice()[index] =
-    self.as_slice()[index].checked_add(&change_size.try_into().ok()?)?;
-}
-Some(())
-}
-}
-
 
 )*
 
