@@ -404,25 +404,59 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
     input_shift: u32,
     target_value: Coefficient,
   ) -> Option<()> {
-    let mut target_values: ::smallvec::SmallVec<[DoubleSized<Coefficient>; 8]> =
-      ::smallvec::SmallVec::with_capacity(which_coefficient + 1);
-    let bounds = self.all_taylor_coefficients_bounds(input, input_shift, 0u32)?;
-    for index in 0..which_coefficient {
-      target_values.push(mean_round_to_even(
-        bounds.as_slice()[index][0],
-        bounds.as_slice()[index][1],
-      ));
+    let integer_input = shr_nicely_rounded(input, input_shift);
+    let small_input = input.wrapping_sub(&(Shl::<u32>::shl(integer_input, input_shift)));
+    let integer_coefficients = self.all_taylor_coefficients(integer_input)?;
+    let bounds = <Self as AllTaylorCoefficientsBoundsWithinHalf<
+      DoubleSized<Coefficient>,
+    >>::all_taylor_coefficients_bounds_within_half(
+      &integer_coefficients,
+      small_input,
+      input_shift,
+      0u32,
+    );
+
+    let mut change_at_input = [Coefficient::zero(); COEFFICIENTS];
+    change_at_input[which_coefficient] = (DoubleSized::<Coefficient>::from(target_value)
+      - mean_round_to_even(bounds[which_coefficient][0], bounds[which_coefficient][1]))
+    .try_into()
+    .ok()?;
+    let change_at_integer = <Self as AllTaylorCoefficientsBoundsWithinHalf<
+      DoubleSized<Coefficient>,
+    >>::all_taylor_coefficients_bounds_within_half(
+      &change_at_input,
+      -small_input,
+      input_shift,
+      0u32,
+    );
+    let mut new_at_integer = integer_coefficients;
+    for (change, new) in change_at_integer.iter().zip(new_at_integer.iter_mut()) {
+      *new = (DoubleSized::<Coefficient>::from(*new) + mean_round_to_even(change[0], change[1]))
+        .try_into()
+        .ok()?;
     }
-    target_values.push(target_value.into());
-    for (index, target_value) in target_values.iter().enumerate().rev() {
-      let current_bounds = self
-        .all_taylor_coefficients_bounds(input, input_shift, 0u32)?
-        .as_slice()[index];
-      let current_value = mean_round_to_even(current_bounds[0], current_bounds[1]);
-      let change_size = target_value.checked_sub(&current_value)?;
-      self.as_mut_slice()[index] =
-        self.as_slice()[index].checked_add(&change_size.try_into().ok()?)?;
-    }
+    *self = new_at_integer.all_taylor_coefficients(-integer_input)?;
+    // let bounds = self.all_taylor_coefficients_bounds(input, input_shift, 0u32)?;
+    //
+    // let mut target_values: ::smallvec::SmallVec<[DoubleSized<Coefficient>; 8]> =
+    //   ::smallvec::SmallVec::with_capacity(which_coefficient + 1);
+    // let bounds = self.all_taylor_coefficients_bounds(input, input_shift, 0u32)?;
+    // for index in 0..which_coefficient {
+    //   target_values.push(mean_round_to_even(
+    //     bounds.as_slice()[index][0],
+    //     bounds.as_slice()[index][1],
+    //   ));
+    // }
+    // target_values.push(target_value.into());
+    // for (index, target_value) in target_values.iter().enumerate().rev() {
+    //   let current_bounds = self
+    //     .all_taylor_coefficients_bounds(input, input_shift, 0u32)?
+    //     .as_slice()[index];
+    //   let current_value = mean_round_to_even(current_bounds[0], current_bounds[1]);
+    //   let change_size = target_value.checked_sub(&current_value)?;
+    //   self.as_mut_slice()[index] =
+    //     self.as_slice()[index].checked_add(&change_size.try_into().ok()?)?;
+    // }
     Some(())
   }
 }
