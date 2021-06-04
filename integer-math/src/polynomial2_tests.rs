@@ -102,6 +102,27 @@ fn arbitrary_fractional_input() -> BoxedStrategy<FractionalInput<i64>> {
     .boxed()
 }
 
+fn probe_max_total_shift<
+  Coefficient: Integer + Signed,
+  WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient>,
+  const COEFFICIENTS: usize,
+>(
+  overflow: u32,
+) {
+  let max_total_shift = <[Coefficient; COEFFICIENTS] as AllTaylorCoefficientsBoundsWithinHalf<
+    WorkingType,
+  >>::max_total_shift()
+    + overflow;
+  for input_shift in 1..max_total_shift {
+    all_taylor_coefficients_bounds_within_half_unchecked::<Coefficient, WorkingType, COEFFICIENTS>(
+      &[Coefficient::max_value(); COEFFICIENTS],
+      WorkingType::one() << (input_shift - 1),
+      input_shift,
+      max_total_shift - input_shift,
+    );
+  }
+}
+
 macro_rules! test_polynomials {
   ($($coefficients: expr, $integer: ident, $double: ident, $uniform: ident, $name: ident,)*) => {
 $(
@@ -110,30 +131,15 @@ $(
     //use super::super::*;
     //use proptest::prelude::*;
 
-    fn test_max_total_shift_generic<WorkingType: Integer+Signed+From<$integer>+TryInto<$integer>>() {
-      // TODO: this previously used the definition of accumulated_error_shift
-      // from AllTaylorCoefficientsBoundsWithinHalf, but I later made that private because it's
-      // an implementation detail. So now, this is a hardcoded duplicate of the definition.
-      // That's tolerable since this is a test, but I should rethink the purpose of this test and
-      // either change it or write a better explanatory comment.
-      let accumulated_error_shift = $coefficients;
-      let max_total_shift = <[$integer; $coefficients] as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::max_total_shift();
-      for input_shift in 1..$integer::total_bits() {
-        for precision_shift in (input_shift..max_total_shift).map(|a| a-input_shift) {
-          let initial_shift = precision_shift + accumulated_error_shift;
-          let max_initial_intermediate = <WorkingType as From<$integer>>::from($integer::max_value()) << initial_shift as u32;
-          let max_input = WorkingType::one() << (input_shift - 1) as u32;
-          assert!((max_initial_intermediate * <WorkingType as From<$integer>>::from($coefficients - 1)).checked_mul (&max_input).is_some());
-        }
-      }
-
-
+    #[test]
+    fn max_total_shift_works() {
+      probe_max_total_shift::<$integer, $double, $coefficients>(0);
     }
 
     #[test]
-    fn test_max_total_shift() {
-      //test_max_total_shift_generic::<$integer>();
-      test_max_total_shift_generic::<$double>();
+    #[should_panic(expected = "overflow")]
+    fn max_total_shift_tight() {
+      probe_max_total_shift::<$integer, $double, $coefficients>(1);
     }
 
     proptest! {

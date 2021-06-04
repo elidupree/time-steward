@@ -125,9 +125,152 @@ pub trait AllTaylorCoefficientsBoundsWithinHalf<WorkingType> {
   ) -> Self::Output;
 }
 
+/**
+Get the minimal S such that the error size of every term in the intermediates for all_taylor_coefficients_bounds_within_half is < (1 << S).
+*/
 #[inline(always)]
-fn accumulated_error_shift<const COEFFICIENTS: usize>() -> u32 {
-  COEFFICIENTS as u32
+const fn intermediate_error_shift<const COEFFICIENTS: usize>() -> u32 {
+  /*
+  Hardcoded values calculated by this Python code:
+
+  ```python
+  shifts = []
+  for coefficients in range(33):
+    intermediate_errors = [0 for _ in range(coefficients)]
+
+    for first_source in reversed(range(1, coefficients)):
+      print(intermediate_errors)
+      for source in range(first_source, coefficients):
+        # produces a *strict* upper bound on the error because round-to-integer
+        # cannot produce an error of *exactly* 1.0, only slightly less
+        intermediate_errors[source - 1] += intermediate_errors[source] * 0.5 + 1.0
+
+    print(intermediate_errors)
+    worst = max(intermediate_errors + [0])
+    # <= vs < because intermediate_errors are *strict* upper bounds on the error
+    shift = next(s for s in range(100) if worst <= 2**s)
+    print(f"#{coefficients}: {worst} < 1<<{shift}")
+    shifts.append(shift)
+
+  print(shifts)
+  ```
+
+   */
+  const HARDCODED: [u32; 33] = [
+    0, 0, 0, 1, 2, 3, 4, 4, 5, 5, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 12, 12, 13, 13, 14, 14, 15, 15,
+    16, 17, 17, 18, 18,
+  ];
+  if COEFFICIENTS < HARDCODED.len() {
+    HARDCODED[COEFFICIENTS]
+  } else {
+    COEFFICIENTS as u32
+  }
+}
+
+/**
+Get the minimal S such that the accumulated magnitude of every term in the intermediates for
+all_taylor_coefficients_bounds_within_half is < (1 << S) times the maximum magnitude
+of the original coefficients.
+*/
+#[inline(always)]
+const fn intermediate_magnitude_factor_shift<const COEFFICIENTS: usize>() -> u32 {
+  /*
+  Hardcoded values calculated by this Python code:
+
+  ```python
+  shifts = []
+  for coefficients in range(33):
+    # Magnitudes proportional to the maximum value of the original coefficient type
+    max_intermediates = [1.0 for _ in range(coefficients)]
+
+    for first_source in reversed(range(1, coefficients)):
+      print(max_intermediates)
+      for source in range(first_source, coefficients):
+        # Assume the type is always at least i8, so the maximum increase due to rounding
+        # error is <= 1/127 of the maximum value of the coefficient type.
+        # Make it a little bigger to guarantee that it's a strict upper bound
+        # (these tiny adjustments do not change the computed answers)
+        max_intermediates[source - 1] += max_intermediates[source] * 0.5 + (1/126)
+
+    print(max_intermediates)
+    worst = max(max_intermediates + [0])
+    # <= vs < because max_intermediates are *strict* upper bounds on the magnitude
+    shift = next(s for s in range(100) if worst <= 2**s)
+    print(f"#{coefficients}: {worst} < 1<<{shift}")
+    shifts.append(shift)
+
+  print(shifts)
+  ```
+
+   */
+  const HARDCODED: [u32; 33] = [
+    0, 0, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 11, 11, 12, 12, 13, 13, 14, 15,
+    15, 16, 16, 17, 17,
+  ];
+  if COEFFICIENTS < HARDCODED.len() {
+    HARDCODED[COEFFICIENTS]
+  } else {
+    COEFFICIENTS as u32
+  }
+}
+
+pub(crate) fn all_taylor_coefficients_bounds_within_half_unchecked<
+  Coefficient: Integer + Signed,
+  WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient>,
+  const COEFFICIENTS: usize,
+>(
+  polynomial: &[Coefficient; COEFFICIENTS],
+  input: WorkingType,
+  input_shift: u32,
+  precision_shift: u32,
+) -> [[WorkingType; 2]; COEFFICIENTS] {
+  // In the loop, error accumulates each term.
+  // Fortunately, the error size is < intermediate_error_shift.
+  // We want to scale down the error as far as possible, so we first left-shift by intermediate_error_shift+2,
+  // then right-shift by the same amount at the end of the calculation.
+  // This reduces the accumulated error range (which is twice the max error magnitude) to < 0.5.
+  // It unavoidably adds an error of up to <1.0 due to the final rounding, so the final error is <1.5.
+  // This means that the final upper and lower bound can be no more than 2 away from each other,
+  // which is the best we can hope for.
+  // TODO: would making this a ZST optimize anything, or is it already inlined?
+  let intermediate_error_shift = intermediate_error_shift::<COEFFICIENTS>();
+
+  // in total, in the formula, we left-shift by precision_shift,
+  // then multiply by a number that is up to half of 1<<input_shift -
+  // i.e. we need space for precision_shift+inputshift-1 more bits in the type.
+
+  let total_initial_shift = precision_shift + intermediate_error_shift + 2;
+  let mut intermediates: [WorkingType; COEFFICIENTS] = polynomial.map(|raw| {
+    let mut raw: WorkingType = raw.into();
+    raw <<= total_initial_shift as u32;
+    raw
+  });
+  for first_source in (1..intermediates.len()).rev() {
+    for source in first_source..intermediates.len() {
+      intermediates[source - 1] += shr_round_to_even(intermediates[source] * input, input_shift);
+    }
+  }
+  intermediates.map(|a| {
+    [
+      Shr::<u32>::shr(
+        // Subtract 0.25, shifting the error range from (answer - 0.25, answer + 0.25)
+        // to (answer - 0.5, answer), then floor, leaving (answer - 1.5, answer).
+        a - (WorkingType::one() << (intermediate_error_shift)),
+        intermediate_error_shift + 2,
+      ),
+      Shr::<u32>::shr(
+        // Add 0.25, shifting the error range from (answer - 0.25, answer + 0.25)
+        // to (answer, answer + 0.5), then ceil, leaving (answer, answer + 1.5).
+        // The ceil is rolled into one "add+floor". If you remove the last `- WorkingType::one()`,
+        // it would still yields a correct answer, but would
+        // create a directional bias compared to the min.
+        a + ((WorkingType::one() << (intermediate_error_shift))
+          + (WorkingType::one() << (intermediate_error_shift + 2))
+          - WorkingType::one()),
+        intermediate_error_shift + 2,
+      ),
+    ]
+  })
 }
 
 impl<
@@ -139,8 +282,11 @@ impl<
   type Output = [[WorkingType; 2]; COEFFICIENTS];
   fn max_total_shift() -> u32 {
     let spare = WorkingType::nonsign_bits() - Coefficient::nonsign_bits();
-    // we need to take out coefficients - 1 twice: once to do higher calculations at higher magnitude to remove the error, and once to make sure the calculations don't overflow due to accumulated value.
-    spare + 1 - accumulated_error_shift::<COEFFICIENTS>() - (COEFFICIENTS as u32 - 1)
+    // we need to take out enough for the initial left-shift to do higher calculations at higher magnitude to remove the error,
+    // and then also take out enough to make sure the calculations don't overflow due to accumulated value.
+    spare
+      - (intermediate_error_shift::<COEFFICIENTS>() + 2)
+      - intermediate_magnitude_factor_shift::<COEFFICIENTS>()
   }
   fn all_taylor_coefficients_bounds_within_half(
     &self,
@@ -168,47 +314,7 @@ impl<
         panic!("all_taylor_coefficients_bounds_within_half called with an input({}) that is not within half (shift: {})", input, input_shift);
       }
     }
-
-    // In the loop, error accumulates each term.
-    // Fortunately, the error is strictly bounded above by 2^(degree-1).
-    // We want to scale down the error as far as possible, so we first left-shift by degree+1,
-    // then right-shift by the same amount at the end of the calculation.
-    // This reduces the accumulated error range (which is twice the max error magnitude) to less than half.
-    // It unavoidably adds an error of up to 1 due to the final rounding, so the final error is up to (not including) 1.5.
-    // This means that the final upper and lower bound can be no more than 2 away from each other,
-    // which is the best we can hope for.
-    // TODO: would making this a ZST optimize anything, or is it already inlined?
-    let accumulated_error_shift = accumulated_error_shift::<COEFFICIENTS>();
-
-    // in total, in the formula, we left-shift by precision_shift,
-    // then multiply by a number that is up to half of 1<<input_shift -
-    // i.e. we need space for precision_shift+inputshift-1 more bits in the type.
-
-    let total_initial_shift = precision_shift + accumulated_error_shift;
-    let mut intermediates: [WorkingType; COEFFICIENTS] = self.map(|raw| {
-      let mut raw: WorkingType = raw.into();
-      raw <<= total_initial_shift as u32;
-      raw
-    });
-    for first_source in (1..intermediates.len()).rev() {
-      for source in first_source..intermediates.len() {
-        intermediates[source - 1] += shr_round_to_even(intermediates[source] * input, input_shift);
-      }
-    }
-    intermediates.map(|a| {
-      [
-        Shr::<u32>::shr(
-          a - (WorkingType::one() << (accumulated_error_shift - 2)),
-          accumulated_error_shift,
-        ),
-        Shr::<u32>::shr(
-          a + (WorkingType::one() << (accumulated_error_shift - 2))
-            + (WorkingType::one() << (accumulated_error_shift))
-            - WorkingType::one(),
-          accumulated_error_shift,
-        ),
-      ]
-    })
+    all_taylor_coefficients_bounds_within_half_unchecked(self, input, input_shift, precision_shift)
   }
 }
 
