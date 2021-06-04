@@ -169,7 +169,7 @@ const fn intermediate_error_shift<const COEFFICIENTS: usize>() -> u32 {
 
 /**
 Get the minimal S such that the accumulated magnitude of every term in the intermediates for
-all_taylor_coefficients_bounds_within_half is <= (1 << S) times the maximum magnitude
+all_taylor_coefficients_bounds_within_half is < (1 << S) times the maximum magnitude
 of the original coefficients.
 */
 #[inline(always)]
@@ -186,25 +186,24 @@ const fn intermediate_magnitude_factor_shift<const COEFFICIENTS: usize>() -> u32
     for first_source in reversed(range(1, coefficients)):
       print(max_intermediates)
       for source in range(first_source, coefficients):
-        # No rounding error term: Dividing any valid magnitude by 2 cannot
-        # give a result with magnitude *greater than* half the maximum magnitude!
-        # You might worry about the fact that the type can't represent a positive value
-        # with exactly the maximum magnitude, but that's okay because a -1 is always
-        # carried from the initial value.
-        max_intermediates[source - 1] += max_intermediates[source] * 0.5
+        # Assume the type is always at least i8, so the maximum increase due to rounding
+        # error is <= 1/127 of the maximum value of the coefficient type.
+        # Make it a little bigger to guarantee that it's a strict upper bound
+        # (these tiny adjustments do not change the computed answers)
+        max_intermediates[source - 1] += max_intermediates[source] * 0.5 + (1/126)
 
     print(max_intermediates)
     worst = max(max_intermediates + [0])
     # <= vs < because max_intermediates are *strict* upper bounds on the magnitude
     shift = next(s for s in range(100) if worst <= 2**s)
-    print(f"#{coefficients}: {worst} <= 1<<{shift}")
+    print(f"#{coefficients}: {worst} < 1<<{shift}")
     shifts.append(shift)
 
   print(shifts)
   ```
 
   Note that, for the purpose of max_total_shift below,
-  we could squeeze out an extra 1 for polynomials of degree 2, 3, and 5
+  we might be able to squeeze out an extra 1 for certain values of COEFFICIENTS
   if we only consider the intermediates *that will actually be multiplied by `input`*.
   However, in the special case where input_shift == 1, the max input is 1, so multiplying
   by input is irrelevant (if you used the rule that works for input_shift>1, and applied
@@ -216,7 +215,7 @@ const fn intermediate_magnitude_factor_shift<const COEFFICIENTS: usize>() -> u32
 
    */
   const HARDCODED: [u32; 33] = [
-    0, 0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 11, 11, 12, 12, 13, 13, 14, 14,
+    0, 0, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 11, 11, 12, 12, 13, 13, 14, 15,
     15, 16, 16, 17, 17,
   ];
   if COEFFICIENTS < HARDCODED.len() {
