@@ -89,10 +89,28 @@ tuple_impls! {
 #[derive(
   Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default,
 )]
-pub struct RestoreOldData<T>(pub T);
-impl<T: SimulationStateData> UndoData<T> for RestoreOldData<T> {
+pub struct RestoreOldValue<T>(pub T);
+impl<T: SimulationStateData> UndoData<T> for RestoreOldValue<T> {
   fn undo(&self, target: &mut T) {
     *target = self.0.clone();
+  }
+}
+
+#[derive(
+  Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default,
+)]
+pub struct UndoInContained<Choice, Undo> {
+  choice: Choice,
+  undo_data: Undo,
+}
+impl<
+    T,
+    Choice: ChoiceOfObjectContainedIn<T> + SimulationStateData,
+    Undo: UndoData<Choice::Target>,
+  > UndoData<T> for UndoInContained<Choice, Undo>
+{
+  fn undo(&self, target: &mut T) {
+    self.undo_data.undo(target.get_contained_mut(self.choice));
   }
 }
 
@@ -157,7 +175,7 @@ impl<'a, 'acc, E: EntityKind, A: EventAccessor<'acc>> WriteAccess<'a, 'acc, E, A
 {
   fn write(self, accessor: &'a mut A) -> A::WriteGuard<'a, Self::Target> {
     let old_value = accessor.raw_read(self).clone();
-    accessor.record_undo(self, RestoreOldData(old_value));
+    accessor.record_undo(self, RestoreOldValue(old_value));
     accessor.raw_write(self)
   }
 }

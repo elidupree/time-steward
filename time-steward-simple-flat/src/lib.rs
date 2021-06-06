@@ -34,7 +34,7 @@ use unsize::CoerceUnsize;
 
 use time_steward_api::entity_handles::*;
 use time_steward_api::*;
-use time_steward_entity_views::RestoreOldData;
+use time_steward_entity_views::RestoreOldValue;
 use time_steward_implementation_support::accessor_cell::AccessorCell;
 use time_steward_implementation_support::{
   accessor_cell, EventChildrenIdGenerator, GlobalsConstructionIdGenerator,
@@ -153,7 +153,7 @@ impl<S: SimulationSpec, T: SimulationStateData> History<S, T> {
   }
   fn replace(&self, guard: &mut accessor_cell::WriteGuard, time: S::Time, new_value: T) {
     let old_value = self.current_value(guard).clone();
-    self.record_undo(time, RestoreOldData(old_value));
+    self.record_undo(time, RestoreOldValue(old_value));
     *self.raw_write(guard) = new_value;
   }
   fn value_before(&self, guard: &impl accessor_cell::ReadAccess, time: &S::Time) -> T
