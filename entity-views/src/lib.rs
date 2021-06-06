@@ -1,7 +1,100 @@
 //use crate::type_utils::{ChoiceOfObjectContainedIn, GetContained};
-use crate::{Accessor, EntityKind, EventAccessor, MutableData, TypedHandle, TypedHandleRef};
 use derivative::Derivative;
+use serde::{Deserialize, Serialize};
+use time_steward_api::{
+  Accessor, EntityKind, EventAccessor, MutableData, SimulationStateData, TypedHandle,
+  TypedHandleRef, UndoData,
+};
 use time_steward_type_utils::delegate;
+
+pub trait ChoiceOfObjectContainedIn<T>: Copy + 'static {
+  type Target;
+  fn get(self, object: &T) -> &Self::Target;
+  fn get_mut(self, object: &mut T) -> &mut Self::Target;
+}
+
+pub trait GetContained<Choice> {
+  type Target;
+  fn get_contained(&self, choice: Choice) -> &Self::Target;
+  fn get_contained_mut(&mut self, choice: Choice) -> &mut Self::Target;
+}
+
+impl<T, C: ChoiceOfObjectContainedIn<T>> GetContained<C> for T {
+  type Target = C::Target;
+  fn get_contained(&self, choice: C) -> &Self::Target {
+    choice.get(self)
+  }
+  fn get_contained_mut(&mut self, choice: C) -> &mut Self::Target {
+    choice.get_mut(self)
+  }
+}
+
+// macro for implementing n-ary tuple functions and operations, adapted from libcore
+macro_rules! tuple_impls {
+    ($(
+        $Tuple:ident {
+            $First: ident
+            ($($T:ident $Choice:ident $U:ident,)*)
+            $Last: ident
+        }
+    )+) => {
+        $(
+            #[allow(non_snake_case)]
+            impl<$($T: 'static,)* $Last: 'static, $($Choice: ChoiceOfObjectContainedIn<$T, Target=$U>,)* > ChoiceOfObjectContainedIn<$First> for ($($Choice,)*) {
+              type Target= $Last;
+              fn get(self, object: &T) -> &Self::Target {
+                let $First = object;
+                let ($($Choice,)*) = self;
+                $(let $U = $Choice.get($T);)*
+                $Last
+              }
+              fn get_mut(self, object: &mut T) -> &mut Self::Target {
+                let $First = object;
+                let ($($Choice,)*) = self;
+                $(let $U = $Choice.get_mut($T);)*
+                $Last
+              }
+            }
+        )+
+    }
+}
+
+tuple_impls! {
+    Tuple1 {
+        T (T TU U,) U
+    }
+    Tuple2 {
+        T (T TU U, U UV V,) V
+    }
+    Tuple3 {
+        T (T TU U, U UV V, V VW W,) W
+    }
+    Tuple4 {
+        T (T TU U, U UV V, V VW W, W WX X,) X
+    }
+    Tuple5 {
+        T (T TU U, U UV V, V VW W, W WX X, X XY Z,) Z
+    }
+    Tuple6 {
+        T (T TU U, U UV V, V VW W, W WX X, X XY Z, Z ZA A,) A
+    }
+    Tuple7 {
+        T (T TU U, U UV V, V VW W, W WX X, X XY Z, Z ZA A, A AB B,) B
+    }
+    Tuple8 {
+        T (T TU U, U UV V, V VW W, W WX X, X XY Z, Z ZA A, A AB B, B BC C,) C
+    }
+}
+
+#[derive(
+  Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default,
+)]
+pub struct RestoreOldData<T>(pub T);
+impl<T: SimulationStateData> UndoData<T> for RestoreOldData<T> {
+  fn undo(&self, target: &mut T) {
+    *target = self.0.clone();
+  }
+}
 
 /// types that allow undo-safe access to entity data in some way; this is about undo safety, not memory safety,
 /// and the read method needs an accessor to actually be allowed to view the data
@@ -64,7 +157,7 @@ impl<'a, 'acc, E: EntityKind, A: EventAccessor<'acc>> WriteAccess<'a, 'acc, E, A
 {
   fn write(self, accessor: &'a mut A) -> A::WriteGuard<'a, Self::Target> {
     let old_value = accessor.raw_read(self).clone();
-    accessor.record_undo(self, move |m| *m = old_value.clone());
+    accessor.record_undo(self, RestoreOldData(old_value));
     accessor.raw_write(self)
   }
 }

@@ -34,6 +34,7 @@ use unsize::CoerceUnsize;
 
 use time_steward_api::entity_handles::*;
 use time_steward_api::*;
+use time_steward_entity_views::RestoreOldData;
 use time_steward_implementation_support::accessor_cell::AccessorCell;
 use time_steward_implementation_support::{
   accessor_cell, EventChildrenIdGenerator, GlobalsConstructionIdGenerator,
@@ -100,12 +101,21 @@ trait AnyEntityInner<S: SimulationSpec>: Debug {
   unsafe fn wake(&self, accessor: &mut SfEventAccessor<S>);
 }
 
+trait DynUndoData<T> {
+  fn undo(&self, target: &mut T);
+}
+impl<T, U: UndoData<T>> DynUndoData<T> for U {
+  fn undo(&self, target: &mut T) {
+    <Self as UndoData<T>>::undo(self, target)
+  }
+}
+
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
 struct UndoEntry<S: SimulationSpec, T> {
   time: S::Time,
   #[derivative(Debug = "ignore")]
-  undo: Box<dyn Fn(&mut T)>,
+  undo: Box<dyn DynUndoData<T>>,
 }
 
 #[derive(Derivative)]
@@ -135,7 +145,7 @@ impl<S: SimulationSpec, T: SimulationStateData> History<S, T> {
   fn raw_write<'a>(&'a self, guard: &'a mut accessor_cell::WriteGuard) -> &'a mut T {
     guard.write(&self.current_value)
   }
-  fn record_undo(&self, time: S::Time, undo: impl Fn(&mut T) + 'static) {
+  fn record_undo(&self, time: S::Time, undo: impl UndoData<T>) {
     self.changes.borrow_mut().push(UndoEntry {
       time,
       undo: Box::new(undo),
@@ -143,7 +153,7 @@ impl<S: SimulationSpec, T: SimulationStateData> History<S, T> {
   }
   fn replace(&self, guard: &mut accessor_cell::WriteGuard, time: S::Time, new_value: T) {
     let old_value = self.current_value(guard).clone();
-    self.record_undo(time, move |m| *m = old_value.clone());
+    self.record_undo(time, RestoreOldData(old_value));
     *self.raw_write(guard) = new_value;
   }
   fn value_before(&self, guard: &impl accessor_cell::ReadAccess, time: &S::Time) -> T
@@ -159,7 +169,7 @@ impl<S: SimulationSpec, T: SimulationStateData> History<S, T> {
       if change_time < time {
         break;
       }
-      (undo)(&mut value);
+      undo.undo(&mut value);
     }
     value
   }
@@ -555,7 +565,7 @@ impl<'acc, S: SimulationSpec> EventAccessor<'acc> for SfEventAccessor<'acc, S> {
   fn record_undo<E: EntityKind>(
     &self,
     entity: TypedHandleRef<E, Self::EntityHandleKind>,
-    undo: impl Fn(&mut MutableData<E, Self::EntityHandleKind>) + 'static,
+    undo: impl UndoData<MutableData<E, Self::EntityHandleKind>>,
   ) {
     entity
       .into_wrapped_gat()

@@ -28,6 +28,7 @@ nalgebra = {version = "0.26.2", features = ["serde-serialize"]}
 time_steward_integer_math = {path="../integer-math"}
 time_steward_type_utils = {path="../type-utils"}
 time_steward_api = {path="../time-steward-api"}
+time_steward_entity_views = {path="../entity-views"}
 
 [dependencies.rpds]
 version = "0.3"

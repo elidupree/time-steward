@@ -132,6 +132,16 @@ An Accessor with all abilities that can be used during the construction of the g
 pub trait GlobalsConstructionAccessor: CreateEntityAccessor {}
 
 /**
+Data for undoing changes to entities (or parts of entities).
+
+See `EventAccessor::record_undo` for more details.
+*/
+pub trait UndoData<T>: SimulationStateData {
+  /// Apply the undo operation, reverting `target` to its earlier state.
+  fn undo(&self, target: &mut T);
+}
+
+/**
 An Accessor with all abilities that can be used during an event.
 
 EventAccessors can create and modify entities, and modify entity schedules.
@@ -171,7 +181,7 @@ pub trait EventAccessor<'acc>: InitializedAccessor<'acc> + CreateEntityAccessor 
   fn record_undo<E: EntityKind>(
     &self,
     entity: TypedHandleRef<E, Self::EntityHandleKind>,
-    undo: impl Fn(&mut MutableData<E, Self::EntityHandleKind>) + 'static,
+    undo: impl UndoData<MutableData<E, Self::EntityHandleKind>>,
   );
 
   /**

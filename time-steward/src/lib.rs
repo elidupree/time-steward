@@ -75,9 +75,7 @@ pub mod dynamic {
 }*/
 
 pub use time_steward_api::*;
-
-mod access;
-pub use crate::access::*;
+pub use time_steward_entity_views::*;
 
 #[macro_use]
 pub mod support {
