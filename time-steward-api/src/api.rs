@@ -65,6 +65,10 @@ pub trait Accessor {
   Raw read access for entities, perhaps simply taking a reference to the entity contents. This is not undo-safe, but is a building block for building undo-safe wrappers.
 
   This requires `&'a self` as well as `'a` entity, so that we can statically guarantee that there is no overlap with mutable access to entities. As a result, you can't hold a reference to *any* entity while any other entity is being modified. This restriction could theoretically be relaxed, but it is the simplest way uphold "shared XOR mutable" without runtime checks.
+
+  `raw_read` is undo-safe if **any** of the following conditions are met:
+  * You call `record_read` or `record_undo` on the same entity at any time within the same event, regardless of which call happened first.
+  * The data you read from the entity never influences any entity changes (for example, if it's only used for assertions or logging).
   */
   fn raw_read<'a, E: EntityKind>(
     &'a self,
@@ -85,6 +89,8 @@ pub trait Accessor {
 
   /**
   Raw read access for an entity's current schedule, perhaps simply copying the value. This is not undo-safe, but is a building block for building undo-safe wrappers.
+
+  `raw_read_schedule` is undo-safe in the same situations as `raw_read`.
   */
   fn raw_read_schedule<E: Wake<Self::SimulationSpec>>(
     &self,

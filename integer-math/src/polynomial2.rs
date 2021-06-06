@@ -6,7 +6,7 @@ The array `[a, b, c, ...]` represents the polynomial `a + bx + cx^2 + ...`. Thus
 
 */
 
-use num::{CheckedAdd, CheckedMul, CheckedSub, Signed};
+use num::{CheckedAdd, CheckedMul, Signed};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
@@ -384,7 +384,7 @@ pub trait SetNthTaylorCoefficientAtFractionalInput<WorkingType>: PolynomialBase 
   This can fail due to overflow; we don't currently have a rigorous definition of when that can happen. We also don't have a definition of how bad the rounding error can be.
   */
   // TODO: define the overflow and error size rules, make tests, refactor this function, etc.
-  // Possible approach: split off a SetNthTaylorCoefficientWithinHalf, and from that, also split off a AddNthTaylorCoefficientWithinHalf. AddNthTaylorCoefficientWithinHalf can be the one with the rigorous guarantees; the first two can be documented as compositions of the others.
+  // Possible approach: split off a SetNthTaylorCoefficientWithinHalf, and from that, also split off a AddNthTaylorCoefficientWithinHalf. AddNthTaylorCoefficientWithinHalf can be the one with the rigorous guarantees; the first two can be documented as compositions of the others. Also, these functions should return copies rather than modify `self`.
   fn set_nth_taylor_coefficient_at_fractional_input(
     &mut self,
     which_coefficient: usize,
