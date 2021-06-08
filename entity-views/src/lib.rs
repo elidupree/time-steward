@@ -270,19 +270,31 @@ impl<'a, E: EntityKind, A: Accessor> ReadAccess<'a, E, A> for ReadRecordedRef<'a
 // impl<A: EventAccessor> EventAccessorExt for A {}
 
 pub trait Access {
-  type Data<A: AccessType>;
-  fn wrap<A: AccessType>(input: A::Data<Self>) -> Self::Data<A>;
+  type Data<A: AccessType, Root, Choice: ChoiceOfObjectContainedIn<Root, Target = Self>>;
+  fn wrap<A: AccessType, Root, Choice: ChoiceOfObjectContainedIn<Root, Target = Self>>(
+    input: A::Data<Root, Choice>,
+  ) -> Self::Data<A, Root, Choice>;
 }
 pub trait AccessType {
-  type Data<T: ?Sized>;
-  fn map<T, U, Choice: ChoiceOfObjectContainedIn<T, Target = U>>(
-    input: Self::Data<T>,
-    choice: Choice,
-  ) -> Self::Data<U>;
-  fn read<T>(input: &Self::Data<T>) -> &T;
+  type Data<Root, Choice: ChoiceOfObjectContainedIn<Root>>;
+  fn map<
+    Root: 'static,
+    T: 'static,
+    U: 'static,
+    Choice: ChoiceOfObjectContainedIn<Root, Target = T>,
+    NextChoice: ChoiceOfObjectContainedIn<T, Target = U>,
+  >(
+    input: Self::Data<Root, Choice>,
+    choice: NextChoice,
+  ) -> Self::Data<Root, (Choice, NextChoice)>;
+  fn read<Root, Choice: ChoiceOfObjectContainedIn<Root>>(
+    input: &Self::Data<Root, Choice>,
+  ) -> &Choice::Target;
 }
+
 #[derive(Copy, Clone)]
 pub struct VecEntryChoice(usize);
+
 impl<T> ChoiceOfObjectContainedIn<Vec<T>> for VecEntryChoice {
   type Target = T;
   fn get(self, object: &Vec<T>) -> &Self::Target {
@@ -293,16 +305,27 @@ impl<T> ChoiceOfObjectContainedIn<Vec<T>> for VecEntryChoice {
   }
 }
 
-pub struct VecAccess<T, A: AccessType>(A::Data<Vec<T>>);
+pub struct VecAccess<A: AccessType, Root, Choice: ChoiceOfObjectContainedIn<Root>>(
+  A::Data<Root, Choice>,
+);
 impl<T> Access for Vec<T> {
-  type Data<A: AccessType> = VecAccess<T, A>;
-  fn wrap<A: AccessType>(input: A::Data<Self>) -> Self::Data<A> {
+  type Data<A: AccessType, Root, Choice: ChoiceOfObjectContainedIn<Root, Target = Self>> =
+    VecAccess<A, Root, Choice>;
+  fn wrap<A: AccessType, Root, Choice: ChoiceOfObjectContainedIn<Root, Target = Self>>(
+    input: A::Data<Root, Choice>,
+  ) -> Self::Data<A, Root, Choice> {
     VecAccess(input)
   }
 }
 
-impl<T: Access, A: AccessType> VecAccess<T, A> {
-  pub fn get(self, index: usize) -> Option<T::Data<A>> {
+impl<
+    T: Access + 'static,
+    A: AccessType,
+    Root: 'static,
+    Choice: ChoiceOfObjectContainedIn<Root, Target = Vec<T>>,
+  > VecAccess<A, Root, Choice>
+{
+  pub fn get(self, index: usize) -> Option<T::Data<A, Root, (Choice, VecEntryChoice)>> {
     (index < A::read(&self.0).len()).then(move || T::wrap(A::map(self.0, VecEntryChoice(index))))
   }
 }
