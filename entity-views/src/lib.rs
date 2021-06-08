@@ -1,3 +1,7 @@
+#![feature(generic_associated_types)]
+#![warn(unsafe_op_in_unsafe_fn)]
+#![allow(incomplete_features)]
+
 //use crate::type_utils::{ChoiceOfObjectContainedIn, GetContained};
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
@@ -264,3 +268,41 @@ impl<'a, E: EntityKind, A: Accessor> ReadAccess<'a, E, A> for ReadRecordedRef<'a
 //   }
 // }
 // impl<A: EventAccessor> EventAccessorExt for A {}
+
+pub trait Access {
+  type Data<A: AccessType>;
+  fn wrap<A: AccessType>(input: A::Data<Self>) -> Self::Data<A>;
+}
+pub trait AccessType {
+  type Data<T: ?Sized>;
+  fn map<T, U, Choice: ChoiceOfObjectContainedIn<T, Target = U>>(
+    input: Self::Data<T>,
+    choice: Choice,
+  ) -> Self::Data<U>;
+  fn read<T>(input: &Self::Data<T>) -> &T;
+}
+#[derive(Copy, Clone)]
+pub struct VecEntryChoice(usize);
+impl<T> ChoiceOfObjectContainedIn<Vec<T>> for VecEntryChoice {
+  type Target = T;
+  fn get(self, object: &Vec<T>) -> &Self::Target {
+    object.get(self.0).unwrap()
+  }
+  fn get_mut(self, object: &mut Vec<T>) -> &mut Self::Target {
+    object.get_mut(self.0).unwrap()
+  }
+}
+
+pub struct VecAccess<T, A: AccessType>(A::Data<Vec<T>>);
+impl<T> Access for Vec<T> {
+  type Data<A: AccessType> = VecAccess<T, A>;
+  fn wrap<A: AccessType>(input: A::Data<Self>) -> Self::Data<A> {
+    VecAccess(input)
+  }
+}
+
+impl<T: Access, A: AccessType> VecAccess<T, A> {
+  pub fn get(self, index: usize) -> Option<T::Data<A>> {
+    (index < A::read(&self.0).len()).then(move || T::wrap(A::map(self.0, VecEntryChoice(index))))
+  }
+}
