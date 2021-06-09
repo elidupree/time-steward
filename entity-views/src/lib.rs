@@ -5,6 +5,7 @@
 //use crate::type_utils::{ChoiceOfObjectContainedIn, GetContained};
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
+use std::ops::{Deref, DerefMut};
 use time_steward_api::{
   Accessor, EntityKind, EventAccessor, MutableData, SimulationStateData, TypedHandle,
   TypedHandleRef, UndoData,
@@ -282,6 +283,10 @@ pub trait Access {
   ) -> Self::Mapped<Choice>;
   fn read(&self) -> &Self::Target;
 }
+pub trait AccessMut: Access {
+  fn raw_write(&mut self) -> &mut Self::Target;
+  fn record_undo(&mut self, undo: impl UndoData<Self::Target>);
+}
 
 impl<'a, T> Access for &'a T {
   type Target = T;
@@ -314,6 +319,16 @@ impl<'a, T> Access for &'a mut T {
 #[derive(Copy, Clone)]
 pub struct VecEntryChoice(usize);
 
+#[derive(
+  Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default,
+)]
+pub struct UndoVecPush;
+impl<T> UndoData<Vec<T>> for UndoVecPush {
+  fn undo(&self, target: &mut Vec<T>) {
+    target.pop();
+  }
+}
+
 impl<T> ChoiceOfObjectContainedIn<Vec<T>> for VecEntryChoice {
   type Target = T;
   fn get(self, object: &Vec<T>) -> &Self::Target {
@@ -324,16 +339,34 @@ impl<T> ChoiceOfObjectContainedIn<Vec<T>> for VecEntryChoice {
   }
 }
 
-pub struct VecAccessWrapper<A: Access>(A);
+pub struct VecAccessWrapper<A>(A);
 impl<T> HasDefaultAccessWrapper for Vec<T> {
   type Wrapper<A: Access> = VecAccessWrapper<A>;
   fn wrap_access<A: Access>(input: A) -> Self::Wrapper<A> {
     VecAccessWrapper(input)
   }
 }
+impl<A> Deref for VecAccessWrapper<A> {
+  type Target = A;
+
+  fn deref(&self) -> &Self::Target {
+    &self.0
+  }
+}
+impl<A> DerefMut for VecAccessWrapper<A> {
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.0
+  }
+}
 
 impl<T: HasDefaultAccessWrapper + 'static, A: Access<Target = Vec<T>>> VecAccessWrapper<A> {
   pub fn get(self, index: usize) -> Option<T::Wrapper<A::Mapped<VecEntryChoice>>> {
     (index < self.0.read().len()).then(move || T::wrap_access(self.0.map(VecEntryChoice(index))))
+  }
+}
+impl<T, A: AccessMut<Target = Vec<T>>> VecAccessWrapper<A> {
+  pub fn push(&mut self, value: T) {
+    self.0.raw_write().push(value);
+    self.0.record_undo(UndoVecPush);
   }
 }
