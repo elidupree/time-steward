@@ -269,20 +269,19 @@ impl<'a, E: EntityKind, A: Accessor> ReadAccess<'a, E, A> for ReadRecordedRef<'a
 // }
 // impl<A: EventAccessor> EventAccessorExt for A {}
 
-pub trait Access {
-  type Data<A: AccessType, Root, Choice: ChoiceOfObjectContainedIn<Root, Target = Self>>;
-  fn wrap<A: AccessType, Root, Choice: ChoiceOfObjectContainedIn<Root, Target = Self>>(
+pub trait HasDefaultAccessWrapper {
+  type Data<A: AccessKind, Root, Choice: ChoiceOfObjectContainedIn<Root, Target = Self>>;
+  fn wrap_access<A: AccessKind, Root, Choice: ChoiceOfObjectContainedIn<Root, Target = Self>>(
     input: A::Data<Root, Choice>,
   ) -> Self::Data<A, Root, Choice>;
 }
-pub trait AccessType {
+pub trait AccessKind {
   type Data<Root, Choice: ChoiceOfObjectContainedIn<Root>>;
   fn map<
     Root: 'static,
     T: 'static,
-    U: 'static,
     Choice: ChoiceOfObjectContainedIn<Root, Target = T>,
-    NextChoice: ChoiceOfObjectContainedIn<T, Target = U>,
+    NextChoice: ChoiceOfObjectContainedIn<T>,
   >(
     input: Self::Data<Root, Choice>,
     choice: NextChoice,
@@ -305,27 +304,28 @@ impl<T> ChoiceOfObjectContainedIn<Vec<T>> for VecEntryChoice {
   }
 }
 
-pub struct VecAccess<A: AccessType, Root, Choice: ChoiceOfObjectContainedIn<Root>>(
+pub struct VecAccessWrapper<A: AccessKind, Root, Choice: ChoiceOfObjectContainedIn<Root>>(
   A::Data<Root, Choice>,
 );
-impl<T> Access for Vec<T> {
-  type Data<A: AccessType, Root, Choice: ChoiceOfObjectContainedIn<Root, Target = Self>> =
-    VecAccess<A, Root, Choice>;
-  fn wrap<A: AccessType, Root, Choice: ChoiceOfObjectContainedIn<Root, Target = Self>>(
+impl<T> HasDefaultAccessWrapper for Vec<T> {
+  type Data<A: AccessKind, Root, Choice: ChoiceOfObjectContainedIn<Root, Target = Self>> =
+    VecAccessWrapper<A, Root, Choice>;
+  fn wrap_access<A: AccessKind, Root, Choice: ChoiceOfObjectContainedIn<Root, Target = Self>>(
     input: A::Data<Root, Choice>,
   ) -> Self::Data<A, Root, Choice> {
-    VecAccess(input)
+    VecAccessWrapper(input)
   }
 }
 
 impl<
-    T: Access + 'static,
-    A: AccessType,
+    T: HasDefaultAccessWrapper + 'static,
+    A: AccessKind,
     Root: 'static,
     Choice: ChoiceOfObjectContainedIn<Root, Target = Vec<T>>,
-  > VecAccess<A, Root, Choice>
+  > VecAccessWrapper<A, Root, Choice>
 {
   pub fn get(self, index: usize) -> Option<T::Data<A, Root, (Choice, VecEntryChoice)>> {
-    (index < A::read(&self.0).len()).then(move || T::wrap(A::map(self.0, VecEntryChoice(index))))
+    (index < A::read(&self.0).len())
+      .then(move || T::wrap_access(A::map(self.0, VecEntryChoice(index))))
   }
 }
