@@ -4,15 +4,17 @@
 
 //use crate::type_utils::{ChoiceOfObjectContainedIn, GetContained};
 use derivative::Derivative;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use time_steward_api::{
-  Accessor, EntityKind, EventAccessor, MutableData, RecordUndo, SimulationStateData, TypedHandle,
-  TypedHandleRef,
+  Accessor, EntityKind, EventAccessor, MutableData, PerformUndo, RecordUndo, SimulationStateData,
+  TypedHandle, TypedHandleRef,
 };
 use time_steward_type_utils::delegate;
 
-pub trait ChoiceOfObjectContainedIn<T>: Copy + 'static {
+pub trait ChoiceOfObjectContainedIn<T>: Copy + Serialize + DeserializeOwned + 'static {
   type Target: SimulationStateData;
   fn get(self, object: &T) -> &Self::Target;
   fn get_mut(self, object: &mut T) -> &mut Self::Target;
@@ -290,9 +292,15 @@ pub trait AccessMut<'a>: Access {
   fn raw_write<'u, 's: 'u>(&'s mut self) -> (&'s mut Self::Target, Self::UndoRecorder<'u>);
   fn write(&mut self) -> &mut Self::Target {
     let (value, mut undo_recorder) = self.raw_write();
-    undo_recorder.record_undo(value, |v, de| {
-      *v = Self::Target::deserialize(de).unwrap();
-    });
+    undo_recorder.record_undo::<_, Perform>(value);
+
+    struct Perform;
+    impl<T: SimulationStateData> PerformUndo<T> for Perform {
+      type UndoData = T;
+      fn perform_undo(data: &mut T, undo_data: Self::UndoData) {
+        *data = undo_data;
+      }
+    }
     value
   }
   //fn record_undo(&mut self, undo: impl UndoData<Self::Target>);
@@ -401,33 +409,31 @@ impl<
     Choice: ChoiceOfObjectContainedIn<MutableData<E, A::EntityHandleKind>>,
   > RecordUndo<Choice::Target> for &'a mut WriteRefUndoRecorder<'a, 'acc, E, A, Choice>
 {
-  type Deserializer = <A::UndoRecorder<'a, MutableData<E, A::EntityHandleKind>> as RecordUndo<
+  type Serializer = <A::UndoRecorder<'a, MutableData<E, A::EntityHandleKind>> as RecordUndo<
     MutableData<E, A::EntityHandleKind>,
-  >>::Deserializer;
+  >>::Serializer;
 
-  /**
-  Record a single undo operation.
-
-  `undo_data` will be serialized and stored somewhere. If and when `perform_undo` is called, it will be given a deserializer containing the same data.
-
-  For performance, we expect that a large majority of the time, `perform_undo` will never be called, so it's okay to make `perform_undo` somewhat expensive in order to minimize the cost of serializing and storing `undo_data`. You can expect that it's being serialized into a raw byte buffer.
-
-  Deserialization must not have errors; there is no fallback if they happen. `perform_undo` functions may panic on errors.
-
-  See `EventAccessor::record_undo` for more details about when you should call this.
-  */
-  fn record_undo<S: Serialize>(
-    &mut self,
-    undo_data: &S,
-    perform_undo: fn(&mut Choice::Target, Self::Deserializer),
-  ) {
+  fn record_undo<S: Serialize, P: PerformUndo<Choice::Target>>(&mut self, undo_data: S) {
     self
       .undo_recorder
-      .record_undo((&self.choice, &undo_data), || {})
+      .record_undo::<_, Perform<MutableData<E, A::EntityHandleKind>, Choice, P>>((
+        &self.choice,
+        undo_data,
+      ));
+
+    struct Perform<T, Choice, P>(PhantomData<*const (T, Choice, P)>);
+    impl<T, Choice: ChoiceOfObjectContainedIn<T>, P: PerformUndo<Choice::Target>> PerformUndo<T>
+      for Perform<T, Choice, P>
+    {
+      type UndoData = (Choice, P::UndoData);
+      fn perform_undo(data: &mut T, (choice, undo_data): Self::UndoData) {
+        P::perform_undo(choice.get_mut(data), undo_data);
+      }
+    }
   }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize, Debug)]
 pub struct VecEntryChoice(usize);
 
 impl<T: SimulationStateData> ChoiceOfObjectContainedIn<Vec<T>> for VecEntryChoice {
@@ -471,8 +477,14 @@ impl<'a, T: SimulationStateData, A: AccessMut<'a, Target = Vec<T>>> VecAccessWra
   pub fn push(&mut self, value: T) {
     let (v, mut undo_recorder) = self.raw_write();
     v.push(value);
-    undo_recorder.record_undo(&(), |v, _| {
-      v.pop();
-    });
+    undo_recorder.record_undo::<_, Perform>(());
+
+    struct Perform;
+    impl<T> PerformUndo<Vec<T>> for Perform {
+      type UndoData = ();
+      fn perform_undo(data: &mut Vec<T>, (): Self::UndoData) {
+        data.pop();
+      }
+    }
   }
 }

@@ -1,4 +1,4 @@
-use serde::{de::DeserializeOwned, Deserializer, Serialize};
+use serde::{de::DeserializeOwned, Deserializer, Serialize, Serializer};
 use std::any::Any;
 use std::fmt::Debug;
 use std::io::Read;
@@ -131,16 +131,26 @@ An Accessor with all abilities that can be used during the construction of the g
 */
 pub trait GlobalsConstructionAccessor: CreateEntityAccessor {}
 
+pub trait PerformUndo<T> {
+  type UndoData: DeserializeOwned;
+  /**
+  Perform the undo operation, by reading any necessary data from the deserializer.
+
+  See `RecordUndo` and `EventAccessor::record_undo` for more details about how to use this.
+  */
+  fn perform_undo(data: &mut T, undo_data: Self::UndoData);
+}
+
 /**
 An object that can record undo data.
 
 See `EventAccessor::record_undo` for more details.
 */
 pub trait RecordUndo<T> {
-  /// The deserializer used by `perform_undo` functions.
+  /// The serializer used by `make_record` functions.
   ///
-  /// From the perspective of the programmer, `perform_undo` functions must be generic in the deserializer. However, we expose it as an associated type so that you can pass a closure as the `perform_undo` function.
-  type Deserializer: for<'de> Deserializer<'de>;
+  /// From the perspective of the programmer, `make_record` functions must be generic in the serializer. However, we expose it as an associated type so that you can pass a closure as the `make_record` function.
+  type Serializer: Serializer;
 
   /**
   Record a single undo operation.
@@ -149,15 +159,9 @@ pub trait RecordUndo<T> {
 
   For performance, we expect that a large majority of the time, `perform_undo` will never be called, so it's okay to make `perform_undo` somewhat expensive in order to minimize the cost of serializing and storing `undo_data`. You can expect that it's being serialized into a raw byte buffer.
 
-  Deserialization must not have errors; there is no fallback if they happen. `perform_undo` functions may panic on errors.
-
   See `EventAccessor::record_undo` for more details about when you should call this.
   */
-  fn record_undo<S: Serialize>(
-    &mut self,
-    undo_data: &S,
-    perform_undo: fn(&mut T, Self::Deserializer),
-  );
+  fn record_undo<S: Serialize, P: PerformUndo<T>>(&mut self, undo_data: S);
 }
 
 /**
