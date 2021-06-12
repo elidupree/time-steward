@@ -1,4 +1,4 @@
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserializer, Serialize};
 use std::any::Any;
 use std::fmt::Debug;
 use std::io::Read;
@@ -132,13 +132,32 @@ An Accessor with all abilities that can be used during the construction of the g
 pub trait GlobalsConstructionAccessor: CreateEntityAccessor {}
 
 /**
-Data for undoing changes to entities (or parts of entities).
+An object that can record undo data.
 
 See `EventAccessor::record_undo` for more details.
 */
-pub trait UndoData<T>: SimulationStateData {
-  /// Apply the undo operation, reverting `target` to its earlier state.
-  fn undo(&self, target: &mut T);
+pub trait RecordUndo<T> {
+  /// The deserializer used by `perform_undo` functions.
+  ///
+  /// From the perspective of the programmer, `perform_undo` functions must be generic in the deserializer. However, we expose it as an associated type so that you can pass a closure as the `perform_undo` function.
+  type Deserializer: for<'de> Deserializer<'de>;
+
+  /**
+  Record a single undo operation.
+
+  `undo_data` will be serialized and stored somewhere. If and when `perform_undo` is called, it will be given a deserializer containing the same data.
+
+  For performance, we expect that a large majority of the time, `perform_undo` will never be called, so it's okay to make `perform_undo` somewhat expensive in order to minimize the cost of serializing and storing `undo_data`. You can expect that it's being serialized into a raw byte buffer.
+
+  Deserialization must not have errors; there is no fallback if they happen. `perform_undo` functions may panic on errors.
+
+  See `EventAccessor::record_undo` for more details about when you should call this.
+  */
+  fn record_undo<S: Serialize>(
+    &mut self,
+    undo_data: &S,
+    perform_undo: fn(&mut T, Self::Deserializer),
+  );
 }
 
 /**
@@ -149,6 +168,7 @@ EventAccessors can create and modify entities, and modify entity schedules.
 pub trait EventAccessor<'acc>: InitializedAccessor<'acc> + CreateEntityAccessor {
   /// The guard type returned by `raw_write`. In EventAccessors for optimized TimeStewards, you can assume that this is equivalent to `&'a mut T`. Simpler implementations may use `std::cell::RefMut`.
   type WriteGuard<'a, T: 'a>: DerefMut<Target = T>;
+  type UndoRecorder<'a, T: 'a>: RecordUndo<T>;
 
   /// Make a new WriteGuard for a component of the borrowed data, similar to `std::cell::RefMut::map`. If the WriteGuard type is `&mut T`, this is a trivial application of `f`.
   #[allow(clippy::needless_lifetimes)] // Clippy is currently wrong about GATs
@@ -158,30 +178,22 @@ pub trait EventAccessor<'acc>: InitializedAccessor<'acc> + CreateEntityAccessor 
   ) -> Self::WriteGuard<'a, U>;
 
   /**
-  Raw write access for entities, perhaps simply taking a mutable reference to the entity contents. This is not undo-safe, but is a building block for building undo-safe wrappers.
+  Raw write access for entities. This is not undo-safe, but is a building block for building undo-safe wrappers.
 
   This requires `&'a mut self` as well as `'a` entity, so that we can statically guarantee that there is no overlap with shared access to entities. As a result, you can't hold a reference to *any* entity while any other entity is being modified. This restriction could theoretically be relaxed, but it is the simplest way uphold "shared XOR mutable" without runtime checks.
+
+  Undo safety is accomplished by calling `record_undo` on the returned `UndoRecorder` (see the `RecordUndo` trait). `raw_write` is undo-safe if, after you drop the WriteGuard and UndoRecorder, the undo operations you recorded exactly revert the changes you made. That is, running all the `perform_undo` functions you recorded, in reverse order, on the entity's mutable data, leaves it in the same state that it was in at the start of the `raw_write` call.
+
+  This condition is typically fulfilled through a wrapper that allows you to perform a sequence of individual mutating operations while recording the undo data for each operation as it is performed.
+
+  Any call to `record_undo` also makes `Accessor::raw_read` undo-safe in the same way as `Accessor::record_read` does. If a write makes *no* changes, it doesn't need to call `record_undo` any times, but must still record a read according to the same rules as `Accessor::raw_read`.
   */
   fn raw_write<'a, E: EntityKind>(
     &'a mut self,
     entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
-  ) -> Self::WriteGuard<'a, MutableData<E, Self::EntityHandleKind>>;
-
-  /**
-  Store a record of how to undo a modification we made to this entity in this event. This is not undo-safe, but is a building block for building undo-safe wrappers.
-
-  `raw_write` and `record_undo` are undo-safe if, at the end of the event, running all of the undo functions for this entity in reverse order leaves you with the same mutable data the entity started with at the beginning of the event.
-
-  The simplest way to fulfill this condition is to begin by copying the original state of the entity (or something contained in the entity) and recording an undo function that overwrites that data with a copy of that copy. This allows arbitrary mutable access after that point.
-
-  A second way to fulfill this condition would be to always pair "performing a mutating operation" with "record_undo with exactly the inverse of that operation". Unfortunately, these don't play nicely together: "overwrite a subset, then do an invertible operation on the whole entity, then arbitrarily modify the subset" would end up passing the wrong input to the inversion function. We have not yet defined a clear set of rules for writing undo-safe wrappers.
-
-  Any call to `record_undo` also makes `Accessor::raw_read` undo-safe in the same way as `Accessor::record_read` does.
-  */
-  fn record_undo<E: EntityKind>(
-    &self,
-    entity: TypedHandleRef<E, Self::EntityHandleKind>,
-    undo: impl UndoData<MutableData<E, Self::EntityHandleKind>>,
+  ) -> (
+    Self::WriteGuard<'a, MutableData<E, Self::EntityHandleKind>>,
+    Self::UndoRecorder<'a, MutableData<E, Self::EntityHandleKind>>,
   );
 
   /**

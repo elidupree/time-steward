@@ -7,19 +7,19 @@ use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
 use time_steward_api::{
-  Accessor, EntityKind, EventAccessor, MutableData, SimulationStateData, TypedHandle,
-  TypedHandleRef, UndoData,
+  Accessor, EntityKind, EventAccessor, MutableData, RecordUndo, SimulationStateData, TypedHandle,
+  TypedHandleRef,
 };
 use time_steward_type_utils::delegate;
 
 pub trait ChoiceOfObjectContainedIn<T>: Copy + 'static {
-  type Target;
+  type Target: SimulationStateData;
   fn get(self, object: &T) -> &Self::Target;
   fn get_mut(self, object: &mut T) -> &mut Self::Target;
 }
 
 pub trait GetContained<Choice> {
-  type Target;
+  type Target: SimulationStateData;
   fn get_contained(&self, choice: Choice) -> &Self::Target;
   fn get_contained_mut(&mut self, choice: Choice) -> &mut Self::Target;
 }
@@ -45,7 +45,7 @@ macro_rules! tuple_impls {
     )+) => {
         $(
             #[allow(non_snake_case)]
-            impl<$($T: 'static,)* $Last: 'static, $($Choice: ChoiceOfObjectContainedIn<$T, Target=$U>,)* > ChoiceOfObjectContainedIn<$First> for ($($Choice,)*) {
+            impl<$($T: SimulationStateData,)* $Last: SimulationStateData, $($Choice: ChoiceOfObjectContainedIn<$T, Target=$U>,)* > ChoiceOfObjectContainedIn<$First> for ($($Choice,)*) {
               type Target= $Last;
               fn get(self, object: &T) -> &Self::Target {
                 let $First = object;
@@ -91,33 +91,33 @@ tuple_impls! {
     }
 }
 
-#[derive(
-  Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default,
-)]
-pub struct RestoreOldValue<T>(pub T);
-impl<T: SimulationStateData> UndoData<T> for RestoreOldValue<T> {
-  fn undo(&self, target: &mut T) {
-    *target = self.0.clone();
-  }
-}
+// #[derive(
+//   Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default,
+// )]
+// pub struct RestoreOldValue<T>(pub T);
+// impl<T: SimulationStateData> UndoData<T> for RestoreOldValue<T> {
+//   fn undo(&self, target: &mut T) {
+//     *target = self.0.clone();
+//   }
+// }
 
-#[derive(
-  Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default,
-)]
-pub struct UndoInContained<Choice, Undo> {
-  choice: Choice,
-  undo_data: Undo,
-}
-impl<
-    T,
-    Choice: ChoiceOfObjectContainedIn<T> + SimulationStateData,
-    Undo: UndoData<Choice::Target>,
-  > UndoData<T> for UndoInContained<Choice, Undo>
-{
-  fn undo(&self, target: &mut T) {
-    self.undo_data.undo(target.get_contained_mut(self.choice));
-  }
-}
+// #[derive(
+//   Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default,
+// )]
+// pub struct UndoInContained<Choice, Undo> {
+//   choice: Choice,
+//   undo_data: Undo,
+// }
+// impl<
+//     T,
+//     Choice: ChoiceOfObjectContainedIn<T> + SimulationStateData,
+//     Undo: UndoData<Choice::Target>,
+//   > UndoData<T> for UndoInContained<Choice, Undo>
+// {
+//   fn undo(&self, target: &mut T) {
+//     self.undo_data.undo(target.get_contained_mut(self.choice));
+//   }
+// }
 
 /// types that allow undo-safe access to entity data in some way; this is about undo safety, not memory safety,
 /// and the read method needs an accessor to actually be allowed to view the data
@@ -180,8 +180,8 @@ impl<'a, 'acc, E: EntityKind, A: EventAccessor<'acc>> WriteAccess<'a, 'acc, E, A
 {
   fn write(self, accessor: &'a mut A) -> A::WriteGuard<'a, Self::Target> {
     let old_value = accessor.raw_read(self).clone();
-    accessor.record_undo(self, RestoreOldValue(old_value));
-    accessor.raw_write(self)
+    // accessor.record_undo(self, RestoreOldValue(old_value));
+    accessor.raw_write(self).0
   }
 }
 
@@ -275,7 +275,7 @@ pub trait HasDefaultAccessWrapper {
   fn wrap_access<A: Access>(input: A) -> Self::Wrapper<A>;
 }
 pub trait Access {
-  type Target;
+  type Target: SimulationStateData;
   type Mapped<Choice: ChoiceOfObjectContainedIn<Self::Target>>: Access<Target = Choice::Target>;
   fn map<Choice: ChoiceOfObjectContainedIn<Self::Target>>(
     self,
@@ -283,12 +283,22 @@ pub trait Access {
   ) -> Self::Mapped<Choice>;
   fn read(&self) -> &Self::Target;
 }
-pub trait AccessMut: Access {
-  fn raw_write(&mut self) -> &mut Self::Target;
-  fn record_undo(&mut self, undo: impl UndoData<Self::Target>);
+pub trait AccessMut<'a>: Access {
+  type UndoRecorder<'b>: RecordUndo<Self::Target>
+  where
+    'a: 'b;
+  fn raw_write<'u, 's: 'u>(&'s mut self) -> (&'s mut Self::Target, Self::UndoRecorder<'u>);
+  fn write(&mut self) -> &mut Self::Target {
+    let (value, mut undo_recorder) = self.raw_write();
+    undo_recorder.record_undo(value, |v, de| {
+      *v = Self::Target::deserialize(de).unwrap();
+    });
+    value
+  }
+  //fn record_undo(&mut self, undo: impl UndoData<Self::Target>);
 }
 
-impl<'a, T> Access for &'a T {
+impl<'a, T: SimulationStateData> Access for &'a T {
   type Target = T;
   type Mapped<Choice: ChoiceOfObjectContainedIn<Self::Target>> = &'a Choice::Target;
   fn map<Choice: ChoiceOfObjectContainedIn<Self::Target>>(
@@ -302,7 +312,7 @@ impl<'a, T> Access for &'a T {
   }
 }
 
-impl<'a, T> Access for &'a mut T {
+impl<'a, T: SimulationStateData> Access for &'a mut T {
   type Target = T;
   type Mapped<Choice: ChoiceOfObjectContainedIn<Self::Target>> = &'a mut Choice::Target;
   fn map<Choice: ChoiceOfObjectContainedIn<Self::Target>>(
@@ -316,20 +326,111 @@ impl<'a, T> Access for &'a mut T {
   }
 }
 
-#[derive(Copy, Clone)]
-pub struct VecEntryChoice(usize);
+pub struct WriteRefUndoRecorder<
+  'a,
+  'acc: 'a,
+  E: EntityKind,
+  A: EventAccessor<'acc>,
+  Choice: ChoiceOfObjectContainedIn<MutableData<E, A::EntityHandleKind>>,
+> {
+  choice: Choice,
+  undo_recorder: A::UndoRecorder<'a, MutableData<E, A::EntityHandleKind>>,
+}
+pub struct WriteRef<
+  'a,
+  'acc: 'a,
+  E: EntityKind,
+  A: EventAccessor<'acc>,
+  Choice: ChoiceOfObjectContainedIn<MutableData<E, A::EntityHandleKind>>,
+> {
+  value: &'a mut Choice::Target,
+  undo_recorder: WriteRefUndoRecorder<'a, 'acc, E, A, Choice>,
+}
 
-#[derive(
-  Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default,
-)]
-pub struct UndoVecPush;
-impl<T> UndoData<Vec<T>> for UndoVecPush {
-  fn undo(&self, target: &mut Vec<T>) {
-    target.pop();
+impl<
+    'a,
+    'acc: 'a,
+    E: EntityKind,
+    A: EventAccessor<'acc>,
+    Choice: ChoiceOfObjectContainedIn<MutableData<E, A::EntityHandleKind>>,
+  > Access for WriteRef<'a, 'acc, E, A, Choice>
+{
+  type Target = Choice::Target;
+  type Mapped<NextChoice: ChoiceOfObjectContainedIn<Self::Target>> =
+    WriteRef<'a, 'acc, E, A, (Choice, NextChoice)>;
+  fn map<NextChoice: ChoiceOfObjectContainedIn<Self::Target>>(
+    self,
+    next_choice: NextChoice,
+  ) -> Self::Mapped<NextChoice> {
+    WriteRef {
+      value: next_choice.get_mut(self.value),
+
+      undo_recorder: WriteRefUndoRecorder {
+        choice: (self.undo_recorder.choice, next_choice),
+        undo_recorder: self.undo_recorder.undo_recorder,
+      },
+    }
+  }
+  fn read(&self) -> &Self::Target {
+    self.value
   }
 }
 
-impl<T> ChoiceOfObjectContainedIn<Vec<T>> for VecEntryChoice {
+impl<
+    'a,
+    'acc: 'a,
+    E: EntityKind,
+    A: EventAccessor<'acc> + 'a,
+    Choice: ChoiceOfObjectContainedIn<MutableData<E, A::EntityHandleKind>>,
+  > AccessMut<'a> for WriteRef<'a, 'acc, E, A, Choice>
+{
+  type UndoRecorder<'b>
+  where
+    'a: 'b,
+  = &'b mut WriteRefUndoRecorder<'b, 'acc, E, A, Choice>;
+  fn raw_write<'u, 's: 'u>(&'s mut self) -> (&'s mut Self::Target, Self::UndoRecorder<'u>) {
+    (self.value, &mut self.undo_recorder)
+  }
+}
+
+impl<
+    'a,
+    'acc: 'a,
+    E: EntityKind,
+    A: EventAccessor<'acc>,
+    Choice: ChoiceOfObjectContainedIn<MutableData<E, A::EntityHandleKind>>,
+  > RecordUndo<Choice::Target> for &'a mut WriteRefUndoRecorder<'a, 'acc, E, A, Choice>
+{
+  type Deserializer = <A::UndoRecorder<'a, MutableData<E, A::EntityHandleKind>> as RecordUndo<
+    MutableData<E, A::EntityHandleKind>,
+  >>::Deserializer;
+
+  /**
+  Record a single undo operation.
+
+  `undo_data` will be serialized and stored somewhere. If and when `perform_undo` is called, it will be given a deserializer containing the same data.
+
+  For performance, we expect that a large majority of the time, `perform_undo` will never be called, so it's okay to make `perform_undo` somewhat expensive in order to minimize the cost of serializing and storing `undo_data`. You can expect that it's being serialized into a raw byte buffer.
+
+  Deserialization must not have errors; there is no fallback if they happen. `perform_undo` functions may panic on errors.
+
+  See `EventAccessor::record_undo` for more details about when you should call this.
+  */
+  fn record_undo<S: Serialize>(
+    &mut self,
+    undo_data: &S,
+    perform_undo: fn(&mut Choice::Target, Self::Deserializer),
+  ) {
+    self
+      .undo_recorder
+      .record_undo((&self.choice, &undo_data), || {})
+  }
+}
+
+#[derive(Copy, Clone)]
+pub struct VecEntryChoice(usize);
+
+impl<T: SimulationStateData> ChoiceOfObjectContainedIn<Vec<T>> for VecEntryChoice {
   type Target = T;
   fn get(self, object: &Vec<T>) -> &Self::Target {
     object.get(self.0).unwrap()
@@ -359,14 +460,19 @@ impl<A> DerefMut for VecAccessWrapper<A> {
   }
 }
 
-impl<T: HasDefaultAccessWrapper + 'static, A: Access<Target = Vec<T>>> VecAccessWrapper<A> {
+impl<T: SimulationStateData + HasDefaultAccessWrapper, A: Access<Target = Vec<T>>>
+  VecAccessWrapper<A>
+{
   pub fn get(self, index: usize) -> Option<T::Wrapper<A::Mapped<VecEntryChoice>>> {
     (index < self.0.read().len()).then(move || T::wrap_access(self.0.map(VecEntryChoice(index))))
   }
 }
-impl<T, A: AccessMut<Target = Vec<T>>> VecAccessWrapper<A> {
+impl<'a, T: SimulationStateData, A: AccessMut<'a, Target = Vec<T>>> VecAccessWrapper<A> {
   pub fn push(&mut self, value: T) {
-    self.0.raw_write().push(value);
-    self.0.record_undo(UndoVecPush);
+    let (v, mut undo_recorder) = self.raw_write();
+    v.push(value);
+    undo_recorder.record_undo(&(), |v, _| {
+      v.pop();
+    });
   }
 }
