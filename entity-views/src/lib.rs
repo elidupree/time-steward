@@ -285,14 +285,12 @@ pub trait Access {
   ) -> Self::Mapped<Choice>;
   fn read(&self) -> &Self::Target;
 }
-pub trait AccessMut<'a>: Access {
-  type UndoRecorder<'b>: RecordUndo<Self::Target>
-  where
-    'a: 'b;
-  fn raw_write<'u, 's: 'u>(&'s mut self) -> (&'s mut Self::Target, Self::UndoRecorder<'u>);
+pub trait AccessMut: Access {
+  type UndoRecorder: RecordUndo<Self::Target>;
+  fn raw_write(&mut self) -> (&mut Self::Target, &mut Self::UndoRecorder);
   fn write(&mut self) -> &mut Self::Target {
-    let (value, mut undo_recorder) = self.raw_write();
-    undo_recorder.record_undo::<_, Perform>(value);
+    let (value, undo_recorder) = self.raw_write();
+    undo_recorder.record_undo::<_, Perform>(&*value);
 
     struct Perform;
     impl<T: SimulationStateData> PerformUndo<T> for Perform {
@@ -390,13 +388,10 @@ impl<
     E: EntityKind,
     A: EventAccessor<'acc> + 'a,
     Choice: ChoiceOfObjectContainedIn<MutableData<E, A::EntityHandleKind>>,
-  > AccessMut<'a> for WriteRef<'a, 'acc, E, A, Choice>
+  > AccessMut for WriteRef<'a, 'acc, E, A, Choice>
 {
-  type UndoRecorder<'b>
-  where
-    'a: 'b,
-  = &'b mut WriteRefUndoRecorder<'b, 'acc, E, A, Choice>;
-  fn raw_write<'u, 's: 'u>(&'s mut self) -> (&'s mut Self::Target, Self::UndoRecorder<'u>) {
+  type UndoRecorder = WriteRefUndoRecorder<'a, 'acc, E, A, Choice>;
+  fn raw_write(&mut self) -> (&mut Self::Target, &mut Self::UndoRecorder) {
     (self.value, &mut self.undo_recorder)
   }
 }
@@ -407,12 +402,8 @@ impl<
     E: EntityKind,
     A: EventAccessor<'acc>,
     Choice: ChoiceOfObjectContainedIn<MutableData<E, A::EntityHandleKind>>,
-  > RecordUndo<Choice::Target> for &'a mut WriteRefUndoRecorder<'a, 'acc, E, A, Choice>
+  > RecordUndo<Choice::Target> for WriteRefUndoRecorder<'a, 'acc, E, A, Choice>
 {
-  type Serializer = <A::UndoRecorder<'a, MutableData<E, A::EntityHandleKind>> as RecordUndo<
-    MutableData<E, A::EntityHandleKind>,
-  >>::Serializer;
-
   fn record_undo<S: Serialize, P: PerformUndo<Choice::Target>>(&mut self, undo_data: S) {
     self
       .undo_recorder
@@ -472,10 +463,13 @@ impl<T: SimulationStateData + HasDefaultAccessWrapper, A: Access<Target = Vec<T>
   pub fn get(self, index: usize) -> Option<T::Wrapper<A::Mapped<VecEntryChoice>>> {
     (index < self.0.read().len()).then(move || T::wrap_access(self.0.map(VecEntryChoice(index))))
   }
+  // pub fn iter(self) -> impl Iterator<Item = T::Wrapper<A::Mapped<VecEntryChoice>>> {
+  //   unimplemented!()
+  // }
 }
-impl<'a, T: SimulationStateData, A: AccessMut<'a, Target = Vec<T>>> VecAccessWrapper<A> {
+impl<T: SimulationStateData, A: AccessMut<Target = Vec<T>>> VecAccessWrapper<A> {
   pub fn push(&mut self, value: T) {
-    let (v, mut undo_recorder) = self.raw_write();
+    let (v, undo_recorder) = self.raw_write();
     v.push(value);
     undo_recorder.record_undo::<_, Perform>(());
 

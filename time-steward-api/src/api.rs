@@ -147,11 +147,6 @@ An object that can record undo data.
 See `EventAccessor::record_undo` for more details.
 */
 pub trait RecordUndo<T> {
-  /// The serializer used by `make_record` functions.
-  ///
-  /// From the perspective of the programmer, `make_record` functions must be generic in the serializer. However, we expose it as an associated type so that you can pass a closure as the `make_record` function.
-  type Serializer: Serializer;
-
   /**
   Record a single undo operation.
 
