@@ -463,6 +463,7 @@ impl<T: SimulationStateData + HasDefaultAccessWrapper, A: Access<Target = Vec<T>
   pub fn get(self, index: usize) -> Option<T::Wrapper<A::Mapped<VecEntryChoice>>> {
     (index < self.0.read().len()).then(move || T::wrap_access(self.0.map(VecEntryChoice(index))))
   }
+  // TODO: this had a problem where the undo recorder had to be an &mut, so an iterator that can be collected would be an aliasing violation. We can address this by making the undo recorder an & (using either a RefCell, which is very cheap, or a safety obligation for client code; and luckily the API doesn't have to commit to which of those it is, individual TimeSteward implementors can decide)
   // pub fn iter(self) -> impl Iterator<Item = T::Wrapper<A::Mapped<VecEntryChoice>>> {
   //   unimplemented!()
   // }
