@@ -3,10 +3,10 @@ extern crate time_steward;
 #[macro_use]
 extern crate glium;
 
-extern crate nalgebra;
-extern crate rand;
 extern crate boolinator;
 extern crate docopt;
+extern crate nalgebra;
+extern crate rand;
 
 extern crate serde;
 #[macro_use]
@@ -21,7 +21,7 @@ Usage:
   space_game
   space_game (-l | --listen) <host> <port>
   space_game (-c | --connect) <host> <port>
-  
+
 Options:
   -l, --listen   Start a synchronized simulation by listening for TCP connections.
   -c, --connect  Start a synchronized simulation by making a TCP connection.
@@ -31,28 +31,28 @@ Options:
 struct Args {
   flag_listen: bool,
   flag_connect: bool,
-    
-  arg_host: Option <String>,
-  arg_port: Option <u16>,
+
+  arg_host: Option<String>,
+  arg_port: Option<u16>,
 }
 
-
-use std::time::{Instant};
-use std::marker::PhantomData;
 use glium::{DisplayBuild, Surface};
+use std::marker::PhantomData;
+use std::time::Instant;
 
-use time_steward::{EntityId};
+use time_steward::EntityId;
 //use time_steward::stewards::{simple_full as steward_module};
-use steward_module::{TimeSteward, ConstructibleTimeSteward, Accessor, simple_timeline};
-use simple_timeline::{query};
-use steward_module::bbox_collision_detection_2d::{BoundingBox, Detector};
+use simple_timeline::query;
 use steward_module::bbox_collision_detection_2d::simple_grid::SimpleGridDetector;
+use steward_module::bbox_collision_detection_2d::{BoundingBox, Detector};
+use steward_module::{simple_timeline, Accessor, ConstructibleTimeSteward, TimeSteward};
 
-#[path = "../dev-shared/space_game.rs"] mod space_game;
+#[path = "../dev-shared/space_game.rs"]
+mod space_game;
 use space_game::*;
-#[path = "../dev-shared/emscripten_compatibility.rs"] mod emscripten_compatibility;
+#[path = "../dev-shared/emscripten_compatibility.rs"]
+mod emscripten_compatibility;
 pub use emscripten_compatibility::canvas_click;
-
 
 #[derive(Copy, Clone)]
 
@@ -72,7 +72,7 @@ fn main() {
     let arguments: Args = Docopt::new(USAGE)
                             .and_then(|d| d.deserialize())
                             .unwrap_or_else(|e| e.exit());
-    
+
     if arguments.flag_listen {
       let listener = TcpListener::bind ((arguments.arg_host.as_ref().map_or("localhost", | string | string as & str), arguments.arg_port.unwrap())).unwrap();
       let stream = listener.accept().unwrap().0;
@@ -90,18 +90,17 @@ fn main() {
   }*/
   {
     //let mut steward: s::Steward<SimulationSpec,
-                                //inefficient_flat::Steward<SimulationSpec>,
-                                //memoized_flat::Steward<SimulationSpec>> = s::Steward::from_constants(());
+    //inefficient_flat::Steward<SimulationSpec>,
+    //memoized_flat::Steward<SimulationSpec>> = s::Steward::from_constants(());
     let mut steward: Steward = Steward::from_globals(make_globals());
-    steward.insert_fiat_event(0, EntityId::hash_of(&0), Initialize{}).unwrap();
-    run (steward, |_,_|());
+    steward
+      .insert_fiat_event(0, EntityId::hash_of(&0), Initialize {})
+      .unwrap();
+    run(steward, |_, _| ());
   }
 }
 
-
-fn run <F: Fn (&mut Steward, Time)>(mut stew: Steward, settle:F) {
-
-
+fn run<F: Fn(&mut Steward, Time)>(mut stew: Steward, settle: F) {
   let vertex_shader_source = r#"
 #version 100
 attribute lowp vec2 direction;
@@ -132,9 +131,9 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
 "#;
 
   //let mut snapshots = Vec::new();
-  
+
   let mut event_index = 0u64;
-  let mut mouse_coordinates = [0,0];
+  let mut mouse_coordinates = [0, 0];
 
   if true {
     let display = glium::glutin::WindowBuilder::new()
@@ -156,95 +155,144 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
 
     let frame = || {
       //let frame_begin = Instant::now();
-      let time = 1+((start.elapsed().as_secs() as i64 * 1000000000i64) +
-                            start.elapsed().subsec_nanos() as i64) *
-                           SECOND / 1000000000i64;
+      let time = 1
+        + ((start.elapsed().as_secs() as i64 * 1000000000i64)
+          + start.elapsed().subsec_nanos() as i64)
+          * SECOND
+          / 1000000000i64;
       for ev in display.poll_events() {
         match ev {
           glium::glutin::Event::Closed => return true,
-          glium::glutin::Event::MouseMoved (x,y) => {
-            mouse_coordinates [0] = ((x as SpaceCoordinate) - 150) * ARENA_SIZE / 300;
-            mouse_coordinates [1] = (450-(y as SpaceCoordinate)) * ARENA_SIZE / 300;
+          glium::glutin::Event::MouseMoved(x, y) => {
+            mouse_coordinates[0] = ((x as SpaceCoordinate) - 150) * ARENA_SIZE / 300;
+            mouse_coordinates[1] = (450 - (y as SpaceCoordinate)) * ARENA_SIZE / 300;
             //println!("mouse {} {} {:?}", x,y,mouse_coordinates);
-          },
-          glium::glutin::Event::MouseInput (_,_) => {
+          }
+          glium::glutin::Event::MouseInput(_, _) => {
             event_index += 1;
-            stew.insert_fiat_event (time, EntityId::hash_of (& event_index), Disturb {coordinates: [mouse_coordinates [0], mouse_coordinates [1]]}).unwrap();
-          },
+            stew
+              .insert_fiat_event(
+                time,
+                EntityId::hash_of(&event_index),
+                Disturb {
+                  coordinates: [mouse_coordinates[0], mouse_coordinates[1]],
+                },
+              )
+              .unwrap();
+          }
           _ => (),
         }
       }
-      while let Some ((x,y)) = emscripten_compatibility::pop_click() {
+      while let Some((x, y)) = emscripten_compatibility::pop_click() {
         // TODO duplicate code
-        mouse_coordinates [0] = (((x*600.0) as SpaceCoordinate) - 150) * ARENA_SIZE / 300;
-        mouse_coordinates [1] = (450-((y*600.0) as SpaceCoordinate)) * ARENA_SIZE / 300;
+        mouse_coordinates[0] = (((x * 600.0) as SpaceCoordinate) - 150) * ARENA_SIZE / 300;
+        mouse_coordinates[1] = (450 - ((y * 600.0) as SpaceCoordinate)) * ARENA_SIZE / 300;
         event_index += 1;
-        stew.insert_fiat_event (time, EntityId::hash_of (& event_index), Disturb {coordinates: [mouse_coordinates [0], mouse_coordinates [1]]}).unwrap();
+        stew
+          .insert_fiat_event(
+            time,
+            EntityId::hash_of(&event_index),
+            Disturb {
+              coordinates: [mouse_coordinates[0], mouse_coordinates[1]],
+            },
+          )
+          .unwrap();
       }
 
       let mut target = display.draw();
       target.clear_color(0.0, 0.0, 0.0, 1.0);
       let mut vertices = Vec::<Vertex>::new();
 
-      let accessor = stew.snapshot_before(& time)
+      let accessor = stew
+        .snapshot_before(&time)
         .expect("steward failed to provide snapshot");
-      stew.forget_before(& time);
-      settle (&mut stew, time);
-      for handle in SimpleGridDetector::objects_near_box (& accessor, & query (& accessor, & accessor.globals().detector), BoundingBox {bounds: [[to_collision_space (-ARENA_SIZE/2), to_collision_space (ARENA_SIZE*3/2)],[to_collision_space (-ARENA_SIZE/2), to_collision_space (ARENA_SIZE*3/2)]],_marker: PhantomData}, None).iter() {
-        let circle = query (& accessor, &handle.varying);
-        let position = circle.position.updated_by(accessor.now() - circle.last_change).unwrap().evaluate();
-        let center = [position[0] as f32 / ARENA_SIZE as f32 - 0.5,
-                      position[1] as f32 / ARENA_SIZE as f32 - 0.5];
+      stew.forget_before(&time);
+      settle(&mut stew, time);
+      for handle in SimpleGridDetector::objects_near_box(
+        &accessor,
+        &query(&accessor, &accessor.globals().detector),
+        BoundingBox {
+          bounds: [
+            [
+              to_collision_space(-ARENA_SIZE / 2),
+              to_collision_space(ARENA_SIZE * 3 / 2),
+            ],
+            [
+              to_collision_space(-ARENA_SIZE / 2),
+              to_collision_space(ARENA_SIZE * 3 / 2),
+            ],
+          ],
+          _marker: PhantomData,
+        },
+        None,
+      )
+      .iter()
+      {
+        let circle = query(&accessor, &handle.varying);
+        let position = circle
+          .position
+          .updated_by(accessor.now() - circle.last_change)
+          .unwrap()
+          .evaluate();
+        let center = [
+          position[0] as f32 / ARENA_SIZE as f32 - 0.5,
+          position[1] as f32 / ARENA_SIZE as f32 - 0.5,
+        ];
         let radius = handle.radius as f32 / ARENA_SIZE as f32;
         // println!("drawing circ at {}, {}", center[0],center[1]);
-        vertices.extend(&[Vertex {
-                            center: center,
-                            radius: radius,
-                            direction: [1.0, 0.0],
-                          },
-                          Vertex {
-                            center: center,
-                            radius: radius,
-                            direction: [-1.0, 0.0],
-                          },
-                          Vertex {
-                            center: center,
-                            radius: radius,
-                            direction: [0.0, 1.0],
-                          },
-                          Vertex {
-                            center: center,
-                            radius: radius,
-                            direction: [1.0, 0.0],
-                          },
-                          Vertex {
-                            center: center,
-                            radius: radius,
-                            direction: [-1.0, 0.0],
-                          },
-                          Vertex {
-                            center: center,
-                            radius: radius,
-                            direction: [0.0, -1.0],
-                          }]);
+        vertices.extend(&[
+          Vertex {
+            center: center,
+            radius: radius,
+            direction: [1.0, 0.0],
+          },
+          Vertex {
+            center: center,
+            radius: radius,
+            direction: [-1.0, 0.0],
+          },
+          Vertex {
+            center: center,
+            radius: radius,
+            direction: [0.0, 1.0],
+          },
+          Vertex {
+            center: center,
+            radius: radius,
+            direction: [1.0, 0.0],
+          },
+          Vertex {
+            center: center,
+            radius: radius,
+            direction: [-1.0, 0.0],
+          },
+          Vertex {
+            center: center,
+            radius: radius,
+            direction: [0.0, -1.0],
+          },
+        ]);
       }
-      target.draw(&glium::VertexBuffer::new(&display, &vertices)
-                .expect("failed to generate glium Vertex buffer"),
-              &indices,
-              &program,
-              &glium::uniforms::EmptyUniforms,
-              &parameters)
+      target
+        .draw(
+          &glium::VertexBuffer::new(&display, &vertices)
+            .expect("failed to generate glium Vertex buffer"),
+          &indices,
+          &program,
+          &glium::uniforms::EmptyUniforms,
+          &parameters,
+        )
         .expect("failed target.draw");
 
       target.finish().expect("failed to finish drawing");
-      
+
       /*while frame_begin.elapsed() < Duration::from_millis (10) && stew.updated_until_before().map_or (false, | limitation | limitation < time + SECOND) {
         for _ in 0..8 {stew.step();}
       }*/
       false
     };
-    
-    emscripten_compatibility::main_loop (frame);
+
+    emscripten_compatibility::main_loop(frame);
   }
 
   /*

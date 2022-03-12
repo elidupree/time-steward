@@ -1,4 +1,4 @@
-#![feature(array_map, array_methods, try_trait)]
+#![feature(array_methods)]
 
 #[cfg(test)]
 #[macro_use]
@@ -407,6 +407,7 @@ pub fn saturating_downcast<T: Integer + From<U> + TryInto<U>, U: Integer>(a: T) 
 
 pub mod array;
 //pub mod polynomial;
+//pub mod incremental_search;
 pub mod polynomial2;
 #[cfg(test)]
 pub mod polynomial2_tests;

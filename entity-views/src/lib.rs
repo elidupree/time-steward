@@ -287,7 +287,7 @@ pub trait Access {
 }
 pub trait AccessMut: Access {
   type UndoRecorder: RecordUndo<Self::Target>;
-  fn raw_write(&mut self) -> (&mut Self::Target, &mut Self::UndoRecorder);
+  fn raw_write(&mut self) -> (&mut Self::Target, &Self::UndoRecorder);
   fn write(&mut self) -> &mut Self::Target {
     let (value, undo_recorder) = self.raw_write();
     undo_recorder.record_undo::<_, Perform>(&*value);
@@ -336,7 +336,7 @@ pub struct WriteRefUndoRecorder<
   'a,
   'acc: 'a,
   E: EntityKind,
-  A: EventAccessor<'acc>,
+  A: EventAccessor<'acc> + 'a,
   Choice: ChoiceOfObjectContainedIn<MutableData<E, A::EntityHandleKind>>,
 > {
   choice: Choice,
@@ -391,7 +391,7 @@ impl<
   > AccessMut for WriteRef<'a, 'acc, E, A, Choice>
 {
   type UndoRecorder = WriteRefUndoRecorder<'a, 'acc, E, A, Choice>;
-  fn raw_write(&mut self) -> (&mut Self::Target, &mut Self::UndoRecorder) {
+  fn raw_write(&mut self) -> (&mut Self::Target, &Self::UndoRecorder) {
     (self.value, &mut self.undo_recorder)
   }
 }
@@ -404,7 +404,7 @@ impl<
     Choice: ChoiceOfObjectContainedIn<MutableData<E, A::EntityHandleKind>>,
   > RecordUndo<Choice::Target> for WriteRefUndoRecorder<'a, 'acc, E, A, Choice>
 {
-  fn record_undo<S: Serialize, P: PerformUndo<Choice::Target>>(&mut self, undo_data: S) {
+  fn record_undo<S: Serialize, P: PerformUndo<Choice::Target>>(&self, undo_data: S) {
     self
       .undo_recorder
       .record_undo::<_, Perform<MutableData<E, A::EntityHandleKind>, Choice, P>>((
@@ -464,9 +464,12 @@ impl<T: SimulationStateData + HasDefaultAccessWrapper, A: Access<Target = Vec<T>
     (index < self.0.read().len()).then(move || T::wrap_access(self.0.map(VecEntryChoice(index))))
   }
   // TODO: this had a problem where the undo recorder had to be an &mut, so an iterator that can be collected would be an aliasing violation. We can address this by making the undo recorder an & (using either a RefCell, which is very cheap, or a safety obligation for client code; and luckily the API doesn't have to commit to which of those it is, individual TimeSteward implementors can decide)
-  // pub fn iter(self) -> impl Iterator<Item = T::Wrapper<A::Mapped<VecEntryChoice>>> {
-  //   unimplemented!()
-  // }
+  pub fn iter(self) -> impl Iterator<Item = T::Wrapper<A::Mapped<VecEntryChoice>>> {
+    self
+      .0
+      .read()
+      .map(move |index| T::wrap_access(self.0.map(VecEntryChoice(index))))
+  }
 }
 impl<T: SimulationStateData, A: AccessMut<Target = Vec<T>>> VecAccessWrapper<A> {
   pub fn push(&mut self, value: T) {

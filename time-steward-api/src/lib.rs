@@ -1,4 +1,4 @@
-#![feature(generic_associated_types, const_generics, const_evaluatable_checked)]
+#![feature(generic_associated_types, adt_const_params, generic_const_exprs)]
 #![warn(unsafe_op_in_unsafe_fn)]
 #![allow(incomplete_features)]
 

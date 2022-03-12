@@ -48,7 +48,7 @@ impl EntityId {
   /// Generally, calling this with unique inputs is guaranteed to give unique outputs.
   /// However, take note: the serialization doesn't generally include any representation of the
   /// *type* of data serialized, so (for instance) two different structs with the
-  /// same fields will produce the same result. If you want to make sure and ID is unique,
+  /// same fields will produce the same result. If you want to make sure an ID is unique,
   /// a good technique is to use a tuple containing a unique numeric literal
   /// (randomly-generated to be unique to that part of your code):
   ///

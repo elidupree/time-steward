@@ -15,8 +15,8 @@ pub trait TypedEntityHandle<E: EntityKind, H: EntityHandleKind>: EntityHandle {
   where
     H: EntityHandleKindDeref;
 }
-pub trait OwnedEntityHandle: EntityHandle + 'static {}
-impl<E: EntityHandle + 'static> OwnedEntityHandle for E {}
+pub trait OwnedEntityHandle: EntityHandle {}
+impl<E: EntityHandle> OwnedEntityHandle for E {}
 pub trait BorrowedEntityHandle: EntityHandle + Copy {}
 impl<E: EntityHandle + Copy> BorrowedEntityHandle for E {}
 pub trait OwnedTypedEntityHandle<E: EntityKind, H: EntityHandleKind>:

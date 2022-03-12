@@ -59,7 +59,9 @@ pub trait Accessor {
   type EntityHandleKind: EntityHandleKindDeref;
 
   /// The guard type returned by `raw_read`. In EventAccessors for optimized TimeStewards, you can assume that this is equivalent to `&'a T`. Simpler implementations may use std::cell::Ref.
-  type ReadGuard<'a, T: 'a>: Deref<Target = T>;
+  type ReadGuard<'a, T: 'a>: Deref<Target = T>
+  where
+    Self: 'a;
 
   /**
   Raw read access for entities, perhaps simply taking a reference to the entity contents. This is not undo-safe, but is a building block for building undo-safe wrappers.
@@ -134,7 +136,7 @@ pub trait GlobalsConstructionAccessor: CreateEntityAccessor {}
 pub trait PerformUndo<T> {
   type UndoData: DeserializeOwned;
   /**
-  Perform the undo operation, by reading any necessary data from the deserializer.
+  Perform the undo operation, using the deserialized data.
 
   See `RecordUndo` and `EventAccessor::record_undo` for more details about how to use this.
   */
@@ -156,7 +158,7 @@ pub trait RecordUndo<T> {
 
   See `EventAccessor::record_undo` for more details about when you should call this.
   */
-  fn record_undo<S: Serialize, P: PerformUndo<T>>(&mut self, undo_data: S);
+  fn record_undo<S: Serialize, P: PerformUndo<T>>(&self, undo_data: S);
 }
 
 /**
@@ -167,7 +169,9 @@ EventAccessors can create and modify entities, and modify entity schedules.
 pub trait EventAccessor<'acc>: InitializedAccessor<'acc> + CreateEntityAccessor {
   /// The guard type returned by `raw_write`. In EventAccessors for optimized TimeStewards, you can assume that this is equivalent to `&'a mut T`. Simpler implementations may use `std::cell::RefMut`.
   type WriteGuard<'a, T: 'a>: DerefMut<Target = T>;
-  type UndoRecorder<'a, T: 'a>: RecordUndo<T>;
+  type UndoRecorder<'a, T: SimulationStateData>: RecordUndo<T> + Copy
+  where
+    Self: 'a;
 
   /// Make a new WriteGuard for a component of the borrowed data, similar to `std::cell::RefMut::map`. If the WriteGuard type is `&mut T`, this is a trivial application of `f`.
   #[allow(clippy::needless_lifetimes)] // Clippy is currently wrong about GATs
@@ -244,7 +248,9 @@ An Accessor representing a snapshot of a complete simulation state.
 */
 pub trait SnapshotAccessor<'acc>: InitializedAccessor<'acc> {
   /// The iterator type returned by `scheduled_events`.
-  type ScheduledEvents<'a>: Iterator<Item = DynHandle<Self::EntityHandleKind>> + 'a;
+  type ScheduledEvents<'a>: Iterator<Item = DynHandle<Self::EntityHandleKind>> + 'a
+  where
+    Self: 'a;
 
   /**
   Take an iterator over all entities that are currently scheduled to wake in the future.
