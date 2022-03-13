@@ -4,10 +4,9 @@
 
 //use crate::type_utils::{ChoiceOfObjectContainedIn, GetContained};
 use derivative::Derivative;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut, IndexMut};
+use std::ops::{Deref, IndexMut};
 use time_steward_api::{
   Accessor, EntityKind, EventAccessor, MutableData, PerformUndo, RecordUndo, SimulationStateData,
   TypedHandle, TypedHandleRef,
@@ -18,7 +17,7 @@ use time_steward_type_utils::delegate;
 ///
 /// The name "Lens" is inspired by its usage in functional programming, but
 /// this type does not provide non-mutating updates.
-pub trait Lens<T>: Clone + Serialize + DeserializeOwned + 'static {
+pub trait Lens<T>: SimulationStateData {
   type Target: SimulationStateData;
   fn get<'a>(&self, object: &'a T) -> &'a Self::Target;
   fn get_mut<'a>(&self, object: &'a mut T) -> &'a mut Self::Target;
@@ -108,33 +107,29 @@ tuple_impls! {
     }
 }
 
-// #[derive(
-//   Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default,
-// )]
-// pub struct RestoreOldValue<T>(pub T);
-// impl<T: SimulationStateData> UndoData<T> for RestoreOldValue<T> {
-//   fn undo(&self, target: &mut T) {
-//     *target = self.0.clone();
-//   }
-// }
+#[derive(Debug)]
+pub struct RestoreOldValue<T>(PhantomData<T>);
+impl<T: SimulationStateData> PerformUndo<T> for RestoreOldValue<T> {
+  type UndoData = T;
 
-// #[derive(
-//   Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default,
-// )]
-// pub struct UndoInContained<Choice, Undo> {
-//   choice: Choice,
-//   undo_data: Undo,
-// }
-// impl<
-//     T,
-//     Choice: ChoiceOfObjectContainedIn<T> + SimulationStateData,
-//     Undo: UndoData<Choice::Target>,
-//   > UndoData<T> for UndoInContained<Choice, Undo>
-// {
-//   fn undo(&self, target: &mut T) {
-//     self.undo_data.undo(target.get_contained_mut(self.choice));
-//   }
-// }
+  fn perform_undo(data: &mut T, undo_data: Self::UndoData) {
+    *data = undo_data;
+  }
+}
+
+#[derive(
+  Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default,
+)]
+pub struct UndoInContained<T, L, P>(PhantomData<(T, L, P)>);
+impl<T, L: Lens<T> + SimulationStateData, P: PerformUndo<L::Target>> PerformUndo<T>
+  for UndoInContained<T, L, P>
+{
+  type UndoData = (L, P::UndoData);
+
+  fn perform_undo(data: &mut T, (lens, undo_data): Self::UndoData) {
+    P::perform_undo(lens.get_mut(data), undo_data);
+  }
+}
 
 /// types that allow undo-safe access to entity data in some way; this is about undo safety, not memory safety,
 /// and the read method needs an accessor to actually be allowed to view the data
@@ -196,9 +191,13 @@ impl<'a, 'acc, E: EntityKind, A: EventAccessor<'acc>> WriteAccess<'a, 'acc, E, A
   for TypedHandleRef<'a, E, A::EntityHandleKind>
 {
   fn write(self, accessor: &'a mut A) -> A::WriteGuard<'a, Self::Target> {
-    let old_value = accessor.raw_read(self).clone();
-    // accessor.record_undo(self, RestoreOldValue(old_value));
-    accessor.raw_write(self).0
+    let (value, undo_recorder) = accessor.raw_write(self);
+    undo_recorder
+      .record_undo::<
+        &MutableData<E, A::EntityHandleKind>,
+        RestoreOldValue<MutableData<E, A::EntityHandleKind>>
+      >(&*value);
+    value
   }
 }
 
@@ -287,16 +286,50 @@ impl<'a, E: EntityKind, A: Accessor> ReadAccess<'a, E, A> for ReadRecordedRef<'a
 // }
 // impl<A: EventAccessor> EventAccessorExt for A {}
 
-pub trait MappableWrapper {
-  type Target: SimulationStateData;
-  type Mapped<L: Lens<Self::Target>>: MappableWrapper<Target = L::Target>;
-  fn map<L: Lens<Self::Target>>(self, lens: &L) -> Self::Mapped<L>;
-  fn map_many(self, )
+pub trait LensMappable<T> {
+  type Mapped<L: Lens<T>>: LensMappable<L::Target>;
+  fn map<L: Lens<T>>(&self, lens: &L) -> Self::Mapped<L>;
+}
 
-  // We're also going to implement Deref for every MappableWrapper type,
-  // but it's hard to put Deref as a supertrait because Rust doesn't make it easy
-  // to but an additional trait bound on an associated type
-  fn read(&self) -> &Self::Target;
+pub struct AugmentedRefMut<'a, T, Metadata> {
+  data: &'a mut T,
+  metadata: Metadata,
+}
+
+impl<'a, T: SimulationStateData, Metadata: LensMappable<T>> AugmentedRefMut<'a, T, Metadata> {
+  pub fn map<L: Lens<T>>(self, lens: &L) -> AugmentedRefMut<'a, L::Target, Metadata::Mapped<L>> {
+    AugmentedRefMut {
+      data: lens.get_mut(self.data),
+      metadata: self.metadata.map(lens),
+    }
+  }
+}
+
+impl<'a, T: SimulationStateData, Metadata: LensMappable<Vec<T>> + 'a>
+  AugmentedRefMut<'a, Vec<T>, Metadata>
+{
+  pub fn iter_mut(
+    self,
+  ) -> impl Iterator<Item = AugmentedRefMut<'a, T, Metadata::Mapped<usize>>> + 'a {
+    let AugmentedRefMut { data, metadata } = self;
+    data
+      .iter_mut()
+      .enumerate()
+      .map(move |(index, data)| AugmentedRefMut {
+        data,
+        metadata: metadata.map(&index),
+      })
+  }
+}
+
+impl<'a, T: SimulationStateData, Metadata: LensMappable<T> + 'a> Deref
+  for AugmentedRefMut<'a, T, Metadata>
+{
+  type Target = T;
+
+  fn deref(&self) -> &Self::Target {
+    self.data
+  }
 }
 
 // pub trait AccessMut: MappableWrapper {
@@ -318,29 +351,21 @@ pub trait MappableWrapper {
 //   //fn record_undo(&mut self, undo: impl UndoData<Self::Target>);
 // }
 
-impl<'a, T: SimulationStateData> MappableWrapper for &'a T {
-  type Target = T;
-  type Mapped<L: Lens<Self::Target>> = &'a L::Target;
-  fn map<L: Lens<Self::Target>>(self, lens: &L) -> Self::Mapped<L> {
-    lens.get(self)
-  }
-
-  fn read(&self) -> &Self::Target {
-    self
-  }
-}
-
-impl<'a, T: SimulationStateData> MappableWrapper for &'a mut T {
-  type Target = T;
-  type Mapped<L: Lens<Self::Target>> = &'a mut L::Target;
-  fn map<L: Lens<Self::Target>>(self, lens: &L) -> Self::Mapped<L> {
-    lens.get_mut(self)
-  }
-
-  fn read(&self) -> &Self::Target {
-    self
-  }
-}
+// impl<'a, T: SimulationStateData> LensMappable for &'a T {
+//   type LensTarget = T;
+//   type Mapped<L: Lens<Self::LensTarget>> = &'a L::Target;
+//   fn map<L: Lens<Self::LensTarget>>(self, lens: &L) -> Self::Mapped<L> {
+//     lens.get(self)
+//   }
+// }
+//
+// impl<'a, T: SimulationStateData> LensMappable for &'a mut T {
+//   type LensTarget = T;
+//   type Mapped<L: Lens<Self::LensTarget>> = &'a mut L::Target;
+//   fn map<L: Lens<Self::LensTarget>>(self, lens: &L) -> Self::Mapped<L> {
+//     lens.get_mut(self)
+//   }
+// }
 
 // #[repr(transparent)]
 // pub struct UndoRecordingWrapper<'a,T>(&'a mut T);
@@ -367,16 +392,16 @@ pub struct WriteRefUndoRecorder<
   lens: L,
   undo_recorder: A::UndoRecorder<'a, MutableData<E, A::EntityHandleKind>>,
 }
-pub struct WriteRef<
-  'a,
-  'acc: 'a,
-  E: EntityKind,
-  A: EventAccessor<'acc>,
-  L: Lens<MutableData<E, A::EntityHandleKind>>,
-> {
-  value: &'a mut L::Target,
-  undo_recorder: WriteRefUndoRecorder<'a, 'acc, E, A, L>,
-}
+// pub struct WriteRef<
+//   'a,
+//   'acc: 'a,
+//   E: EntityKind,
+//   A: EventAccessor<'acc>,
+//   L: Lens<MutableData<E, A::EntityHandleKind>>,
+// > {
+//   value: &'a mut L::Target,
+//   undo_recorder: WriteRefUndoRecorder<'a, 'acc, E, A, L>,
+// }
 
 impl<
     'a,
@@ -384,23 +409,40 @@ impl<
     E: EntityKind,
     A: EventAccessor<'acc>,
     L: Lens<MutableData<E, A::EntityHandleKind>>,
-  > MappableWrapper for WriteRef<'a, 'acc, E, A, L>
+  > LensMappable<L::Target> for WriteRefUndoRecorder<'a, 'acc, E, A, L>
 {
-  type Target = L::Target;
-  type Mapped<L2: Lens<Self::Target>> = WriteRef<'a, 'acc, E, A, (L, L2)>;
-  fn map<L2: Lens<Self::Target>>(self, lens2: &L2) -> Self::Mapped<L2> {
-    WriteRef {
-      value: lens2.get_mut(self.value),
-
-      undo_recorder: WriteRefUndoRecorder {
-        lens: (self.undo_recorder.lens, lens2.clone()),
-        undo_recorder: self.undo_recorder.undo_recorder,
-      },
+  type Mapped<L2: Lens<L::Target>> = WriteRefUndoRecorder<'a, 'acc, E, A, (L, L2)>;
+  fn map<L2: Lens<L::Target>>(&self, lens2: &L2) -> Self::Mapped<L2> {
+    WriteRefUndoRecorder {
+      lens: (self.lens.clone(), lens2.clone()),
+      undo_recorder: self.undo_recorder,
     }
   }
+}
 
-  fn read(&self) -> &Self::Target {
-    self.value
+pub type UndoRecordingRef<'a, 'acc, E, A, L> = AugmentedRefMut<
+  'a,
+  <L as Lens<MutableData<E, <A as Accessor>::EntityHandleKind>>>::Target,
+  WriteRefUndoRecorder<'a, 'acc, E, A, L>,
+>;
+
+impl<
+    'a,
+    'acc: 'a,
+    E: EntityKind,
+    A: EventAccessor<'acc>,
+    L: Lens<MutableData<E, A::EntityHandleKind>>,
+  > UndoRecordingRef<'a, 'acc, E, A, L>
+{
+  pub fn write(self) -> &'a mut L::Target {
+    self
+      .metadata
+      .undo_recorder
+      .record_undo::<
+        (&L, &L::Target),
+        UndoInContained <MutableData<E, A::EntityHandleKind>, L, RestoreOldValue<L::Target>>
+      >((&self.metadata.lens,self.data));
+    self.data
   }
 }
 
@@ -418,20 +460,20 @@ impl<
 //   }
 // }
 
-impl<
-    'a,
-    'acc: 'a,
-    E: EntityKind,
-    A: EventAccessor<'acc>,
-    L: Lens<MutableData<E, A::EntityHandleKind>>,
-  > Deref for WriteRef<'a, 'acc, E, A, L>
-{
-  type Target = L::Target;
-
-  fn deref(&self) -> &Self::Target {
-    self.value
-  }
-}
+// impl<
+//     'a,
+//     'acc: 'a,
+//     E: EntityKind,
+//     A: EventAccessor<'acc>,
+//     L: Lens<MutableData<E, A::EntityHandleKind>>,
+//   > Deref for WriteRef<'a, 'acc, E, A, L>
+// {
+//   type Target = L::Target;
+//
+//   fn deref(&self) -> &Self::Target {
+//     self.value
+//   }
+// }
 
 impl<
     'a,
@@ -490,33 +532,33 @@ impl<T: SimulationStateData, C: IndexMut<usize, Output = T>> Lens<C> for usize {
 //   }
 // }
 
-pub trait VecWrapperExt<T: SimulationStateData>: MappableWrapper<Target = Vec<T>> {
-  type Iterator: Iterator<Item = Self::Mapped<usize>>;
-  fn get(self, index: usize) -> Option<Self::Mapped<usize>>;
-  fn iter(self) -> Self::Iterator;
-}
-
-pub type VecWrapperIterator<T: SimulationStateData, W: MappableWrapper<Target = Vec<T>>> =
-  impl Iterator<Item = W::Mapped<usize>>;
-
-impl<T: SimulationStateData, W: MappableWrapper<Target = Vec<T>>> VecWrapperExt<T> for W {
-  type Iterator = VecWrapperIterator<T, Self>;
-
-  fn get(self, index: usize) -> Option<Self::Mapped<usize>> {
-    (index < self.read().len()).then(move || self.map(&index))
-  }
-
-  fn iter(self) -> Self::Iterator {
-    (0..self.read().len()).map(move |index| self.map(&index))
-  }
-  // pub fn get(&self, index: usize) -> Option<T::Wrapper<W::Mapped<usize>>> {
-  //   (index < self.0.read().len()).then(move || T::wrap_access(self.0.map(index)))
-  // }
-  // // TODO: this had a problem where the undo recorder had to be an &mut, so an iterator that can be collected would be an aliasing violation. We can address this by making the undo recorder an & (using either a RefCell, which is very cheap, or a safety obligation for client code; and luckily the API doesn't have to commit to which of those it is, individual TimeSteward implementors can decide)
-  // pub fn iter(&self) -> impl Iterator<Item = T::Wrapper<W::Mapped<usize>>> + '_ {
-  //   (0..self.0.read().len()).map(move |index| self.get(index).unwrap())
-  // }
-}
+// pub trait VecWrapperExt<T: SimulationStateData>: LensMappable<LensTarget = Vec<T>> {
+//   type Iterator: Iterator<Item = Self::Mapped<usize>>;
+//   fn get(self, index: usize) -> Option<Self::Mapped<usize>>;
+//   fn iter(self) -> Self::Iterator;
+// }
+//
+// pub type VecWrapperIterator<T: SimulationStateData, W: LensMappable<LensTarget = Vec<T>>> =
+//   impl Iterator<Item = W::Mapped<usize>>;
+//
+// impl<T: SimulationStateData, W: LensMappable<LensTarget = Vec<T>>> VecWrapperExt<T> for W {
+//   type Iterator = VecWrapperIterator<T, Self>;
+//
+//   fn get(self, index: usize) -> Option<Self::Mapped<usize>> {
+//     (index < self.read().len()).then(move || self.map(&index))
+//   }
+//
+//   fn iter(self) -> Self::Iterator {
+//     (0..self.read().len()).map(move |index| self.map(&index))
+//   }
+//   // pub fn get(&self, index: usize) -> Option<T::Wrapper<W::Mapped<usize>>> {
+//   //   (index < self.0.read().len()).then(move || T::wrap_access(self.0.map(index)))
+//   // }
+//   // // TODO: this had a problem where the undo recorder had to be an &mut, so an iterator that can be collected would be an aliasing violation. We can address this by making the undo recorder an & (using either a RefCell, which is very cheap, or a safety obligation for client code; and luckily the API doesn't have to commit to which of those it is, individual TimeSteward implementors can decide)
+//   // pub fn iter(&self) -> impl Iterator<Item = T::Wrapper<W::Mapped<usize>>> + '_ {
+//   //   (0..self.0.read().len()).map(move |index| self.get(index).unwrap())
+//   // }
+// }
 // impl<T: SimulationStateData, A: AccessMut<Target = Vec<T>>> VecAccessWrapper<A> {
 //   pub fn push(&mut self, value: T) {
 //     let (v, undo_recorder) = self.raw_write();
