@@ -1,4 +1,4 @@
-#![feature(generic_associated_types, array_map, array_methods)]
+#![feature(generic_associated_types, array_methods)]
 #![allow(incomplete_features)]
 
 pub mod benchmarks;

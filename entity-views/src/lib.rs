@@ -121,7 +121,7 @@ impl<T: SimulationStateData> PerformUndo<T> for RestoreOldValue<T> {
   Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug, Default,
 )]
 pub struct UndoInContained<T, L, P>(PhantomData<(T, L, P)>);
-impl<T, L: Lens<T> + SimulationStateData, P: PerformUndo<L::Target>> PerformUndo<T>
+impl<T: 'static, L: Lens<T> + SimulationStateData, P: PerformUndo<L::Target>> PerformUndo<T>
   for UndoInContained<T, L, P>
 {
   type UndoData = (L, P::UndoData);
@@ -194,7 +194,7 @@ impl<'a, 'acc, E: EntityKind, A: EventAccessor<'acc>> WriteAccess<'a, 'acc, E, A
     let (value, undo_recorder) = accessor.raw_write(self);
     undo_recorder
       .record_undo::<
-        &MutableData<E, A::EntityHandleKind>,
+        MutableData<E, A::EntityHandleKind>,
         RestoreOldValue<MutableData<E, A::EntityHandleKind>>
       >(&*value);
     value
@@ -415,7 +415,7 @@ impl<
   fn map<L2: Lens<L::Target>>(&self, lens2: &L2) -> Self::Mapped<L2> {
     WriteRefUndoRecorder {
       lens: (self.lens.clone(), lens2.clone()),
-      undo_recorder: self.undo_recorder,
+      undo_recorder: self.undo_recorder.clone(),
     }
   }
 }
@@ -441,7 +441,7 @@ impl<
       .record_undo::<
         (&L, &L::Target),
         UndoInContained <MutableData<E, A::EntityHandleKind>, L, RestoreOldValue<L::Target>>
-      >((&self.metadata.lens,self.data));
+      >(&(&self.metadata.lens,self.data));
     self.data
   }
 }
@@ -483,15 +483,15 @@ impl<
     L: Lens<MutableData<E, A::EntityHandleKind>>,
   > RecordUndo<L::Target> for WriteRefUndoRecorder<'a, 'acc, E, A, L>
 {
-  fn record_undo<S: Serialize, P: PerformUndo<L::Target>>(&self, undo_data: S) {
+  fn record_undo<S: Serialize, P: PerformUndo<L::Target>>(&self, undo_data: &S) {
     self
       .undo_recorder
-      .record_undo::<_, Perform<MutableData<E, A::EntityHandleKind>, L, P>>((
+      .record_undo::<(&L, &S), Perform<MutableData<E, A::EntityHandleKind>, L, P>>(&(
         &self.lens, undo_data,
       ));
 
     struct Perform<T, L, P>(PhantomData<*const (T, L, P)>);
-    impl<T, L: Lens<T>, P: PerformUndo<L::Target>> PerformUndo<T> for Perform<T, L, P> {
+    impl<T: 'static, L: Lens<T>, P: PerformUndo<L::Target>> PerformUndo<T> for Perform<T, L, P> {
       type UndoData = (L, P::UndoData);
       fn perform_undo(data: &mut T, (lens, undo_data): Self::UndoData) {
         P::perform_undo(lens.get_mut(data), undo_data);

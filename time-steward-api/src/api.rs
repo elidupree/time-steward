@@ -1,4 +1,4 @@
-use serde::{de::DeserializeOwned, Deserializer, Serialize, Serializer};
+use serde::{de::DeserializeOwned, Serialize};
 use std::any::Any;
 use std::fmt::Debug;
 use std::io::Read;
@@ -133,7 +133,7 @@ An Accessor with all abilities that can be used during the construction of the g
 */
 pub trait GlobalsConstructionAccessor: CreateEntityAccessor {}
 
-pub trait PerformUndo<T> {
+pub trait PerformUndo<T>: 'static {
   type UndoData: DeserializeOwned;
   /**
   Perform the undo operation, using the deserialized data.
@@ -158,7 +158,7 @@ pub trait RecordUndo<T> {
 
   See `EventAccessor::record_undo` for more details about when you should call this.
   */
-  fn record_undo<S: Serialize, P: PerformUndo<T>>(&self, undo_data: S);
+  fn record_undo<S: Serialize, P: PerformUndo<T>>(&self, undo_data: &S);
 }
 
 /**
@@ -169,7 +169,7 @@ EventAccessors can create and modify entities, and modify entity schedules.
 pub trait EventAccessor<'acc>: InitializedAccessor<'acc> + CreateEntityAccessor {
   /// The guard type returned by `raw_write`. In EventAccessors for optimized TimeStewards, you can assume that this is equivalent to `&'a mut T`. Simpler implementations may use `std::cell::RefMut`.
   type WriteGuard<'a, T: 'a>: DerefMut<Target = T>;
-  type UndoRecorder<'a, T: SimulationStateData>: RecordUndo<T> + Copy
+  type UndoRecorder<'a, T: SimulationStateData>: RecordUndo<T> + Clone
   where
     Self: 'a;
 

@@ -1,7 +1,7 @@
 #![feature(
   generic_associated_types,
   specialization,
-  min_type_alias_impl_trait,
+  type_alias_impl_trait,
   map_try_insert,
   map_first_last,
   never_type
@@ -32,6 +32,7 @@ use std::rc::Rc;
 use triomphe::{Arc, ArcBorrow};
 use unsize::CoerceUnsize;
 
+use serde::Serialize;
 use time_steward_api::entity_handles::*;
 use time_steward_api::*;
 use time_steward_entity_views::RestoreOldValue;
@@ -101,12 +102,12 @@ trait AnyEntityInner<S: SimulationSpec>: Debug {
   unsafe fn wake(&self, accessor: &mut SfEventAccessor<S>);
 }
 
-trait DynUndoData<T> {
-  fn undo(&self, target: &mut T);
+trait DynPerformUndo<T> {
+  fn undo(&self, target: &mut T, undo_data: &[u8]);
 }
-impl<T, U: UndoData<T>> DynUndoData<T> for U {
-  fn undo(&self, target: &mut T) {
-    <Self as UndoData<T>>::undo(self, target)
+impl<T, P: PerformUndo<T>> DynPerformUndo<T> for PhantomData<*const P> {
+  fn undo(&self, target: &mut T, undo_data: &[u8]) {
+    P::perform_undo(target, bincode::deserialize(undo_data).unwrap())
   }
 }
 
@@ -114,8 +115,9 @@ impl<T, U: UndoData<T>> DynUndoData<T> for U {
 #[derivative(Debug(bound = ""))]
 struct UndoEntry<S: SimulationSpec, T> {
   time: S::Time,
+  undo_data: Vec<u8>,
   #[derivative(Debug = "ignore")]
-  undo: Box<dyn DynUndoData<T>>,
+  undo_performer: Box<dyn DynPerformUndo<T>>,
 }
 
 #[derive(Derivative)]
@@ -129,32 +131,62 @@ struct HistoryInner<S: SimulationSpec, T> {
 #[derivative(Debug(bound = "T: Debug"))]
 struct History<S: SimulationSpec, T> {
   current_value: AccessorCell<T>,
-  changes: RefCell<Vec<UndoEntry<S, T>>>,
+  changes: HistoryChanges<S, T>,
+}
+#[derive(Derivative)]
+#[derivative(Debug(bound = "T: Debug"))]
+struct HistoryChanges<S: SimulationSpec, T>(RefCell<Vec<UndoEntry<S, T>>>);
+
+#[derive(Derivative)]
+#[derivative(Clone(bound = "T: Clone"), Debug(bound = "T: Debug"))]
+pub struct UndoRecorder<'a, S: SimulationSpec, T> {
+  changes: &'a HistoryChanges<S, T>,
+  time: S::Time,
 }
 
+impl<S: SimulationSpec, T: SimulationStateData> HistoryChanges<S, T> {
+  fn record_undo<U: Serialize, P: PerformUndo<T>>(&self, time: S::Time, undo_data: &U) {
+    self.0.borrow_mut().push(UndoEntry {
+      time,
+      undo_data: bincode::serialize(undo_data).unwrap(),
+      undo_performer: Box::new(PhantomData::<*const P>),
+    });
+  }
+}
+impl<'a, S: SimulationSpec, T: SimulationStateData> RecordUndo<T> for UndoRecorder<'a, S, T> {
+  fn record_undo<U: Serialize, P: PerformUndo<T>>(&self, undo_data: &U) {
+    self
+      .changes
+      .record_undo::<U, P>(self.time.clone(), undo_data);
+  }
+}
 impl<S: SimulationSpec, T: SimulationStateData> History<S, T> {
   fn new(starting_value: T) -> History<S, T> {
     History {
       current_value: AccessorCell::new(starting_value),
-      changes: RefCell::new(Vec::new()),
+      changes: HistoryChanges(RefCell::new(Vec::new())),
     }
   }
   fn current_value<'a>(&'a self, guard: &'a impl accessor_cell::ReadAccess) -> &'a T {
     guard.read(&self.current_value)
   }
-  fn raw_write<'a>(&'a self, guard: &'a mut accessor_cell::WriteGuard) -> &'a mut T {
-    guard.write(&self.current_value)
-  }
-  fn record_undo(&self, time: S::Time, undo: impl UndoData<T>) {
-    self.changes.borrow_mut().push(UndoEntry {
-      time,
-      undo: Box::new(undo),
-    });
+  fn raw_write<'a>(
+    &'a self,
+    guard: &'a mut accessor_cell::WriteGuard,
+    time: S::Time,
+  ) -> (&'a mut T, UndoRecorder<'a, S, T>) {
+    (
+      guard.write(&self.current_value),
+      UndoRecorder {
+        changes: &self.changes,
+        time,
+      },
+    )
   }
   fn replace(&self, guard: &mut accessor_cell::WriteGuard, time: S::Time, new_value: T) {
-    let old_value = self.current_value(guard).clone();
-    self.record_undo(time, RestoreOldValue(old_value));
-    *self.raw_write(guard) = new_value;
+    let (value, undo_recorder) = self.raw_write(guard, time);
+    undo_recorder.record_undo::<T, RestoreOldValue<T>>(value);
+    *value = new_value;
   }
   fn value_before(&self, guard: &impl accessor_cell::ReadAccess, time: &S::Time) -> T
   where
@@ -163,13 +195,14 @@ impl<S: SimulationSpec, T: SimulationStateData> History<S, T> {
     let mut value = self.current_value(guard).clone();
     for UndoEntry {
       time: change_time,
-      undo,
-    } in self.changes.borrow().iter().rev()
+      undo_data,
+      undo_performer,
+    } in self.changes.0.borrow().iter().rev()
     {
       if change_time < time {
         break;
       }
-      undo.undo(&mut value);
+      undo_performer.undo(&mut value, undo_data);
     }
     value
   }
@@ -382,7 +415,10 @@ impl<'acc, S: SimulationSpec> Accessor for SfEventAccessor<'acc, S> {
   type SimulationSpec = S;
   type EntityHandleKind = SfEntityHandleKind<S>;
 
-  type ReadGuard<'a, T: 'a> = &'a T;
+  type ReadGuard<'a, T: 'a>
+  where
+    Self: 'a,
+  = &'a T;
   fn raw_read<'a, E: EntityKind>(
     &'a self,
     entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
@@ -422,7 +458,10 @@ impl<'acc, S: SimulationSpec> Accessor for SfSnapshotAccessor<'acc, S> {
   type SimulationSpec = S;
   type EntityHandleKind = SfEntityHandleKind<S>;
 
-  type ReadGuard<'a, T: 'a> = SnapshotQueryResult<T>;
+  type ReadGuard<'a, T: 'a>
+  where
+    Self: 'a,
+  = SnapshotQueryResult<T>;
   fn raw_read<'a, E: EntityKind>(
     &'a self,
     entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
@@ -538,6 +577,10 @@ impl<S: SimulationSpec> CreateEntityAccessor for SfGlobalsConstructionAccessor<S
 
 impl<'acc, S: SimulationSpec> EventAccessor<'acc> for SfEventAccessor<'acc, S> {
   type WriteGuard<'a, T: 'a> = &'a mut T;
+  type UndoRecorder<'a, T: SimulationStateData>
+  where
+    Self: 'a,
+  = UndoRecorder<'a, S, T>;
   #[allow(clippy::needless_lifetimes)] // Clippy is currently wrong about GATs
   fn map_write_guard<'a, T, U>(
     guard: Self::WriteGuard<'a, T>,
@@ -549,29 +592,16 @@ impl<'acc, S: SimulationSpec> EventAccessor<'acc> for SfEventAccessor<'acc, S> {
   fn raw_write<'a, E: EntityKind>(
     &'a mut self,
     entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
-  ) -> Self::WriteGuard<'a, MutableData<E, Self::EntityHandleKind>> {
+  ) -> (
+    Self::WriteGuard<'a, MutableData<E, Self::EntityHandleKind>>,
+    Self::UndoRecorder<'a, MutableData<E, Self::EntityHandleKind>>,
+  ) {
     entity
       .into_wrapped_gat()
       .0
       .get()
       .mutable
-      .raw_write(&mut self.guard)
-  }
-
-  // record a way to undo something we did in this event; undo operations may later be run in reverse order
-  //
-  // calling record_undo isn't undo-safe because things are broken if you undo wrong
-  // record_undo also serves the purpose of record_read?
-  fn record_undo<E: EntityKind>(
-    &self,
-    entity: TypedHandleRef<E, Self::EntityHandleKind>,
-    undo: impl UndoData<MutableData<E, Self::EntityHandleKind>>,
-  ) {
-    entity
-      .into_wrapped_gat()
-      .0
-      .mutable
-      .record_undo(self.now.clone(), undo);
+      .raw_write(&mut self.guard, self.now.clone())
   }
 
   fn set_schedule<E: Wake<Self::SimulationSpec>>(
@@ -621,7 +651,10 @@ type ScheduledEvents<'a, S: SimulationSpec> =
   impl Iterator<Item = DynHandle<SfEntityHandleKind<S>>> + 'a;
 
 impl<'acc, S: SimulationSpec> SnapshotAccessor<'acc> for SfSnapshotAccessor<'acc, S> {
-  type ScheduledEvents<'a> = ScheduledEvents<'a, S>;
+  type ScheduledEvents<'a>
+  where
+    Self: 'a,
+  = ScheduledEvents<'a, S>;
   fn scheduled_events(&self) -> Self::ScheduledEvents<'_> {
     self.snapshot.scheduled_events.iter().cloned()
   }

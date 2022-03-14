@@ -22,15 +22,12 @@
 
 #![feature(
   arbitrary_self_types,
-  array_map,
   unboxed_closures,
   specialization,
   never_type,
   map_first_last,
   map_try_insert,
-  raw,
-  try_trait,
-  min_type_alias_impl_trait,
+  type_alias_impl_trait,
   generic_associated_types
 )]
 #![warn(unsafe_op_in_unsafe_fn)]

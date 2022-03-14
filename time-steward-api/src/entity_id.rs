@@ -67,7 +67,7 @@ impl EntityId {
   /// because Serialize IS meant to be compatible between platforms.
   pub fn hash_of<T: ser::Serialize>(data: &T) -> EntityId {
     let mut writer = SiphashIdGenerator::new();
-    bincode::serialize_into(&mut writer, data, bincode::Infinite).unwrap();
+    bincode::serialize_into(&mut writer, data).unwrap();
     writer.generate()
   }
   /// Useful for creating out-of-band values which don't identify actual
