@@ -6,35 +6,46 @@ The array `[a, b, c, ...]` represents the polynomial `a + bx + cx^2 + ...`. Thus
 
 */
 
+use super::*;
+use crate::range_search::{RangeSearch, RangeSearchRunner, STANDARD_PRECISION_SHIFT};
 use num::{CheckedAdd, CheckedMul, Signed};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-
-use super::*;
-use crate::range_search::{RangeSearch, RangeSearchRunner, STANDARD_PRECISION_SHIFT};
 use std::marker::PhantomData;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+#[error("Overflow")]
+pub struct OverflowError;
 
 /**
 
 Add `first * second` into `destination`.
+
+This can fail due to overflow of intermediate results; we don't currently have a rigorous definition of when that can happen. If this returns Err, there is no guarantee about what values are left in `destination`.
 
 */
 pub fn add_product_into<Coefficient: Integer, T: Integer + Signed + From<Coefficient>>(
   first: &[Coefficient],
   second: &[Coefficient],
   destination: &mut [T],
-) -> Option<()> {
+) -> Result<(), OverflowError> {
   assert!(destination.len() + 1 >= first.len() + second.len());
   for (first_power, first_coefficient) in first.iter().enumerate() {
     let first_coefficient: T = (*first_coefficient).into();
     for (second_power, second_coefficient) in second.iter().enumerate() {
       let second_coefficient: T = (*second_coefficient).into();
       let destination = &mut destination[first_power + second_power];
-      *destination =
-        destination.checked_add(&first_coefficient.checked_mul(&second_coefficient)?)?;
+      *destination = destination
+        .checked_add(
+          &first_coefficient
+            .checked_mul(&second_coefficient)
+            .ok_or(OverflowError)?,
+        )
+        .ok_or(OverflowError)?;
     }
   }
-  Some(())
+  Ok(())
 }
 
 pub trait PolynomialBase {
@@ -391,7 +402,7 @@ pub trait SetNthTaylorCoefficientAtFractionalInput<WorkingType>: PolynomialBase 
     input: WorkingType,
     input_shift: u32,
     target_value: Self::Coefficient,
-  ) -> Option<()>;
+  ) -> Result<(), OverflowError>;
 }
 
 impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
@@ -404,10 +415,12 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
     input: DoubleSized<Coefficient>,
     input_shift: u32,
     target_value: Coefficient,
-  ) -> Option<()> {
+  ) -> Result<(), OverflowError> {
     let integer_input = shr_nicely_rounded(input, input_shift);
     let small_input = input.wrapping_sub(&(Shl::<u32>::shl(integer_input, input_shift)));
-    let integer_coefficients = self.all_taylor_coefficients(integer_input)?;
+    let integer_coefficients = self
+      .all_taylor_coefficients(integer_input)
+      .ok_or(OverflowError)?;
     let bounds = <Self as AllTaylorCoefficientsBoundsWithinHalf<
       DoubleSized<Coefficient>,
     >>::all_taylor_coefficients_bounds_within_half(
@@ -421,7 +434,7 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
     change_at_input[which_coefficient] = (DoubleSized::<Coefficient>::from(target_value)
       - mean_round_to_even(bounds[which_coefficient][0], bounds[which_coefficient][1]))
     .try_into()
-    .ok()?;
+    .map_err(|_| OverflowError)?;
     let change_at_integer = <Self as AllTaylorCoefficientsBoundsWithinHalf<
       DoubleSized<Coefficient>,
     >>::all_taylor_coefficients_bounds_within_half(
@@ -434,9 +447,11 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
     for (change, new) in change_at_integer.iter().zip(new_at_integer.iter_mut()) {
       *new = (DoubleSized::<Coefficient>::from(*new) + mean_round_to_even(change[0], change[1]))
         .try_into()
-        .ok()?;
+        .map_err(|_| OverflowError)?;
     }
-    *self = new_at_integer.all_taylor_coefficients(-integer_input)?;
+    *self = new_at_integer
+      .all_taylor_coefficients(-integer_input)
+      .ok_or(OverflowError)?;
     // let bounds = self.all_taylor_coefficients_bounds(input, input_shift, 0u32)?;
     //
     // let mut target_values: ::smallvec::SmallVec<[DoubleSized<Coefficient>; 8]> =
@@ -458,7 +473,7 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
     //   self.as_mut_slice()[index] =
     //     self.as_slice()[index].checked_add(&change_size.try_into().ok()?)?;
     // }
-    Some(())
+    Ok(())
   }
 }
 
@@ -628,7 +643,7 @@ fn next_time_magnitude_squared_passes<
           &integer_coefficients.as_slice(),
           integer_coefficients.as_slice(),
           magsq.as_mut_slice(),
-        )?;
+        ).ok()?;
       }
       Some(magsq)
     }

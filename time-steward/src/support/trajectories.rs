@@ -261,7 +261,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     let mut transformed_coefficients: SmallVec<[[T::Coordinate; $degree + 1]; 4]> = SmallVec::with_capacity (T::DIMENSIONS);
     for dimension in 0..T::DIMENSIONS {
       let mut coefficients = self.coordinate_coefficients (dimension);
-      coefficients.set_nth_taylor_coefficient_at_fractional_input (which, time_numerator - (self.origin << time_shift), time_shift, target_value.coordinate (dimension).into())?;
+      coefficients.set_nth_taylor_coefficient_at_fractional_input (which, time_numerator - (self.origin << time_shift), time_shift, target_value.coordinate (dimension).into()).ok()?;
       transformed_coefficients.push (coefficients);
     }
     for (dimension, coefficients) in transformed_coefficients.into_iter().enumerate() {
@@ -302,7 +302,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     let mut coefficients = [T::Coordinate::zero(); $degree + $degree + 1];
     for dimension in 0..T::DIMENSIONS {
       let coordinate_coefficients = self.coordinate_coefficients (dimension);
-      polynomial2::add_product_into (& coordinate_coefficients, & coordinate_coefficients, &mut coefficients)?;
+      polynomial2::add_product_into (& coordinate_coefficients, & coordinate_coefficients, &mut coefficients).ok()?;
     }
     Some($ProductTrajectory {
       origin: self.origin, coefficients
