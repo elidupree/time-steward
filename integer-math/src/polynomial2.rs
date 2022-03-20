@@ -131,8 +131,8 @@ pub trait AllTaylorCoefficientsBoundsWithinHalf<WorkingType> {
   fn all_taylor_coefficients_bounds_within_half(
     &self,
     input: WorkingType,
-    input_shift: u32,
-    precision_shift: u32,
+    input_shift: impl ShiftSize,
+    precision_shift: impl ShiftSize,
   ) -> Self::Output;
 }
 
@@ -243,8 +243,8 @@ pub(crate) fn all_taylor_coefficients_bounds_within_half_unchecked<
 >(
   polynomial: &[Coefficient; COEFFICIENTS],
   input: WorkingType,
-  input_shift: u32,
-  precision_shift: u32,
+  input_shift: impl ShiftSize,
+  precision_shift: impl ShiftSize,
 ) -> [[WorkingType; 2]; COEFFICIENTS] {
   // In the loop, error accumulates each term.
   // Fortunately, the error size is < intermediate_error_shift.
@@ -261,7 +261,7 @@ pub(crate) fn all_taylor_coefficients_bounds_within_half_unchecked<
   // then multiply by a number that is up to half of 1<<input_shift -
   // i.e. we need space for precision_shift+inputshift-1 more bits in the type.
 
-  let total_initial_shift = precision_shift + intermediate_error_shift + 2;
+  let total_initial_shift = precision_shift.into() + intermediate_error_shift + 2;
   let mut intermediates: [WorkingType; COEFFICIENTS] = polynomial.map(|raw| {
     let mut raw: WorkingType = raw.into();
     raw <<= total_initial_shift as u32;
@@ -316,27 +316,27 @@ impl<
   fn all_taylor_coefficients_bounds_within_half(
     &self,
     input: WorkingType,
-    input_shift: u32,
-    precision_shift: u32,
+    input_shift: impl ShiftSize,
+    precision_shift: impl ShiftSize,
   ) -> Self::Output {
     assert!(
-      input_shift + precision_shift
+      input_shift.into() + precision_shift.into()
         <= <Self as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::max_total_shift()
     );
     if input == Zero::zero() || COEFFICIENTS as u32 <= 1 {
       return self.map(|raw| {
         let mut raw = raw.into();
-        raw <<= precision_shift as u32;
+        raw <<= precision_shift.into();
         [raw, raw]
       });
     }
-    match input_shift.checked_sub(1) {
+    match input_shift.into().checked_sub(1) {
       Some(half_shift) => {
         let half = WorkingType::one() << half_shift;
-        assert!(input.abs() <= half, "all_taylor_coefficients_bounds_within_half called with an input({}) that is not within half (shift: {}, half: {})", input, input_shift, half);
+        assert!(input.abs() <= half, "all_taylor_coefficients_bounds_within_half called with an input({}) that is not within half (shift: {}, half: {})", input, input_shift.into(), half);
       }
       None => {
-        panic!("all_taylor_coefficients_bounds_within_half called with an input({}) that is not within half (shift: {})", input, input_shift);
+        panic!("all_taylor_coefficients_bounds_within_half called with an input({}) that is not within half (shift: {})", input, input_shift.into());
       }
     }
     all_taylor_coefficients_bounds_within_half_unchecked(self, input, input_shift, precision_shift)
@@ -357,8 +357,8 @@ pub trait AllTaylorCoefficientsBounds<WorkingType>:
   fn all_taylor_coefficients_bounds(
     &self,
     input: WorkingType,
-    input_shift: u32,
-    precision_shift: u32,
+    input_shift: impl ShiftSize,
+    precision_shift: impl ShiftSize,
   ) -> Option<Self::Output>;
 }
 
@@ -368,11 +368,11 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
   fn all_taylor_coefficients_bounds(
     &self,
     input: DoubleSized<Coefficient>,
-    input_shift: u32,
-    precision_shift: u32,
+    input_shift: impl ShiftSize,
+    precision_shift: impl ShiftSize,
   ) -> Option<<Self as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<Coefficient>>>::Output> {
     let integer_input = shr_nicely_rounded(input, input_shift);
-    let small_input = input.wrapping_sub(&(Shl::<u32>::shl(integer_input, input_shift)));
+    let small_input = input.wrapping_sub(&(Shl::<u32>::shl(integer_input, input_shift.into())));
     let integer_coefficients = self.all_taylor_coefficients(integer_input)?;
     Some(<Self as AllTaylorCoefficientsBoundsWithinHalf<
       DoubleSized<Coefficient>,
@@ -400,7 +400,7 @@ pub trait SetNthTaylorCoefficientAtFractionalInput<WorkingType>: PolynomialBase 
     &mut self,
     which_coefficient: usize,
     input: WorkingType,
-    input_shift: u32,
+    input_shift: impl ShiftSize,
     target_value: Self::Coefficient,
   ) -> Result<(), OverflowError>;
 }
@@ -413,11 +413,11 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
     &mut self,
     which_coefficient: usize,
     input: DoubleSized<Coefficient>,
-    input_shift: u32,
+    input_shift: impl ShiftSize,
     target_value: Coefficient,
   ) -> Result<(), OverflowError> {
     let integer_input = shr_nicely_rounded(input, input_shift);
-    let small_input = input.wrapping_sub(&(Shl::<u32>::shl(integer_input, input_shift)));
+    let small_input = input.wrapping_sub(&(Shl::<u32>::shl(integer_input, input_shift.into())));
     let integer_coefficients = self
       .all_taylor_coefficients(integer_input)
       .ok_or(OverflowError)?;
@@ -519,7 +519,7 @@ pub trait PolynomialRangeSearch<Coefficient, WorkingType>: PolynomialBase {
   fn next_time_value_passes<Filter: PolynomialBoundsFilter<Coefficient>>(
     &self,
     start_input: WorkingType,
-    input_shift: u32,
+    input_shift: impl ShiftSize,
     filter: Filter,
   ) -> Option<WorkingType>;
 }
@@ -527,7 +527,7 @@ pub trait PolynomialMagnitudeSquaredRangeSearch<WorkingType>: PolynomialBase + S
   fn next_time_magnitude_squared_passes<Filter: PolynomialBoundsFilter<WorkingType>>(
     coordinates: &[Self],
     start_input: WorkingType,
-    input_shift: u32,
+    input_shift: impl ShiftSize,
     filter: Filter,
   ) -> Option<WorkingType>;
 }
@@ -563,16 +563,16 @@ fn next_time_value_passes<
 >(
   &self,
   start_input: DoubleSized<Coefficient>,
-  input_shift: u32,
+  input_shift: impl ShiftSize,
   filter: Filter,
 ) -> Option<DoubleSized<Coefficient>> {
-  struct Search <Coefficient, Filter> {
+  struct Search <S,Coefficient, Filter> {
     polynomial: [Coefficient; $coefficients],
     filter: Filter,
-    input_shift: u32,
+    input_shift: S,
     _marker: PhantomData <Coefficient>,
   }
-  impl<Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <Coefficient>> RangeSearch for Search<Coefficient, Filter> {
+  impl<S: ShiftSize,Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <Coefficient>> RangeSearch for Search<S,Coefficient, Filter> {
     type Input = DoubleSized<Coefficient>;
     type IntegerValue = [Coefficient; $coefficients];
     type FractionalValue = [[DoubleSized <Coefficient>; 2]; $coefficients];
@@ -585,8 +585,8 @@ fn next_time_value_passes<
     fn integer_interval_filter (&self, endpoints: [&Self::IntegerValue; 2], duration: Self::Input)->bool {
       self.filter.interval_filter (range_search::coefficient_bounds_on_integer_interval (endpoints, duration) [0])
     }
-    fn fractional_interval_filter (&self, endpoints: [&Self::FractionalValue; 2], duration_shift: u32)->bool {
-      self.filter.interval_filter (range_search::value_bounds_on_negative_power_of_2_interval::<_, Coefficient> (endpoints, duration_shift))
+    fn fractional_interval_filter (&self, endpoints: [&Self::FractionalValue; 2], duration_shift: impl ShiftSize)->bool {
+      self.filter.interval_filter (range_search::value_bounds_on_negative_power_of_2_interval::<_, Coefficient, $coefficients> (endpoints, duration_shift))
     }
     fn tail_filter (&self, endpoint: &Self::IntegerValue)->bool {
       self.filter.interval_filter (range_search::coefficient_bounds_on_tail (endpoint) [0])
@@ -621,16 +621,16 @@ fn next_time_magnitude_squared_passes<
 >(
   coordinates: &[Self],
   start_input: DoubleSized<Coefficient>,
-  input_shift: u32,
+  input_shift: impl ShiftSize,
   filter: Filter,
 ) -> Option<DoubleSized<Coefficient>> {
-  struct Search <'a, Coefficient, Filter> {
+  struct Search <'a, S, Coefficient, Filter> {
     coordinates: &'a [[Coefficient; $coefficients]],
     filter: Filter,
-    input_shift: u32,
+    input_shift: S,
     _marker: PhantomData <Coefficient>,
   }
-  impl<'a, Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <DoubleSized<Coefficient>>> RangeSearch for Search<'a, Coefficient, Filter> where DoubleSized<Coefficient>: DoubleSizedSignedInteger {
+  impl<'a, S: ShiftSize, Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <DoubleSized<Coefficient>>> RangeSearch for Search<'a, S, Coefficient, Filter> where DoubleSized<Coefficient>: DoubleSizedSignedInteger {
     type Input = DoubleSized<Coefficient>;
     type IntegerValue = [DoubleSized<Coefficient>; $coefficients*2-1];
     type FractionalValue = [[DoubleSized<DoubleSized <Coefficient>>; 2]; $coefficients*2-1];
@@ -653,8 +653,8 @@ fn next_time_magnitude_squared_passes<
    fn integer_interval_filter (&self, endpoints: [&Self::IntegerValue; 2], duration: Self::Input)->bool {
       self.filter.interval_filter (range_search::coefficient_bounds_on_integer_interval (endpoints, duration.into()) [0])
     }
-    fn fractional_interval_filter (&self, endpoints: [&Self::FractionalValue; 2], duration_shift: u32)->bool {
-      self.filter.interval_filter (range_search::value_bounds_on_negative_power_of_2_interval::<_, DoubleSized<Coefficient>> (endpoints, duration_shift))
+    fn fractional_interval_filter (&self, endpoints: [&Self::FractionalValue; 2], duration_shift: impl ShiftSize)->bool {
+      self.filter.interval_filter (range_search::value_bounds_on_negative_power_of_2_interval::<_, DoubleSized<Coefficient>, {$coefficients* 2 -1}> (endpoints, duration_shift))
     }
     fn tail_filter (&self, endpoint: &Self::IntegerValue)->bool {
       self.filter.interval_filter (range_search::coefficient_bounds_on_tail (endpoint) [0])

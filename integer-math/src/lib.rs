@@ -1,4 +1,5 @@
-#![feature(array_methods)]
+#![feature(array_methods, generic_const_exprs)]
+#![allow(incomplete_features)]
 
 #[cfg(test)]
 #[macro_use]
@@ -7,6 +8,7 @@ extern crate proptest;
 use num::traits::{CheckedShl, CheckedShr, Signed, WrappingAdd, WrappingMul, WrappingSub, Zero};
 use std::mem;
 //use std::cmp::{min};
+use crate::maybe_const::ShiftSize;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display};
 use std::ops::{
@@ -153,7 +155,7 @@ pub mod impls {
 /// Right-shift an integer, but round to nearest, with ties rounding to even.
 ///
 /// This minimizes error, and avoids a directional bias.
-pub fn shr_nicely_rounded<T: Integer>(input: T, shift: impl Into<u32>) -> T {
+pub fn shr_nicely_rounded<T: Integer>(input: T, shift: impl ShiftSize) -> T {
   let shift: u32 = shift.into();
   let (mask, shifted) = match T::one().checked_shl(shift) {
     Some(divisor) => (divisor.wrapping_sub(&T::one()), input >> shift),
@@ -175,7 +177,7 @@ pub fn shr_nicely_rounded<T: Integer>(input: T, shift: impl Into<u32>) -> T {
 /// Right-shift an integer, but round to even.
 ///
 /// This avoids a directional bias.
-pub fn shr_round_to_even<T: Integer>(input: T, shift: impl Into<u32>) -> T {
+pub fn shr_round_to_even<T: Integer>(input: T, shift: impl ShiftSize) -> T {
   let shift: u32 = shift.into();
   let divisor = match T::one().checked_shl(shift) {
     Some(value) => value,
@@ -192,7 +194,7 @@ pub fn shr_round_to_even<T: Integer>(input: T, shift: impl Into<u32>) -> T {
 }
 
 /// Right-shift an integer, but round towards positive infinity.
-pub fn shr_ceil<T: Integer>(input: T, shift: impl Into<u32>) -> T {
+pub fn shr_ceil<T: Integer>(input: T, shift: impl ShiftSize) -> T {
   let shift: u32 = shift.into();
   let divisor = match T::one().checked_shl(shift) {
     Some(value) => value,
@@ -214,7 +216,7 @@ pub fn shr_ceil<T: Integer>(input: T, shift: impl Into<u32>) -> T {
 }
 
 /// Right-shift an integer, but allow shifting by more than the size of the type, with the expected numerical behavior.
-pub fn shr_floor<T: Integer>(input: T, shift: impl Into<u32>) -> T {
+pub fn shr_floor<T: Integer>(input: T, shift: impl ShiftSize) -> T {
   let shift: u32 = shift.into();
   match input.checked_shr(shift) {
     Some(value) => value,
@@ -229,7 +231,7 @@ pub fn shr_floor<T: Integer>(input: T, shift: impl Into<u32>) -> T {
 }
 
 /// Right-shift an integer, but round towards 0.
-pub fn shr_round_towards_zero<T: Integer>(input: T, shift: impl Into<u32>) -> T {
+pub fn shr_round_towards_zero<T: Integer>(input: T, shift: impl ShiftSize) -> T {
   let shift: u32 = shift.into();
   (input
     + if input < T::zero() {
@@ -241,7 +243,7 @@ pub fn shr_round_towards_zero<T: Integer>(input: T, shift: impl Into<u32>) -> T 
 }
 
 /// Left-shift an integer, returning Some(input*(2^shift)) if it fits within the type, None otherwise.
-pub fn overflow_checked_shl<T: Integer>(input: T, shift: impl Into<u32>) -> Option<T> {
+pub fn overflow_checked_shl<T: Integer>(input: T, shift: impl ShiftSize) -> Option<T> {
   let shift: u32 = shift.into();
   if input == T::zero() {
     return Some(T::zero());
@@ -408,6 +410,7 @@ pub fn saturating_downcast<T: Integer + From<U> + TryInto<U>, U: Integer>(a: T) 
 pub mod array;
 //pub mod polynomial;
 //pub mod incremental_search;
+pub mod maybe_const;
 pub mod polynomial2;
 #[cfg(test)]
 pub mod polynomial2_tests;

@@ -201,10 +201,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
       snapshot.with_accessor(|accessor| {
         for handle in accessor.globals().circles.iter() {
           let circle = handle.read(accessor);
-          let position = circle
-            .position
-            .value(*accessor.now(), STATIC_TIME_SHIFT)
-            .unwrap();
+          let position = circle.position.value(*accessor.now(), TIME_SHIFT).unwrap();
           let center = [
             position[0] as f32 / ARENA_SIZE as f32 - 0.5,
             position[1] as f32 / ARENA_SIZE as f32 - 0.5,

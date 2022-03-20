@@ -3,6 +3,7 @@ use rand::Rng;
 use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
 
+use time_steward::integer_math::maybe_const::ConstU32;
 use time_steward::support::trajectories;
 use time_steward::type_utils::list_of_types::ListedType;
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
@@ -17,13 +18,14 @@ pub type SpaceCoordinate = i32;
 pub type QuadraticTrajectory = trajectories::QuadraticTrajectory<Vector2<SpaceCoordinate>>;
 
 pub const HOW_MANY_CIRCLES: usize = 20;
-pub const ARENA_SIZE_SHIFT: u32 = 20;
-pub const ARENA_SIZE: SpaceCoordinate = 1 << ARENA_SIZE_SHIFT;
+pub const ARENA_SIZE_SHIFT_U32: u32 = 20;
+pub const ARENA_SIZE_SHIFT: ConstU32<ARENA_SIZE_SHIFT_U32> = ConstU32;
+pub const ARENA_SIZE: SpaceCoordinate = 1 << ARENA_SIZE_SHIFT_U32;
 // pub const GRID_SIZE_SHIFT: u32 = ARENA_SIZE_SHIFT - 3;
 // pub const GRID_SIZE: SpaceCoordinate = 1 << GRID_SIZE_SHIFT;
-pub const TIME_SHIFT: u32 = 20;
-pub const STATIC_TIME_SHIFT: u32 = TIME_SHIFT;
-pub const SECOND: Time = 1 << TIME_SHIFT;
+pub const TIME_SHIFT_U32: u32 = 20;
+pub const TIME_SHIFT: ConstU32<TIME_SHIFT_U32> = ConstU32;
+pub const SECOND: Time = 1 << TIME_SHIFT_U32;
 
 pub struct BouncyCirclesSpec;
 impl SimulationSpec for BouncyCirclesSpec {
@@ -95,16 +97,16 @@ impl Wake<BouncyCirclesSpec> for Circle {
     if let Some(induced_acceleration) = new.boundary_induced_acceleration {
       new
         .position
-        .add_acceleration(now, STATIC_TIME_SHIFT, -induced_acceleration)
+        .add_acceleration(now, TIME_SHIFT, -induced_acceleration)
         .unwrap();
       new.boundary_induced_acceleration = None;
     } else {
-      let acceleration = -(new.position.value(now, STATIC_TIME_SHIFT).unwrap()
+      let acceleration = -(new.position.value(now, TIME_SHIFT).unwrap()
         - Vector2::new(ARENA_SIZE / 2, ARENA_SIZE / 2))
         * (ARENA_SIZE * 1600 / (ARENA_SIZE - this.radius));
       new
         .position
-        .add_acceleration(now, STATIC_TIME_SHIFT, acceleration)
+        .add_acceleration(now, TIME_SHIFT, acceleration)
         .unwrap();
       new.boundary_induced_acceleration = Some(acceleration);
     }
@@ -124,7 +126,7 @@ impl Wake<BouncyCirclesSpec> for Relationship {
       .each_ref()
       .map(|c| c.read(accessor).position.clone());
     // let new_difference =
-    //   new[0].value(now, STATIC_TIME_SHIFT).unwrap() - new[0].value(now, STATIC_TIME_SHIFT).unwrap();
+    //   new[0].value(now, TIME_SHIFT).unwrap() - new[0].value(now, TIME_SHIFT).unwrap();
     // println!(
     //   "event with error {:?}",
     //   (new_difference.dot(&new_difference) as f64).sqrt()
@@ -133,22 +135,22 @@ impl Wake<BouncyCirclesSpec> for Relationship {
     let mut this_mutable = this.write(accessor);
     if let Some(induced_acceleration) = this_mutable.induced_acceleration {
       new[0]
-        .add_acceleration(now, STATIC_TIME_SHIFT, -induced_acceleration)
+        .add_acceleration(now, TIME_SHIFT, -induced_acceleration)
         .unwrap();
       new[1]
-        .add_acceleration(now, STATIC_TIME_SHIFT, induced_acceleration)
+        .add_acceleration(now, TIME_SHIFT, induced_acceleration)
         .unwrap();
       this_mutable.induced_acceleration = None;
       //println!("Parted {} At {}", self.id, mutator.now());
     } else {
-      let acceleration = (new[0].value(now, STATIC_TIME_SHIFT).unwrap()
-        - new[1].value(now, STATIC_TIME_SHIFT).unwrap())
+      let acceleration = (new[0].value(now, TIME_SHIFT).unwrap()
+        - new[1].value(now, TIME_SHIFT).unwrap())
         * (ARENA_SIZE * 16 / (circles[0].radius + circles[1].radius));
       new[0]
-        .add_acceleration(now, STATIC_TIME_SHIFT, acceleration)
+        .add_acceleration(now, TIME_SHIFT, acceleration)
         .unwrap();
       new[1]
-        .add_acceleration(now, STATIC_TIME_SHIFT, -acceleration)
+        .add_acceleration(now, TIME_SHIFT, -acceleration)
         .unwrap();
       this_mutable.induced_acceleration = Some(acceleration);
       //println!("Joined {} At {}", self.id, mutator.now());
@@ -196,13 +198,13 @@ fn update_relationship_change_schedule<
   let change_time = if relationship_mutable.induced_acceleration.is_none() {
     difference.next_time_magnitude_significantly_lt(
       [*accessor.now(), Time::MAX],
-      STATIC_TIME_SHIFT,
+      TIME_SHIFT,
       radius - 2,
     )
   } else {
     difference.next_time_magnitude_significantly_gt(
       [*accessor.now(), Time::MAX],
-      STATIC_TIME_SHIFT,
+      TIME_SHIFT,
       radius + 2,
     )
   };
@@ -232,13 +234,13 @@ fn update_boundary_change_schedule<'a, A: EventAccessor<'a, SimulationSpec = Bou
   let change_time = if circle_mutable.boundary_induced_acceleration.is_some() {
     difference.next_time_magnitude_significantly_lt(
       [*accessor.now(), Time::max_value()],
-      STATIC_TIME_SHIFT,
+      TIME_SHIFT,
       radius - 2,
     )
   } else {
     difference.next_time_magnitude_significantly_gt(
       [*accessor.now(), Time::max_value()],
-      STATIC_TIME_SHIFT,
+      TIME_SHIFT,
       radius + 2,
     )
   };
@@ -265,7 +267,7 @@ impl ConstructGlobals<BouncyCirclesSpec> for BouncyCirclesSpec {
         position
           .set_velocity(
             0,
-            STATIC_TIME_SHIFT,
+            TIME_SHIFT,
             Vector2::new(
               generator.gen_range(-thingy..=thingy),
               generator.gen_range(-thingy..=thingy),
@@ -369,7 +371,7 @@ impl Wake<BouncyCirclesSpec> for Disturb {
       .iter()
       .min_by_key(|circle| {
         let mutable = circle.read(accessor);
-        let position = mutable.position.value(now, STATIC_TIME_SHIFT).unwrap();
+        let position = mutable.position.value(now, TIME_SHIFT).unwrap();
         let [dx, dy] = [
           (this.coordinates[0] - position[0]) as i64,
           (this.coordinates[1] - position[1]) as i64,
@@ -381,7 +383,7 @@ impl Wake<BouncyCirclesSpec> for Disturb {
     let impulse = -(best_circle
       .read(accessor)
       .position
-      .value(now, STATIC_TIME_SHIFT)
+      .value(now, TIME_SHIFT)
       .unwrap()
       - Vector2::new(ARENA_SIZE / 2, ARENA_SIZE / 2))
       * (ARENA_SIZE * 4 / (ARENA_SIZE));
@@ -451,7 +453,7 @@ impl Wake<BouncyCirclesSpec> for Disturb {
 //     let varying = tracking_query(accessor, &object.varying);
 //     let center = varying
 //       .position
-//       .value(*accessor.now(), STATIC_TIME_SHIFT)
+//       .value(*accessor.now(), TIME_SHIFT)
 //       .unwrap();
 //     let effective_radius = object.radius + 16; // just correcting for leeway in next_time_possibly_outside_bounds
 //     BoundingBox {
@@ -477,7 +479,7 @@ impl Wake<BouncyCirclesSpec> for Disturb {
 //     let varying = tracking_query(accessor, &object.varying);
 //     varying.position.next_time_possibly_outside_bounds(
 //       [*accessor.now(), Time::max_value()],
-//       STATIC_TIME_SHIFT,
+//       TIME_SHIFT,
 //       [
 //         Vector2::new(
 //           from_collision_space(bounds.bounds[0][0]) + object.radius,

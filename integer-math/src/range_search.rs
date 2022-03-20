@@ -1,5 +1,3 @@
-use crate::array::{Array, ReplaceItemType};
-use array_ext::Array as ArrayExtArray;
 use arrayvec::{self, ArrayVec};
 use num::{CheckedAdd, FromPrimitive, One, Signed};
 #[allow(unused_imports)]
@@ -10,14 +8,13 @@ use super::*;
 use crate::polynomial2::PolynomialBasedAtInput;
 
 pub fn coefficient_bounds_on_integer_interval<
-  P: Array + arrayvec::Array<Item = Coefficient> + ReplaceItemType<[Coefficient; 2]>,
   Coefficient: DoubleSizedSignedInteger,
+  const COEFFICIENTS: usize,
 >(
-  endpoints: [&P; 2],
+  endpoints: [&[Coefficient; COEFFICIENTS]; 2],
   duration: DoubleSized<Coefficient>,
-) -> <P as ReplaceItemType<[Coefficient; 2]>>::Type {
-  let mut result: <P as ReplaceItemType<[Coefficient; 2]>>::Type =
-    array_ext::Array::from_fn(|_| [Zero::zero(); 2]);
+) -> [[Coefficient; 2]; COEFFICIENTS] {
+  let mut result = [[Zero::zero(); 2]; COEFFICIENTS];
   assert!(duration >= Zero::zero());
   let double_sized_max_bounds = [
     <DoubleSized<Coefficient>>::from(Coefficient::min_value()),
@@ -74,12 +71,14 @@ pub fn coefficient_bounds_on_integer_interval<
 pub const STANDARD_PRECISION_SHIFT: u32 = 2;
 
 pub fn value_bounds_on_negative_power_of_2_interval<
-  P: Array + arrayvec::Array<Item = [DoubleSized<Coefficient>; 2]>,
+  S: ShiftSize,
   Coefficient: DoubleSizedSignedInteger,
+  const COEFFICIENTS: usize,
 >(
-  endpoints: [&P; 2],
-  duration_shift: u32,
+  endpoints: [&[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; 2],
+  duration_shift: S,
 ) -> [Coefficient; 2] {
+  let duration_shift = duration_shift.into();
   let max_magnitude = Shl::<u32>::shl(
     <DoubleSized<Coefficient>>::one(),
     Coefficient::nonsign_bits() + STANDARD_PRECISION_SHIFT,
@@ -148,14 +147,10 @@ pub fn value_bounds_on_negative_power_of_2_interval<
   unreachable!()
 }
 
-pub fn coefficient_bounds_on_tail<
-  P: Array + arrayvec::Array<Item = Coefficient> + ReplaceItemType<[Coefficient; 2]>,
-  Coefficient: Integer + Signed,
->(
-  endpoint: &P,
-) -> <P as ReplaceItemType<[Coefficient; 2]>>::Type {
-  let mut result: <P as ReplaceItemType<[Coefficient; 2]>>::Type =
-    array_ext::Array::from_fn(|_| [Zero::zero(); 2]);
+pub fn coefficient_bounds_on_tail<Coefficient: Integer + Signed, const COEFFICIENTS: usize>(
+  endpoint: &[Coefficient; COEFFICIENTS],
+) -> [[Coefficient; 2]; COEFFICIENTS] {
+  let mut result = [[Zero::zero(); 2]; COEFFICIENTS];
   let mut previous_derivative_range: [Coefficient; 2] = [Zero::zero(), Zero::zero()];
   for exponent in (0..result.len()).rev() {
     let mut bounds = [endpoint.as_slice()[exponent]; 2];
@@ -220,7 +215,7 @@ pub trait RangeSearch {
   fn fractional_interval_filter(
     &self,
     endpoints: [&Self::FractionalValue; 2],
-    duration_shift: u32,
+    duration_shift: impl ShiftSize,
   ) -> bool;
   fn tail_filter(&self, endpoint: &Self::IntegerValue) -> bool;
   fn fractional_result_filter(&self, value: &Self::FractionalValue) -> bool;
@@ -238,7 +233,7 @@ pub struct RangeSearchRunner<S: RangeSearch> {
 }
 
 impl<S: RangeSearch> RangeSearchRunner<S> {
-  pub fn run(search: S, start_input: S::Input, input_shift: u32) -> Option<S::Input> {
+  pub fn run(search: S, start_input: S::Input, input_shift: impl ShiftSize) -> Option<S::Input> {
     let start_integer = shr_floor(start_input, input_shift);
     let start_value =
       PolynomialBasedAtInput::new(search.value_at_integer(start_integer)?, start_integer);
@@ -262,7 +257,7 @@ impl<S: RangeSearch> RangeSearchRunner<S> {
 
     let mut runner = RangeSearchRunner {
       search,
-      max_input_shift: input_shift,
+      max_input_shift: input_shift.into(),
       start_input,
       integer_stack: ArrayVec::new(),
       next_jump: One::one(),

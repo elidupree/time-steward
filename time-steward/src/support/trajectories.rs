@@ -14,7 +14,7 @@ use smallvec::SmallVec;
 use std::convert::TryInto;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use super::integer_math::{Vector as GenericVector, *};
+use super::integer_math::{maybe_const::ShiftSize, Vector as GenericVector, *};
 
 pub type Time = i64;
 pub type Coordinate = i32;
@@ -49,13 +49,13 @@ where
   fn next_time_significantly_ge(
     &self,
     range: [Time; 2],
-    input_shift: u32,
+    input_shift: impl ShiftSize,
     target: Self::Coefficient,
   ) -> Option<Time>;
   fn next_time_significantly_gt(
     &self,
     range: [Time; 2],
-    input_shift: u32,
+    input_shift: impl ShiftSize,
     target: Self::Coefficient,
   ) -> Option<Time> {
     self.next_time_significantly_ge(range, input_shift, target + Self::Coefficient::one())
@@ -63,7 +63,7 @@ where
   fn next_time_significantly_le(
     &self,
     range: [Time; 2],
-    input_shift: u32,
+    input_shift: impl ShiftSize,
     target: Self::Coefficient,
   ) -> Option<Time> {
     (-self).next_time_significantly_ge(range, input_shift, -target)
@@ -71,7 +71,7 @@ where
   fn next_time_significantly_lt(
     &self,
     range: [Time; 2],
-    input_shift: u32,
+    input_shift: impl ShiftSize,
     target: Self::Coefficient,
   ) -> Option<Time> {
     self.next_time_significantly_le(range, input_shift, target - Self::Coefficient::one())
@@ -247,21 +247,21 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
   }
 
 
-  pub fn nth_coefficient (&self, which: usize, time_numerator: Time, time_shift: u32)->Option<T> {
+  pub fn nth_coefficient (&self, which: usize, time_numerator: Time, time_shift: impl ShiftSize)->Option<T> {
     let mut result = T::zero();
     for dimension in 0..T::DIMENSIONS {
       let bounds = self.coordinate_coefficients (dimension)
-        .all_taylor_coefficients_bounds(time_numerator - (self.origin << time_shift), time_shift, 0)?[which];
+        .all_taylor_coefficients_bounds(time_numerator - (self.origin << time_shift.into()), time_shift, 0)?[which];
       result.set_coordinate(dimension, mean_round_to_even(bounds[0], bounds[1]).try_into().ok()?);
     }
     Some(result)
   }
-  pub fn set_nth_coefficient (&mut self, which: usize, time_numerator: Time, time_shift: u32, target_value: T)->Option<()> {
-    self.set_origin (time_numerator >> time_shift)?;
+  pub fn set_nth_coefficient (&mut self, which: usize, time_numerator: Time, time_shift: impl ShiftSize, target_value: T)->Option<()> {
+    self.set_origin (time_numerator >> time_shift.into())?;
     let mut transformed_coefficients: SmallVec<[[T::Coordinate; $degree + 1]; 4]> = SmallVec::with_capacity (T::DIMENSIONS);
     for dimension in 0..T::DIMENSIONS {
       let mut coefficients = self.coordinate_coefficients (dimension);
-      coefficients.set_nth_taylor_coefficient_at_fractional_input (which, time_numerator - (self.origin << time_shift), time_shift, target_value.coordinate (dimension).into()).ok()?;
+      coefficients.set_nth_taylor_coefficient_at_fractional_input (which, time_numerator - (self.origin << time_shift.into()), time_shift, target_value.coordinate (dimension).into()).ok()?;
       transformed_coefficients.push (coefficients);
     }
     for (dimension, coefficients) in transformed_coefficients.into_iter().enumerate() {
@@ -271,21 +271,21 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     }
     Some(())
   }
-  pub fn add_nth_coefficient (&mut self, which: usize, time_numerator: Time, time_shift: u32, added_value: T)->Option<()> {
+  pub fn add_nth_coefficient (&mut self, which: usize, time_numerator: Time, time_shift: impl ShiftSize, added_value: T)->Option<()> {
     let current_value = self.nth_coefficient (which, time_numerator, time_shift)?;
     self.set_nth_coefficient (which, time_numerator, time_shift, current_value + added_value)
   }
-  pub fn value (&self, time_numerator: Time, time_shift: u32)->Option<T> {self.nth_coefficient (0, time_numerator, time_shift)}
-  pub fn velocity (&self, time_numerator: Time, time_shift: u32)->Option<T> {self.nth_coefficient (1, time_numerator, time_shift)}
-  //pub fn acceleration (&self, time_numerator: Time, time_shift: u32)->Option<T> {Ok (self.nth_coefficient (1, time_numerator, time_shift)?<<1)}
-  pub fn set_value (&mut self, time_numerator: Time, time_shift: u32, value: T)->Option<()> {self.set_nth_coefficient (0, time_numerator, time_shift, value)}
-  pub fn set_velocity (&mut self, time_numerator: Time, time_shift: u32, value: T)->Option<()> {self.set_nth_coefficient (1, time_numerator, time_shift, value)}
-  pub fn set_acceleration (&mut self, time_numerator: Time, time_shift: u32, value: T)->Option<()> {self.set_nth_coefficient (2, time_numerator, time_shift, value.map_coordinates (| coordinate | shr_round_to_even (coordinate, 1u32)))}
+  pub fn value (&self, time_numerator: Time, time_shift: impl ShiftSize)->Option<T> {self.nth_coefficient (0, time_numerator, time_shift)}
+  pub fn velocity (&self, time_numerator: Time, time_shift: impl ShiftSize)->Option<T> {self.nth_coefficient (1, time_numerator, time_shift)}
+  //pub fn acceleration (&self, time_numerator: Time, time_shift: impl ShiftSize)->Option<T> {Ok (self.nth_coefficient (1, time_numerator, time_shift)?<<1)}
+  pub fn set_value (&mut self, time_numerator: Time, time_shift: impl ShiftSize, value: T)->Option<()> {self.set_nth_coefficient (0, time_numerator, time_shift, value)}
+  pub fn set_velocity (&mut self, time_numerator: Time, time_shift: impl ShiftSize, value: T)->Option<()> {self.set_nth_coefficient (1, time_numerator, time_shift, value)}
+  pub fn set_acceleration (&mut self, time_numerator: Time, time_shift: impl ShiftSize, value: T)->Option<()> {self.set_nth_coefficient (2, time_numerator, time_shift, value.map_coordinates (| coordinate | shr_round_to_even (coordinate, 1u32)))}
   pub fn add_value (&mut self, value: T) {*self += value}
-  pub fn add_velocity (&mut self, time_numerator: Time, time_shift: u32, value: T)->Option<()> {self.add_nth_coefficient (1, time_numerator, time_shift, value)}
-  pub fn add_acceleration (&mut self, time_numerator: Time, time_shift: u32, value: T)->Option<()> {self.add_nth_coefficient (2, time_numerator, time_shift, value.map_coordinates (| coordinate | shr_round_to_even (coordinate, 1u32)))}
+  pub fn add_velocity (&mut self, time_numerator: Time, time_shift: impl ShiftSize, value: T)->Option<()> {self.add_nth_coefficient (1, time_numerator, time_shift, value)}
+  pub fn add_acceleration (&mut self, time_numerator: Time, time_shift: impl ShiftSize, value: T)->Option<()> {self.add_nth_coefficient (2, time_numerator, time_shift, value.map_coordinates (| coordinate | shr_round_to_even (coordinate, 1u32)))}
 
-  pub fn next_time_possibly_outside_bounds (&self, range: [Time; 2], input_shift: u32, bounds: [T; 2])->Option<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
+  pub fn next_time_possibly_outside_bounds (&self, range: [Time; 2], input_shift: impl ShiftSize, bounds: [T; 2])->Option<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
     (0..T::DIMENSIONS).filter_map (| dimension | {
       let trajectory = self.coordinate_trajectory (dimension);
       let four = (T::Coordinate::one() + T::Coordinate::one()) + (T::Coordinate::one() + T::Coordinate::one());
@@ -309,9 +309,9 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     })
   }
   #[cfg $multiplication]
-  pub fn next_time_magnitude_significantly_gt (&self, range: [Time; 2], input_shift: u32, target: T::Coordinate)->Option<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
+  pub fn next_time_magnitude_significantly_gt (&self, range: [Time; 2], input_shift: impl ShiftSize, target: T::Coordinate)->Option<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
     //self.magnitude_squared_trajectory()?.next_time_significantly_gt (range, input_shift, target*target)
-    let origin = self.origin << input_shift;
+    let origin = self.origin << input_shift.into();
     let mut coordinate_polynomials: SmallVec<[[T::Coordinate; $degree + 1]; 4]> = SmallVec::with_capacity (T::DIMENSIONS);
     for dimension in 0..T::DIMENSIONS {
       coordinate_polynomials.push(self.coordinate_coefficients (dimension));
@@ -319,9 +319,9 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     <[T::Coordinate; $degree + 1]>::next_time_magnitude_squared_passes(&coordinate_polynomials, range [0] - origin, input_shift, GreaterThanFilter::new(target as i64*target as i64, (target as i64+3)*(target as i64+3))).map(|a| a + origin)
   }
   #[cfg $multiplication]
-  pub fn next_time_magnitude_significantly_lt (&self, range: [Time; 2], input_shift: u32, target: T::Coordinate)->Option<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
+  pub fn next_time_magnitude_significantly_lt (&self, range: [Time; 2], input_shift: impl ShiftSize, target: T::Coordinate)->Option<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
     //self.magnitude_squared_trajectory()?.next_time_significantly_lt (range, input_shift, target*target)
-    let origin = self.origin << input_shift;
+    let origin = self.origin << input_shift.into();
     let mut coordinate_polynomials: SmallVec<[[T::Coordinate; $degree + 1]; 4]> = SmallVec::with_capacity (T::DIMENSIONS);
     for dimension in 0..T::DIMENSIONS {
       coordinate_polynomials.push(self.coordinate_coefficients (dimension));
@@ -463,8 +463,8 @@ impl <'a, T: Vector> Neg for & 'a $Trajectory <T> where & 'a T: Neg <Output = T>
 }
 
 impl ScalarTrajectory for $Trajectory <Coordinate> {
-  fn next_time_significantly_ge (&self, range: [Time; 2], input_shift: u32, target: Self::Coefficient)->Option<Time> {
-    let origin = self.origin << input_shift;
+  fn next_time_significantly_ge (&self, range: [Time; 2], input_shift: impl ShiftSize, target: Self::Coefficient)->Option<Time> {
+    let origin = self.origin << input_shift.into();
     self.coefficients.next_time_value_passes(range [0] - origin, input_shift, GreaterThanEqualToFilter::new(target, target + 3)).map(|a| a + origin)
   }
 }
