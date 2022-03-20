@@ -344,7 +344,7 @@ impl<
 }
 
 /**
-Evaluate all Taylor coefficients of a polynomial at a given *fractional* input in the range [-0.5, 0.5].
+Evaluate all Taylor coefficients of a polynomial at a given *fractional* input.
 */
 pub trait AllTaylorCoefficientsBounds<WorkingType>:
   AllTaylorCoefficientsBoundsWithinHalf<WorkingType>
