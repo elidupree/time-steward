@@ -1,8 +1,8 @@
 use arrayvec::{self, ArrayVec};
-use num::{CheckedAdd, FromPrimitive, One, Signed};
+use num::{CheckedAdd, CheckedMul, FromPrimitive, Integer as _, One};
 #[allow(unused_imports)]
 use serde::Serialize;
-use std::cmp::{max, min};
+use std::cmp::{max, min, Ordering};
 
 use super::*;
 use crate::polynomial2::PolynomialBasedAtInput;
@@ -23,9 +23,8 @@ pub fn coefficient_bounds_on_integer_interval<
   let mut movement_range_from_previous: [DoubleSized<Coefficient>; 2] =
     [Zero::zero(), Zero::zero()];
   for exponent in (0..COEFFICIENTS as u32).rev() {
-    let end_values = endpoints.map(|endpoint| {
-      <DoubleSized<Coefficient> as From<Coefficient>>::from(endpoint[exponent as usize])
-    });
+    let end_values: [DoubleSized<Coefficient>; 2] =
+      endpoints.map(|endpoint| endpoint[exponent as usize].into());
 
     let bounds: [DoubleSized<Coefficient>; 2] = if movement_range_from_previous[0] >= Zero::zero() {
       [end_values[0], end_values[1]]
@@ -147,21 +146,106 @@ pub fn value_bounds_on_negative_power_of_2_interval<
   unreachable!()
 }
 
-pub fn coefficient_bounds_on_tail<Coefficient: Integer + Signed, const COEFFICIENTS: usize>(
+pub fn coefficient_bounds_on_tail<
+  Coefficient: DoubleSizedSignedInteger,
+  const COEFFICIENTS: usize,
+>(
   endpoint: &[Coefficient; COEFFICIENTS],
 ) -> [[Coefficient; 2]; COEFFICIENTS] {
   let mut result = [[Zero::zero(); 2]; COEFFICIENTS];
-  let mut previous_derivative_range: [Coefficient; 2] = [Zero::zero(), Zero::zero()];
-  for exponent in (0..COEFFICIENTS).rev() {
-    let mut bounds = [endpoint[exponent]; 2];
-    if previous_derivative_range[0] < Zero::zero() {
-      bounds[0] = Coefficient::min_value();
+
+  for (exponent, &coefficient) in endpoint.iter().enumerate().rev() {
+    match coefficient.cmp(&Zero::zero()) {
+      Ordering::Equal => {}
+      Ordering::Less => {
+        // Note: Code is mostly duplicated between the Less and Greater branches,
+        // different only in directionality
+        let mut previous_term_upper_bound = coefficient;
+        let mut movement_upper_bound_arising_from_previous = Coefficient::zero();
+        result[exponent] = [coefficient, coefficient];
+
+        for (exponent, &coefficient) in endpoint[..exponent].iter().enumerate().rev() {
+          let this_term_upper_bound =
+            coefficient.saturating_add(movement_upper_bound_arising_from_previous);
+          result[exponent] = [Coefficient::min_value(), this_term_upper_bound];
+
+          if exponent == 0 {
+            return result;
+          }
+
+          movement_upper_bound_arising_from_previous = if this_term_upper_bound <= Zero::zero() {
+            Zero::zero()
+          } else if previous_term_upper_bound < Zero::zero() {
+            let b: DoubleSized<Coefficient> = this_term_upper_bound.into();
+            let p: DoubleSized<Coefficient> = previous_term_upper_bound.into();
+            let f1 = <DoubleSized<Coefficient>>::from_usize(exponent + 1).unwrap();
+            let f2 = <DoubleSized<Coefficient>>::from_usize(exponent).unwrap();
+            if let Some(limit) = (b * b)
+              .checked_mul(&f2)
+              .and_then(|v| v.div_floor(&(-p * f1)).try_into().ok())
+            {
+              limit
+            } else {
+              for r in result[..exponent].iter_mut() {
+                *r = [Coefficient::min_value(), Coefficient::max_value()];
+              }
+              return result;
+            }
+          } else {
+            for r in result[..exponent].iter_mut() {
+              *r = [Coefficient::min_value(), Coefficient::max_value()];
+            }
+            return result;
+          };
+          assert!(movement_upper_bound_arising_from_previous >= Zero::zero());
+          previous_term_upper_bound = this_term_upper_bound;
+        }
+      }
+      Ordering::Greater => {
+        // Note: Code is mostly duplicated between the Less and Greater branches,
+        // different only in directionality
+        let mut previous_term_lower_bound = coefficient;
+        let mut movement_lower_bound_arising_from_previous = Coefficient::zero();
+        result[exponent] = [coefficient, coefficient];
+
+        for (exponent, &coefficient) in endpoint[..exponent].iter().enumerate().rev() {
+          let this_term_lower_bound =
+            coefficient.saturating_add(movement_lower_bound_arising_from_previous);
+          result[exponent] = [this_term_lower_bound, Coefficient::max_value()];
+
+          if exponent == 0 {
+            return result;
+          }
+
+          movement_lower_bound_arising_from_previous = if this_term_lower_bound >= Zero::zero() {
+            Zero::zero()
+          } else if previous_term_lower_bound > Zero::zero() {
+            let b: DoubleSized<Coefficient> = this_term_lower_bound.into();
+            let p: DoubleSized<Coefficient> = previous_term_lower_bound.into();
+            let f1 = <DoubleSized<Coefficient>>::from_usize(exponent + 1).unwrap();
+            let f2 = <DoubleSized<Coefficient>>::from_usize(exponent).unwrap();
+            if let Some(limit) = (b * b)
+              .checked_mul(&f2)
+              .and_then(|v| v.div_floor(&(-p * f1)).try_into().ok())
+            {
+              limit
+            } else {
+              for r in result[..exponent].iter_mut() {
+                *r = [Coefficient::min_value(), Coefficient::max_value()];
+              }
+              return result;
+            }
+          } else {
+            for r in result[..exponent].iter_mut() {
+              *r = [Coefficient::min_value(), Coefficient::max_value()];
+            }
+            return result;
+          };
+          assert!(movement_lower_bound_arising_from_previous <= Zero::zero());
+          previous_term_lower_bound = this_term_lower_bound;
+        }
+      }
     }
-    if previous_derivative_range[1] > Zero::zero() {
-      bounds[1] = Coefficient::max_value();
-    }
-    result[exponent] = bounds;
-    previous_derivative_range = bounds;
   }
   result
 }
@@ -228,7 +312,7 @@ pub struct RangeSearchRunner<S: RangeSearch> {
   search: S,
   max_input_shift: u32,
   start_input: S::Input,
-  integer_stack: ArrayVec<[PolynomialBasedAtInput<S::IntegerValue, S::Input>; 64]>,
+  integer_stack: ArrayVec<PolynomialBasedAtInput<S::IntegerValue, S::Input>, 64>,
   next_jump: S::Input,
 }
 

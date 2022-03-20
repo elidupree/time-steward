@@ -1,14 +1,7 @@
-#![allow(unused_imports)]
-use crate::array::{Array, ReplaceItemType};
-use array_ext::{Array as ArrayExtArray, *};
-use arrayvec::{self, ArrayVec};
 use num::{BigInt, BigRational};
-use num::{
-  Bounded, CheckedAdd, CheckedMul, CheckedSub, FromPrimitive, Integer as NumInteger, One, Signed,
-};
+use num::{Bounded, FromPrimitive, One, Signed};
 use proptest::prelude::*;
-use serde::Serialize;
-use std::cmp::{max, min, Ordering};
+use std::cmp::max;
 
 use super::polynomial2::*;
 use super::range_search::*;
@@ -122,11 +115,7 @@ fn probe_max_total_shift<
   for input_shift in 1..max_total_shift {
     for input in [WorkingType::one(), -WorkingType::one()] {
       for polynomial in &[all_pos, all_neg, one_pos, one_neg] {
-        all_taylor_coefficients_bounds_within_half_unchecked::<
-          Coefficient,
-          WorkingType,
-          COEFFICIENTS,
-        >(
+        all_taylor_coefficients_bounds_within_half_unchecked(
           polynomial,
           input << (input_shift - 1),
           input_shift,
@@ -335,7 +324,7 @@ macro_rules! test_polynomial {
         prop_assume! (second.is_some());
         let second = second.unwrap();
 
-        let bounds = value_bounds_on_negative_power_of_2_interval::<_,$integer>([&first, &second], duration_shift);
+        let bounds: [$integer; 2] = value_bounds_on_negative_power_of_2_interval([&first, &second], duration_shift);
         let test_time = start.numerator + ((duration as f64+0.999) * test_frac).floor() as $double;
         let test_time = rational_input(FractionalInput::new(test_time, start.shift));
 

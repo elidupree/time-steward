@@ -1,5 +1,4 @@
-#![feature(array_methods, generic_const_exprs)]
-#![allow(incomplete_features)]
+#![feature(array_methods)]
 
 #[cfg(test)]
 #[macro_use]
@@ -407,7 +406,7 @@ pub fn saturating_downcast<T: Integer + From<U> + TryInto<U>, U: Integer>(a: T) 
   }
 }
 
-pub mod array;
+// pub mod array;
 //pub mod polynomial;
 //pub mod incremental_search;
 pub mod maybe_const;
