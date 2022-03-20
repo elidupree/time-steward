@@ -22,9 +22,9 @@ pub fn coefficient_bounds_on_integer_interval<
   ];
   let mut movement_range_from_previous: [DoubleSized<Coefficient>; 2] =
     [Zero::zero(), Zero::zero()];
-  for exponent in (0..result.len() as u32).rev() {
+  for exponent in (0..COEFFICIENTS as u32).rev() {
     let end_values = endpoints.map(|endpoint| {
-      <DoubleSized<Coefficient> as From<Coefficient>>::from(endpoint.as_slice()[exponent as usize])
+      <DoubleSized<Coefficient> as From<Coefficient>>::from(endpoint[exponent as usize])
     });
 
     let bounds: [DoubleSized<Coefficient>; 2] = if movement_range_from_previous[0] >= Zero::zero() {
@@ -61,7 +61,7 @@ pub fn coefficient_bounds_on_integer_interval<
       ]
     };
 
-    result.as_mut_slice()[exponent as usize] = bounds.map(|a| a.try_into().ok().unwrap());
+    result[exponent as usize] = bounds.map(|a| a.try_into().ok().unwrap());
     let factor = duration * <DoubleSized<Coefficient>>::from_u32(exponent).unwrap();
     movement_range_from_previous = bounds.map(|a| a * factor);
   }
@@ -88,8 +88,8 @@ pub fn value_bounds_on_negative_power_of_2_interval<
     [Zero::zero(), Zero::zero()];
   let duration_round_up = Shl::<u32>::shl(<DoubleSized<Coefficient>>::one(), duration_shift)
     - <DoubleSized<Coefficient>>::one();
-  for exponent in (0..endpoints[0].len() as u32).rev() {
-    let end_bounds = endpoints.map(|endpoint| endpoint.as_slice()[exponent as usize]);
+  for exponent in (0..COEFFICIENTS as u32).rev() {
+    let end_bounds = endpoints.map(|endpoint| endpoint[exponent as usize]);
 
     let bounds: [DoubleSized<Coefficient>; 2] = if movement_range_from_previous[0] >= Zero::zero() {
       [end_bounds[0][0], end_bounds[1][1]]
@@ -152,15 +152,15 @@ pub fn coefficient_bounds_on_tail<Coefficient: Integer + Signed, const COEFFICIE
 ) -> [[Coefficient; 2]; COEFFICIENTS] {
   let mut result = [[Zero::zero(); 2]; COEFFICIENTS];
   let mut previous_derivative_range: [Coefficient; 2] = [Zero::zero(), Zero::zero()];
-  for exponent in (0..result.len()).rev() {
-    let mut bounds = [endpoint.as_slice()[exponent]; 2];
+  for exponent in (0..COEFFICIENTS).rev() {
+    let mut bounds = [endpoint[exponent]; 2];
     if previous_derivative_range[0] < Zero::zero() {
       bounds[0] = Coefficient::min_value();
     }
     if previous_derivative_range[1] > Zero::zero() {
       bounds[1] = Coefficient::max_value();
     }
-    result.as_mut_slice()[exponent] = bounds;
+    result[exponent] = bounds;
     previous_derivative_range = bounds;
   }
   result
