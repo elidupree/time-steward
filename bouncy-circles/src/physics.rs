@@ -18,9 +18,8 @@ pub type SpaceCoordinate = i32;
 pub type QuadraticTrajectory = trajectories::QuadraticTrajectory<Vector2<SpaceCoordinate>>;
 
 pub const HOW_MANY_CIRCLES: usize = 20;
-pub const ARENA_SIZE_SHIFT_U32: u32 = 20;
-pub const ARENA_SIZE_SHIFT: ConstU32<ARENA_SIZE_SHIFT_U32> = ConstU32;
-pub const ARENA_SIZE: SpaceCoordinate = 1 << ARENA_SIZE_SHIFT_U32;
+pub const ARENA_SIZE_SHIFT: u32 = 20;
+pub const ARENA_SIZE: SpaceCoordinate = 1 << ARENA_SIZE_SHIFT;
 // pub const GRID_SIZE_SHIFT: u32 = ARENA_SIZE_SHIFT - 3;
 // pub const GRID_SIZE: SpaceCoordinate = 1 << GRID_SIZE_SHIFT;
 pub const TIME_SHIFT_U32: u32 = 20;
