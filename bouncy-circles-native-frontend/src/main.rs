@@ -1,4 +1,4 @@
-use glium::{glutin, implement_vertex, Surface};
+use glium::{glutin, implement_vertex, Blend, BlendingFunction, LinearBlendingFactor, Surface};
 use serde::Deserialize;
 use std::time::{Duration, Instant};
 
@@ -132,7 +132,18 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
       glium::Program::from_source(&display, vertex_shader_source, fragment_shader_source, None)
         .expect("glium program generation failed");
     let parameters = glium::DrawParameters {
-      blend: glium::draw_parameters::Blend::alpha_blending(),
+      //blend: glium::draw_parameters::Blend::alpha_blending(),
+      blend: Blend {
+        color: BlendingFunction::Addition {
+          source: LinearBlendingFactor::OneMinusDestinationColor,
+          destination: LinearBlendingFactor::OneMinusSourceAlpha,
+        },
+        alpha: BlendingFunction::Addition {
+          source: LinearBlendingFactor::SourceAlpha,
+          destination: LinearBlendingFactor::OneMinusSourceAlpha,
+        },
+        constant_value: (0.5, 1.0, 0.0, 0.5),
+      },
       ..Default::default()
     };
     let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
