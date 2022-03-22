@@ -284,7 +284,7 @@ pub(crate) fn all_taylor_coefficients_bounds_within_half_unchecked<
         // Add 0.25, shifting the error range from (answer - 0.25, answer + 0.25)
         // to (answer, answer + 0.5), then ceil, leaving (answer, answer + 1.5).
         // The ceil is rolled into one "add+floor". If you remove the last `- WorkingType::one()`,
-        // it would still yields a correct answer, but would
+        // it would still yield a correct answer, but would
         // create a directional bias compared to the min.
         a + ((WorkingType::one() << (intermediate_error_shift))
           + (WorkingType::one() << (intermediate_error_shift + 2))

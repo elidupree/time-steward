@@ -1,8 +1,8 @@
 use arrayvec::{self, ArrayVec};
-use num::{CheckedAdd, CheckedMul, FromPrimitive, Integer as _, One};
+use num::{CheckedAdd, FromPrimitive, One};
 #[allow(unused_imports)]
 use serde::Serialize;
-use std::cmp::{max, min, Ordering};
+use std::cmp::{max, min};
 
 use super::*;
 use crate::polynomial2::PolynomialBasedAtInput;
@@ -95,8 +95,9 @@ pub fn value_bounds_on_negative_power_of_2_interval<
     } else if movement_range_from_previous[1] <= Zero::zero() {
       [end_bounds[1][0], end_bounds[0][1]]
     } else {
-      // TODO: these bounds can be tightened by analyzing the parallelogram
+      // TODO: try tightening these bounds by analyzing the parallelogram
       // but it might overflow
+      // and it might be a pessimization anyway
       // did the algebra as (v1*s1 + v0*-s0 + (t1-t0)*s1*-s0)/(s1+ -s0) = max_value
       // let slope_product = previous_derivative_range[0]*previous_derivative_range[1];
 
