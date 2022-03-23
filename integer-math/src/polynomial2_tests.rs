@@ -95,6 +95,16 @@ fn arbitrary_fractional_input() -> BoxedStrategy<FractionalInput<i64>> {
     .boxed()
 }
 
+fn arbitrary_interval_within_pos_half() -> BoxedStrategy<(u32, i64, i64, i64)> {
+  (1u32..16)
+    .prop_flat_map(|shift| (Just(shift), 0i64..=1i64 << (shift - 1)))
+    .prop_flat_map(|(shift, input1)| (Just(shift), Just(input1), input1..=1i64 << (shift - 1)))
+    .prop_flat_map(|(shift, input1, input2)| {
+      (Just(shift), Just(input1), Just(input2), input1..=input2)
+    })
+    .boxed()
+}
+
 fn probe_max_total_shift<
   Coefficient: Integer + Signed,
   WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient>,
@@ -331,6 +341,24 @@ macro_rules! test_polynomial {
         let exact = naive_perfect_nth_taylor_coefficient(&coefficients, test_time.clone(), 0);
         prop_assert!(BigRational::from(BigInt::from(bounds [0])) <= exact);
         prop_assert!(BigRational::from(BigInt::from(bounds [1])) >= exact);
+      }
+  }
+  proptest! {
+      #[test]
+      fn randomly_test_bounds_on_interval_within_half (
+          coefficients in prop::array::$uniform(-16 as $integer..16),
+          (shift, input1, input2, test_input) in arbitrary_interval_within_pos_half()) {
+
+        let upper_bound = upper_bound_on_interval_within_pos_half(& coefficients,[input1.into(), input2.into()],shift);
+        let test_input = rational_input(FractionalInput::new(test_input, shift));
+
+        let exact = naive_perfect_nth_taylor_coefficient(&coefficients, test_input.clone(), 0);
+        prop_assert!(BigRational::from(BigInt::from(upper_bound)) >= exact);
+
+        let (neg_input1, neg_input2, neg_test_input) = (-input2, -input1, -test_input);
+        let neg_upper_bound = upper_bound_on_interval_within_neg_half(& coefficients,[neg_input1.into(), neg_input2.into()],shift);
+        let neg_exact = naive_perfect_nth_taylor_coefficient(&coefficients, neg_test_input.clone(), 0);
+        prop_assert!(BigRational::from(BigInt::from(neg_upper_bound)) >= neg_exact);
       }
   }
 }}

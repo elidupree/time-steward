@@ -295,6 +295,34 @@ pub(crate) fn all_taylor_coefficients_bounds_within_half_unchecked<
   })
 }
 
+pub fn assert_input_within_half<T: Integer + Signed, S: ShiftSize>(
+  input: T,
+  input_shift: S,
+  fn_name: &'static str,
+) {
+  match input_shift.into().checked_sub(1) {
+    Some(half_shift) => {
+      let half = T::one() << half_shift;
+      assert!(
+        input.abs() <= half,
+        "{} called with an input({}) that is not within half (shift: {}, half: {})",
+        fn_name,
+        input,
+        input_shift.into(),
+        half
+      );
+    }
+    None => {
+      panic!(
+        "{} called with an input({}) that is not within half (shift: {})",
+        fn_name,
+        input,
+        input_shift.into()
+      );
+    }
+  }
+}
+
 impl<
     Coefficient: Integer + Signed,
     WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient>,
@@ -330,15 +358,11 @@ impl<
         [raw, raw]
       });
     }
-    match input_shift.into().checked_sub(1) {
-      Some(half_shift) => {
-        let half = WorkingType::one() << half_shift;
-        assert!(input.abs() <= half, "all_taylor_coefficients_bounds_within_half called with an input({}) that is not within half (shift: {}, half: {})", input, input_shift.into(), half);
-      }
-      None => {
-        panic!("all_taylor_coefficients_bounds_within_half called with an input({}) that is not within half (shift: {})", input, input_shift.into());
-      }
-    }
+    assert_input_within_half(
+      input,
+      input_shift,
+      "all_taylor_coefficients_bounds_within_half",
+    );
     all_taylor_coefficients_bounds_within_half_unchecked(self, input, input_shift, precision_shift)
   }
 }

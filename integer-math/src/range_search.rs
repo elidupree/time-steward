@@ -1,11 +1,12 @@
 use arrayvec::{self, ArrayVec};
+use guard::guard;
 use num::{CheckedAdd, FromPrimitive, One};
 #[allow(unused_imports)]
 use serde::Serialize;
 use std::cmp::{max, min};
 
 use super::*;
-use crate::polynomial2::PolynomialBasedAtInput;
+use crate::polynomial2::{assert_input_within_half, PolynomialBasedAtInput};
 
 pub fn coefficient_bounds_on_integer_interval<
   Coefficient: DoubleSizedSignedInteger,
@@ -145,6 +146,101 @@ pub fn value_bounds_on_negative_power_of_2_interval<
     };
   }
   unreachable!()
+}
+
+/**
+Finding the *least* upper bound is complex: you have to find:
+
+max_{x3 \in [x1, x2]} (((a*x3) + b)*x3 + c)*x3 +...
+
+which is as difficult as polynomial solving.
+
+But you can find a *decent* upper bound by relaxing the above formula to:
+
+max_{x3,x4,x5,... \in [x1, x2]} (((a*x3) + b)*x4 + c)*x5 +...
+
+which is much simpler to compute. If 0 <= x1 <= x2, you just check if each intermediate term is positive; if it's positive, you choose xn = x2, and if it's negative, you choose xn = x1. (With x1 <= x2 <= 0, you alternate the senses.)
+*/
+pub fn upper_bound_on_interval_within_pos_half<
+  S: ShiftSize,
+  Coefficient: DoubleSizedSignedInteger,
+  const COEFFICIENTS: usize,
+>(
+  coefficients: &[Coefficient; COEFFICIENTS],
+  inputs: [DoubleSized<Coefficient>; 2],
+  input_shift: S,
+) -> DoubleSized<Coefficient> {
+  for &input in &inputs {
+    assert_input_within_half(
+      input,
+      input_shift,
+      "upper_bound_on_interval_within_pos_half",
+    );
+  }
+  assert!(
+    inputs[0] >= Zero::zero(),
+    "upper_bound_on_interval_within_pos_half inputs must be positive"
+  );
+  assert!(
+    inputs[1] >= inputs[0],
+    "upper_bound_on_interval_within_pos_half inputs must be in-order"
+  );
+  guard!(let Some((&highest, remaining)) = coefficients.split_last() else { return Zero::zero(); });
+  let mut intermediate: DoubleSized<Coefficient> = highest.into();
+  for &coefficient in remaining.iter().rev() {
+    let best_input: DoubleSized<Coefficient> = if intermediate >= Zero::zero() {
+      inputs[1]
+    } else {
+      inputs[0]
+    };
+    let coefficient: DoubleSized<Coefficient> = coefficient.into();
+    intermediate = shr_ceil(intermediate * best_input, input_shift) + coefficient;
+  }
+  intermediate
+}
+pub fn upper_bound_on_interval_within_neg_half<
+  S: ShiftSize,
+  Coefficient: DoubleSizedSignedInteger,
+  const COEFFICIENTS: usize,
+>(
+  coefficients: &[Coefficient; COEFFICIENTS],
+  inputs: [DoubleSized<Coefficient>; 2],
+  input_shift: S,
+) -> DoubleSized<Coefficient> {
+  for &input in &inputs {
+    assert_input_within_half(
+      input,
+      input_shift,
+      "upper_bound_on_interval_within_neg_half",
+    );
+  }
+  assert!(
+    inputs[1] <= Zero::zero(),
+    "upper_bound_on_interval_within_neg_half inputs must be negative"
+  );
+  assert!(
+    inputs[1] >= inputs[0],
+    "upper_bound_on_interval_within_neg_half inputs must be in-order"
+  );
+  let inputs = [-inputs[1], -inputs[0]];
+  guard!(let Some((&highest, remaining)) = coefficients.split_last() else { return Zero::zero(); });
+  let mut intermediate: DoubleSized<Coefficient> = highest.into();
+  if (COEFFICIENTS & 1) == 0 {
+    intermediate = -intermediate;
+  }
+  for (exponent, &coefficient) in remaining.iter().enumerate().rev() {
+    let best_input: DoubleSized<Coefficient> = if intermediate >= Zero::zero() {
+      inputs[1]
+    } else {
+      inputs[0]
+    };
+    let mut coefficient: DoubleSized<Coefficient> = coefficient.into();
+    if (exponent & 1) != 0 {
+      coefficient = -coefficient;
+    }
+    intermediate = shr_ceil(intermediate * best_input, input_shift) + coefficient;
+  }
+  intermediate
 }
 
 pub fn coefficient_bounds_on_tail<Coefficient: Integer + Signed, const COEFFICIENTS: usize>(
