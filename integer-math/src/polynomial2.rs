@@ -238,7 +238,7 @@ const fn intermediate_magnitude_factor_shift<const COEFFICIENTS: usize>() -> u32
 
 pub(crate) fn all_taylor_coefficients_bounds_within_half_unchecked<
   Coefficient: Integer + Signed,
-  WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient>,
+  WorkingType: Integer + Signed + From<Coefficient>,
   const COEFFICIENTS: usize,
 >(
   polynomial: &[Coefficient; COEFFICIENTS],

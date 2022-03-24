@@ -149,6 +149,9 @@ pub fn value_bounds_on_negative_power_of_2_interval<
 }
 
 /**
+
+Computes a lower/upper bound of the polynomial (`coefficients` * 2^precision_shift) within a fractional input range.
+
 Finding the *least* upper bound is complex: you have to find:
 
 max_{x3 \in [x1, x2]} (((a*x3) + b)*x3 + c)*x3 +...
@@ -160,87 +163,140 @@ But you can find a *decent* upper bound by relaxing the above formula to:
 max_{x3,x4,x5,... \in [x1, x2]} (((a*x3) + b)*x4 + c)*x5 +...
 
 which is much simpler to compute. If 0 <= x1 <= x2, you just check if each intermediate term is positive; if it's positive, you choose xn = x2, and if it's negative, you choose xn = x1. (With x1 <= x2 <= 0, you alternate the senses.)
+
+In addition to this looseness, there is an extra looseness up to <2 due to rounding error.
+
+# Panics
+
+The inputs must either be in the range [-0.5, 0] or the range [0, 0.5]. Otherwise, this function will panic.
+
+`input_shift + precision_shift` must not exceed `WorkingType::nonsign_bits() - Coefficient::nonsign_bits() + 1`. If they are, this function will panic.
+
+However, this function never fails due to overflow.
 */
-pub fn upper_bound_on_interval_within_pos_half<
-  S: ShiftSize,
-  Coefficient: DoubleSizedSignedInteger,
+pub fn bound_on_interval_within_half<
+  Coefficient: Integer + Signed,
+  WorkingType: Integer + Signed + From<Coefficient>,
+  S1: ShiftSize,
+  S2: ShiftSize,
   const COEFFICIENTS: usize,
+  const UPPER: bool,
 >(
   coefficients: &[Coefficient; COEFFICIENTS],
-  inputs: [DoubleSized<Coefficient>; 2],
-  input_shift: S,
-) -> DoubleSized<Coefficient> {
+  inputs: [WorkingType; 2],
+  input_shift: S1,
+  precision_shift: S2,
+) -> WorkingType {
+  assert!(
+    input_shift.into() + precision_shift.into() <= WorkingType::nonsign_bits() - Coefficient::nonsign_bits() + 1,
+    "bound_on_interval_within_half `input_shift ({}) + precision_shift ({})` must not exceed `WorkingType::nonsign_bits()({}) - Coefficient::nonsign_bits() ({}) + 1`",
+    input_shift.into(), precision_shift.into(), WorkingType::nonsign_bits() , Coefficient::nonsign_bits(),
+  );
   for &input in &inputs {
-    assert_input_within_half(
-      input,
-      input_shift,
-      "upper_bound_on_interval_within_pos_half",
-    );
+    assert_input_within_half(input, input_shift, "bound_on_interval_within_half");
   }
   assert!(
-    inputs[0] >= Zero::zero(),
-    "upper_bound_on_interval_within_pos_half inputs must be positive"
+    inputs[1] >= inputs[0],
+    "bound_on_interval_within_half inputs must be in-order"
   );
   assert!(
-    inputs[1] >= inputs[0],
-    "upper_bound_on_interval_within_pos_half inputs must be in-order"
+    inputs[1] <= Zero::zero() || inputs[0] >= Zero::zero(),
+    "bound_on_interval_within_half inputs must not be opposite signs"
   );
+
+  let mut inputs = inputs;
+  let inputs_negative = inputs[0] < Zero::zero();
+  if inputs_negative {
+    inputs = [-inputs[1], -inputs[0]];
+  }
+
   guard!(let Some((&highest, remaining)) = coefficients.split_last() else { return Zero::zero(); });
-  let mut intermediate: DoubleSized<Coefficient> = highest.into();
-  for &coefficient in remaining.iter().rev() {
-    let best_input: DoubleSized<Coefficient> = if intermediate >= Zero::zero() {
+  let mut intermediate: WorkingType = highest.into();
+  // if getting upper bound instead of lower, flip everything;
+  // also, if inputs negative, flip odd-numbered coefficients
+  if UPPER != (inputs_negative && ((COEFFICIENTS - 1) & 1) != 0) {
+    intermediate = -intermediate;
+  }
+  intermediate <<= precision_shift.into();
+  for (exponent, &coefficient) in remaining.iter().enumerate().rev() {
+    // minimize result (assuming lower bound, inputs >= 0);
+    // negative numbers should be multiplied as much as possible,
+    // positive numbers as little as possible
+    let best_input: WorkingType = if intermediate <= Zero::zero() {
       inputs[1]
     } else {
       inputs[0]
     };
-    let coefficient: DoubleSized<Coefficient> = coefficient.into();
-    intermediate = shr_ceil(intermediate * best_input, input_shift) + coefficient;
+    let mut coefficient: WorkingType = coefficient.into();
+    // if getting upper bound instead of lower, flip everything;
+    // also, if inputs negative, flip odd-numbered coefficients
+    if UPPER != (inputs_negative && (exponent & 1) != 0) {
+      coefficient = -coefficient;
+    }
+    coefficient <<= precision_shift.into();
+    intermediate = Shr::<u32>::shr(intermediate * best_input, input_shift.into()) + coefficient;
+  }
+  // if getting upper bound instead of lower, we now have "lower bound of the negated
+  // polynomial", so flip it
+  if UPPER {
+    intermediate = -intermediate;
   }
   intermediate
 }
-pub fn upper_bound_on_interval_within_neg_half<
-  S: ShiftSize,
-  Coefficient: DoubleSizedSignedInteger,
+pub fn upper_bound_on_interval_within_half<
+  Coefficient: Integer + Signed,
+  WorkingType: Integer + Signed + From<Coefficient>,
+  S1: ShiftSize,
+  S2: ShiftSize,
   const COEFFICIENTS: usize,
 >(
   coefficients: &[Coefficient; COEFFICIENTS],
-  inputs: [DoubleSized<Coefficient>; 2],
-  input_shift: S,
-) -> DoubleSized<Coefficient> {
-  for &input in &inputs {
-    assert_input_within_half(
-      input,
-      input_shift,
-      "upper_bound_on_interval_within_neg_half",
-    );
-  }
-  assert!(
-    inputs[1] <= Zero::zero(),
-    "upper_bound_on_interval_within_neg_half inputs must be negative"
-  );
-  assert!(
-    inputs[1] >= inputs[0],
-    "upper_bound_on_interval_within_neg_half inputs must be in-order"
-  );
-  let inputs = [-inputs[1], -inputs[0]];
-  guard!(let Some((&highest, remaining)) = coefficients.split_last() else { return Zero::zero(); });
-  let mut intermediate: DoubleSized<Coefficient> = highest.into();
-  if (COEFFICIENTS & 1) == 0 {
-    intermediate = -intermediate;
-  }
-  for (exponent, &coefficient) in remaining.iter().enumerate().rev() {
-    let best_input: DoubleSized<Coefficient> = if intermediate >= Zero::zero() {
-      inputs[1]
-    } else {
-      inputs[0]
-    };
-    let mut coefficient: DoubleSized<Coefficient> = coefficient.into();
-    if (exponent & 1) != 0 {
-      coefficient = -coefficient;
-    }
-    intermediate = shr_ceil(intermediate * best_input, input_shift) + coefficient;
-  }
-  intermediate
+  inputs: [WorkingType; 2],
+  input_shift: S1,
+  precision_shift: S2,
+) -> WorkingType {
+  bound_on_interval_within_half::<_, _, _, _, COEFFICIENTS, true>(
+    coefficients,
+    inputs,
+    input_shift,
+    precision_shift,
+  )
+}
+pub fn lower_bound_on_interval_within_half<
+  Coefficient: Integer + Signed,
+  WorkingType: Integer + Signed + From<Coefficient>,
+  S1: ShiftSize,
+  S2: ShiftSize,
+  const COEFFICIENTS: usize,
+>(
+  coefficients: &[Coefficient; COEFFICIENTS],
+  inputs: [WorkingType; 2],
+  input_shift: S1,
+  precision_shift: S2,
+) -> WorkingType {
+  bound_on_interval_within_half::<_, _, _, _, COEFFICIENTS, false>(
+    coefficients,
+    inputs,
+    input_shift,
+    precision_shift,
+  )
+}
+pub fn bounds_on_interval_within_half<
+  Coefficient: Integer + Signed,
+  WorkingType: Integer + Signed + From<Coefficient>,
+  S1: ShiftSize,
+  S2: ShiftSize,
+  const COEFFICIENTS: usize,
+>(
+  coefficients: &[Coefficient; COEFFICIENTS],
+  inputs: [WorkingType; 2],
+  input_shift: S1,
+  precision_shift: S2,
+) -> [WorkingType; 2] {
+  [
+    lower_bound_on_interval_within_half(coefficients, inputs, input_shift, precision_shift),
+    upper_bound_on_interval_within_half(coefficients, inputs, input_shift, precision_shift),
+  ]
 }
 
 pub fn coefficient_bounds_on_tail<Coefficient: Integer + Signed, const COEFFICIENTS: usize>(
@@ -322,6 +378,15 @@ pub trait RangeSearch {
   fn integer_result_filter(&self, value: &Self::IntegerValue) -> bool {
     self.fractional_result_filter(&self.integer_to_fractional(value))
   }
+}
+
+/*
+
+*/
+
+pub enum IncrementalRangeSearchState<S: RangeSearch> {
+  Completed(Option<S::Input>),
+  SearchingFractional,
 }
 
 pub struct RangeSearchRunner<S: RangeSearch> {

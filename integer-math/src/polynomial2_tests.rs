@@ -347,18 +347,21 @@ macro_rules! test_polynomial {
       #[test]
       fn randomly_test_bounds_on_interval_within_half (
           coefficients in prop::array::$uniform(-16 as $integer..16),
-          (shift, input1, input2, test_input) in arbitrary_interval_within_pos_half()) {
+          (shift, input1, input2, test_input) in arbitrary_interval_within_pos_half(),
+          precision_shift in 0u32..16) {
 
-        let upper_bound = upper_bound_on_interval_within_pos_half(& coefficients,[input1.into(), input2.into()],shift);
+        let bounds: [$double; 2] = bounds_on_interval_within_half(& coefficients,[input1.into(), input2.into()],shift, precision_shift);
         let test_input = rational_input(FractionalInput::new(test_input, shift));
 
-        let exact = naive_perfect_nth_taylor_coefficient(&coefficients, test_input.clone(), 0);
-        prop_assert!(BigRational::from(BigInt::from(upper_bound)) >= exact);
+        let exact = naive_perfect_nth_taylor_coefficient(&coefficients, test_input.clone(), 0) * precision_scale(precision_shift);
+        prop_assert!(BigRational::from(BigInt::from(bounds[0])) <= exact);
+        prop_assert!(BigRational::from(BigInt::from(bounds[1])) >= exact);
 
         let (neg_input1, neg_input2, neg_test_input) = (-input2, -input1, -test_input);
-        let neg_upper_bound = upper_bound_on_interval_within_neg_half(& coefficients,[neg_input1.into(), neg_input2.into()],shift);
-        let neg_exact = naive_perfect_nth_taylor_coefficient(&coefficients, neg_test_input.clone(), 0);
-        prop_assert!(BigRational::from(BigInt::from(neg_upper_bound)) >= neg_exact);
+        let neg_bounds: [$double; 2] = bounds_on_interval_within_half(& coefficients,[neg_input1.into(), neg_input2.into()],shift, precision_shift);
+        let neg_exact = naive_perfect_nth_taylor_coefficient(&coefficients, neg_test_input.clone(), 0) * precision_scale(precision_shift);
+        prop_assert!(BigRational::from(BigInt::from(neg_bounds[0])) <= neg_exact);
+        prop_assert!(BigRational::from(BigInt::from(neg_bounds[1])) >= neg_exact);
       }
   }
 }}
