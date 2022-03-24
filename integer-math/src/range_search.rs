@@ -152,6 +152,8 @@ pub fn value_bounds_on_negative_power_of_2_interval<
 
 Computes a lower/upper bound of the polynomial (`coefficients` * 2^precision_shift) within a fractional input range.
 
+Unfortunately, this implementation turns out to be a lot looser than the one above (because it never computes the exact coefficients at the endpoints), despite being faster. As a result, it caused a ~26000% slowdown in the bouncy_circles benchmarks.
+
 Finding the *least* upper bound is complex: you have to find:
 
 max_{x3 \in [x1, x2]} (((a*x3) + b)*x3 + c)*x3 +...
@@ -217,7 +219,7 @@ pub fn bound_on_interval_within_half<
   if UPPER != (inputs_negative && ((COEFFICIENTS - 1) & 1) != 0) {
     intermediate = -intermediate;
   }
-  intermediate <<= precision_shift.into();
+  intermediate <<= precision_shift.into() + 1;
   for (exponent, &coefficient) in remaining.iter().enumerate().rev() {
     // minimize result (assuming lower bound, inputs >= 0);
     // negative numbers should be multiplied as much as possible,
@@ -233,9 +235,10 @@ pub fn bound_on_interval_within_half<
     if UPPER != (inputs_negative && (exponent & 1) != 0) {
       coefficient = -coefficient;
     }
-    coefficient <<= precision_shift.into();
+    coefficient <<= precision_shift.into() + 1;
     intermediate = Shr::<u32>::shr(intermediate * best_input, input_shift.into()) + coefficient;
   }
+  intermediate >>= 1;
   // if getting upper bound instead of lower, we now have "lower bound of the negated
   // polynomial", so flip it
   if UPPER {
