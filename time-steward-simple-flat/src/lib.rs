@@ -415,10 +415,10 @@ impl<'acc, S: SimulationSpec> Accessor for SfEventAccessor<'acc, S> {
   type SimulationSpec = S;
   type EntityHandleKind = SfEntityHandleKind<S>;
 
-  type ReadGuard<'a, T: 'a>
+  type ReadGuard<'a, T: 'a> = &'a T
   where
-    Self: 'a,
-  = &'a T;
+  Self: 'a,;
+
   fn raw_read<'a, E: EntityKind>(
     &'a self,
     entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
@@ -459,9 +459,9 @@ impl<'acc, S: SimulationSpec> Accessor for SfSnapshotAccessor<'acc, S> {
   type EntityHandleKind = SfEntityHandleKind<S>;
 
   type ReadGuard<'a, T: 'a>
+  = SnapshotQueryResult<T>
   where
-    Self: 'a,
-  = SnapshotQueryResult<T>;
+  Self: 'a,;
   fn raw_read<'a, E: EntityKind>(
     &'a self,
     entity: TypedHandleRef<'a, E, Self::EntityHandleKind>,
@@ -578,9 +578,9 @@ impl<S: SimulationSpec> CreateEntityAccessor for SfGlobalsConstructionAccessor<S
 impl<'acc, S: SimulationSpec> EventAccessor<'acc> for SfEventAccessor<'acc, S> {
   type WriteGuard<'a, T: 'a> = &'a mut T;
   type UndoRecorder<'a, T: SimulationStateData>
+  = UndoRecorder<'a, S, T>
   where
-    Self: 'a,
-  = UndoRecorder<'a, S, T>;
+  Self: 'a,;
   #[allow(clippy::needless_lifetimes)] // Clippy is currently wrong about GATs
   fn map_write_guard<'a, T, U>(
     guard: Self::WriteGuard<'a, T>,
@@ -652,9 +652,9 @@ type ScheduledEvents<'a, S: SimulationSpec> =
 
 impl<'acc, S: SimulationSpec> SnapshotAccessor<'acc> for SfSnapshotAccessor<'acc, S> {
   type ScheduledEvents<'a>
+  = ScheduledEvents<'a, S>
   where
-    Self: 'a,
-  = ScheduledEvents<'a, S>;
+  Self: 'a,;
   fn scheduled_events(&self) -> Self::ScheduledEvents<'_> {
     self.snapshot.scheduled_events.iter().cloned()
   }
