@@ -387,6 +387,18 @@ $(
       }
 
       #[test]
+      fn randomly_test_next_time_magnitude_squared_definitely_gt2_is_gt(coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..1024, threshold_difference in 3 as $integer..16) {
+        let require_threshold = permit_threshold + threshold_difference;
+        let time = next_time_magnitude_squared_passes (&coefficients.each_ref(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold*permit_threshold, require_threshold*require_threshold));
+        prop_assume! (time .is_some());
+        let time = time.unwrap();
+
+        let exact = naive_perfect_evaluate_magnitude_squared(&coefficients.each_ref().map (|a| a.as_slice()), rational_input(FractionalInput::new(time, input.shift)));
+        //if let Some(coefficients) = coefficients.all_taylor_coefficients_bounds (time, input.shift, 0u32) {
+        prop_assert!(exact > BigRational::from(BigInt::from(permit_threshold*permit_threshold)), "expected above {} but was {} at {}", permit_threshold*permit_threshold, exact, time);
+      }
+
+      #[test]
       fn randomly_test_next_time_magnitude_squared_definitely_gt_is_next (coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..100024, threshold_difference in 3..16, test_frac in 0f64..1f64) {
         let require_threshold = permit_threshold + threshold_difference;
         let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
