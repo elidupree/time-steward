@@ -112,9 +112,7 @@ fn probe_max_total_shift<
 >(
   overflow: u32,
 ) {
-  let max_total_shift = <[Coefficient; COEFFICIENTS] as AllTaylorCoefficientsBoundsWithinHalf<
-    WorkingType,
-  >>::max_total_shift()
+  let max_total_shift = Polynomial:: <Coefficient, COEFFICIENTS>::all_taylor_coefficients_bounds_within_half_max_total_shift::< WorkingType>()
     + overflow;
   let all_pos = [Coefficient::max_value(); COEFFICIENTS];
   let all_neg = [Coefficient::min_value(); COEFFICIENTS];
@@ -124,9 +122,9 @@ fn probe_max_total_shift<
   one_pos[COEFFICIENTS - 1] = Coefficient::max_value();
   for input_shift in 1..max_total_shift {
     for input in [WorkingType::one(), -WorkingType::one()] {
-      for polynomial in &[all_pos, all_neg, one_pos, one_neg] {
+      for &polynomial in &[all_pos, all_neg, one_pos, one_neg] {
         all_taylor_coefficients_bounds_within_half_unchecked(
-          polynomial,
+          &Polynomial(polynomial),
           input << (input_shift - 1),
           input_shift,
           max_total_shift - input_shift,
@@ -172,18 +170,18 @@ macro_rules! test_polynomial {
     proptest! {
       #[test]
       fn randomly_test_polynomial_translation_inverts (coefficients in prop::array::$uniform(-16 as $integer..16), input in -16 as $integer..16) {
-        let translated = coefficients.all_taylor_coefficients (input);
+        let translated = Polynomial (coefficients).all_taylor_coefficients (input);
         prop_assume! (translated.is_some());
         let translated = translated.unwrap();
         let translated_back = translated.all_taylor_coefficients (-input);
         prop_assert! (translated_back.is_some(), "we know that the original value was in bounds, so translating back should return some");
-        prop_assert_eq! (coefficients, translated_back.unwrap());
+        prop_assert_eq! (Polynomial (coefficients), translated_back.unwrap());
 
       }
 
       #[test]
       fn randomly_test_taylor_coefficients_evaluates (coefficients in prop::array::$uniform(-16 as $integer..16), input in -16 as $integer..16) {
-        let translated = coefficients.all_taylor_coefficients (input);
+        let translated = Polynomial (coefficients).all_taylor_coefficients (input);
         prop_assume! (translated.is_some());
         let translated = translated.unwrap();
         let evaluated = naive_perfect_evaluate (&coefficients, BigRational::from(BigInt::from(input)));
@@ -195,7 +193,7 @@ macro_rules! test_polynomial {
 
       #[test]
       fn randomly_test_taylor_coefficients_bounds_correct (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), precision_shift in 0u32..10) {
-        let bounds = coefficients.all_taylor_coefficients_bounds (input.numerator, input.shift, precision_shift);
+        let bounds = Polynomial (coefficients).all_taylor_coefficients_bounds (input.numerator, input.shift, precision_shift);
         prop_assume! (bounds.is_some());
         let bounds = bounds.unwrap();
         for which in 0..$coefficients {
@@ -208,7 +206,7 @@ macro_rules! test_polynomial {
 
       #[test]
       fn randomly_test_taylor_coefficients_bounds_close(coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), precision_shift in 0u32..10) {
-        let bounds = coefficients.all_taylor_coefficients_bounds (input.numerator, input.shift, precision_shift);
+        let bounds = Polynomial (coefficients).all_taylor_coefficients_bounds (input.numerator, input.shift, precision_shift);
         prop_assume! (bounds.is_some());
         let bounds = bounds.unwrap();
         let leeway = BigRational::new(BigInt::from(3i32), BigInt::from(2i32));
@@ -224,7 +222,7 @@ macro_rules! test_polynomial {
       #[test]
       fn randomly_test_next_time_definitely_lt_is_lt (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16) {
         let require_threshold = permit_threshold - threshold_difference;
-        let time = coefficients.next_time_value_passes (input.numerator, input.shift, LessThanFilter::new(permit_threshold, require_threshold));
+        let time = Polynomial (coefficients).next_time_value_passes (input.numerator, input.shift, LessThanFilter::new(permit_threshold, require_threshold));
         prop_assume! (time .is_some());
         let time = time.unwrap();
 
@@ -236,7 +234,7 @@ macro_rules! test_polynomial {
       #[test]
       fn randomly_test_next_time_definitely_lt_is_next (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16, test_frac in 0f64..1f64) {
         let require_threshold = permit_threshold - threshold_difference;
-        let time = coefficients.next_time_value_passes (input.numerator, input.shift, LessThanFilter::new(permit_threshold, require_threshold));
+        let time = Polynomial (coefficients).next_time_value_passes (input.numerator, input.shift, LessThanFilter::new(permit_threshold, require_threshold));
         let last_not_lt = match time {
           None => $double::max_value(),
           Some(k) => {
@@ -259,7 +257,7 @@ macro_rules! test_polynomial {
       #[test]
       fn randomly_test_next_time_definitely_ge_is_ge(coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16) {
         let require_threshold = permit_threshold + threshold_difference;
-        let time = coefficients.next_time_value_passes (input.numerator, input.shift, GreaterThanEqualToFilter::new(permit_threshold, require_threshold));
+        let time = Polynomial (coefficients).next_time_value_passes (input.numerator, input.shift, GreaterThanEqualToFilter::new(permit_threshold, require_threshold));
         prop_assume! (time .is_some());
         let time = time.unwrap();
 
@@ -271,7 +269,7 @@ macro_rules! test_polynomial {
       #[test]
       fn randomly_test_next_time_definitely_ge_is_next (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16, test_frac in 0f64..1f64) {
         let require_threshold = permit_threshold + threshold_difference;
-        let time = coefficients.next_time_value_passes (input.numerator, input.shift, GreaterThanEqualToFilter::new(permit_threshold, require_threshold));
+        let time = Polynomial (coefficients).next_time_value_passes (input.numerator, input.shift, GreaterThanEqualToFilter::new(permit_threshold, require_threshold));
         let last_not_ge = match time {
           None => $double::max_value(),
           Some(k) => {
@@ -293,10 +291,10 @@ macro_rules! test_polynomial {
 
       #[test]
       fn randomly_test_coefficient_bounds_on_integer_interval (coefficients in prop::array::$uniform(-16 as $integer..16), start in -16 as $double..16, duration in 0 as $double..16, test_frac in 0f64..1f64) {
-        let first = coefficients.all_taylor_coefficients (start);
+        let first = Polynomial (coefficients).all_taylor_coefficients (start);
         prop_assume! (first.is_some());
         let first = first.unwrap();
-        let second = coefficients.all_taylor_coefficients (start+duration);
+        let second = Polynomial (coefficients).all_taylor_coefficients (start+duration);
         prop_assume! (second.is_some());
         let second = second.unwrap();
 
@@ -311,7 +309,7 @@ macro_rules! test_polynomial {
 
       #[test]
       fn randomly_test_coefficient_bounds_on_tail (coefficients in prop::array::$uniform(-16 as $integer..16), start in -16 as $double..16, test_frac in 0f64..1f64) {
-        let first = coefficients.all_taylor_coefficients (start);
+        let first = Polynomial (coefficients).all_taylor_coefficients (start);
         prop_assume! (first.is_some());
         let first = first.unwrap();
 
@@ -326,11 +324,11 @@ macro_rules! test_polynomial {
 
       #[test]
       fn randomly_test_value_bounds_on_negative_power_of_2_interval (coefficients in prop::array::$uniform(-16 as $integer..16), (start, duration_shift) in arbitrary_fractional_input().prop_flat_map(|input| (Just(input), 0..input.shift+1)), test_frac in 0f64..1f64) {
-        let first = coefficients.all_taylor_coefficients_bounds (start.numerator, start.shift, STANDARD_PRECISION_SHIFT);
+        let first = Polynomial (coefficients).all_taylor_coefficients_bounds (start.numerator, start.shift, STANDARD_PRECISION_SHIFT);
         prop_assume! (first.is_some());
         let first = first.unwrap();
         let duration = 1<<(start.shift - duration_shift);
-        let second = coefficients.all_taylor_coefficients_bounds (start.numerator+duration, start.shift, STANDARD_PRECISION_SHIFT);
+        let second = Polynomial (coefficients).all_taylor_coefficients_bounds (start.numerator+duration, start.shift, STANDARD_PRECISION_SHIFT);
         prop_assume! (second.is_some());
         let second = second.unwrap();
 
@@ -350,7 +348,7 @@ macro_rules! test_polynomial {
           (shift, input1, input2, test_input) in arbitrary_interval_within_pos_half(),
           precision_shift in 0u32..16) {
 
-        let bounds: [$double; 2] = bounds_on_interval_within_half(& coefficients,[input1.into(), input2.into()],shift, precision_shift);
+        let bounds: [$double; 2] = bounds_on_interval_within_half(& Polynomial (coefficients),[input1.into(), input2.into()],shift, precision_shift);
         let test_input = rational_input(FractionalInput::new(test_input, shift));
 
         let exact = naive_perfect_nth_taylor_coefficient(&coefficients, test_input.clone(), 0) * precision_scale(precision_shift);
@@ -358,7 +356,7 @@ macro_rules! test_polynomial {
         prop_assert!(BigRational::from(BigInt::from(bounds[1])) >= exact);
 
         let (neg_input1, neg_input2, neg_test_input) = (-input2, -input1, -test_input);
-        let neg_bounds: [$double; 2] = bounds_on_interval_within_half(& coefficients,[neg_input1.into(), neg_input2.into()],shift, precision_shift);
+        let neg_bounds: [$double; 2] = bounds_on_interval_within_half(& Polynomial (coefficients),[neg_input1.into(), neg_input2.into()],shift, precision_shift);
         let neg_exact = naive_perfect_nth_taylor_coefficient(&coefficients, neg_test_input.clone(), 0) * precision_scale(precision_shift);
         prop_assert!(BigRational::from(BigInt::from(neg_bounds[0])) <= neg_exact);
         prop_assert!(BigRational::from(BigInt::from(neg_bounds[1])) >= neg_exact);
@@ -377,7 +375,8 @@ $(
       fn randomly_test_next_time_magnitude_squared_definitely_gt_is_gt(coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..1024, threshold_difference in 3..16) {
         let require_threshold = permit_threshold + threshold_difference;
         let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
-        let time = <[$integer; $coefficients] as PolynomialMagnitudeSquaredRangeSearch<$double>>::next_time_magnitude_squared_passes (coefficients.as_slice(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
+        let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
+        let time = Polynomial ::<$integer, $coefficients>::next_time_magnitude_squared_passes (polynomials.as_slice(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
         prop_assume! (time .is_some());
         let time = time.unwrap();
 
@@ -389,7 +388,8 @@ $(
       #[test]
       fn randomly_test_next_time_magnitude_squared_definitely_gt2_is_gt(coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..1024, threshold_difference in 3 as $integer..16) {
         let require_threshold = permit_threshold + threshold_difference;
-        let time = next_time_magnitude_squared_passes (&coefficients.each_ref(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold*permit_threshold, require_threshold*require_threshold));
+        let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
+        let time = next_time_magnitude_squared_passes (&polynomials.each_ref(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold*permit_threshold, require_threshold*require_threshold));
         prop_assume! (time .is_some());
         let time = time.unwrap();
 
@@ -402,7 +402,8 @@ $(
       fn randomly_test_next_time_magnitude_squared_definitely_gt_is_next (coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..100024, threshold_difference in 3..16, test_frac in 0f64..1f64) {
         let require_threshold = permit_threshold + threshold_difference;
         let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
-        let time = <[$integer; $coefficients] as PolynomialMagnitudeSquaredRangeSearch<$double>>::next_time_magnitude_squared_passes (coefficients.as_slice(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
+        let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
+        let time = Polynomial ::<$integer, $coefficients> ::next_time_magnitude_squared_passes (polynomials.as_slice(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
 
         let last_not_lt = match time {
           None => $double::max_value(),

@@ -8,8 +8,11 @@ The array `[a, b, c, ...]` represents the polynomial `a + bx + cx^2 + ...`. Thus
 
 use super::*;
 use crate::range_search::{RangeSearch, RangeSearchRunner, STANDARD_PRECISION_SHIFT};
+use derivative::Derivative;
+use derive_more::{Deref, DerefMut};
 use num::{CheckedAdd, CheckedMul, Signed};
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use std::cmp::{max, min, Ordering};
 use std::marker::PhantomData;
 use thiserror::Error;
@@ -17,6 +20,18 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 #[error("Overflow")]
 pub struct OverflowError;
+
+#[repr(transparent)]
+#[serde_as]
+#[derive(
+  Copy, Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize, Deref, DerefMut, Derivative,
+)]
+#[derivative(Default(bound = "[Coefficient; COEFFICIENTS]: Default"))]
+#[serde(bound(serialize = "Coefficient: Serialize"))]
+#[serde(bound(deserialize = "Coefficient: Deserialize<'de>"))]
+pub struct Polynomial<Coefficient, const COEFFICIENTS: usize>(
+  #[serde_as(as = "[_; COEFFICIENTS]")] pub [Coefficient; COEFFICIENTS],
+);
 
 /**
 
@@ -48,18 +63,23 @@ pub fn add_product_into<Coefficient: Integer, T: Integer + Signed + From<Coeffic
   Ok(())
 }
 
-pub trait PolynomialBase {
-  type Coefficient: Integer + Signed;
+impl<Coefficient: Integer, const COEFFICIENTS: usize> Polynomial<Coefficient, COEFFICIENTS> {
+  pub fn zero() -> Self {
+    Polynomial([Zero::zero(); COEFFICIENTS])
+  }
+  pub fn constant(value: Coefficient) -> Self {
+    let mut coefficients = [Zero::zero(); COEFFICIENTS];
+    coefficients[0] = value;
+    Polynomial(coefficients)
+  }
+  pub fn is_constant(&self) -> bool {
+    self.0.iter().skip(1).all(|&a| a == Coefficient::zero())
+  }
 }
 
-impl<Coefficient: Integer + Signed, const COEFFICIENTS: usize> PolynomialBase
-  for [Coefficient; COEFFICIENTS]
+impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
+  Polynomial<Coefficient, COEFFICIENTS>
 {
-  type Coefficient = Coefficient;
-}
-
-/// Evaluate all Taylor coefficients of a polynomial at a given integer input.
-pub trait AllTaylorCoefficients<WorkingType>: Sized {
   /// Calculate the Taylor coefficients of the polynomial `self` at the input `input`.
   ///
   /// Returns None if any of the coefficients do not fit in the type.
@@ -67,19 +87,16 @@ pub trait AllTaylorCoefficients<WorkingType>: Sized {
   /// By restricting it to the original type, we can at least guarantee that we always return Some
   /// if the results are in-bounds; if we returned WorkingType, there would also be failures due
   /// to internal overflow.)
-  fn all_taylor_coefficients(&self, input: impl Copy + Into<WorkingType>) -> Option<Self>;
-}
-
-impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
-  AllTaylorCoefficients<DoubleSized<Coefficient>> for [Coefficient; COEFFICIENTS]
-{
-  fn all_taylor_coefficients(
+  pub fn all_taylor_coefficients(
     &self,
-    input: impl Copy + Into<DoubleSized<Coefficient>>,
+    input: impl Copy + TryInto<DoubleSized<Coefficient>>,
   ) -> Option<Self> {
-    let input = input.into();
+    if self.is_constant() {
+      return Some(*self);
+    }
+    let input = input.try_into().ok()?;
     let mut intermediates: [DoubleSized<Coefficient>; COEFFICIENTS] =
-      self.map(|coefficient| coefficient.into());
+      self.0.map(|coefficient| coefficient.into());
     for first_source in (1..intermediates.len()).rev() {
       for source in first_source..intermediates.len() {
         intermediates[source - 1] =
@@ -90,50 +107,8 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
     for (index, value) in intermediates.iter().enumerate() {
       output[index] = (*value).try_into().ok()?;
     }
-    Some(output)
+    Some(Polynomial(output))
   }
-}
-
-/**
-Evaluate all Taylor coefficients of a polynomial at a given *fractional* input in the range [-0.5, 0.5].
-*/
-pub trait AllTaylorCoefficientsBoundsWithinHalf<WorkingType> {
-  /// The output type, which will be [[WorkingType; 2]; COEFFICIENTS].
-  type Output;
-
-  /// The maximum total of `input_shift + precision_shift`.
-  /// The bigger WorkingType is, the bigger this can be.
-  fn max_total_shift() -> u32;
-
-  /**
-  Calculate the Taylor coefficients of the polynomial (`self` * 2^precision_shift) at the input (`input` / 2^`input_shift`).
-
-  The true outputs won't necessarily be integers, so we can't return them exactly.
-  Instead, for each coefficient, we return bounds of the form [WorkingType; 2],
-  representing an inclusive range that is guaranteed to include the true answer.
-  The min and max of that range are also guaranteed to be < 1.5 units away from the true answer.
-  Since they're integers, this also implies all of the following:
-  * They will be <= 2 units away from each other.
-  * Their mean will be <= 0.5 units away from the true answer.
-  * Their mean rounded to the nearest integer will be <= 1 units away from the true answer.
-
-  The idea of precision_shift is to let you calculate the answer with a smaller amount of error,
-  by scaling up the numbers while guaranteeing the same absolute range of <=2 in the answers.
-
-  # Panics
-
-  The input must be in the range [-0.5, 0.5]. Otherwise, this function will panic.
-
-  `input_shift + precision_shift` must not exceed `max_total_shift()`. If they are, this function will panic.
-
-  However, this function never fails due to overflow.
-  */
-  fn all_taylor_coefficients_bounds_within_half(
-    &self,
-    input: WorkingType,
-    input_shift: impl ShiftSize,
-    precision_shift: impl ShiftSize,
-  ) -> Self::Output;
 }
 
 /**
@@ -323,14 +298,14 @@ pub fn assert_input_within_half<T: Integer + Signed, S: ShiftSize>(
   }
 }
 
-impl<
-    Coefficient: Integer + Signed,
-    WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient>,
-    const COEFFICIENTS: usize,
-  > AllTaylorCoefficientsBoundsWithinHalf<WorkingType> for [Coefficient; COEFFICIENTS]
+impl<Coefficient: Integer + Signed, const COEFFICIENTS: usize>
+  Polynomial<Coefficient, COEFFICIENTS>
 {
-  type Output = [[WorkingType; 2]; COEFFICIENTS];
-  fn max_total_shift() -> u32 {
+  /// The maximum total of `input_shift + precision_shift`.
+  /// The bigger WorkingType is, the bigger this can be.
+  pub fn all_taylor_coefficients_bounds_within_half_max_total_shift<
+    WorkingType: Integer + Signed,
+  >() -> u32 {
     let spare = WorkingType::nonsign_bits() - Coefficient::nonsign_bits();
     // we need to take out enough for the initial left-shift to do higher calculations at higher magnitude to remove the error,
     // and then also take out enough to make sure the calculations don't overflow due to accumulated value.
@@ -341,18 +316,46 @@ impl<
       - intermediate_magnitude_factor_shift::<COEFFICIENTS>()
       + 1
   }
-  fn all_taylor_coefficients_bounds_within_half(
+
+  /**
+  Evaluate all Taylor coefficients of `self` at a given input in the range [-0.5, 0.5].
+
+  Calculates the Taylor coefficients of the polynomial (`self` * 2^precision_shift) at the input (`input` / 2^`input_shift`).
+
+  The true outputs won't necessarily be integers, so we can't return them exactly.
+  Instead, for each coefficient, we return bounds of the form [WorkingType; 2],
+  representing an inclusive range that is guaranteed to include the true answer.
+  The min and max of that range are also guaranteed to be < 1.5 units away from the true answer.
+  Since they're integers, this also implies all of the following:
+  * They will be <= 2 units away from each other.
+  * Their mean will be <= 0.5 units away from the true answer.
+  * Their mean rounded to the nearest integer will be <= 1 units away from the true answer.
+
+  The idea of precision_shift is to let you calculate the answer with a smaller amount of error,
+  by scaling up the numbers while guaranteeing the same absolute range of <=2 in the answers.
+
+  # Panics
+
+  The input must be in the range [-0.5, 0.5]. Otherwise, this function will panic.
+
+  `input_shift + precision_shift` must not exceed `all_taylor_coefficients_bounds_within_half_max_total_shift()`. If they are, this function will panic.
+
+  However, this function never fails due to overflow.
+  */
+  pub fn all_taylor_coefficients_bounds_within_half<
+    WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient>,
+  >(
     &self,
     input: WorkingType,
     input_shift: impl ShiftSize,
     precision_shift: impl ShiftSize,
-  ) -> Self::Output {
+  ) -> [[WorkingType; 2]; COEFFICIENTS] {
     assert!(
       input_shift.into() + precision_shift.into()
-        <= <Self as AllTaylorCoefficientsBoundsWithinHalf<WorkingType>>::max_total_shift()
+        <= Self::all_taylor_coefficients_bounds_within_half_max_total_shift::<WorkingType>()
     );
     if input == Zero::zero() || COEFFICIENTS as u32 <= 1 {
-      return self.map(|raw| {
+      return self.0.map(|raw| {
         let mut raw = raw.into();
         raw <<= precision_shift.into();
         [raw, raw]
@@ -367,73 +370,50 @@ impl<
   }
 }
 
-/**
-Evaluate all Taylor coefficients of a polynomial at a given *fractional* input.
-*/
-pub trait AllTaylorCoefficientsBounds<WorkingType>:
-  AllTaylorCoefficientsBoundsWithinHalf<WorkingType>
+impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
+  Polynomial<Coefficient, COEFFICIENTS>
 {
   /**
-  Calculate the Taylor coefficients of the polynomial (`self` * 2^precision_shift) at the input (`input` / 2^`input_shift`).
+  Evaluate all Taylor coefficients of `self` at a given *fractional* input.
+
+  Calculates the Taylor coefficients of the polynomial (`self` * 2^precision_shift) at the input (`input` / 2^`input_shift`).
 
   This function is simply the composition of all_taylor_coefficients() (to find the closest integer polynomial) and all_taylor_coefficients_bounds_within_half(). Thus, it may return None if the closest integer polynomial has overflowing exponents, even if the true answer would not overflow. See those two functions' documentation for more details.
   */
-  fn all_taylor_coefficients_bounds(
+  pub fn all_taylor_coefficients_bounds<
+    WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+  >(
     &self,
     input: WorkingType,
     input_shift: impl ShiftSize,
     precision_shift: impl ShiftSize,
-  ) -> Option<Self::Output>;
-}
-
-impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
-  AllTaylorCoefficientsBounds<DoubleSized<Coefficient>> for [Coefficient; COEFFICIENTS]
-{
-  fn all_taylor_coefficients_bounds(
-    &self,
-    input: DoubleSized<Coefficient>,
-    input_shift: impl ShiftSize,
-    precision_shift: impl ShiftSize,
-  ) -> Option<<Self as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<Coefficient>>>::Output> {
+  ) -> Option<[[WorkingType; 2]; COEFFICIENTS]> {
     let integer_input = shr_nicely_rounded(input, input_shift);
     let small_input = input.wrapping_sub(&(Shl::<u32>::shl(integer_input, input_shift.into())));
     let integer_coefficients = self.all_taylor_coefficients(integer_input)?;
-    Some(<Self as AllTaylorCoefficientsBoundsWithinHalf<
-      DoubleSized<Coefficient>,
-    >>::all_taylor_coefficients_bounds_within_half(
-      &integer_coefficients,
-      small_input,
-      input_shift,
-      precision_shift,
-    ))
+    Some(
+      integer_coefficients.all_taylor_coefficients_bounds_within_half(
+        small_input,
+        input_shift,
+        precision_shift,
+      ),
+    )
   }
 }
 
-/**
-Modify a specific Taylor coefficient at a fractional input.
-*/
-pub trait SetNthTaylorCoefficientAtFractionalInput<WorkingType>: PolynomialBase {
+impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
+  Polynomial<Coefficient, COEFFICIENTS>
+{
   /**
-  Modify `self` so that its `which_coefficient`th Taylor coefficient will be approximately equal to `target_value` at the input (`input` / 2^`input_shift`), while its other Taylor coefficients at that input will be approximately the same as they were before.
+  Modify a specific Taylor coefficient at a fractional input.
+
+  Modifies `self` so that its `which_coefficient`th Taylor coefficient will be approximately equal to `target_value` at the input (`input` / 2^`input_shift`), while its other Taylor coefficients at that input will be approximately the same as they were before.
 
   This can fail due to overflow; we don't currently have a rigorous definition of when that can happen. We also don't have a definition of how bad the rounding error can be.
   */
   // TODO: define the overflow and error size rules, make tests, refactor this function, etc.
   // Possible approach: split off a SetNthTaylorCoefficientWithinHalf, and from that, also split off a AddNthTaylorCoefficientWithinHalf. AddNthTaylorCoefficientWithinHalf can be the one with the rigorous guarantees; the first two can be documented as compositions of the others. Also, these functions should return copies rather than modify `self`.
-  fn set_nth_taylor_coefficient_at_fractional_input(
-    &mut self,
-    which_coefficient: usize,
-    input: WorkingType,
-    input_shift: impl ShiftSize,
-    target_value: Self::Coefficient,
-  ) -> Result<(), OverflowError>;
-}
-
-impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
-  SetNthTaylorCoefficientAtFractionalInput<DoubleSized<Coefficient>>
-  for [Coefficient; COEFFICIENTS]
-{
-  fn set_nth_taylor_coefficient_at_fractional_input(
+  pub fn set_nth_taylor_coefficient_at_fractional_input(
     &mut self,
     which_coefficient: usize,
     input: DoubleSized<Coefficient>,
@@ -445,28 +425,19 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
     let integer_coefficients = self
       .all_taylor_coefficients(integer_input)
       .ok_or(OverflowError)?;
-    let bounds = <Self as AllTaylorCoefficientsBoundsWithinHalf<
-      DoubleSized<Coefficient>,
-    >>::all_taylor_coefficients_bounds_within_half(
-      &integer_coefficients,
+    let bounds = integer_coefficients.all_taylor_coefficients_bounds_within_half(
       small_input,
       input_shift,
       0u32,
     );
 
-    let mut change_at_input = [Coefficient::zero(); COEFFICIENTS];
+    let mut change_at_input = Polynomial::<_, COEFFICIENTS>::zero();
     change_at_input[which_coefficient] = (DoubleSized::<Coefficient>::from(target_value)
       - mean_round_to_even(bounds[which_coefficient][0], bounds[which_coefficient][1]))
     .try_into()
     .map_err(|_| OverflowError)?;
-    let change_at_integer = <Self as AllTaylorCoefficientsBoundsWithinHalf<
-      DoubleSized<Coefficient>,
-    >>::all_taylor_coefficients_bounds_within_half(
-      &change_at_input,
-      -small_input,
-      input_shift,
-      0u32,
-    );
+    let change_at_integer =
+      change_at_input.all_taylor_coefficients_bounds_within_half(-small_input, input_shift, 0u32);
     let mut new_at_integer = integer_coefficients;
     for (change, new) in change_at_integer.iter().zip(new_at_integer.iter_mut()) {
       *new = (DoubleSized::<Coefficient>::from(*new) + mean_round_to_even(change[0], change[1]))
@@ -539,40 +510,40 @@ impl_filter!(LessThanEqualToFilter, <=, 0, 1, <, -Coefficient::one());
 impl_filter!(GreaterThanFilter, >, 1, 0, >, Coefficient::one());
 impl_filter!(GreaterThanEqualToFilter, >=, 1, 0, >, Coefficient::one());
 
-pub trait PolynomialRangeSearch<Coefficient, WorkingType>: PolynomialBase {
-  fn next_time_value_passes<Filter: PolynomialBoundsFilter<Coefficient>>(
-    &self,
-    start_input: WorkingType,
-    input_shift: impl ShiftSize,
-    filter: Filter,
-  ) -> Option<WorkingType>;
-}
-pub trait PolynomialMagnitudeSquaredRangeSearch<WorkingType>: PolynomialBase + Sized {
-  fn next_time_magnitude_squared_passes<Filter: PolynomialBoundsFilter<WorkingType>>(
-    coordinates: &[Self],
-    start_input: WorkingType,
-    input_shift: impl ShiftSize,
-    filter: Filter,
-  ) -> Option<WorkingType>;
-}
+// pub trait PolynomialRangeSearch<Coefficient, WorkingType>: PolynomialBase {
+//   fn next_time_value_passes<Filter: PolynomialBoundsFilter<Coefficient>>(
+//     &self,
+//     start_input: WorkingType,
+//     input_shift: impl ShiftSize,
+//     filter: Filter,
+//   ) -> Option<WorkingType>;
+// }
+// pub trait PolynomialMagnitudeSquaredRangeSearch<WorkingType>: PolynomialBase + Sized {
+//   fn next_time_magnitude_squared_passes<Filter: PolynomialBoundsFilter<WorkingType>>(
+//     coordinates: &[Self],
+//     start_input: WorkingType,
+//     input_shift: impl ShiftSize,
+//     filter: Filter,
+//   ) -> Option<WorkingType>;
+// }
 
-pub trait Polynomial<Coefficient: DoubleSizedSignedInteger>:
-  PolynomialBase<Coefficient = Coefficient>
-  + AllTaylorCoefficients<DoubleSized<Coefficient>>
-  + AllTaylorCoefficientsBounds<DoubleSized<Coefficient>>
-  + PolynomialRangeSearch<Coefficient, DoubleSized<Coefficient>>
-//+ PolynomialMagnitudeSquaredRangeSearch<Coefficient, DoubleSized<Coefficient>>
-{
-}
-impl<
-    Coefficient: DoubleSizedSignedInteger,
-    P: PolynomialBase<Coefficient = Coefficient>
-      + AllTaylorCoefficients<DoubleSized<Coefficient>>
-      + AllTaylorCoefficientsBounds<DoubleSized<Coefficient>>
-      + PolynomialRangeSearch<Coefficient, DoubleSized<Coefficient>>, //+ PolynomialMagnitudeSquaredRangeSearch<Coefficient, DoubleSized<Coefficient>>
-  > Polynomial<Coefficient> for P
-{
-}
+// pub trait Polynomial<Coefficient: DoubleSizedSignedInteger>:
+//   PolynomialBase<Coefficient = Coefficient>
+//   + AllTaylorCoefficients<DoubleSized<Coefficient>>
+//   + AllTaylorCoefficientsBounds<DoubleSized<Coefficient>>
+//   + PolynomialRangeSearch<Coefficient, DoubleSized<Coefficient>>
+// //+ PolynomialMagnitudeSquaredRangeSearch<Coefficient, DoubleSized<Coefficient>>
+// {
+// }
+// impl<
+//     Coefficient: DoubleSizedSignedInteger,
+//     P: PolynomialBase<Coefficient = Coefficient>
+//       + AllTaylorCoefficients<DoubleSized<Coefficient>>
+//       + AllTaylorCoefficientsBounds<DoubleSized<Coefficient>>
+//       + PolynomialRangeSearch<Coefficient, DoubleSized<Coefficient>>, //+ PolynomialMagnitudeSquaredRangeSearch<Coefficient, DoubleSized<Coefficient>>
+//   > Polynomial<Coefficient> for P
+// {
+// }
 
 macro_rules! impl_polynomials {
 ($($coefficients: expr),*) => {
@@ -581,8 +552,8 @@ $(
 
 
 
-impl <Coefficient: DoubleSizedSignedInteger> PolynomialRangeSearch<Coefficient, DoubleSized<Coefficient>> for [Coefficient; $coefficients] {
-fn next_time_value_passes<
+impl <Coefficient: DoubleSizedSignedInteger> Polynomial <Coefficient, $coefficients> {
+pub fn next_time_value_passes<
   Filter: PolynomialBoundsFilter<Coefficient>,
 >(
   &self,
@@ -591,14 +562,14 @@ fn next_time_value_passes<
   filter: Filter,
 ) -> Option<DoubleSized<Coefficient>> {
   struct Search <S,Coefficient, Filter> {
-    polynomial: [Coefficient; $coefficients],
+    polynomial: Polynomial <Coefficient, $coefficients>,
     filter: Filter,
     input_shift: S,
     _marker: PhantomData <Coefficient>,
   }
   impl<S: ShiftSize,Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <Coefficient>> RangeSearch for Search<S,Coefficient, Filter> {
     type Input = DoubleSized<Coefficient>;
-    type IntegerValue = [Coefficient; $coefficients];
+    type IntegerValue = Polynomial <Coefficient, $coefficients>;
     type FractionalValue = [[DoubleSized <Coefficient>; 2]; $coefficients];
     fn value_at_integer (&self, input: Self::Input)->Option<Self::IntegerValue> {
       self.polynomial.all_taylor_coefficients (input)
@@ -638,9 +609,9 @@ fn next_time_value_passes<
 macro_rules! impl_squarable_polynomials {
 ($($coefficients: expr),*) => {
 $(
-impl <Coefficient: DoubleSizedSignedInteger> PolynomialMagnitudeSquaredRangeSearch<DoubleSized<Coefficient>> for [Coefficient; $coefficients] where DoubleSized<Coefficient>: DoubleSizedSignedInteger
+impl <Coefficient: DoubleSizedSignedInteger> Polynomial <Coefficient, $coefficients> where DoubleSized<Coefficient>: DoubleSizedSignedInteger
 {
-fn next_time_magnitude_squared_passes<
+pub fn next_time_magnitude_squared_passes<
   Filter: PolynomialBoundsFilter<DoubleSized<Coefficient>>,
 >(
   coordinates: &[Self],
@@ -649,14 +620,14 @@ fn next_time_magnitude_squared_passes<
   filter: Filter,
 ) -> Option<DoubleSized<Coefficient>> {
   struct Search <'a, S, Coefficient, Filter> {
-    coordinates: &'a [[Coefficient; $coefficients]],
+    coordinates: &'a [Polynomial <Coefficient, $coefficients>],
     filter: Filter,
     input_shift: S,
     _marker: PhantomData <Coefficient>,
   }
   impl<'a, S: ShiftSize, Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <DoubleSized<Coefficient>>> RangeSearch for Search<'a, S, Coefficient, Filter> where DoubleSized<Coefficient>: DoubleSizedSignedInteger {
     type Input = DoubleSized<Coefficient>;
-    type IntegerValue = [DoubleSized<Coefficient>; $coefficients*2-1];
+    type IntegerValue = Polynomial <DoubleSized<Coefficient>, {$coefficients*2-1}>;
     type FractionalValue = [[DoubleSized<DoubleSized <Coefficient>>; 2]; $coefficients*2-1];
     fn value_at_integer (&self, input: Self::Input)->Option<Self::IntegerValue> {
       let mut magsq: [DoubleSized<Coefficient>; $coefficients*2 -1] = [Zero::zero(); $coefficients*2 -1];
@@ -664,15 +635,15 @@ fn next_time_magnitude_squared_passes<
         let integer_coefficients = coordinate.all_taylor_coefficients(input)?;
 
         add_product_into(
-          &integer_coefficients.as_slice(),
-          integer_coefficients.as_slice(),
+          &integer_coefficients.0.as_slice(),
+          integer_coefficients.0.as_slice(),
           magsq.as_mut_slice(),
         ).ok()?;
       }
-      Some(magsq)
+      Some(Polynomial (magsq))
     }
     fn value_at_fractional (&self, nearest_integer_value: &Self::IntegerValue, relative_input: Self::Input)->Self::FractionalValue {
-      <[DoubleSized<Coefficient>; $coefficients*2 -1] as AllTaylorCoefficientsBoundsWithinHalf<DoubleSized<DoubleSized<Coefficient>>>>::all_taylor_coefficients_bounds_within_half(nearest_integer_value, From::from(relative_input), self.input_shift, STANDARD_PRECISION_SHIFT)
+      nearest_integer_value.all_taylor_coefficients_bounds_within_half(From::from(relative_input), self.input_shift, STANDARD_PRECISION_SHIFT)
     }
    fn integer_interval_filter (&self, endpoints: [&Self::IntegerValue; 2], duration: Self::Input)->bool {
       self.filter.interval_filter (range_search::coefficient_bounds_on_integer_interval (endpoints, duration.into()) [0])
@@ -732,7 +703,7 @@ pub fn next_time_magnitude_squared_passes<
   const DIMENSIONS: usize,
   const COEFFICIENTS: usize,
 >(
-  coordinates: &[&[Coefficient; COEFFICIENTS]; DIMENSIONS],
+  coordinates: &[&Polynomial<Coefficient, COEFFICIENTS>; DIMENSIONS],
   start_input: DoubleSized<Coefficient>,
   input_shift: impl ShiftSize,
   filter: Filter,
@@ -742,7 +713,7 @@ where
   [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
 {
   struct Search<'a, S, Coefficient, Filter, const COEFFICIENTS: usize, const DIMENSIONS: usize> {
-    coordinates: &'a [&'a [Coefficient; COEFFICIENTS]; DIMENSIONS],
+    coordinates: &'a [&'a Polynomial<Coefficient, COEFFICIENTS>; DIMENSIONS],
     filter: Filter,
     input_shift: S,
     _marker: PhantomData<Coefficient>,
@@ -760,10 +731,10 @@ where
     [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
   {
     type Input = DoubleSized<Coefficient>;
-    type IntegerValue = [[Coefficient; COEFFICIENTS]; DIMENSIONS];
+    type IntegerValue = [Polynomial<Coefficient, COEFFICIENTS>; DIMENSIONS];
     type FractionalValue = [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS];
     fn value_at_integer(&self, input: Self::Input) -> Option<Self::IntegerValue> {
-      let mut result = [[Zero::zero(); COEFFICIENTS]; DIMENSIONS];
+      let mut result = [Polynomial::zero(); DIMENSIONS];
       for (coordinate, result) in self.coordinates.iter().zip(&mut result) {
         *result = coordinate.all_taylor_coefficients(input)?;
       }

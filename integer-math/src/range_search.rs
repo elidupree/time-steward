@@ -6,13 +6,13 @@ use serde::Serialize;
 use std::cmp::{max, min};
 
 use super::*;
-use crate::polynomial2::{assert_input_within_half, PolynomialBasedAtInput};
+use crate::polynomial2::{assert_input_within_half, Polynomial, PolynomialBasedAtInput};
 
 pub fn coefficient_bounds_on_integer_interval<
   Coefficient: DoubleSizedSignedInteger,
   const COEFFICIENTS: usize,
 >(
-  endpoints: [&[Coefficient; COEFFICIENTS]; 2],
+  endpoints: [&Polynomial<Coefficient, COEFFICIENTS>; 2],
   duration: DoubleSized<Coefficient>,
 ) -> [[Coefficient; 2]; COEFFICIENTS] {
   let mut result = [[Zero::zero(); 2]; COEFFICIENTS];
@@ -303,7 +303,7 @@ pub fn bounds_on_interval_within_half<
 }
 
 pub fn coefficient_bounds_on_tail<Coefficient: Integer + Signed, const COEFFICIENTS: usize>(
-  endpoint: &[Coefficient; COEFFICIENTS],
+  endpoint: &Polynomial<Coefficient, COEFFICIENTS>,
 ) -> [[Coefficient; 2]; COEFFICIENTS] {
   let mut result = [[Zero::zero(); 2]; COEFFICIENTS];
   let mut previous_derivative_range: [Coefficient; 2] = [Zero::zero(), Zero::zero()];

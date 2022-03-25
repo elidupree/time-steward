@@ -49,10 +49,10 @@ pub trait Integer:
 /*impl <T: 'static + num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + ShlAssign <u32> + ShrAssign <u32> + Debug + Display + Send + Sync> Integer for T {}*/
 
 pub trait HasCoordinates {
-  type Coordinate: Integer + Signed + Vector + HasCoordinates<Coordinate = Self::Coordinate>;
+  type Coordinate: Integer + Signed + VectorExt + HasCoordinates<Coordinate = Self::Coordinate>;
 }
 
-pub trait Vector:
+pub trait VectorExt:
   'static + Sized + Copy + Clone + Eq + HasCoordinates +
   Add <Self, Output = Self> + Sub <Self, Output = Self> + Mul <<Self as HasCoordinates>::Coordinate, Output = Self> +
   for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + //for<'a> Mul <&'a <Self as HasCoordinates>::Coordinate, Output = Self> +
@@ -73,24 +73,43 @@ pub trait Vector:
   }
 }
 
+pub type Vector<T, const DIMENSIONS: usize> =
+  nalgebra::Vector<T, nalgebra::Const<DIMENSIONS>, nalgebra::ArrayStorage<T, DIMENSIONS, 1>>;
+
+// TODO: add this to VectorExt - but there are significant type system difficulties
+// with doing it in the trivial way
+pub fn vector_to_array<T: Integer, const DIMENSIONS: usize>(
+  vector: &Vector<T, DIMENSIONS>,
+) -> [T; DIMENSIONS] {
+  let mut result = [Default::default(); DIMENSIONS];
+  for which in 0..DIMENSIONS {
+    result[which] = vector[which];
+  }
+  result
+}
+
 pub trait DoubleSizedSignedInteger: Integer + Signed {
   type DoubleSized: Integer + Signed + From<Self> + TryInto<Self>;
 }
 pub type DoubleSized<T> = <T as DoubleSizedSignedInteger>::DoubleSized;
 
 pub mod impls {
-  use super::{Vector, *};
-  use nalgebra::*;
-  macro_rules! impl_vector {
-    ($([$coordinates: expr, $Vector: ident],)*) => {
-      $(
-        impl <T: Integer + Signed + Vector + HasCoordinates <Coordinate = T>> HasCoordinates for $Vector <T> {type Coordinate = T;}
-        impl <T: Integer + Signed + Vector + HasCoordinates <Coordinate = T>> Vector for $Vector <T> {
-          const DIMENSIONS: usize = $coordinates;
-          fn coordinate (&self, which: usize)->Self::Coordinate {self [which]}
-          fn set_coordinate (&mut self, which: usize, value: Self::Coordinate) {self [which] = value}
-        }
-      )*
+  use super::*;
+
+  impl<T: Integer + Signed + VectorExt + HasCoordinates<Coordinate = T>, const DIMENSIONS: usize>
+    HasCoordinates for Vector<T, DIMENSIONS>
+  {
+    type Coordinate = T;
+  }
+  impl<T: Integer + Signed + VectorExt + HasCoordinates<Coordinate = T>, const DIMENSIONS: usize>
+    VectorExt for Vector<T, DIMENSIONS>
+  {
+    const DIMENSIONS: usize = DIMENSIONS;
+    fn coordinate(&self, which: usize) -> Self::Coordinate {
+      self[which]
+    }
+    fn set_coordinate(&mut self, which: usize, value: Self::Coordinate) {
+      self[which] = value
     }
   }
   macro_rules! impl_integer {
@@ -112,7 +131,7 @@ pub mod impls {
     ($($Integer: ident,)*) => {
       $(
         impl HasCoordinates for $Integer {type Coordinate = $Integer;}
-        impl Vector for $Integer {
+        impl VectorExt for $Integer {
           const DIMENSIONS: usize = 1;
           fn coordinate (&self, _which: usize)->Self::Coordinate {*self}
           fn set_coordinate (&mut self, _which: usize, value: Self::Coordinate) {*self = value}
@@ -129,14 +148,6 @@ pub mod impls {
       )*
     }
   }
-  impl_vector!(
-    [1, Vector1],
-    [2, Vector2],
-    [3, Vector3],
-    [4, Vector4],
-    [5, Vector5],
-    [6, Vector6],
-  );
   impl_integer! (
     i8 1, i16 1, i32 1, i64 1, i128 1, isize 1,
     u8 0, u16 0, u32 0, u64 0, u128 0, usize 0,
@@ -414,6 +425,7 @@ pub mod polynomial2;
 #[cfg(test)]
 pub mod polynomial2_tests;
 pub mod range_search;
+pub mod trajectory;
 
 #[cfg(test)]
 mod tests {

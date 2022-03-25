@@ -3,18 +3,14 @@ use num::traits::Signed;
 use num::{One, Zero};
 use std::cmp::min;
 //use self::polynomial::RootSearchResult;
-use self::polynomial2::{
-  AllTaylorCoefficients, AllTaylorCoefficientsBounds, GreaterThanEqualToFilter, GreaterThanFilter,
-  LessThanFilter, Polynomial, PolynomialMagnitudeSquaredRangeSearch, PolynomialRangeSearch,
-  SetNthTaylorCoefficientAtFractionalInput,
-};
+use self::polynomial2::{GreaterThanEqualToFilter, GreaterThanFilter, LessThanFilter, Polynomial};
 use array_ext::*;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::convert::TryInto;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use super::integer_math::{maybe_const::ShiftSize, Vector as GenericVector, *};
+use super::integer_math::{maybe_const::ShiftSize, VectorExt as GenericVector, *};
 
 pub type Time = i64;
 pub type Coordinate = i32;
@@ -210,18 +206,18 @@ macro_rules! impl_trajectory {
 #[derive (Clone, Serialize, Deserialize, Debug, Default)]
 pub struct $Trajectory <T> {
   origin: Time,
-  coefficients: [T; $degree + 1],
+  coefficients: Polynomial <T, {$degree + 1}>,
 }
 
 impl <T: Vector> Trajectory for $Trajectory <T> {
   type Coefficient = T;
 }
 
-impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordinate; $degree+1]: Polynomial<T::Coordinate> {
+impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate> {
   pub fn constant (value: T)->Self {
     let mut coefficients = [T::zero(); $degree + 1];
     coefficients [0] = value;
-    $Trajectory {origin: 0, coefficients}
+    $Trajectory {origin: 0, coefficients: Polynomial (coefficients)}
   }
   pub fn set_origin (&mut self, new_origin: Time)->Option<()> {
     let mut result = self.clone();
@@ -236,8 +232,8 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     Some(())
   }
 
-  pub fn coordinate_coefficients (&self, dimension: usize)->[T::Coordinate; $degree + 1] {
-    Array::from_fn (| which | self.coefficients [which].coordinate (dimension))
+  pub fn coordinate_coefficients (&self, dimension: usize)->Polynomial <T::Coordinate, {$degree + 1}> {
+    Polynomial (Array::from_fn (| which | self.coefficients [which].coordinate (dimension)))
   }
   pub fn coordinate_trajectory (&self, dimension: usize)->$Trajectory <T::Coordinate> {
     $Trajectory {
@@ -258,7 +254,7 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
   }
   pub fn set_nth_coefficient (&mut self, which: usize, time_numerator: Time, time_shift: impl ShiftSize, target_value: T)->Option<()> {
     self.set_origin (time_numerator >> time_shift.into())?;
-    let mut transformed_coefficients: SmallVec<[[T::Coordinate; $degree + 1]; 4]> = SmallVec::with_capacity (T::DIMENSIONS);
+    let mut transformed_coefficients: SmallVec<[Polynomial <T::Coordinate, {$degree + 1}>; 4]> = SmallVec::with_capacity (T::DIMENSIONS);
     for dimension in 0..T::DIMENSIONS {
       let mut coefficients = self.coordinate_coefficients (dimension);
       coefficients.set_nth_taylor_coefficient_at_fractional_input (which, time_numerator - (self.origin << time_shift.into()), time_shift, target_value.coordinate (dimension).into()).ok()?;
@@ -302,31 +298,31 @@ impl <T: Vector> $Trajectory <T> where Time: From <T::Coordinate>,  [T::Coordina
     let mut coefficients = [T::Coordinate::zero(); $degree + $degree + 1];
     for dimension in 0..T::DIMENSIONS {
       let coordinate_coefficients = self.coordinate_coefficients (dimension);
-      polynomial2::add_product_into (& coordinate_coefficients, & coordinate_coefficients, &mut coefficients).ok()?;
+      polynomial2::add_product_into (& coordinate_coefficients.0, & coordinate_coefficients.0, &mut coefficients).ok()?;
     }
     Some($ProductTrajectory {
-      origin: self.origin, coefficients
+      origin: self.origin, coefficients: Polynomial (coefficients)
     })
   }
   #[cfg $multiplication]
   pub fn next_time_magnitude_significantly_gt (&self, range: [Time; 2], input_shift: impl ShiftSize, target: T::Coordinate)->Option<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
     //self.magnitude_squared_trajectory()?.next_time_significantly_gt (range, input_shift, target*target)
     let origin = self.origin << input_shift.into();
-    let mut coordinate_polynomials: SmallVec<[[T::Coordinate; $degree + 1]; 4]> = SmallVec::with_capacity (T::DIMENSIONS);
+    let mut coordinate_polynomials: SmallVec<[Polynomial <T::Coordinate, {$degree + 1}>; 4]> = SmallVec::with_capacity (T::DIMENSIONS);
     for dimension in 0..T::DIMENSIONS {
       coordinate_polynomials.push(self.coordinate_coefficients (dimension));
     }
-    <[T::Coordinate; $degree + 1]>::next_time_magnitude_squared_passes(&coordinate_polynomials, range [0] - origin, input_shift, GreaterThanFilter::new(target as i64*target as i64, (target as i64+3)*(target as i64+3))).map(|a| a + origin)
+    <Polynomial <T::Coordinate, {$degree + 1}>>::next_time_magnitude_squared_passes(&coordinate_polynomials, range [0] - origin, input_shift, GreaterThanFilter::new(target as i64*target as i64, (target as i64+3)*(target as i64+3))).map(|a| a + origin)
   }
   #[cfg $multiplication]
   pub fn next_time_magnitude_significantly_lt (&self, range: [Time; 2], input_shift: impl ShiftSize, target: T::Coordinate)->Option<Time> where for <'a> & 'a T::Coordinate: Neg <Output = T::Coordinate> {
     //self.magnitude_squared_trajectory()?.next_time_significantly_lt (range, input_shift, target*target)
     let origin = self.origin << input_shift.into();
-    let mut coordinate_polynomials: SmallVec<[[T::Coordinate; $degree + 1]; 4]> = SmallVec::with_capacity (T::DIMENSIONS);
+    let mut coordinate_polynomials: SmallVec<[Polynomial <T::Coordinate, {$degree + 1}>; 4]> = SmallVec::with_capacity (T::DIMENSIONS);
     for dimension in 0..T::DIMENSIONS {
       coordinate_polynomials.push(self.coordinate_coefficients (dimension));
     }
-    <[T::Coordinate; $degree + 1]>::next_time_magnitude_squared_passes(&coordinate_polynomials, range [0] - origin, input_shift, LessThanFilter::new(target as i64*target as i64, (target as i64-3)*(target as i64-3))).map(|a| a + origin)
+    <Polynomial <T::Coordinate, {$degree + 1}>>::next_time_magnitude_squared_passes(&coordinate_polynomials, range [0] - origin, input_shift, LessThanFilter::new(target as i64*target as i64, (target as i64-3)*(target as i64-3))).map(|a| a + origin)
   }
 }
 
@@ -448,7 +444,7 @@ impl <T: Vector + Neg <Output = T>> Neg for $Trajectory <T> {
   fn neg (self)->Self {
     $Trajectory {
       origin: self.origin,
-      coefficients: Array::from_fn (| index | self.coefficients [index].clone().neg()),
+      coefficients: Polynomial (Array::from_fn (| index | self.coefficients [index].clone().neg())),
     }
   }
 }
@@ -457,7 +453,7 @@ impl <'a, T: Vector> Neg for & 'a $Trajectory <T> where & 'a T: Neg <Output = T>
   fn neg (self)->$Trajectory <T> {
     $Trajectory {
       origin: self.origin,
-      coefficients: Array::from_fn (| index | (& self.coefficients [index]).neg()),
+      coefficients: Polynomial (Array::from_fn (| index | (& self.coefficients [index]).neg())),
     }
   }
 }
