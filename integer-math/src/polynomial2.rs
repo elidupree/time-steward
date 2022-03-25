@@ -64,9 +64,6 @@ pub fn add_product_into<Coefficient: Integer, T: Integer + Signed + From<Coeffic
 }
 
 impl<Coefficient: Integer, const COEFFICIENTS: usize> Polynomial<Coefficient, COEFFICIENTS> {
-  pub fn zero() -> Self {
-    Polynomial([Zero::zero(); COEFFICIENTS])
-  }
   pub fn constant(value: Coefficient) -> Self {
     let mut coefficients = [Zero::zero(); COEFFICIENTS];
     coefficients[0] = value;

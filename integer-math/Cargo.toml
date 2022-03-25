@@ -22,6 +22,7 @@ serde_with = "1.12.0"
 derivative = "2.2.0"
 derive_more = "0.99.17"
 guard = "0.5.1"
+forward_ref_generic = "0.2.1"
 nalgebra = {version = "0.26.2", features = ["serde-serialize"]}
 
 [dev-dependencies]

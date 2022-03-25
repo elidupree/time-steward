@@ -1,4 +1,4 @@
-#![feature(array_methods)]
+#![feature(array_methods, array_zip)]
 
 #[cfg(test)]
 #[macro_use]
@@ -424,6 +424,7 @@ pub mod maybe_const;
 pub mod polynomial2;
 #[cfg(test)]
 pub mod polynomial2_tests;
+mod polynomial_impls;
 pub mod range_search;
 pub mod trajectory;
 
