@@ -427,6 +427,7 @@ pub mod polynomial2_tests;
 mod polynomial_impls;
 pub mod range_search;
 pub mod trajectory;
+mod trajectory_impls;
 
 #[cfg(test)]
 mod tests {
