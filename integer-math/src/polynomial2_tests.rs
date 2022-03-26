@@ -438,7 +438,7 @@ $(
       }
 
       #[test]
-      fn randomly_test_next_time_magnitude_squared_definitely_gt2_is_next (coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..100024, threshold_difference in 3..16, test_frac in 0f64..1f64) {
+      fn randomly_test_next_time_magnitude_squared_definitely_gt2_is_next (coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..46325, threshold_difference in 3..16, test_frac in 0f64..1f64) {
         let require_threshold = permit_threshold + threshold_difference;
         let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
         let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
@@ -454,13 +454,39 @@ $(
         prop_assume!(last_not_lt >= input.numerator);
         let test_time = input.numerator + ((last_not_lt.saturating_sub(input.numerator)) as f64 * test_frac).floor() as $double;
 
-        let exact_require_threshold = BigRational::from(BigInt::from(require_threshold));
+        let exact_require_threshold = BigRational::from(BigInt::from(require_threshold*require_threshold));
         let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(input));
         prop_assert!(exact <= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been <= {}", input.numerator, time, exact, exact_require_threshold);
         let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(FractionalInput::new(last_not_lt, input.shift)));
         prop_assert!(exact <= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been <= {}", last_not_lt, time, exact, exact_require_threshold);
         let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(FractionalInput::new(test_time, input.shift)));
         prop_assert!(exact <= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been <= {}", test_time, time, exact, exact_require_threshold);
+      }
+
+      #[test]
+      fn randomly_test_next_time_magnitude_squared_definitely_lt2_is_next (coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), require_threshold in 1 as $integer..32, threshold_difference in 3..16, test_frac in 0f64..1f64) {
+        let permit_threshold = require_threshold + threshold_difference;
+        let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
+        let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
+        let time = next_time_magnitude_squared_passes (&polynomials.each_ref(), input.numerator, input.shift, LessThanFilter::new(permit_threshold*permit_threshold, require_threshold*require_threshold));
+
+        let last_not_lt = match time {
+          None => $double::max_value(),
+          Some(k) => {
+            prop_assert!(k >= input.numerator);
+            k-1
+          },
+        };
+        prop_assume!(last_not_lt >= input.numerator);
+        let test_time = input.numerator + ((last_not_lt.saturating_sub(input.numerator)) as f64 * test_frac).floor() as $double;
+
+        let exact_require_threshold = BigRational::from(BigInt::from(require_threshold*require_threshold));
+        let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(input));
+        prop_assert!(exact >= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been >= {}", input.numerator, time, exact, exact_require_threshold);
+        let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(FractionalInput::new(last_not_lt, input.shift)));
+        prop_assert!(exact >= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been >= {}", last_not_lt, time, exact, exact_require_threshold);
+        let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(FractionalInput::new(test_time, input.shift)));
+        prop_assert!(exact >= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been >= {}", test_time, time, exact, exact_require_threshold);
       }
 
     }

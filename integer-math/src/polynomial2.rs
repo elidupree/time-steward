@@ -483,13 +483,14 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
 /*pub trait PolynomialBoundsGenerator<Input, Output> {
 fn generate_bounds(&self, input: FractionalInput<Input>) -> Option<Output>;
 }*/
-pub trait PolynomialBoundsFilter<Coefficient> {
+pub trait PolynomialBoundsFilter<Coefficient>: Debug {
   fn interval_filter(&self, bounds: [Coefficient; 2]) -> bool;
   fn result_filter(&self, bounds: [Coefficient; 2]) -> bool;
 }
 
 macro_rules! impl_filter {
 ($Filter: ident, $operation: tt, $yesdir: expr, $nodir: expr, $validcond: tt, $validval: expr) => {
+#[derive(Debug)]
 pub struct $Filter<Coefficient> {
 permit_threshold: Coefficient,
 require_threshold: Coefficient,
@@ -811,18 +812,14 @@ where
       endpoints: [&Self::FractionalValue; 2],
       duration_shift: impl ShiftSize,
     ) -> bool {
-      eprintln!(
-        "{:?}:{:?}: {:?}, {:?}",
-        self.input_shift, duration_shift, self.coordinates, endpoints
-      );
-      dbg!(self.filter.interval_filter(square_bounds(
+      self.filter.interval_filter(square_bounds(
         SQUARED_PRECISION_SHIFT * 2 - STANDARD_PRECISION_SHIFT * 2,
         endpoints[0].iter().zip(endpoints[1]).map(|(e1, e2)| {
           let b: [Coefficient; 2] =
             range_search::value_bounds_on_negative_power_of_2_interval([e1, e2], duration_shift);
           b.map(|a| a.into())
         }),
-      )))
+      ))
     }
     fn tail_filter(&self, endpoint: &Self::IntegerValue) -> bool {
       self.filter.interval_filter(square_bounds(
