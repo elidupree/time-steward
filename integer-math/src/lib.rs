@@ -1,4 +1,5 @@
 #![feature(array_methods, array_zip)]
+#![feature(array_from_fn)]
 
 #[cfg(test)]
 #[macro_use]
@@ -48,6 +49,24 @@ pub trait Integer:
 }
 /*impl <T: 'static + num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + ShlAssign <u32> + ShrAssign <u32> + Debug + Display + Send + Sync> Integer for T {}*/
 
+pub trait VectorLike<Coordinate: nalgebra::Scalar, const DIMENSIONS: usize> {
+  fn coordinate(&self, which: usize) -> Coordinate;
+  fn to_vector(&self) -> Vector<Coordinate, DIMENSIONS> {
+    Vector::from_fn(|row, col| {
+      assert_eq!(col, 1);
+      self.coordinate(row)
+    })
+  }
+  fn to_array(&self) -> [Coordinate; DIMENSIONS] {
+    std::array::from_fn(|which| self.coordinate(which))
+  }
+}
+impl<T: nalgebra::Scalar> VectorLike<T, 1> for T {
+  fn coordinate(&self, _which: usize) -> T {
+    self.clone()
+  }
+}
+
 pub trait HasCoordinates {
   type Coordinate: Integer + Signed + VectorExt + HasCoordinates<Coordinate = Self::Coordinate>;
 }
@@ -76,18 +95,6 @@ pub trait VectorExt:
 pub type Vector<T, const DIMENSIONS: usize> =
   nalgebra::Vector<T, nalgebra::Const<DIMENSIONS>, nalgebra::ArrayStorage<T, DIMENSIONS, 1>>;
 
-// TODO: add this to VectorExt - but there are significant type system difficulties
-// with doing it in the trivial way
-pub fn vector_to_array<T: Integer, const DIMENSIONS: usize>(
-  vector: &Vector<T, DIMENSIONS>,
-) -> [T; DIMENSIONS] {
-  let mut result = [Default::default(); DIMENSIONS];
-  for which in 0..DIMENSIONS {
-    result[which] = vector[which];
-  }
-  result
-}
-
 pub trait DoubleSizedSignedInteger: Integer + Signed {
   type DoubleSized: Integer + Signed + From<Self> + TryInto<Self>;
 }
@@ -110,6 +117,11 @@ pub mod impls {
     }
     fn set_coordinate(&mut self, which: usize, value: Self::Coordinate) {
       self[which] = value
+    }
+  }
+  impl<T: Integer, const DIMENSIONS: usize> VectorLike<T, DIMENSIONS> for Vector<T, DIMENSIONS> {
+    fn coordinate(&self, which: usize) -> T {
+      self[which]
     }
   }
   macro_rules! impl_integer {

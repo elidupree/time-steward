@@ -2,6 +2,7 @@ use crate::maybe_const::ConstU32;
 use crate::polynomial2::{OverflowError, Polynomial};
 use crate::{
   mean_round_to_even, shr_round_to_even, DoubleSized, DoubleSizedSignedInteger, Integer, Vector,
+  VectorLike,
 };
 use derivative::Derivative;
 use num::{Signed, Zero};
@@ -53,9 +54,9 @@ impl<
   > Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
-  pub fn constant(value: &Vector<Coefficient, DIMENSIONS>) -> Self {
+  pub fn constant(value: &impl VectorLike<Coefficient, DIMENSIONS>) -> Self {
     Trajectory {
-      coordinates: crate::vector_to_array(value).map(Polynomial::constant),
+      coordinates: value.to_array().map(Polynomial::constant),
       unrounded_origin: Time::min_value(),
     }
   }
@@ -134,9 +135,9 @@ impl<
     }
   }
 
-  pub fn nth_coefficient(
+  pub fn nth_coefficient_vector(
     &self,
-    which: usize,
+    n: usize,
     time: Time,
   ) -> Option<Vector<Coefficient, DIMENSIONS>> {
     let mut result = Vector::<Coefficient, DIMENSIONS>::zero();
@@ -146,7 +147,7 @@ impl<
         relative_time,
         ConstU32::<TIME_SHIFT>,
         0,
-      )?[which];
+      )?[n];
       result[dimension] = mean_round_to_even(bounds[0], bounds[1]).try_into().ok()?;
     }
     Some(result)
@@ -154,18 +155,18 @@ impl<
 
   pub fn set_nth_coefficient(
     &mut self,
-    which: usize,
+    n: usize,
     time: Time,
-    target_value: &Vector<Coefficient, DIMENSIONS>,
+    target_value: &impl VectorLike<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
     self.try_set_origin(time)?;
     let relative_time = self.relative_to_rounded_origin(time).ok_or(OverflowError)?;
     for (dimension, coordinate) in self.coordinates.iter_mut().enumerate() {
       coordinate.set_nth_taylor_coefficient_at_fractional_input(
-        which,
+        n,
         relative_time,
         ConstU32::<TIME_SHIFT>,
-        target_value[dimension],
+        target_value.coordinate(dimension),
       )?;
     }
     Ok(())
@@ -173,39 +174,36 @@ impl<
 
   pub fn add_nth_coefficient(
     &mut self,
-    which: usize,
+    n: usize,
     time: Time,
-    added_value: &Vector<Coefficient, DIMENSIONS>,
+    added_value: &impl VectorLike<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
     // TODO used proper add function instead, once I implement it
-    let current_value = self.nth_coefficient(which, time).ok_or(OverflowError)?;
-    self.set_nth_coefficient(which, time, &(current_value + added_value))
+    let current_value = self.nth_coefficient_vector(n, time).ok_or(OverflowError)?;
+    self.set_nth_coefficient(n, time, &(current_value + added_value.to_vector()))
   }
 
-  pub fn value(&self, time: Time) -> Option<Vector<Coefficient, DIMENSIONS>> {
-    self.nth_coefficient(0, time)
+  pub fn position_vector(&self, time: Time) -> Option<Vector<Coefficient, DIMENSIONS>> {
+    self.nth_coefficient_vector(0, time)
   }
 
-  pub fn velocity(&self, time: Time) -> Option<Vector<Coefficient, DIMENSIONS>> {
-    self.nth_coefficient(1, time)
+  pub fn velocity_vector(&self, time: Time) -> Option<Vector<Coefficient, DIMENSIONS>> {
+    self.nth_coefficient_vector(1, time)
   }
 
-  // pub fn acceleration(
-  //   &self,
-  //   time: Time,
-  //
-  // ) -> Option<Vector<Coefficient, DIMENSIONS>> {
-  //   Some(
-  //     self
-  //       .nth_coefficient(1, time, ConstU32::<TIME_SHIFT>)?
-  //       .checked_mul(2)?,
-  //   )
-  // }
+  pub fn acceleration_vector(&self, time: Time) -> Option<Vector<Coefficient, DIMENSIONS>> {
+    unimplemented!()
+    // Some(
+    // self
+    //   .nth_coefficient(1, time, ConstU32::<TIME_SHIFT>)?
+    //   .checked_mul(2)?,
+    // )
+  }
 
-  pub fn set_value(
+  pub fn set_position(
     &mut self,
     time: Time,
-    value: &Vector<Coefficient, DIMENSIONS>,
+    value: &impl VectorLike<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
     self.set_nth_coefficient(0, time, value)
   }
@@ -213,7 +211,7 @@ impl<
   pub fn set_velocity(
     &mut self,
     time: Time,
-    value: &Vector<Coefficient, DIMENSIONS>,
+    value: &impl VectorLike<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
     self.set_nth_coefficient(1, time, value)
   }
@@ -233,13 +231,13 @@ impl<
   //   )
   // }
 
-  pub fn add_value(&mut self, value: Vector<Coefficient, DIMENSIONS>) {
-    *self += value
+  pub fn add_position(&mut self, value: &impl VectorLike<Coefficient, DIMENSIONS>) {
+    *self += value.to_vector()
   }
   pub fn add_velocity(
     &mut self,
     time: Time,
-    value: &Vector<Coefficient, DIMENSIONS>,
+    value: &impl VectorLike<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
     self.add_nth_coefficient(1, time, value)
   }
@@ -258,3 +256,57 @@ impl<
   //   )
   // }
 }
+
+impl<
+    Coefficient: DoubleSizedSignedInteger,
+    Time: Integer
+      + Signed
+      //+ From<Coefficient>
+      //+ From<DoubleSized<Coefficient>>
+      + TryInto<Coefficient>
+      + TryInto<DoubleSized<Coefficient>>,
+    const COEFFICIENTS: usize,
+    const TIME_SHIFT: u32,
+  > Trajectory<Coefficient, Time, 1, COEFFICIENTS, TIME_SHIFT>
+{
+  pub fn position(&self, time: Time) -> Option<Coefficient> {
+    self.position_vector(time).map(|v| v[0])
+  }
+  pub fn velocity(&self, time: Time) -> Option<Coefficient> {
+    self.velocity_vector(time).map(|v| v[0])
+  }
+  pub fn acceleration(&self, time: Time) -> Option<Coefficient> {
+    self.acceleration_vector(time).map(|v| v[0])
+  }
+}
+
+macro_rules! normal_dimensions_impls {
+  ($($DIMENSIONS: expr),*) => {
+    $(
+    impl<
+        Coefficient: DoubleSizedSignedInteger,
+        Time: Integer
+          + Signed
+          //+ From<Coefficient>
+          //+ From<DoubleSized<Coefficient>>
+          + TryInto<Coefficient>
+          + TryInto<DoubleSized<Coefficient>>,
+        const COEFFICIENTS: usize,
+        const TIME_SHIFT: u32,
+      > Trajectory<Coefficient, Time, $DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
+    {
+      pub fn position(&self, time: Time) -> Option<Vector<Coefficient, $DIMENSIONS>> {
+        self.position_vector(time)
+      }
+      pub fn velocity(&self, time: Time) -> Option<Vector<Coefficient, $DIMENSIONS>> {
+        self.velocity_vector(time)
+      }
+      pub fn acceleration(&self, time: Time) -> Option<Vector<Coefficient, $DIMENSIONS>> {
+        self.acceleration_vector(time)
+      }
+    }
+    )*
+  };
+}
+
+normal_dimensions_impls!(2, 3, 4, 5, 6, 7, 8);
