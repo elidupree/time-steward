@@ -10,13 +10,17 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
-  > Add<Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>>
-  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+    const TIME_SHIFT: u32,
+  > Add<Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
-  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>;
+  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>;
 
   #[inline]
-  fn add(self, rhs: Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>) -> Self::Output {
+  fn add(
+    self,
+    rhs: Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>,
+  ) -> Self::Output {
     let (a, b) =
       Trajectory::with_later_origin(self, rhs).expect("overflow in Trajectory arithmetic");
     Trajectory {
@@ -31,12 +35,13 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
-  > CheckedAdd for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+    const TIME_SHIFT: u32,
+  > CheckedAdd for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
   fn checked_add(
     &self,
-    rhs: &Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>,
+    rhs: &Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>,
   ) -> Option<Self> {
     let (mut a, b) = Trajectory::with_later_origin(*self, *rhs)?;
     for (a, b) in a.coordinates.iter_mut().zip(b.coordinates) {
@@ -51,11 +56,15 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
-  > AddAssign<Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>>
-  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+    const TIME_SHIFT: u32,
+  > AddAssign<Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
-  fn add_assign(&mut self, rhs: Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>) {
+  fn add_assign(
+    &mut self,
+    rhs: Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>,
+  ) {
     *self = *self + rhs
   }
 }
@@ -65,18 +74,22 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
-  > AddAssign<&Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>>
-  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+    const TIME_SHIFT: u32,
+  > AddAssign<&Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
-  fn add_assign(&mut self, rhs: &Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>) {
+  fn add_assign(
+    &mut self,
+    rhs: &Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>,
+  ) {
     *self = *self + rhs
   }
 }
 
 forward_ref_binop! {
-  [Coefficient: DoubleSizedSignedInteger, Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>, const DIMENSIONS: usize, const COEFFICIENTS: usize]
-  impl Add for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+  [Coefficient: DoubleSizedSignedInteger, Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>, const DIMENSIONS: usize, const COEFFICIENTS: usize, const TIME_SHIFT: u32]
+  impl Add for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 }
 
 impl<
@@ -84,10 +97,11 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
+    const TIME_SHIFT: u32,
   > Add<Vector<Coefficient, DIMENSIONS>>
-  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
-  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>;
+  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>;
 
   #[inline]
   fn add(mut self, rhs: Vector<Coefficient, DIMENSIONS>) -> Self::Output {
@@ -103,8 +117,9 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
+    const TIME_SHIFT: u32,
   > AddAssign<Vector<Coefficient, DIMENSIONS>>
-  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
   fn add_assign(&mut self, rhs: Vector<Coefficient, DIMENSIONS>) {
@@ -117,8 +132,9 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
+    const TIME_SHIFT: u32,
   > AddAssign<&Vector<Coefficient, DIMENSIONS>>
-  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
   fn add_assign(&mut self, rhs: &Vector<Coefficient, DIMENSIONS>) {
@@ -127,8 +143,8 @@ impl<
 }
 
 forward_ref_binop! {
-  [Coefficient: DoubleSizedSignedInteger, Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>, const DIMENSIONS: usize, const COEFFICIENTS: usize]
-  impl Add for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>, Vector<Coefficient, DIMENSIONS>
+  [Coefficient: DoubleSizedSignedInteger, Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>, const DIMENSIONS: usize, const COEFFICIENTS: usize, const TIME_SHIFT: u32]
+  impl Add for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>, Vector<Coefficient, DIMENSIONS>
 }
 
 impl<
@@ -136,13 +152,17 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
-  > Sub<Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>>
-  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+    const TIME_SHIFT: u32,
+  > Sub<Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
-  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>;
+  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>;
 
   #[inline]
-  fn sub(self, rhs: Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>) -> Self::Output {
+  fn sub(
+    self,
+    rhs: Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>,
+  ) -> Self::Output {
     let (a, b) =
       Trajectory::with_later_origin(self, rhs).expect("overflow in Trajectory arithmetic");
     Trajectory {
@@ -157,12 +177,13 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
-  > CheckedSub for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+    const TIME_SHIFT: u32,
+  > CheckedSub for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
   fn checked_sub(
     &self,
-    rhs: &Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>,
+    rhs: &Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>,
   ) -> Option<Self> {
     let (mut a, b) = Trajectory::with_later_origin(*self, *rhs)?;
     for (a, b) in a.coordinates.iter_mut().zip(b.coordinates) {
@@ -177,11 +198,15 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
-  > SubAssign<Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>>
-  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+    const TIME_SHIFT: u32,
+  > SubAssign<Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
-  fn sub_assign(&mut self, rhs: Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>) {
+  fn sub_assign(
+    &mut self,
+    rhs: Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>,
+  ) {
     *self = *self - rhs
   }
 }
@@ -191,18 +216,22 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
-  > SubAssign<&Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>>
-  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+    const TIME_SHIFT: u32,
+  > SubAssign<&Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
-  fn sub_assign(&mut self, rhs: &Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>) {
+  fn sub_assign(
+    &mut self,
+    rhs: &Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>,
+  ) {
     *self = *self - rhs
   }
 }
 
 forward_ref_binop! {
-  [Coefficient: DoubleSizedSignedInteger, Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>, const DIMENSIONS: usize, const COEFFICIENTS: usize]
-  impl Sub for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+  [Coefficient: DoubleSizedSignedInteger, Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>, const DIMENSIONS: usize, const COEFFICIENTS: usize, const TIME_SHIFT: u32]
+  impl Sub for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 }
 
 impl<
@@ -210,10 +239,11 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
+    const TIME_SHIFT: u32,
   > Sub<Vector<Coefficient, DIMENSIONS>>
-  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
-  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>;
+  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>;
 
   #[inline]
   fn sub(mut self, rhs: Vector<Coefficient, DIMENSIONS>) -> Self::Output {
@@ -229,8 +259,9 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
+    const TIME_SHIFT: u32,
   > SubAssign<Vector<Coefficient, DIMENSIONS>>
-  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
   fn sub_assign(&mut self, rhs: Vector<Coefficient, DIMENSIONS>) {
@@ -243,8 +274,9 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
+    const TIME_SHIFT: u32,
   > SubAssign<&Vector<Coefficient, DIMENSIONS>>
-  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
   fn sub_assign(&mut self, rhs: &Vector<Coefficient, DIMENSIONS>) {
@@ -253,14 +285,19 @@ impl<
 }
 
 forward_ref_binop! {
-  [Coefficient: DoubleSizedSignedInteger, Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>, const DIMENSIONS: usize, const COEFFICIENTS: usize]
-  impl Sub for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>, Vector<Coefficient, DIMENSIONS>
+  [Coefficient: DoubleSizedSignedInteger, Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>, const DIMENSIONS: usize, const COEFFICIENTS: usize, const TIME_SHIFT: u32]
+  impl Sub for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>, Vector<Coefficient, DIMENSIONS>
 }
 
-impl<Coefficient: Integer, Time: Integer, const DIMENSIONS: usize, const COEFFICIENTS: usize>
-  Mul<Coefficient> for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+impl<
+    Coefficient: Integer,
+    Time: Integer,
+    const DIMENSIONS: usize,
+    const COEFFICIENTS: usize,
+    const TIME_SHIFT: u32,
+  > Mul<Coefficient> for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
-  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>;
+  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>;
 
   #[inline]
   fn mul(mut self, rhs: Coefficient) -> Self::Output {
@@ -271,8 +308,13 @@ impl<Coefficient: Integer, Time: Integer, const DIMENSIONS: usize, const COEFFIC
   }
 }
 
-impl<Coefficient: Integer, Time: Integer, const DIMENSIONS: usize, const COEFFICIENTS: usize>
-  Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+impl<
+    Coefficient: Integer,
+    Time: Integer,
+    const DIMENSIONS: usize,
+    const COEFFICIENTS: usize,
+    const TIME_SHIFT: u32,
+  > Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
   pub fn checked_mul(&self, rhs: Coefficient) -> Option<Self> {
@@ -284,8 +326,13 @@ impl<Coefficient: Integer, Time: Integer, const DIMENSIONS: usize, const COEFFIC
   }
 }
 
-impl<Coefficient: Integer, Time: Integer, const DIMENSIONS: usize, const COEFFICIENTS: usize>
-  MulAssign<Coefficient> for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+impl<
+    Coefficient: Integer,
+    Time: Integer,
+    const DIMENSIONS: usize,
+    const COEFFICIENTS: usize,
+    const TIME_SHIFT: u32,
+  > MulAssign<Coefficient> for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
   fn mul_assign(&mut self, rhs: Coefficient) {
@@ -293,8 +340,14 @@ impl<Coefficient: Integer, Time: Integer, const DIMENSIONS: usize, const COEFFIC
   }
 }
 
-impl<Coefficient: Integer, Time: Integer, const DIMENSIONS: usize, const COEFFICIENTS: usize>
-  MulAssign<&Coefficient> for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+impl<
+    Coefficient: Integer,
+    Time: Integer,
+    const DIMENSIONS: usize,
+    const COEFFICIENTS: usize,
+    const TIME_SHIFT: u32,
+  > MulAssign<&Coefficient>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
   fn mul_assign(&mut self, rhs: &Coefficient) {
@@ -303,8 +356,8 @@ impl<Coefficient: Integer, Time: Integer, const DIMENSIONS: usize, const COEFFIC
 }
 
 forward_ref_binop! {
-  [Coefficient: Integer, Time: Integer, const DIMENSIONS: usize, const COEFFICIENTS: usize]
-  impl Mul for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>, Coefficient
+  [Coefficient: Integer, Time: Integer, const DIMENSIONS: usize, const COEFFICIENTS: usize, const TIME_SHIFT: u32]
+  impl Mul for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>, Coefficient
 }
 
 impl<
@@ -312,9 +365,10 @@ impl<
     Time: Integer,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
-  > Neg for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+    const TIME_SHIFT: u32,
+  > Neg for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
-  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>;
+  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>;
 
   #[inline]
   fn neg(mut self) -> Self::Output {
@@ -331,9 +385,10 @@ impl<
     Time: Integer,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
-  > Neg for &'a Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+    const TIME_SHIFT: u32,
+  > Neg for &'a Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
-  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>;
+  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>;
 
   #[inline]
   fn neg(self) -> Self::Output {
@@ -346,7 +401,8 @@ impl<
     Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
-  > Zero for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+    const TIME_SHIFT: u32,
+  > Zero for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
   fn zero() -> Self {
