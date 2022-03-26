@@ -33,9 +33,10 @@ pub struct Trajectory<
   const COEFFICIENTS: usize,
   const TIME_SHIFT: u32,
 > {
+  // our coordinate polynomials, as functions of self.relative_to_rounded_origin(time)
   #[serde_as(as = "[_; DIMENSIONS]")]
   pub(crate) coordinates: [Polynomial<Coefficient, COEFFICIENTS>; DIMENSIONS],
-  pub(crate) origin: Time,
+  pub(crate) unrounded_origin: Time,
 }
 
 impl<
@@ -55,7 +56,7 @@ impl<
   pub fn constant(value: &Vector<Coefficient, DIMENSIONS>) -> Self {
     Trajectory {
       coordinates: crate::vector_to_array(value).map(Polynomial::constant),
-      origin: Time::zero(),
+      unrounded_origin: Time::min_value(),
     }
   }
   #[inline]
@@ -63,33 +64,54 @@ impl<
     self.coordinates.iter().all(Polynomial::is_constant)
   }
 
+  fn time_numerator_to_nearest_integer(time_numerator: Time) -> Time {
+    // we don't mind a directional bias here, because time has a directional bias
+    // round towards neginf at N.5 (why? shrug, just feels right)
+    (time_numerator + (Time::one() << (TIME_SHIFT - 1)) - Time::one()) >> TIME_SHIFT
+  }
+
+  // the origin of our polynomials, in time-numerator form
+  fn rounded_origin_numerator(&self) -> Time {
+    Self::time_numerator_to_nearest_integer(self.unrounded_origin) << TIME_SHIFT
+  }
+
+  fn relative_to_rounded_origin(&self, time_numerator: Time) -> Option<DoubleSized<Coefficient>> {
+    (time_numerator - self.rounded_origin_numerator())
+      .try_into()
+      .ok()
+  }
+
   pub fn set_origin(&mut self, new_origin: Time) {
     if !self.is_constant() {
-      let duration: DoubleSized<Coefficient> = (new_origin - self.origin)
+      let integer_duration: DoubleSized<Coefficient> =
+        (Self::time_numerator_to_nearest_integer(new_origin)
+          - Self::time_numerator_to_nearest_integer(self.unrounded_origin))
         .try_into()
         .ok()
         .expect("Overflow in Trajectory::set_origin");
       for coordinate in &mut self.coordinates {
         *coordinate = coordinate
-          .all_taylor_coefficients(duration)
+          .all_taylor_coefficients(integer_duration)
           .expect("Overflow in Trajectory::set_origin");
       }
     }
-    self.origin = new_origin;
+    self.unrounded_origin = new_origin;
   }
 
   pub fn try_set_origin(&mut self, new_origin: Time) -> Result<(), OverflowError> {
     if !self.is_constant() {
-      let duration: DoubleSized<Coefficient> = (new_origin - self.origin)
+      let integer_duration: DoubleSized<Coefficient> =
+        (Self::time_numerator_to_nearest_integer(new_origin)
+          - Self::time_numerator_to_nearest_integer(self.unrounded_origin))
         .try_into()
         .map_err(|_| OverflowError)?;
       for coordinate in &mut self.coordinates {
         *coordinate = coordinate
-          .all_taylor_coefficients(duration)
+          .all_taylor_coefficients(integer_duration)
           .ok_or(OverflowError)?;
       }
     }
-    self.origin = new_origin;
+    self.unrounded_origin = new_origin;
     Ok(())
   }
 
@@ -101,10 +123,13 @@ impl<
   }
 
   #[inline]
-  pub fn with_later_origin(a: Self, b: Self) -> Option<(Self, Self)> {
-    match a.origin.cmp(&b.origin) {
-      Ordering::Less => Some((a.with_origin(b.origin)?, b)),
-      Ordering::Equal => Some((a, b.with_origin(a.origin)?)),
+  pub(crate) fn with_matching_rounded_origins(a: Self, b: Self) -> Option<(Self, Self)> {
+    match a
+      .rounded_origin_numerator()
+      .cmp(&b.rounded_origin_numerator())
+    {
+      Ordering::Less => Some((a.with_origin(b.unrounded_origin)?, b)),
+      Ordering::Equal => Some((a, b.with_origin(a.unrounded_origin)?)),
       Ordering::Greater => Some((a, b)),
     }
   }
@@ -115,8 +140,7 @@ impl<
     time: Time,
   ) -> Option<Vector<Coefficient, DIMENSIONS>> {
     let mut result = Vector::<Coefficient, DIMENSIONS>::zero();
-    let relative_time: DoubleSized<Coefficient> =
-      (time - (self.origin << TIME_SHIFT)).try_into().ok()?;
+    let relative_time = self.relative_to_rounded_origin(time)?;
     for dimension in 0..DIMENSIONS {
       let bounds = self.coordinates[dimension].all_taylor_coefficients_bounds(
         relative_time,
@@ -132,13 +156,10 @@ impl<
     &mut self,
     which: usize,
     time: Time,
-
     target_value: &Vector<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
-    self.try_set_origin(time >> TIME_SHIFT)?;
-    let relative_time: DoubleSized<Coefficient> = (time - (self.origin << TIME_SHIFT))
-      .try_into()
-      .map_err(|_| OverflowError)?;
+    self.try_set_origin(time)?;
+    let relative_time = self.relative_to_rounded_origin(time).ok_or(OverflowError)?;
     for (dimension, coordinate) in self.coordinates.iter_mut().enumerate() {
       coordinate.set_nth_taylor_coefficient_at_fractional_input(
         which,
@@ -154,7 +175,6 @@ impl<
     &mut self,
     which: usize,
     time: Time,
-
     added_value: &Vector<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
     // TODO used proper add function instead, once I implement it
@@ -185,7 +205,6 @@ impl<
   pub fn set_value(
     &mut self,
     time: Time,
-
     value: &Vector<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
     self.set_nth_coefficient(0, time, value)
@@ -194,7 +213,6 @@ impl<
   pub fn set_velocity(
     &mut self,
     time: Time,
-
     value: &Vector<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
     self.set_nth_coefficient(1, time, value)
@@ -203,7 +221,6 @@ impl<
   // pub fn set_acceleration(
   //   &mut self,
   //   time: Time,
-  //
   //   value: &Vector<Coefficient, DIMENSIONS>,
   // ) -> Result<(), OverflowError> {
   //   self.set_nth_coefficient(
@@ -222,7 +239,6 @@ impl<
   pub fn add_velocity(
     &mut self,
     time: Time,
-
     value: &Vector<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
     self.add_nth_coefficient(1, time, value)
@@ -230,7 +246,6 @@ impl<
   // pub fn add_acceleration(
   //   &mut self,
   //   time: Time,
-  //
   //   value: &Vector<Coefficient, DIMENSIONS>,
   // ) -> Result<(), OverflowError> {
   //   self.add_nth_coefficient(
