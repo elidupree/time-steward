@@ -74,6 +74,14 @@ impl<Coefficient: Integer, const COEFFICIENTS: usize> Polynomial<Coefficient, CO
   pub fn is_constant(&self) -> bool {
     self.0.iter().skip(1).all(|&a| a == Coefficient::zero())
   }
+  // #[inline]
+  // pub fn nth_coefficient_if_constant(&self, n: usize) -> Option<Coefficient> {
+  //   if self.0.iter().skip(n + 1).all(|&a| a == Coefficient::zero()) {
+  //     Some(self.0.get(n).copied().unwrap_or_else(Zero::zero))
+  //   } else {
+  //     None
+  //   }
+  // }
 }
 
 impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
@@ -545,65 +553,89 @@ impl_filter!(GreaterThanEqualToFilter, >=, 1, 0, >, Coefficient::one());
 // {
 // }
 
-macro_rules! impl_polynomials {
-($($coefficients: expr),*) => {
-$(
-
-
-
-
-impl <Coefficient: DoubleSizedSignedInteger> Polynomial <Coefficient, $coefficients> {
-pub fn next_time_value_passes<
-  Filter: PolynomialBoundsFilter<Coefficient>,
->(
-  &self,
-  start_input: DoubleSized<Coefficient>,
-  input_shift: impl ShiftSize,
-  filter: Filter,
-) -> Option<DoubleSized<Coefficient>> {
-  struct Search <S,Coefficient, Filter> {
-    polynomial: Polynomial <Coefficient, $coefficients>,
+impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
+  Polynomial<Coefficient, COEFFICIENTS>
+{
+  pub fn next_time_value_passes<Filter: PolynomialBoundsFilter<Coefficient>>(
+    &self,
+    start_input: DoubleSized<Coefficient>,
+    input_shift: impl ShiftSize,
     filter: Filter,
-    input_shift: S,
-    _marker: PhantomData <Coefficient>,
+  ) -> Option<DoubleSized<Coefficient>>
+  where
+    [[DoubleSized<Coefficient>; 2]; COEFFICIENTS]: Default,
+  {
+    struct Search<S, Coefficient, Filter, const COEFFICIENTS: usize> {
+      polynomial: Polynomial<Coefficient, COEFFICIENTS>,
+      filter: Filter,
+      input_shift: S,
+      _marker: PhantomData<Coefficient>,
+    }
+    impl<
+        S: ShiftSize,
+        Coefficient: DoubleSizedSignedInteger,
+        Filter: PolynomialBoundsFilter<Coefficient>,
+        const COEFFICIENTS: usize,
+      > RangeSearch for Search<S, Coefficient, Filter, COEFFICIENTS>
+    where
+      [[DoubleSized<Coefficient>; 2]; COEFFICIENTS]: Default,
+    {
+      type Input = DoubleSized<Coefficient>;
+      type IntegerValue = Polynomial<Coefficient, COEFFICIENTS>;
+      type FractionalValue = [[DoubleSized<Coefficient>; 2]; COEFFICIENTS];
+      fn value_at_integer(&self, input: Self::Input) -> Option<Self::IntegerValue> {
+        self.polynomial.all_taylor_coefficients(input)
+      }
+      fn value_at_fractional(
+        &self,
+        nearest_integer_value: &Self::IntegerValue,
+        relative_input: Self::Input,
+      ) -> Self::FractionalValue {
+        nearest_integer_value.all_taylor_coefficients_bounds_within_half(
+          relative_input,
+          self.input_shift,
+          STANDARD_PRECISION_SHIFT,
+        )
+      }
+      fn integer_interval_filter(
+        &self,
+        endpoints: [&Self::IntegerValue; 2],
+        duration: Self::Input,
+      ) -> bool {
+        self.filter.interval_filter(
+          range_search::coefficient_bounds_on_integer_interval(endpoints, duration)[0],
+        )
+      }
+      fn fractional_interval_filter(
+        &self,
+        endpoints: [&Self::FractionalValue; 2],
+        duration_shift: impl ShiftSize,
+      ) -> bool {
+        self.filter.interval_filter (range_search::value_bounds_on_negative_power_of_2_interval::<_, Coefficient, COEFFICIENTS> (endpoints, duration_shift))
+      }
+      fn tail_filter(&self, endpoint: &Self::IntegerValue) -> bool {
+        self
+          .filter
+          .interval_filter(range_search::coefficient_bounds_on_tail(endpoint)[0])
+      }
+      fn fractional_result_filter(&self, value: &Self::FractionalValue) -> bool {
+        self.filter.result_filter([
+          saturating_downcast(shr_floor(value[0][0], STANDARD_PRECISION_SHIFT)),
+          saturating_downcast(shr_ceil(value[0][1], STANDARD_PRECISION_SHIFT)),
+        ])
+      }
+    }
+    RangeSearchRunner::run(
+      Search {
+        polynomial: *self,
+        filter,
+        input_shift,
+        _marker: PhantomData,
+      },
+      start_input,
+      input_shift,
+    )
   }
-  impl<S: ShiftSize,Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <Coefficient>> RangeSearch for Search<S,Coefficient, Filter> {
-    type Input = DoubleSized<Coefficient>;
-    type IntegerValue = Polynomial <Coefficient, $coefficients>;
-    type FractionalValue = [[DoubleSized <Coefficient>; 2]; $coefficients];
-    fn value_at_integer (&self, input: Self::Input)->Option<Self::IntegerValue> {
-      self.polynomial.all_taylor_coefficients (input)
-    }
-    fn value_at_fractional (&self, nearest_integer_value: &Self::IntegerValue, relative_input: Self::Input)->Self::FractionalValue {
-      nearest_integer_value.all_taylor_coefficients_bounds_within_half (relative_input, self.input_shift, STANDARD_PRECISION_SHIFT)
-    }
-    fn integer_interval_filter (&self, endpoints: [&Self::IntegerValue; 2], duration: Self::Input)->bool {
-      self.filter.interval_filter (range_search::coefficient_bounds_on_integer_interval (endpoints, duration) [0])
-    }
-    fn fractional_interval_filter (&self, endpoints: [&Self::FractionalValue; 2], duration_shift: impl ShiftSize)->bool {
-      self.filter.interval_filter (range_search::value_bounds_on_negative_power_of_2_interval::<_, Coefficient, $coefficients> (endpoints, duration_shift))
-    }
-    fn tail_filter (&self, endpoint: &Self::IntegerValue)->bool {
-      self.filter.interval_filter (range_search::coefficient_bounds_on_tail (endpoint) [0])
-    }
-    fn fractional_result_filter (&self, value: &Self::FractionalValue)->bool {
-      self.filter.result_filter ([
-        saturating_downcast(shr_floor(value[0][0], STANDARD_PRECISION_SHIFT)),
-        saturating_downcast(shr_ceil(value[0][1], STANDARD_PRECISION_SHIFT)),
-      ])
-    }
-  }
-  RangeSearchRunner::run (Search {
-    polynomial: *self,
-    filter, input_shift,
-    _marker: PhantomData
-  }, start_input, input_shift)
-}
-}
-
-)*
-
-}
 }
 
 macro_rules! impl_squarable_polynomials {
@@ -673,25 +705,31 @@ pub fn next_time_magnitude_squared_passes<
 }
 }
 
-impl_polynomials!(1, 2, 3, 4, 5);
+// impl_polynomials!(1, 2, 3, 4, 5);
 impl_squarable_polynomials!(1, 2, 3);
 
 const SQUARED_PRECISION_SHIFT: u32 = 3;
-fn square_bounds<T: Integer>(scale_down: bool, bounds: impl IntoIterator<Item = [T; 2]>) -> [T; 2] {
+fn square_bounds<T: Integer>(scale_down: u32, bounds: impl IntoIterator<Item = [T; 2]>) -> [T; 2] {
   let mut result: [T; 2] = [Zero::zero(); 2];
   for [lower, upper] in bounds {
+    assert!(lower <= upper);
     let lower_square = lower.saturating_mul(lower);
     let upper_square = upper.saturating_mul(upper);
     if (lower > Zero::zero()) == (upper > Zero::zero()) {
       result[0] = result[0].saturating_add(min(lower_square, upper_square));
     }
     result[1] = result[1].saturating_add(max(lower_square, upper_square));
+    assert!(result[0] <= result[1]);
+    assert!(result[0] >= T::zero());
   }
-  if scale_down {
-    [
-      shr_floor(result[0], SQUARED_PRECISION_SHIFT * 2),
-      shr_ceil(result[1], SQUARED_PRECISION_SHIFT * 2),
-    ]
+  if scale_down > 0 {
+    result = [
+      shr_floor(result[0], scale_down),
+      shr_ceil(result[1], scale_down),
+    ];
+    assert!(result[0] <= result[1]);
+    assert!(result[0] >= T::zero());
+    result
   } else {
     result
   }
@@ -709,7 +747,7 @@ pub fn next_time_magnitude_squared_passes<
   filter: Filter,
 ) -> Option<DoubleSized<Coefficient>>
 where
-  DoubleSized<Coefficient>: DoubleSizedSignedInteger,
+  //DoubleSized<Coefficient>: DoubleSizedSignedInteger,
   [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
 {
   struct Search<'a, S, Coefficient, Filter, const COEFFICIENTS: usize, const DIMENSIONS: usize> {
@@ -727,7 +765,7 @@ where
       const DIMENSIONS: usize,
     > RangeSearch for Search<'a, S, Coefficient, Filter, COEFFICIENTS, DIMENSIONS>
   where
-    DoubleSized<Coefficient>: DoubleSizedSignedInteger,
+    //DoubleSized<Coefficient>: DoubleSizedSignedInteger,
     [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
   {
     type Input = DoubleSized<Coefficient>;
@@ -761,7 +799,7 @@ where
       duration: Self::Input,
     ) -> bool {
       self.filter.interval_filter(square_bounds(
-        false,
+        0,
         endpoints[0].iter().zip(endpoints[1]).map(|(e1, e2)| {
           range_search::coefficient_bounds_on_integer_interval([e1, e2], duration)[0]
             .map(|a| a.into())
@@ -773,27 +811,32 @@ where
       endpoints: [&Self::FractionalValue; 2],
       duration_shift: impl ShiftSize,
     ) -> bool {
-      self.filter.interval_filter(square_bounds(
-        true,
+      eprintln!(
+        "{:?}:{:?}: {:?}, {:?}",
+        self.input_shift, duration_shift, self.coordinates, endpoints
+      );
+      dbg!(self.filter.interval_filter(square_bounds(
+        SQUARED_PRECISION_SHIFT * 2 - STANDARD_PRECISION_SHIFT * 2,
         endpoints[0].iter().zip(endpoints[1]).map(|(e1, e2)| {
           let b: [Coefficient; 2] =
             range_search::value_bounds_on_negative_power_of_2_interval([e1, e2], duration_shift);
           b.map(|a| a.into())
         }),
-      ))
+      )))
     }
     fn tail_filter(&self, endpoint: &Self::IntegerValue) -> bool {
       self.filter.interval_filter(square_bounds(
-        false,
+        0,
         endpoint
           .iter()
           .map(|e1| range_search::coefficient_bounds_on_tail(e1)[0].map(|a| a.into())),
       ))
     }
     fn fractional_result_filter(&self, value: &Self::FractionalValue) -> bool {
-      self
-        .filter
-        .result_filter(square_bounds(true, value.iter().map(|c| c[0])))
+      self.filter.result_filter(square_bounds(
+        SQUARED_PRECISION_SHIFT * 2,
+        value.iter().map(|c| c[0]),
+      ))
     }
   }
   RangeSearchRunner::run(

@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 /**
 An integer that may either be a runtime u32, or a ZST that can produce a constant u32.
 
@@ -12,7 +14,7 @@ a typical TimeSteward simulation will use only one, constant shift size;
 in this situation, I was able to measure a 8-10% speedup in the bouncy_circles benchmarks
 from using ConstU32 instead of u32.
 */
-pub trait ShiftSize: Into<u32> + Copy {}
+pub trait ShiftSize: Into<u32> + Copy + Debug {}
 
 /**
 A ZST representing a specific u32 value.

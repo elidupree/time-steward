@@ -70,6 +70,8 @@ pub fn coefficient_bounds_on_integer_interval<
 
 pub const STANDARD_PRECISION_SHIFT: u32 = 2;
 
+// value bounds assuming endpoints is actually the real values left shifted by STANDARD_PRECISION_SHIFT.
+// TODO: make the function not have such a hokey assumption
 pub fn value_bounds_on_negative_power_of_2_interval<
   S: ShiftSize,
   Coefficient: DoubleSizedSignedInteger,

@@ -1,11 +1,13 @@
 use crate::maybe_const::ConstU32;
-use crate::polynomial2::{OverflowError, Polynomial};
+use crate::polynomial2::{
+  next_time_magnitude_squared_passes, GreaterThanFilter, LessThanFilter, OverflowError, Polynomial,
+};
 use crate::{
   mean_round_to_even, shr_round_to_even, DoubleSized, DoubleSizedSignedInteger, Integer, Vector,
   VectorLike,
 };
 use derivative::Derivative;
-use num::{Signed, Zero};
+use num::{One, Signed, Zero};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::cmp::Ordering;
@@ -54,7 +56,7 @@ impl<
   > Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
 {
   #[inline]
-  pub fn constant(value: &impl VectorLike<Coefficient, DIMENSIONS>) -> Self {
+  pub fn constant(value: impl VectorLike<Coefficient, DIMENSIONS>) -> Self {
     Trajectory {
       coordinates: value.to_array().map(Polynomial::constant),
       unrounded_origin: Time::min_value(),
@@ -135,6 +137,25 @@ impl<
     }
   }
 
+  pub fn highest_coefficient_vector(&self) -> Vector<Coefficient, DIMENSIONS> {
+    let mut result = Vector::<Coefficient, DIMENSIONS>::zero();
+    for dimension in 0..DIMENSIONS {
+      result[dimension] = self.coordinates[dimension][DIMENSIONS - 1];
+    }
+    result
+  }
+
+  // pub fn nth_coefficient_vector_if_constant(
+  //   &self,
+  //   n: usize,
+  // ) -> Option<Vector<Coefficient, DIMENSIONS>> {
+  //   let mut result = Vector::<Coefficient, DIMENSIONS>::zero();
+  //   for dimension in 0..DIMENSIONS {
+  //     result[dimension] = self.coordinates[dimension].nth_coefficient_if_constant(n)?;
+  //   }
+  //   Some(result)
+  // }
+
   pub fn nth_coefficient_vector(
     &self,
     n: usize,
@@ -157,7 +178,7 @@ impl<
     &mut self,
     n: usize,
     time: Time,
-    target_value: &impl VectorLike<Coefficient, DIMENSIONS>,
+    target_value: impl VectorLike<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
     self.try_set_origin(time)?;
     let relative_time = self.relative_to_rounded_origin(time).ok_or(OverflowError)?;
@@ -176,11 +197,11 @@ impl<
     &mut self,
     n: usize,
     time: Time,
-    added_value: &impl VectorLike<Coefficient, DIMENSIONS>,
+    added_value: impl VectorLike<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
     // TODO used proper add function instead, once I implement it
     let current_value = self.nth_coefficient_vector(n, time).ok_or(OverflowError)?;
-    self.set_nth_coefficient(n, time, &(current_value + added_value.to_vector()))
+    self.set_nth_coefficient(n, time, current_value + added_value.to_vector())
   }
 
   pub fn position_vector(&self, time: Time) -> Option<Vector<Coefficient, DIMENSIONS>> {
@@ -203,7 +224,7 @@ impl<
   pub fn set_position(
     &mut self,
     time: Time,
-    value: &impl VectorLike<Coefficient, DIMENSIONS>,
+    value: impl VectorLike<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
     self.set_nth_coefficient(0, time, value)
   }
@@ -211,7 +232,7 @@ impl<
   pub fn set_velocity(
     &mut self,
     time: Time,
-    value: &impl VectorLike<Coefficient, DIMENSIONS>,
+    value: impl VectorLike<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
     self.set_nth_coefficient(1, time, value)
   }
@@ -231,30 +252,132 @@ impl<
   //   )
   // }
 
-  pub fn add_position(&mut self, value: &impl VectorLike<Coefficient, DIMENSIONS>) {
+  pub fn add_position(&mut self, value: impl VectorLike<Coefficient, DIMENSIONS>) {
     *self += value.to_vector()
   }
   pub fn add_velocity(
     &mut self,
     time: Time,
-    value: &impl VectorLike<Coefficient, DIMENSIONS>,
+    value: impl VectorLike<Coefficient, DIMENSIONS>,
   ) -> Result<(), OverflowError> {
     self.add_nth_coefficient(1, time, value)
   }
-  // pub fn add_acceleration(
-  //   &mut self,
-  //   time: Time,
-  //   value: &Vector<Coefficient, DIMENSIONS>,
-  // ) -> Result<(), OverflowError> {
-  //   self.add_nth_coefficient(
-  //     2,
-  //     time,
-  //
-  //     // note: we don't have to use shr_nicely_rounded because it's always at 0.5
-  //     // TODO: do this with slightly better precision
-  //     value.map_coordinates(|coordinate| shr_round_to_even(coordinate, 1u32)),
-  //   )
-  // }
+  pub fn add_acceleration(
+    &mut self,
+    time: Time,
+    value: impl VectorLike<Coefficient, DIMENSIONS>,
+  ) -> Result<(), OverflowError> {
+    self.add_nth_coefficient(
+      2,
+      time,
+      // note: we don't have to use shr_nicely_rounded because it's always at 0.5
+      // TODO: do this with slightly better precision
+      value
+        .to_array()
+        .map(|coordinate| shr_round_to_even(coordinate, 1u32)),
+    )
+  }
+
+  // TODO: the below functions come pre-deprecated;
+  // I'm going to replace the interface, but I'm writing them for now so I can
+  // plug this into bouncy_circles in order to test and run benchmarks
+
+  pub fn next_time_possibly_outside_bounds(
+    &self,
+    range: [Time; 2],
+    bounds: [impl VectorLike<Coefficient, DIMENSIONS>; 2],
+  ) -> Option<Time>
+  where
+    DoubleSized<Coefficient>: Into<Time>,
+    [[DoubleSized<Coefficient>; 2]; COEFFICIENTS]: Default,
+  {
+    let three = Coefficient::one() + Coefficient::one() + Coefficient::one();
+    self
+      .coordinates
+      .iter()
+      .enumerate()
+      .filter_map(|(dimension, coordinate)| {
+        let target = bounds[0].coordinate(dimension);
+        coordinate
+          .next_time_value_passes(
+            (range[0] - self.rounded_origin_numerator())
+              .try_into()
+              .ok()?,
+            ConstU32::<TIME_SHIFT>,
+            LessThanFilter::new(target + three, target),
+          )
+          .map(|a| a.into() + self.rounded_origin_numerator())
+      })
+      .chain(
+        self
+          .coordinates
+          .iter()
+          .enumerate()
+          .filter_map(|(dimension, coordinate)| {
+            let target = bounds[1].coordinate(dimension);
+            coordinate
+              .next_time_value_passes(
+                (range[0] - self.rounded_origin_numerator())
+                  .try_into()
+                  .ok()?,
+                ConstU32::<TIME_SHIFT>,
+                GreaterThanFilter::new(target - three, target),
+              )
+              .map(|a| a.into() + self.rounded_origin_numerator())
+          }),
+      )
+      .min()
+  }
+
+  pub fn next_time_magnitude_significantly_gt(
+    &self,
+    range: [Time; 2],
+    target: Coefficient,
+  ) -> Option<Time>
+  where
+    DoubleSized<Coefficient>: Into<Time>,
+    [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
+  {
+    let target: DoubleSized<Coefficient> = target.into();
+    let target_plus_three = target
+      + DoubleSized::<Coefficient>::one()
+      + DoubleSized::<Coefficient>::one()
+      + DoubleSized::<Coefficient>::one();
+    next_time_magnitude_squared_passes(
+      &self.coordinates.each_ref(),
+      (range[0] - self.rounded_origin_numerator())
+        .try_into()
+        .ok()?,
+      ConstU32::<TIME_SHIFT>,
+      GreaterThanFilter::new(target * target, target_plus_three * target_plus_three),
+    )
+    .map(|a| a.into() + self.rounded_origin_numerator())
+  }
+
+  pub fn next_time_magnitude_significantly_lt(
+    &self,
+    range: [Time; 2],
+    target: Coefficient,
+  ) -> Option<Time>
+  where
+    DoubleSized<Coefficient>: Into<Time>,
+    [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
+  {
+    let target: DoubleSized<Coefficient> = target.into();
+    let target_minus_three = target
+      - DoubleSized::<Coefficient>::one()
+      - DoubleSized::<Coefficient>::one()
+      - DoubleSized::<Coefficient>::one();
+    next_time_magnitude_squared_passes(
+      &self.coordinates.each_ref(),
+      (range[0] - self.rounded_origin_numerator())
+        .try_into()
+        .ok()?,
+      ConstU32::<TIME_SHIFT>,
+      LessThanFilter::new(target * target, target_minus_three * target_minus_three),
+    )
+    .map(|a| a.into() + self.rounded_origin_numerator())
+  }
 }
 
 impl<
@@ -269,14 +392,53 @@ impl<
     const TIME_SHIFT: u32,
   > Trajectory<Coefficient, Time, 1, COEFFICIENTS, TIME_SHIFT>
 {
-  pub fn position(&self, time: Time) -> Option<Coefficient> {
+  pub fn nth_coefficient(&self, n: usize, time: Time) -> Option<Coefficient> {
+    self.nth_coefficient_vector(n, time).map(|v| v[0])
+  }
+  pub fn position_at(&self, time: Time) -> Option<Coefficient> {
     self.position_vector(time).map(|v| v[0])
   }
-  pub fn velocity(&self, time: Time) -> Option<Coefficient> {
+  pub fn velocity_at(&self, time: Time) -> Option<Coefficient> {
     self.velocity_vector(time).map(|v| v[0])
   }
-  pub fn acceleration(&self, time: Time) -> Option<Coefficient> {
+  pub fn acceleration_at(&self, time: Time) -> Option<Coefficient> {
     self.acceleration_vector(time).map(|v| v[0])
+  }
+}
+
+impl<
+    Coefficient: DoubleSizedSignedInteger,
+    Time: Integer
+      + Signed
+      //+ From<Coefficient>
+      //+ From<DoubleSized<Coefficient>>
+      + TryInto<Coefficient>
+      + TryInto<DoubleSized<Coefficient>>,
+    const TIME_SHIFT: u32,
+  > Trajectory<Coefficient, Time, 1, 2, TIME_SHIFT>
+{
+  pub fn velocity(&self) -> Coefficient {
+    self.highest_coefficient_vector()[0]
+  }
+}
+
+impl<
+    Coefficient: DoubleSizedSignedInteger,
+    Time: Integer
+      + Signed
+      //+ From<Coefficient>
+      //+ From<DoubleSized<Coefficient>>
+      + TryInto<Coefficient>
+      + TryInto<DoubleSized<Coefficient>>,
+    const TIME_SHIFT: u32,
+  > Trajectory<Coefficient, Time, 1, 3, TIME_SHIFT>
+{
+  pub fn acceleration(&self) -> Coefficient {
+    // possible issue: no fallback for out-of-bounds, unlike the other methods?
+    // possible justification: also unlike the other methods,
+    //   which can implicitly overflow as time passes,
+    //   this acceleration must have been explicitly set
+    self.highest_coefficient_vector()[0] * (Coefficient::one() + Coefficient::one())
   }
 }
 
@@ -295,14 +457,53 @@ macro_rules! normal_dimensions_impls {
         const TIME_SHIFT: u32,
       > Trajectory<Coefficient, Time, $DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
     {
-      pub fn position(&self, time: Time) -> Option<Vector<Coefficient, $DIMENSIONS>> {
+      pub fn nth_coefficient(&self, n: usize, time: Time) -> Option<Vector<Coefficient, $DIMENSIONS>> {
+        self.nth_coefficient_vector(n, time)
+      }
+      pub fn position_at(&self, time: Time) -> Option<Vector<Coefficient, $DIMENSIONS>> {
         self.position_vector(time)
       }
-      pub fn velocity(&self, time: Time) -> Option<Vector<Coefficient, $DIMENSIONS>> {
+      pub fn velocity_at(&self, time: Time) -> Option<Vector<Coefficient, $DIMENSIONS>> {
         self.velocity_vector(time)
       }
-      pub fn acceleration(&self, time: Time) -> Option<Vector<Coefficient, $DIMENSIONS>> {
+      pub fn acceleration_at(&self, time: Time) -> Option<Vector<Coefficient, $DIMENSIONS>> {
         self.acceleration_vector(time)
+      }
+    }
+
+    impl<
+        Coefficient: DoubleSizedSignedInteger,
+        Time: Integer
+          + Signed
+          //+ From<Coefficient>
+          //+ From<DoubleSized<Coefficient>>
+          + TryInto<Coefficient>
+          + TryInto<DoubleSized<Coefficient>>,
+        const TIME_SHIFT: u32,
+      > Trajectory<Coefficient, Time, $DIMENSIONS, 2, TIME_SHIFT>
+    {
+      pub fn velocity(&self) -> Vector<Coefficient, $DIMENSIONS> {
+        self.highest_coefficient_vector()
+      }
+    }
+
+    impl<
+        Coefficient: DoubleSizedSignedInteger,
+        Time: Integer
+          + Signed
+          //+ From<Coefficient>
+          //+ From<DoubleSized<Coefficient>>
+          + TryInto<Coefficient>
+          + TryInto<DoubleSized<Coefficient>>,
+        const TIME_SHIFT: u32,
+      > Trajectory<Coefficient, Time, $DIMENSIONS, 3, TIME_SHIFT>
+    {
+      pub fn acceleration(&self) -> Vector<Coefficient, $DIMENSIONS> {
+        // possible issue: no fallback for out-of-bounds, unlike the other methods?
+        // possible justification: also unlike the other methods,
+        //   which can implicitly overflow as time passes,
+        //   this acceleration must have been explicitly set
+        self.highest_coefficient_vector() * (Coefficient::one() + Coefficient::one())
       }
     }
     )*

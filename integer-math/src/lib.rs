@@ -53,7 +53,7 @@ pub trait VectorLike<Coordinate: nalgebra::Scalar, const DIMENSIONS: usize> {
   fn coordinate(&self, which: usize) -> Coordinate;
   fn to_vector(&self) -> Vector<Coordinate, DIMENSIONS> {
     Vector::from_fn(|row, col| {
-      assert_eq!(col, 1);
+      assert_eq!(col, 0);
       self.coordinate(row)
     })
   }
@@ -119,9 +119,16 @@ pub mod impls {
       self[which] = value
     }
   }
-  impl<T: Integer, const DIMENSIONS: usize> VectorLike<T, DIMENSIONS> for Vector<T, DIMENSIONS> {
+  impl<T: nalgebra::Scalar, const DIMENSIONS: usize> VectorLike<T, DIMENSIONS>
+    for Vector<T, DIMENSIONS>
+  {
     fn coordinate(&self, which: usize) -> T {
-      self[which]
+      self[which].clone()
+    }
+  }
+  impl<T: nalgebra::Scalar, const DIMENSIONS: usize> VectorLike<T, DIMENSIONS> for [T; DIMENSIONS] {
+    fn coordinate(&self, which: usize) -> T {
+      self[which].clone()
     }
   }
   macro_rules! impl_integer {
