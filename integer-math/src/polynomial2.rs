@@ -64,11 +64,13 @@ pub fn add_product_into<Coefficient: Integer, T: Integer + Signed + From<Coeffic
 }
 
 impl<Coefficient: Integer, const COEFFICIENTS: usize> Polynomial<Coefficient, COEFFICIENTS> {
+  #[inline]
   pub fn constant(value: Coefficient) -> Self {
     let mut coefficients = [Zero::zero(); COEFFICIENTS];
     coefficients[0] = value;
     Polynomial(coefficients)
   }
+  #[inline]
   pub fn is_constant(&self) -> bool {
     self.0.iter().skip(1).all(|&a| a == Coefficient::zero())
   }
@@ -300,6 +302,7 @@ impl<Coefficient: Integer + Signed, const COEFFICIENTS: usize>
 {
   /// The maximum total of `input_shift + precision_shift`.
   /// The bigger WorkingType is, the bigger this can be.
+  #[inline]
   pub fn all_taylor_coefficients_bounds_within_half_max_total_shift<
     WorkingType: Integer + Signed,
   >() -> u32 {

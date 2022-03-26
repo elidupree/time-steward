@@ -1,5 +1,5 @@
 use crate::trajectory::Trajectory;
-use crate::{DoubleSized, DoubleSizedSignedInteger, Integer};
+use crate::{DoubleSized, DoubleSizedSignedInteger, Integer, Vector};
 use forward_ref_generic::forward_ref_binop;
 use num::{CheckedAdd, CheckedSub, Signed, Zero};
 use std::convert::TryInto;
@@ -7,7 +7,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 impl<
     Coefficient: DoubleSizedSignedInteger,
-    Time: Integer + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
   > Add<Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>>
@@ -28,7 +28,7 @@ impl<
 
 impl<
     Coefficient: DoubleSizedSignedInteger,
-    Time: Integer + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
   > CheckedAdd for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
@@ -48,7 +48,7 @@ impl<
 
 impl<
     Coefficient: DoubleSizedSignedInteger,
-    Time: Integer + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
   > AddAssign<Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>>
@@ -62,7 +62,7 @@ impl<
 
 impl<
     Coefficient: DoubleSizedSignedInteger,
-    Time: Integer + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
   > AddAssign<&Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>>
@@ -75,13 +75,65 @@ impl<
 }
 
 forward_ref_binop! {
-  [Coefficient: DoubleSizedSignedInteger, Time: Integer + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>, const DIMENSIONS: usize, const COEFFICIENTS: usize]
+  [Coefficient: DoubleSizedSignedInteger, Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>, const DIMENSIONS: usize, const COEFFICIENTS: usize]
   impl Add for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
 }
 
 impl<
     Coefficient: DoubleSizedSignedInteger,
-    Time: Integer + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    const DIMENSIONS: usize,
+    const COEFFICIENTS: usize,
+  > Add<Vector<Coefficient, DIMENSIONS>>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+{
+  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>;
+
+  #[inline]
+  fn add(mut self, rhs: Vector<Coefficient, DIMENSIONS>) -> Self::Output {
+    for (dimension, coordinate) in self.coordinates.iter_mut().enumerate() {
+      coordinate[0] += rhs[dimension];
+    }
+    self
+  }
+}
+
+impl<
+    Coefficient: DoubleSizedSignedInteger,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    const DIMENSIONS: usize,
+    const COEFFICIENTS: usize,
+  > AddAssign<Vector<Coefficient, DIMENSIONS>>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+{
+  #[inline]
+  fn add_assign(&mut self, rhs: Vector<Coefficient, DIMENSIONS>) {
+    *self = *self + rhs
+  }
+}
+
+impl<
+    Coefficient: DoubleSizedSignedInteger,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    const DIMENSIONS: usize,
+    const COEFFICIENTS: usize,
+  > AddAssign<&Vector<Coefficient, DIMENSIONS>>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+{
+  #[inline]
+  fn add_assign(&mut self, rhs: &Vector<Coefficient, DIMENSIONS>) {
+    *self = *self + rhs
+  }
+}
+
+forward_ref_binop! {
+  [Coefficient: DoubleSizedSignedInteger, Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>, const DIMENSIONS: usize, const COEFFICIENTS: usize]
+  impl Add for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>, Vector<Coefficient, DIMENSIONS>
+}
+
+impl<
+    Coefficient: DoubleSizedSignedInteger,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
   > Sub<Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>>
@@ -102,7 +154,7 @@ impl<
 
 impl<
     Coefficient: DoubleSizedSignedInteger,
-    Time: Integer + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
   > CheckedSub for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
@@ -122,7 +174,7 @@ impl<
 
 impl<
     Coefficient: DoubleSizedSignedInteger,
-    Time: Integer + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
   > SubAssign<Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>>
@@ -136,7 +188,7 @@ impl<
 
 impl<
     Coefficient: DoubleSizedSignedInteger,
-    Time: Integer + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
     const DIMENSIONS: usize,
     const COEFFICIENTS: usize,
   > SubAssign<&Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>>
@@ -149,8 +201,60 @@ impl<
 }
 
 forward_ref_binop! {
-  [Coefficient: DoubleSizedSignedInteger, Time: Integer + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>, const DIMENSIONS: usize, const COEFFICIENTS: usize]
+  [Coefficient: DoubleSizedSignedInteger, Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>, const DIMENSIONS: usize, const COEFFICIENTS: usize]
   impl Sub for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+}
+
+impl<
+    Coefficient: DoubleSizedSignedInteger,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    const DIMENSIONS: usize,
+    const COEFFICIENTS: usize,
+  > Sub<Vector<Coefficient, DIMENSIONS>>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+{
+  type Output = Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>;
+
+  #[inline]
+  fn sub(mut self, rhs: Vector<Coefficient, DIMENSIONS>) -> Self::Output {
+    for (dimension, coordinate) in self.coordinates.iter_mut().enumerate() {
+      coordinate[0] -= rhs[dimension];
+    }
+    self
+  }
+}
+
+impl<
+    Coefficient: DoubleSizedSignedInteger,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    const DIMENSIONS: usize,
+    const COEFFICIENTS: usize,
+  > SubAssign<Vector<Coefficient, DIMENSIONS>>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+{
+  #[inline]
+  fn sub_assign(&mut self, rhs: Vector<Coefficient, DIMENSIONS>) {
+    *self = *self - rhs
+  }
+}
+
+impl<
+    Coefficient: DoubleSizedSignedInteger,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    const DIMENSIONS: usize,
+    const COEFFICIENTS: usize,
+  > SubAssign<&Vector<Coefficient, DIMENSIONS>>
+  for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>
+{
+  #[inline]
+  fn sub_assign(&mut self, rhs: &Vector<Coefficient, DIMENSIONS>) {
+    *self = *self - rhs
+  }
+}
+
+forward_ref_binop! {
+  [Coefficient: DoubleSizedSignedInteger, Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>, const DIMENSIONS: usize, const COEFFICIENTS: usize]
+  impl Sub for Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS>, Vector<Coefficient, DIMENSIONS>
 }
 
 impl<Coefficient: Integer, Time: Integer, const DIMENSIONS: usize, const COEFFICIENTS: usize>

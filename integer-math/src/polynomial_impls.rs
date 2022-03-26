@@ -51,6 +51,41 @@ forward_ref_binop! {
   impl Add for Polynomial<Coefficient, COEFFICIENTS>
 }
 
+impl<Coefficient: Integer, const COEFFICIENTS: usize> Add<Coefficient>
+  for Polynomial<Coefficient, COEFFICIENTS>
+{
+  type Output = Polynomial<Coefficient, COEFFICIENTS>;
+
+  #[inline]
+  fn add(mut self, rhs: Coefficient) -> Self::Output {
+    self.0[0] += rhs;
+    self
+  }
+}
+
+impl<Coefficient: Integer, const COEFFICIENTS: usize> AddAssign<Coefficient>
+  for Polynomial<Coefficient, COEFFICIENTS>
+{
+  #[inline]
+  fn add_assign(&mut self, rhs: Coefficient) {
+    *self = *self + rhs
+  }
+}
+
+impl<Coefficient: Integer, const COEFFICIENTS: usize> AddAssign<&Coefficient>
+  for Polynomial<Coefficient, COEFFICIENTS>
+{
+  #[inline]
+  fn add_assign(&mut self, rhs: &Coefficient) {
+    *self = *self + rhs
+  }
+}
+
+forward_ref_binop! {
+  [Coefficient: Integer, const COEFFICIENTS: usize]
+  impl Add for Polynomial<Coefficient, COEFFICIENTS>, Coefficient
+}
+
 impl<Coefficient: Integer, const COEFFICIENTS: usize> Sub<Polynomial<Coefficient, COEFFICIENTS>>
   for Polynomial<Coefficient, COEFFICIENTS>
 {
@@ -96,6 +131,41 @@ impl<Coefficient: Integer, const COEFFICIENTS: usize>
 forward_ref_binop! {
   [Coefficient: Integer, const COEFFICIENTS: usize]
   impl Sub for Polynomial<Coefficient, COEFFICIENTS>
+}
+
+impl<Coefficient: Integer, const COEFFICIENTS: usize> Sub<Coefficient>
+  for Polynomial<Coefficient, COEFFICIENTS>
+{
+  type Output = Polynomial<Coefficient, COEFFICIENTS>;
+
+  #[inline]
+  fn sub(mut self, rhs: Coefficient) -> Self::Output {
+    self.0[0] -= rhs;
+    self
+  }
+}
+
+impl<Coefficient: Integer, const COEFFICIENTS: usize> SubAssign<Coefficient>
+  for Polynomial<Coefficient, COEFFICIENTS>
+{
+  #[inline]
+  fn sub_assign(&mut self, rhs: Coefficient) {
+    *self = *self - rhs
+  }
+}
+
+impl<Coefficient: Integer, const COEFFICIENTS: usize> SubAssign<&Coefficient>
+  for Polynomial<Coefficient, COEFFICIENTS>
+{
+  #[inline]
+  fn sub_assign(&mut self, rhs: &Coefficient) {
+    *self = *self - rhs
+  }
+}
+
+forward_ref_binop! {
+  [Coefficient: Integer, const COEFFICIENTS: usize]
+  impl Sub for Polynomial<Coefficient, COEFFICIENTS>, Coefficient
 }
 
 impl<Coefficient: Integer, const COEFFICIENTS: usize> Mul<Coefficient>
