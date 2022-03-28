@@ -441,6 +441,7 @@ pub fn saturating_downcast<T: Integer + From<U> + TryInto<U>, U: Integer>(a: T) 
 //pub mod incremental_search;
 pub mod maybe_const;
 pub mod polynomial2;
+pub mod polynomial2_testing;
 #[cfg(test)]
 pub mod polynomial2_tests;
 mod polynomial_impls;

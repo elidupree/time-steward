@@ -10,6 +10,7 @@ use super::*;
 use crate::range_search::{RangeSearch, RangeSearchRunner, STANDARD_PRECISION_SHIFT};
 use derivative::Derivative;
 use derive_more::{Deref, DerefMut};
+use live_prop_test::live_prop_test;
 use num::{CheckedAdd, CheckedMul, Signed};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -84,6 +85,7 @@ impl<Coefficient: Integer, const COEFFICIENTS: usize> Polynomial<Coefficient, CO
   // }
 }
 
+#[live_prop_test]
 impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
   Polynomial<Coefficient, COEFFICIENTS>
 {
@@ -94,9 +96,10 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
   /// By restricting it to the original type, we can at least guarantee that we always return Some
   /// if the results are in-bounds; if we returned WorkingType, there would also be failures due
   /// to internal overflow.)
+  #[live_prop_test(postcondition = "self.all_taylor_coefficients_postconditions(input, &result)")]
   pub fn all_taylor_coefficients(
     &self,
-    input: impl Copy + TryInto<DoubleSized<Coefficient>>,
+    input: impl Integer + Signed + TryInto<DoubleSized<Coefficient>>,
   ) -> Option<Self> {
     if self.is_constant() {
       return Some(*self);
