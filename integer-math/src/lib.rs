@@ -9,6 +9,7 @@ use num::traits::{CheckedShl, CheckedShr, Signed, WrappingAdd, WrappingMul, Wrap
 use std::mem;
 //use std::cmp::{min};
 use crate::maybe_const::ShiftSize;
+use num::BigRational;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display};
 use std::ops::{
@@ -20,6 +21,7 @@ pub trait Integer:
   + num::PrimInt
   + num::Integer
   + num::FromPrimitive
+  + num::bigint::ToBigInt
   + AddAssign<Self>
   + SubAssign<Self>
   + MulAssign<Self>
@@ -46,6 +48,9 @@ pub trait Integer:
     mem::size_of::<Self>() as u32 * 8
   }
   fn nonsign_bits() -> u32;
+  fn to_big_rational(&self) -> BigRational {
+    BigRational::from(self.to_bigint().unwrap())
+  }
 }
 /*impl <T: 'static + num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + ShlAssign <u32> + ShrAssign <u32> + Debug + Display + Send + Sync> Integer for T {}*/
 
