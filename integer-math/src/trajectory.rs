@@ -328,7 +328,21 @@ impl<
       )
       .min()
   }
+}
 
+// TODO: this stuff can just go in the same impl as above;
+// the only additional requirement is DoubleSized<Coefficient>: DoubleSizedSignedInteger,
+// which can be removed once I settle on the new magnitude bound search implementation
+impl<
+    Coefficient: DoubleSizedSignedInteger,
+    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
+    const DIMENSIONS: usize,
+    const COEFFICIENTS: usize,
+    const TIME_SHIFT: u32,
+  > Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
+where
+  DoubleSized<Coefficient>: DoubleSizedSignedInteger,
+{
   pub fn next_time_magnitude_significantly_gt(
     &self,
     range: [Time; 2],
@@ -337,6 +351,9 @@ impl<
   where
     DoubleSized<Coefficient>: Into<Time>,
     [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
+    [[[DoubleSized<Coefficient>; 2]; 1]; DIMENSIONS]: Default,
+    [[[DoubleSized<Coefficient>; 2]; 2]; DIMENSIONS]: Default,
+    [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default,
   {
     let target: DoubleSized<Coefficient> = target.into();
     let target_plus_three = target
@@ -362,6 +379,9 @@ impl<
   where
     DoubleSized<Coefficient>: Into<Time>,
     [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
+    [[[DoubleSized<Coefficient>; 2]; 1]; DIMENSIONS]: Default,
+    [[[DoubleSized<Coefficient>; 2]; 2]; DIMENSIONS]: Default,
+    [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default,
   {
     let target: DoubleSized<Coefficient> = target.into();
     let target_minus_three = target

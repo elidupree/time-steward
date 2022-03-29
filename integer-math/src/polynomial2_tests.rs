@@ -376,7 +376,7 @@ $(
         let require_threshold = permit_threshold + threshold_difference;
         let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
         let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
-        let time = Polynomial ::<$integer, $coefficients>::next_time_magnitude_squared_passes (polynomials.as_slice(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
+        let time = Polynomial ::<$integer, $coefficients>::next_time_magnitude_squared_passes (&polynomials.each_ref(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
         prop_assume! (time .is_some());
         let time = time.unwrap();
 
@@ -416,7 +416,7 @@ $(
         let require_threshold = permit_threshold + threshold_difference;
         let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
         let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
-        let time = Polynomial ::<$integer, $coefficients> ::next_time_magnitude_squared_passes (polynomials.as_slice(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
+        let time = Polynomial ::<$integer, $coefficients> ::next_time_magnitude_squared_passes (&polynomials.each_ref(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
 
         let last_not_lt = match time {
           None => $double::max_value(),

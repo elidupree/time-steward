@@ -1,5 +1,4 @@
-#![feature(array_methods, array_zip)]
-#![feature(array_from_fn)]
+#![feature(array_methods, array_zip, array_from_fn)]
 
 #[cfg(test)]
 #[macro_use]

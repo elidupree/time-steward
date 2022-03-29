@@ -12,6 +12,7 @@ use derivative::Derivative;
 use derive_more::{Deref, DerefMut};
 use live_prop_test::live_prop_test;
 use num::{CheckedAdd, CheckedMul, Signed};
+use polynomial2_testing::next_time_magnitude_squared_passes_postconditions;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::cmp::{max, min, Ordering};
@@ -494,14 +495,14 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
 /*pub trait PolynomialBoundsGenerator<Input, Output> {
 fn generate_bounds(&self, input: FractionalInput<Input>) -> Option<Output>;
 }*/
-pub trait PolynomialBoundsFilter<Coefficient>: Debug {
+pub trait PolynomialBoundsFilter<Coefficient>: Copy + Debug {
   fn interval_filter(&self, bounds: [Coefficient; 2]) -> bool;
   fn result_filter(&self, bounds: [Coefficient; 2]) -> bool;
 }
 
 macro_rules! impl_filter {
 ($Filter: ident, $operation: tt, $yesdir: expr, $nodir: expr, $validcond: tt, $validval: expr) => {
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct $Filter<Coefficient> {
 permit_threshold: Coefficient,
 require_threshold: Coefficient,
@@ -651,25 +652,40 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
 }
 
 macro_rules! impl_squarable_polynomials {
-($($coefficients: expr),*) => {
+($($m: ident, $coefficients: expr),*) => {
 $(
+mod $m {
+  use super::*;
+  const COEFFICIENTS: usize = $coefficients;
+#[live_prop_test]
 impl <Coefficient: DoubleSizedSignedInteger> Polynomial <Coefficient, $coefficients> where DoubleSized<Coefficient>: DoubleSizedSignedInteger
 {
+  #[live_prop_test(
+    postcondition = "next_time_magnitude_squared_passes_postconditions::<Coefficient, S, Filter, DIMENSIONS, COEFFICIENTS>(coordinates, start_input, input_shift, filter, result)"
+  )]
 pub fn next_time_magnitude_squared_passes<
+  S: ShiftSize,
   Filter: PolynomialBoundsFilter<DoubleSized<Coefficient>>,
+  const DIMENSIONS: usize,
 >(
-  coordinates: &[Self],
+  coordinates: &[&Self; DIMENSIONS],
   start_input: DoubleSized<Coefficient>,
-  input_shift: impl ShiftSize,
+  input_shift: S,
   filter: Filter,
-) -> Option<DoubleSized<Coefficient>> {
-  struct Search <'a, S, Coefficient, Filter> {
-    coordinates: &'a [Polynomial <Coefficient, $coefficients>],
+) -> Option<DoubleSized<Coefficient>>
+  where [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
+  [[[DoubleSized<Coefficient>; 2]; 1]; DIMENSIONS]: Default,
+  [[[DoubleSized<Coefficient>; 2]; 2]; DIMENSIONS]: Default,
+  [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default, {
+  struct Search <'a, S, Coefficient, Filter,
+  const DIMENSIONS: usize,> {
+    coordinates: &'a [&'a Polynomial <Coefficient, $coefficients>; DIMENSIONS],
     filter: Filter,
     input_shift: S,
     _marker: PhantomData <Coefficient>,
   }
-  impl<'a, S: ShiftSize, Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <DoubleSized<Coefficient>>> RangeSearch for Search<'a, S, Coefficient, Filter> where DoubleSized<Coefficient>: DoubleSizedSignedInteger {
+  impl<'a, S: ShiftSize, Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <DoubleSized<Coefficient>>,
+  const DIMENSIONS: usize,> RangeSearch for Search<'a, S, Coefficient, Filter, DIMENSIONS> where DoubleSized<Coefficient>: DoubleSizedSignedInteger {
     type Input = DoubleSized<Coefficient>;
     type IntegerValue = Polynomial <DoubleSized<Coefficient>, {$coefficients*2-1}>;
     type FractionalValue = [[DoubleSized<DoubleSized <Coefficient>>; 2]; $coefficients*2-1];
@@ -712,13 +728,14 @@ pub fn next_time_magnitude_squared_passes<
   }, start_input, input_shift)
 }
 }
+  }
 )*
 
 }
 }
 
 // impl_polynomials!(1, 2, 3, 4, 5);
-impl_squarable_polynomials!(1, 2, 3);
+impl_squarable_polynomials!(m1, 1, m2, 2, m3, 3);
 
 const SQUARED_PRECISION_SHIFT: u32 = 3;
 fn square_bounds<T: Integer>(scale_down: u32, bounds: impl IntoIterator<Item = [T; 2]>) -> [T; 2] {
@@ -747,20 +764,58 @@ fn square_bounds<T: Integer>(scale_down: u32, bounds: impl IntoIterator<Item = [
   }
 }
 
+impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
+  Polynomial<Coefficient, COEFFICIENTS>
+where
+  DoubleSized<Coefficient>: DoubleSizedSignedInteger,
+{
+  pub fn next_time_magnitude_squared_passes_trust_me<
+    S: ShiftSize,
+    Filter: PolynomialBoundsFilter<DoubleSized<Coefficient>>,
+    const DIMENSIONS: usize,
+  >(
+    coordinates: &[&Self; DIMENSIONS],
+    start_input: DoubleSized<Coefficient>,
+    input_shift: S,
+    filter: Filter,
+  ) -> Option<DoubleSized<Coefficient>>
+  where
+    [[[DoubleSized<Coefficient>; 2]; 1]; DIMENSIONS]: Default,
+    [[[DoubleSized<Coefficient>; 2]; 2]; DIMENSIONS]: Default,
+    [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default,
+  {
+    match COEFFICIENTS {
+      1 => Polynomial::<Coefficient, 1>::next_time_magnitude_squared_passes::<S, Filter, DIMENSIONS>(unsafe{std::mem::transmute(coordinates)}, start_input, input_shift, filter),
+      2 => Polynomial::<Coefficient, 2>::next_time_magnitude_squared_passes::<S, Filter, DIMENSIONS>(unsafe{std::mem::transmute(coordinates)}, start_input, input_shift, filter),
+      3 => Polynomial::<Coefficient, 3>::next_time_magnitude_squared_passes::<S, Filter, DIMENSIONS>(unsafe{std::mem::transmute(coordinates)}, start_input, input_shift, filter),
+      _ => panic!("next_time_magnitude_squared_passes_trust_me can only ACTUALLY be called for COEFFICIENTS in [1,2,3])")
+    }
+  }
+}
+
+#[live_prop_test(
+  postcondition = "next_time_magnitude_squared_passes_postconditions::<Coefficient, S, Filter, DIMENSIONS, COEFFICIENTS>(coordinates, start_input, input_shift, filter, result)"
+)]
 pub fn next_time_magnitude_squared_passes<
   Coefficient: DoubleSizedSignedInteger,
+  S: ShiftSize,
   Filter: PolynomialBoundsFilter<DoubleSized<Coefficient>>,
   const DIMENSIONS: usize,
   const COEFFICIENTS: usize,
 >(
   coordinates: &[&Polynomial<Coefficient, COEFFICIENTS>; DIMENSIONS],
   start_input: DoubleSized<Coefficient>,
-  input_shift: impl ShiftSize,
+  input_shift: S,
   filter: Filter,
 ) -> Option<DoubleSized<Coefficient>>
 where
-  //DoubleSized<Coefficient>: DoubleSizedSignedInteger,
+  // this bound is and actually needed for this function, but
+  // I'm including it for now to maintain parity with the other implementation
+  DoubleSized<Coefficient>: DoubleSizedSignedInteger,
   [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
+  [[[DoubleSized<Coefficient>; 2]; 1]; DIMENSIONS]: Default,
+  [[[DoubleSized<Coefficient>; 2]; 2]; DIMENSIONS]: Default,
+  [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default,
 {
   struct Search<'a, S, Coefficient, Filter, const COEFFICIENTS: usize, const DIMENSIONS: usize> {
     coordinates: &'a [&'a Polynomial<Coefficient, COEFFICIENTS>; DIMENSIONS],

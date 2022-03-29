@@ -79,7 +79,7 @@ pub mod support {
   pub mod rounding_error_tolerant_math;
   pub mod time_functions;
   pub use time_steward_integer_math as integer_math;
-  pub mod trajectories;
+  //pub mod trajectories;
   //pub mod bbox_collision_detection;
 }
 

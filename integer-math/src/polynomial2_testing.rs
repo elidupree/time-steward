@@ -1,4 +1,4 @@
-use crate::polynomial2::Polynomial;
+use crate::polynomial2::{next_time_magnitude_squared_passes, Polynomial, PolynomialBoundsFilter};
 use crate::{DoubleSized, DoubleSizedSignedInteger, Integer, ShiftSize};
 use live_prop_test::{lpt_assert, lpt_assert_eq};
 use num::{BigInt, BigRational, One, Signed, Zero};
@@ -153,4 +153,46 @@ impl<Coefficient: Integer + Signed, const COEFFICIENTS: usize>
 
     Ok(())
   }
+}
+
+pub(crate) fn next_time_magnitude_squared_passes_postconditions<
+  Coefficient: DoubleSizedSignedInteger,
+  S: ShiftSize,
+  Filter: PolynomialBoundsFilter<DoubleSized<Coefficient>>,
+  const DIMENSIONS: usize,
+  const COEFFICIENTS: usize,
+>(
+  coordinates: &[&Polynomial<Coefficient, COEFFICIENTS>; DIMENSIONS],
+  start_input: DoubleSized<Coefficient>,
+  input_shift: S,
+  filter: Filter,
+  result: Option<DoubleSized<Coefficient>>,
+) -> Result<(), String>
+where
+  // this bound is and actually needed for this function, but
+  // I'm including it for now to maintain parity with the other implementation
+  DoubleSized<Coefficient>: DoubleSizedSignedInteger,
+  [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
+  [[[DoubleSized<Coefficient>; 2]; 1]; DIMENSIONS]: Default,
+  [[[DoubleSized<Coefficient>; 2]; 2]; DIMENSIONS]: Default,
+  [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default,
+{
+  // let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
+  // let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
+  // let time = Polynomial ::<$integer, $coefficients>::next_time_magnitude_squared_passes (&polynomials.each_ref(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
+  // prop_assume! (time .is_some());
+  // let time = time.unwrap();
+  //
+  // let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(FractionalInput::new(time, input.shift)));
+  // //if let Some(coefficients) = coefficients.all_taylor_coefficients_bounds (time, input.shift, 0u32) {
+  // prop_assert!(exact > BigRational::from(BigInt::from(permit_threshold)), "expected above {} but was {}", permit_threshold, exact);
+
+  Polynomial::<Coefficient, COEFFICIENTS>::next_time_magnitude_squared_passes_trust_me(
+    coordinates,
+    start_input,
+    input_shift,
+    filter,
+  );
+  next_time_magnitude_squared_passes(coordinates, start_input, input_shift, filter);
+  Ok(())
 }
