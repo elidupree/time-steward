@@ -308,6 +308,7 @@ pub fn assert_input_within_half<T: Integer + Signed, S: ShiftSize>(
   }
 }
 
+#[live_prop_test]
 impl<Coefficient: Integer + Signed, const COEFFICIENTS: usize>
   Polynomial<Coefficient, COEFFICIENTS>
 {
@@ -351,8 +352,11 @@ impl<Coefficient: Integer + Signed, const COEFFICIENTS: usize>
 
   `input_shift + precision_shift` must not exceed `all_taylor_coefficients_bounds_within_half_max_total_shift()`. If they are, this function will panic.
 
-  However, this function never fails due to overflow.
+  However, this functupion never fails due to overflow.
   */
+  #[live_prop_test(
+    postcondition = "self.all_taylor_coefficients_bounds_postconditions(input, input_shift, precision_shift, Some(result))"
+  )]
   pub fn all_taylor_coefficients_bounds_within_half<
     WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient>,
   >(
@@ -381,6 +385,7 @@ impl<Coefficient: Integer + Signed, const COEFFICIENTS: usize>
   }
 }
 
+#[live_prop_test]
 impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
   Polynomial<Coefficient, COEFFICIENTS>
 {
@@ -391,6 +396,9 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
 
   This function is simply the composition of all_taylor_coefficients() (to find the closest integer polynomial) and all_taylor_coefficients_bounds_within_half(). Thus, it may return None if the closest integer polynomial has overflowing exponents, even if the true answer would not overflow. See those two functions' documentation for more details.
   */
+  #[live_prop_test(
+    postcondition = "self.all_taylor_coefficients_bounds_postconditions(input, input_shift, precision_shift, result)"
+  )]
   pub fn all_taylor_coefficients_bounds<
     WorkingType: Integer + Signed + From<Coefficient> + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
   >(

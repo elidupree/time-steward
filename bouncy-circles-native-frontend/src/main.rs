@@ -46,6 +46,7 @@ implement_vertex!(Vertex, direction, center, radius);
 //use std::io::{BufReader, BufWriter};
 
 fn main() {
+  live_prop_test::initialize();
   // For some reason, docopt checking the arguments caused build_glium() to fail in emscripten.
   /*if !cfg!(target_os = "emscripten") {
     let arguments: Args = Docopt::new(USAGE)

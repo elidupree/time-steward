@@ -14,4 +14,5 @@ glium = "0.29.1"
 time_steward = {path="../time-steward"}
 bouncy_circles = {path="../bouncy-circles"}
 time_steward_simple_flat = {path="../time-steward-simple-flat"}
+live-prop-test = {git = "https://github.com/elidupree/live-prop-test"}
 
