@@ -70,8 +70,7 @@ pub fn coefficient_bounds_on_integer_interval<
 
 pub const STANDARD_PRECISION_SHIFT: u32 = 2;
 
-// value bounds assuming endpoints is actually the real values left shifted by STANDARD_PRECISION_SHIFT.
-// TODO: make the function not have such a hokey assumption
+// TODO: define guarantees of the function
 pub fn value_bounds_on_negative_power_of_2_interval<
   S: ShiftSize,
   Coefficient: DoubleSizedSignedInteger,
@@ -129,10 +128,7 @@ pub fn value_bounds_on_negative_power_of_2_interval<
     };
 
     if exponent == 0 {
-      return [
-        saturating_downcast(shr_floor(bounds[0], STANDARD_PRECISION_SHIFT)),
-        saturating_downcast(shr_ceil(bounds[1], STANDARD_PRECISION_SHIFT)),
-      ];
+      return bounds.map(saturating_downcast);
     }
     let factor = <DoubleSized<Coefficient>>::from_u32(exponent).unwrap();
     movement_range_from_previous = bounds.map(|a| a * factor);

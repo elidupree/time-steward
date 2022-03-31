@@ -4,6 +4,7 @@ use rand_pcg::Pcg64Mcg;
 use serde::{Deserialize, Serialize};
 
 use time_steward::integer_math::maybe_const::ConstU32;
+use time_steward::integer_math::polynomial2::{definitely_greater_than, definitely_less_than};
 // use time_steward::support::trajectories;
 use time_steward::type_utils::list_of_types::ListedType;
 use time_steward::type_utils::{PersistentTypeId, PersistentlyIdentifiedType};
@@ -182,9 +183,9 @@ fn update_relationship_change_schedule<
   let radius = circles[0].radius + circles[1].radius;
   let relationship_mutable = relationship.read(accessor);
   let change_time = if relationship_mutable.induced_acceleration.is_none() {
-    difference.next_time_magnitude_significantly_lt([*accessor.now(), Time::MAX], radius - 2)
+    difference.next_time_magnitude_is(definitely_less_than(radius - 2).after(*accessor.now()))
   } else {
-    difference.next_time_magnitude_significantly_gt([*accessor.now(), Time::MAX], radius + 2)
+    difference.next_time_magnitude_is(definitely_greater_than(radius + 2).after(*accessor.now()))
   };
 
   if change_time.is_none() && relationship_mutable.induced_acceleration.is_some() {
@@ -210,11 +211,9 @@ fn update_boundary_change_schedule<'a, A: EventAccessor<'a, SimulationSpec = Bou
   let difference = circle_mutable.position - arena_center;
   let radius = ARENA_SIZE - circle.radius;
   let change_time = if circle_mutable.boundary_induced_acceleration.is_some() {
-    difference
-      .next_time_magnitude_significantly_lt([*accessor.now(), Time::max_value()], radius - 2)
+    difference.next_time_magnitude_is(definitely_less_than(radius - 2).after(*accessor.now()))
   } else {
-    difference
-      .next_time_magnitude_significantly_gt([*accessor.now(), Time::max_value()], radius + 2)
+    difference.next_time_magnitude_is(definitely_greater_than(radius + 2).after(*accessor.now()))
   };
 
   drop(circle_mutable);

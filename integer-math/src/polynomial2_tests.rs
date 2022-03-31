@@ -25,21 +25,6 @@ where
   result
 }
 
-fn naive_perfect_evaluate_magnitude_squared<Coefficient: Integer>(
-  coordinates: &[&[Coefficient]],
-  input: BigRational,
-) -> BigRational
-where
-  BigInt: From<Coefficient>,
-{
-  let mut result = BigRational::zero();
-  for coefficients in coordinates {
-    let notsq = naive_perfect_evaluate(coefficients, input.clone());
-    result = result + &notsq * &notsq;
-  }
-  result
-}
-
 fn naive_factorial(value: usize) -> BigInt {
   let mut result = BigInt::one();
   for factor in 2..=value {
@@ -222,7 +207,7 @@ macro_rules! test_polynomial {
       #[test]
       fn randomly_test_next_time_definitely_lt_is_lt (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16) {
         let require_threshold = permit_threshold - threshold_difference;
-        let time = Polynomial (coefficients).next_time_value_passes (input.numerator, input.shift, LessThanFilter::new(permit_threshold, require_threshold));
+        let time = Polynomial (coefficients).next_time_value_passes (input.numerator, input.shift, definitely_less_than(permit_threshold).allow_skipping_only_values_greater_than(require_threshold));
         prop_assume! (time .is_some());
         let time = time.unwrap();
 
@@ -234,7 +219,7 @@ macro_rules! test_polynomial {
       #[test]
       fn randomly_test_next_time_definitely_lt_is_next (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16, test_frac in 0f64..1f64) {
         let require_threshold = permit_threshold - threshold_difference;
-        let time = Polynomial (coefficients).next_time_value_passes (input.numerator, input.shift, LessThanFilter::new(permit_threshold, require_threshold));
+        let time = Polynomial (coefficients).next_time_value_passes (input.numerator, input.shift, definitely_less_than(permit_threshold).allow_skipping_only_values_greater_than(require_threshold));
         let last_not_lt = match time {
           None => $double::max_value(),
           Some(k) => {
@@ -255,35 +240,35 @@ macro_rules! test_polynomial {
       }
 
       #[test]
-      fn randomly_test_next_time_definitely_ge_is_ge(coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16) {
+      fn randomly_test_next_time_definitely_gt_is_gt(coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16) {
         let require_threshold = permit_threshold + threshold_difference;
-        let time = Polynomial (coefficients).next_time_value_passes (input.numerator, input.shift, GreaterThanEqualToFilter::new(permit_threshold, require_threshold));
+        let time = Polynomial (coefficients).next_time_value_passes (input.numerator, input.shift, definitely_greater_than(permit_threshold).allow_skipping_only_values_less_than(require_threshold));
         prop_assume! (time .is_some());
         let time = time.unwrap();
 
         let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(FractionalInput::new(time, input.shift)), 0);
         //if let Some(coefficients) = coefficients.all_taylor_coefficients_bounds (time, input.shift, 0u32) {
-        prop_assert!(exact >= BigRational::from(BigInt::from(permit_threshold)));
+        prop_assert!(exact > BigRational::from(BigInt::from(permit_threshold)));
       }
 
       #[test]
-      fn randomly_test_next_time_definitely_ge_is_next (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16, test_frac in 0f64..1f64) {
+      fn randomly_test_next_time_definitely_gt_is_next (coefficients in prop::array::$uniform(-16 as $integer..16), input in arbitrary_fractional_input(), permit_threshold in -16 as $integer..16, threshold_difference in 3..16, test_frac in 0f64..1f64) {
         let require_threshold = permit_threshold + threshold_difference;
-        let time = Polynomial (coefficients).next_time_value_passes (input.numerator, input.shift, GreaterThanEqualToFilter::new(permit_threshold, require_threshold));
-        let last_not_ge = match time {
+        let time = Polynomial (coefficients).next_time_value_passes (input.numerator, input.shift, definitely_greater_than(permit_threshold).allow_skipping_only_values_less_than(require_threshold));
+        let last_not_gt = match time {
           None => $double::max_value(),
           Some(k) => {
             prop_assert!(k >= input.numerator);
             k-1
           },
         };
-        prop_assume!(last_not_ge >= input.numerator);
-        let test_time = input.numerator + ((last_not_ge.saturating_sub(input.numerator)) as f64 * test_frac).floor() as $double;
+        prop_assume!(last_not_gt >= input.numerator);
+        let test_time = input.numerator + ((last_not_gt.saturating_sub(input.numerator)) as f64 * test_frac).floor() as $double;
 
         let exact_require_threshold = BigRational::from(BigInt::from(require_threshold));
         let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(input), 0);
         prop_assert!(exact < exact_require_threshold);
-        let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(FractionalInput::new(last_not_ge, input.shift)), 0);
+        let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(FractionalInput::new(last_not_gt, input.shift)), 0);
         prop_assert!(exact < exact_require_threshold);
         let exact = naive_perfect_nth_taylor_coefficient(&coefficients, rational_input(FractionalInput::new(test_time, input.shift)), 0);
         prop_assert!(exact < exact_require_threshold);
@@ -324,11 +309,11 @@ macro_rules! test_polynomial {
 
       #[test]
       fn randomly_test_value_bounds_on_negative_power_of_2_interval (coefficients in prop::array::$uniform(-16 as $integer..16), (start, duration_shift) in arbitrary_fractional_input().prop_flat_map(|input| (Just(input), 0..input.shift+1)), test_frac in 0f64..1f64) {
-        let first = Polynomial (coefficients).all_taylor_coefficients_bounds (start.numerator, start.shift, STANDARD_PRECISION_SHIFT);
+        let first = Polynomial (coefficients).all_taylor_coefficients_bounds (start.numerator, start.shift, 0);
         prop_assume! (first.is_some());
         let first = first.unwrap();
         let duration = 1<<(start.shift - duration_shift);
-        let second = Polynomial (coefficients).all_taylor_coefficients_bounds (start.numerator+duration, start.shift, STANDARD_PRECISION_SHIFT);
+        let second = Polynomial (coefficients).all_taylor_coefficients_bounds (start.numerator+duration, start.shift, 0);
         prop_assume! (second.is_some());
         let second = second.unwrap();
 
@@ -370,123 +355,39 @@ $(
   use super::*;
 
   proptest! {
-
       #[test]
-      fn randomly_test_next_time_magnitude_squared_definitely_gt_is_gt(coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..1024, threshold_difference in 3..16) {
+      fn randomly_test_next_time_magnitude_passes1_gt1(coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..1024, threshold_difference in 3 as $integer..16) {
         let require_threshold = permit_threshold + threshold_difference;
-        let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
         let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
-        let time = Polynomial ::<$integer, $coefficients>::next_time_magnitude_squared_passes (&polynomials.each_ref(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
-        prop_assume! (time .is_some());
-        let time = time.unwrap();
-
-        let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(FractionalInput::new(time, input.shift)));
-        //if let Some(coefficients) = coefficients.all_taylor_coefficients_bounds (time, input.shift, 0u32) {
-        prop_assert!(exact > BigRational::from(BigInt::from(permit_threshold)), "expected above {} but was {}", permit_threshold, exact);
+        next_time_magnitude_passes (&polynomials.each_ref(), input.numerator, input.shift, definitely_greater_than(permit_threshold).allow_skipping_only_values_less_than(require_threshold));
       }
 
       #[test]
-      fn randomly_test_next_time_magnitude_squared_definitely_gt2_is_gt(coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..1024, threshold_difference in 3 as $integer..16) {
-        let require_threshold = permit_threshold + threshold_difference;
-        let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
-        let time = next_time_magnitude_squared_passes (&polynomials.each_ref(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold*permit_threshold, require_threshold*require_threshold));
-        prop_assume! (time .is_some());
-        let time = time.unwrap();
-
-        let exact = naive_perfect_evaluate_magnitude_squared(&coefficients.each_ref().map (|a| a.as_slice()), rational_input(FractionalInput::new(time, input.shift)));
-        //if let Some(coefficients) = coefficients.all_taylor_coefficients_bounds (time, input.shift, 0u32) {
-        prop_assert!(exact > BigRational::from(BigInt::from(permit_threshold*permit_threshold)), "expected above {} but was {} at {}", permit_threshold*permit_threshold, exact, time);
-      }
-
-      #[test]
-      fn randomly_test_next_time_magnitude_squared_definitely_lt2_is_lt(coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..1024, threshold_difference in 3 as $integer..16) {
+      fn randomly_test_next_time_magnitude_passes1_lt(coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..1024, threshold_difference in 3 as $integer..16) {
         let require_threshold = permit_threshold - threshold_difference;
         let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
-        let time = next_time_magnitude_squared_passes (&polynomials.each_ref(), input.numerator, input.shift, LessThanFilter::new(permit_threshold*permit_threshold, require_threshold*require_threshold));
-        prop_assume! (time .is_some());
-        let time = time.unwrap();
-
-        let exact = naive_perfect_evaluate_magnitude_squared(&coefficients.each_ref().map (|a| a.as_slice()), rational_input(FractionalInput::new(time, input.shift)));
-        //if let Some(coefficients) = coefficients.all_taylor_coefficients_bounds (time, input.shift, 0u32) {
-        prop_assert!(exact < BigRational::from(BigInt::from(permit_threshold*permit_threshold)), "expected below {} but was {} at {}", permit_threshold*permit_threshold, exact, time);
+        next_time_magnitude_passes (&polynomials.each_ref(), input.numerator, input.shift, definitely_less_than(permit_threshold).allow_skipping_only_values_greater_than(require_threshold));
       }
 
       #[test]
-      fn randomly_test_next_time_magnitude_squared_definitely_gt_is_next (coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..100024, threshold_difference in 3..16, test_frac in 0f64..1f64) {
+      fn randomly_test_next_time_magnitude_passes1_gt2(coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..100024, threshold_difference in 3..16) {
         let require_threshold = permit_threshold + threshold_difference;
-        let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
         let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
-        let time = Polynomial ::<$integer, $coefficients> ::next_time_magnitude_squared_passes (&polynomials.each_ref(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
-
-        let last_not_lt = match time {
-          None => $double::max_value(),
-          Some(k) => {
-            prop_assert!(k >= input.numerator);
-            k-1
-          },
-        };
-        prop_assume!(last_not_lt >= input.numerator);
-        let test_time = input.numerator + ((last_not_lt.saturating_sub(input.numerator)) as f64 * test_frac).floor() as $double;
-
-        let exact_require_threshold = BigRational::from(BigInt::from(require_threshold));
-        let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(input));
-        prop_assert!(exact <= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been <= {}", input.numerator, time, exact, exact_require_threshold);
-        let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(FractionalInput::new(last_not_lt, input.shift)));
-        prop_assert!(exact <= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been <= {}", last_not_lt, time, exact, exact_require_threshold);
-        let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(FractionalInput::new(test_time, input.shift)));
-        prop_assert!(exact <= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been <= {}", test_time, time, exact, exact_require_threshold);
+        Polynomial ::<$integer, $coefficients> ::next_time_magnitude_passes (&polynomials.each_ref(), input.numerator, input.shift, definitely_greater_than(permit_threshold).allow_skipping_only_values_less_than(require_threshold));
       }
 
       #[test]
-      fn randomly_test_next_time_magnitude_squared_definitely_gt2_is_next (coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..46325, threshold_difference in 3..16, test_frac in 0f64..1f64) {
+      fn randomly_test_next_time_magnitude_passes2_gt (coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), permit_threshold in 16 as $integer..46325, threshold_difference in 3..16) {
         let require_threshold = permit_threshold + threshold_difference;
-        let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
         let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
-        let time = next_time_magnitude_squared_passes (&polynomials.each_ref(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold*permit_threshold, require_threshold*require_threshold));
-
-        let last_not_lt = match time {
-          None => $double::max_value(),
-          Some(k) => {
-            prop_assert!(k >= input.numerator);
-            k-1
-          },
-        };
-        prop_assume!(last_not_lt >= input.numerator);
-        let test_time = input.numerator + ((last_not_lt.saturating_sub(input.numerator)) as f64 * test_frac).floor() as $double;
-
-        let exact_require_threshold = BigRational::from(BigInt::from(require_threshold*require_threshold));
-        let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(input));
-        prop_assert!(exact <= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been <= {}", input.numerator, time, exact, exact_require_threshold);
-        let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(FractionalInput::new(last_not_lt, input.shift)));
-        prop_assert!(exact <= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been <= {}", last_not_lt, time, exact, exact_require_threshold);
-        let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(FractionalInput::new(test_time, input.shift)));
-        prop_assert!(exact <= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been <= {}", test_time, time, exact, exact_require_threshold);
+        next_time_magnitude_passes (&polynomials.each_ref(), input.numerator, input.shift, definitely_greater_than(permit_threshold).allow_skipping_only_values_less_than(require_threshold));
       }
 
       #[test]
-      fn randomly_test_next_time_magnitude_squared_definitely_lt2_is_next (coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), require_threshold in 1 as $integer..32, threshold_difference in 3..16, test_frac in 0f64..1f64) {
+      fn randomly_test_next_time_magnitude_passes2_lt (coefficients in prop::array::uniform2(prop::array::$uniform(-16 as $integer..16)), input in arbitrary_fractional_input(), require_threshold in 1 as $integer..32, threshold_difference in 3..16) {
         let permit_threshold = require_threshold + threshold_difference;
-        let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
         let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
-        let time = next_time_magnitude_squared_passes (&polynomials.each_ref(), input.numerator, input.shift, LessThanFilter::new(permit_threshold*permit_threshold, require_threshold*require_threshold));
-
-        let last_not_lt = match time {
-          None => $double::max_value(),
-          Some(k) => {
-            prop_assert!(k >= input.numerator);
-            k-1
-          },
-        };
-        prop_assume!(last_not_lt >= input.numerator);
-        let test_time = input.numerator + ((last_not_lt.saturating_sub(input.numerator)) as f64 * test_frac).floor() as $double;
-
-        let exact_require_threshold = BigRational::from(BigInt::from(require_threshold*require_threshold));
-        let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(input));
-        prop_assert!(exact >= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been >= {}", input.numerator, time, exact, exact_require_threshold);
-        let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(FractionalInput::new(last_not_lt, input.shift)));
-        prop_assert!(exact >= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been >= {}", last_not_lt, time, exact, exact_require_threshold);
-        let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(FractionalInput::new(test_time, input.shift)));
-        prop_assert!(exact >= exact_require_threshold, "at time {}, earlier than {:?}, was {} but should have been >= {}", test_time, time, exact, exact_require_threshold);
+        next_time_magnitude_passes (&polynomials.each_ref(), input.numerator, input.shift, definitely_less_than(permit_threshold).allow_skipping_only_values_greater_than(require_threshold));
       }
 
     }

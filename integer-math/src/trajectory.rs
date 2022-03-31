@@ -1,13 +1,13 @@
 use crate::maybe_const::ConstU32;
 use crate::polynomial2::{
-  next_time_magnitude_squared_passes, GreaterThanFilter, LessThanFilter, OverflowError, Polynomial,
+  definitely_outside_range, next_time_magnitude_passes, OverflowError, Polynomial, SearchBuilder,
 };
 use crate::{
   mean_round_to_even, shr_round_to_even, DoubleSized, DoubleSizedSignedInteger, Integer, Vector,
   VectorLike,
 };
 use derivative::Derivative;
-use num::{One, Signed, Zero};
+use num::{Signed, Zero};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::cmp::Ordering;
@@ -297,104 +297,50 @@ impl<
       .iter()
       .enumerate()
       .filter_map(|(dimension, coordinate)| {
-        let target = bounds[0].coordinate(dimension);
+        let min = bounds[0].coordinate(dimension);
+        let max = bounds[1].coordinate(dimension);
         coordinate
           .next_time_value_passes(
             (range[0] - self.rounded_origin_numerator())
               .try_into()
               .ok()?,
             ConstU32::<TIME_SHIFT>,
-            LessThanFilter::new(target + three, target),
+            definitely_outside_range([min + three, max - three]),
           )
           .map(|a| a.into() + self.rounded_origin_numerator())
       })
-      .chain(
-        self
-          .coordinates
-          .iter()
-          .enumerate()
-          .filter_map(|(dimension, coordinate)| {
-            let target = bounds[1].coordinate(dimension);
-            coordinate
-              .next_time_value_passes(
-                (range[0] - self.rounded_origin_numerator())
-                  .try_into()
-                  .ok()?,
-                ConstU32::<TIME_SHIFT>,
-                GreaterThanFilter::new(target - three, target),
-              )
-              .map(|a| a.into() + self.rounded_origin_numerator())
-          }),
-      )
       .min()
   }
-}
 
-// TODO: this stuff can just go in the same impl as above;
-// the only additional requirement is DoubleSized<Coefficient>: DoubleSizedSignedInteger,
-// which can be removed once I settle on the new magnitude bound search implementation
-impl<
-    Coefficient: DoubleSizedSignedInteger,
-    Time: Integer + Signed + TryInto<Coefficient> + TryInto<DoubleSized<Coefficient>>,
-    const DIMENSIONS: usize,
-    const COEFFICIENTS: usize,
-    const TIME_SHIFT: u32,
-  > Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>
-where
-  DoubleSized<Coefficient>: DoubleSizedSignedInteger,
-{
-  pub fn next_time_magnitude_significantly_gt(
+  // TODO: DoubleSized<Coefficient>: DoubleSizedSignedInteger can be removed once I settle on the new magnitude bound search implementation
+  pub fn next_time_magnitude_is(
     &self,
-    range: [Time; 2],
-    target: Coefficient,
+    target: impl SearchBuilder<Coefficient, Time>,
   ) -> Option<Time>
   where
-    DoubleSized<Coefficient>: Into<Time>,
+    DoubleSized<Coefficient>: DoubleSizedSignedInteger + Into<Time>,
     [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
     [[[DoubleSized<Coefficient>; 2]; 1]; DIMENSIONS]: Default,
     [[[DoubleSized<Coefficient>; 2]; 2]; DIMENSIONS]: Default,
     [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default,
   {
-    let target: DoubleSized<Coefficient> = target.into();
-    let target_plus_three = target
-      + DoubleSized::<Coefficient>::one()
-      + DoubleSized::<Coefficient>::one()
-      + DoubleSized::<Coefficient>::one();
-    next_time_magnitude_squared_passes(
+    let (target_range, start_time) = target.build();
+    let start_time = if let Some(start_time) = start_time {
+      assert!(
+        start_time >= self.unrounded_origin,
+        "searching earlier than the origin of a Trajectory"
+      );
+      start_time
+    } else {
+      self.unrounded_origin
+    };
+    next_time_magnitude_passes(
       &self.coordinates.each_ref(),
-      (range[0] - self.rounded_origin_numerator())
+      (start_time - self.rounded_origin_numerator())
         .try_into()
         .ok()?,
       ConstU32::<TIME_SHIFT>,
-      GreaterThanFilter::new(target * target, target_plus_three * target_plus_three),
-    )
-    .map(|a| a.into() + self.rounded_origin_numerator())
-  }
-
-  pub fn next_time_magnitude_significantly_lt(
-    &self,
-    range: [Time; 2],
-    target: Coefficient,
-  ) -> Option<Time>
-  where
-    DoubleSized<Coefficient>: Into<Time>,
-    [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
-    [[[DoubleSized<Coefficient>; 2]; 1]; DIMENSIONS]: Default,
-    [[[DoubleSized<Coefficient>; 2]; 2]; DIMENSIONS]: Default,
-    [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default,
-  {
-    let target: DoubleSized<Coefficient> = target.into();
-    let target_minus_three = target
-      - DoubleSized::<Coefficient>::one()
-      - DoubleSized::<Coefficient>::one()
-      - DoubleSized::<Coefficient>::one();
-    next_time_magnitude_squared_passes(
-      &self.coordinates.each_ref(),
-      (range[0] - self.rounded_origin_numerator())
-        .try_into()
-        .ok()?,
-      ConstU32::<TIME_SHIFT>,
-      LessThanFilter::new(target * target, target_minus_three * target_minus_three),
+      target_range,
     )
     .map(|a| a.into() + self.rounded_origin_numerator())
   }

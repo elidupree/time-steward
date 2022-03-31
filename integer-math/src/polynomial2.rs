@@ -12,11 +12,10 @@ use derivative::Derivative;
 use derive_more::{Deref, DerefMut};
 use live_prop_test::live_prop_test;
 use num::{CheckedAdd, CheckedMul, Signed};
-use polynomial2_testing::next_time_magnitude_squared_passes_postconditions;
+use polynomial2_testing::next_time_magnitude_passes_postconditions;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::cmp::{max, min, Ordering};
-use std::marker::PhantomData;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -495,41 +494,258 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
 /*pub trait PolynomialBoundsGenerator<Input, Output> {
 fn generate_bounds(&self, input: FractionalInput<Input>) -> Option<Output>;
 }*/
-pub trait PolynomialBoundsFilter<Coefficient>: Copy + Debug {
-  fn interval_filter(&self, bounds: [Coefficient; 2]) -> bool;
-  fn result_filter(&self, bounds: [Coefficient; 2]) -> bool;
+
+// this used to be a trait, but in practice, there's a limited number of filters you can possibly
+// want, and they can all be represented in a shared form, and the runtime cost of doing the checking
+// is only a miniscule fraction of the runtime cost of the searches,
+// so the cost of duplicating the functions in cache is probably more important
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
+pub struct SearchTargetRange<T> {
+  edges: [Option<SearchTargetRangeEdge<T>>; 2],
 }
 
-macro_rules! impl_filter {
-($Filter: ident, $operation: tt, $yesdir: expr, $nodir: expr, $validcond: tt, $validval: expr) => {
-#[derive(Copy, Clone, Debug)]
-pub struct $Filter<Coefficient> {
-permit_threshold: Coefficient,
-require_threshold: Coefficient,
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
+pub struct SearchTargetRangeEdge<T> {
+  pub(crate) permit_threshold: T,
+  pub(crate) require_threshold: T,
 }
 
-impl<Coefficient: Integer+Signed> $Filter<Coefficient> {
-pub fn new(permit_threshold: Coefficient, require_threshold: Coefficient)->Self {
-  assert!(require_threshold.saturating_sub(permit_threshold) $validcond ($validval), "thresholds need to be separated by at least 2 to allow for error");
-  $Filter {permit_threshold, require_threshold}
-}
+impl<T: Integer> SearchTargetRange<T> {
+  pub(crate) fn requires(&self, value: &BigRational) -> bool {
+    if let Some(low_edge) = self.edges[0] {
+      if value <= &low_edge.require_threshold.to_big_rational() {
+        return true;
+      }
+    }
+    if let Some(high_edge) = self.edges[1] {
+      if value >= &high_edge.require_threshold.to_big_rational() {
+        return true;
+      }
+    }
+    false
+  }
+  pub(crate) fn requires_any_in_range(&self, range: [T; 2]) -> bool {
+    if let Some(low_edge) = self.edges[0] {
+      if range[0] <= low_edge.require_threshold {
+        return true;
+      }
+    }
+    if let Some(high_edge) = self.edges[1] {
+      if range[1] >= high_edge.require_threshold {
+        return true;
+      }
+    }
+    false
+  }
+  pub(crate) fn permits(&self, value: &BigRational) -> bool {
+    if let Some(low_edge) = self.edges[0] {
+      if value < &low_edge.permit_threshold.to_big_rational() {
+        return true;
+      }
+    }
+    if let Some(high_edge) = self.edges[1] {
+      if value > &high_edge.permit_threshold.to_big_rational() {
+        return true;
+      }
+    }
+    false
+  }
+  pub(crate) fn permits_all_in_range(&self, range: [T; 2]) -> bool {
+    if let Some(low_edge) = self.edges[0] {
+      if range[1] < low_edge.permit_threshold {
+        return true;
+      }
+    }
+    if let Some(high_edge) = self.edges[1] {
+      if range[0] > high_edge.permit_threshold {
+        return true;
+      }
+    }
+    false
+  }
+
+  pub(crate) fn with_precision(&self, precision_shift: u32) -> SearchTargetRange<DoubleSized<T>>
+  where
+    T: DoubleSizedSignedInteger,
+  {
+    SearchTargetRange {
+      edges: self.edges.map(|edge| {
+        edge.map(|edge| SearchTargetRangeEdge {
+          permit_threshold: DoubleSized::<T>::from(edge.permit_threshold) << precision_shift,
+          require_threshold: DoubleSized::<T>::from(edge.require_threshold) << precision_shift,
+        })
+      }),
+    }
+  }
+
+  pub(crate) fn squared_with_precision(
+    &self,
+    precision_shift: u32,
+  ) -> SearchTargetRange<DoubleSized<T>>
+  where
+    T: DoubleSizedSignedInteger,
+  {
+    SearchTargetRange {
+      edges: self.edges.map(|edge| {
+        edge.map(|edge| SearchTargetRangeEdge {
+          permit_threshold: DoubleSized::<T>::from(edge.permit_threshold).squared()
+            << precision_shift,
+          require_threshold: DoubleSized::<T>::from(edge.require_threshold).squared()
+            << precision_shift,
+        })
+      }),
+    }
+  }
 }
 
-impl<Coefficient: Integer+Signed, Filtered: Integer+Signed+From<Coefficient>> PolynomialBoundsFilter<Filtered> for $Filter<Coefficient> {
-fn interval_filter(&self, bounds: [Filtered; 2]) -> bool {
-  bounds [$yesdir] $operation <Filtered as From<Coefficient>>::from(self.require_threshold)
-}
-fn result_filter(&self, bounds: [Filtered; 2]) -> bool {
-  bounds [$nodir] $operation <Filtered as From<Coefficient>>::from(self.permit_threshold)
-}
+pub struct SearchTargetRangeWithStartTime<T, Time> {
+  target_range: SearchTargetRange<T>,
+  start_time: Time,
 }
 
+pub trait SearchBuilder<T, Time> {
+  fn build(self) -> (SearchTargetRange<T>, Option<Time>);
 }
+
+impl<T: Integer, Time> SearchBuilder<T, Time> for SearchTargetRange<T> {
+  fn build(self) -> (SearchTargetRange<T>, Option<Time>) {
+    (self, None)
+  }
 }
-impl_filter!(LessThanFilter, <, 0, 1, <, -Coefficient::one());
-impl_filter!(LessThanEqualToFilter, <=, 0, 1, <, -Coefficient::one());
-impl_filter!(GreaterThanFilter, >, 1, 0, >, Coefficient::one());
-impl_filter!(GreaterThanEqualToFilter, >=, 1, 0, >, Coefficient::one());
+
+impl<T: Integer, Time: Integer> SearchBuilder<T, Time> for SearchTargetRangeWithStartTime<T, Time> {
+  fn build(self) -> (SearchTargetRange<T>, Option<Time>) {
+    (self.target_range, Some(self.start_time))
+  }
+}
+
+#[inline]
+pub fn definitely_less_than<T: Integer>(threshold: T) -> SearchTargetRange<T> {
+  SearchTargetRange {
+    edges: [
+      Some(SearchTargetRangeEdge {
+        permit_threshold: threshold,
+        require_threshold: threshold - T::one(),
+      }),
+      None,
+    ],
+  }
+}
+
+#[inline]
+pub fn definitely_greater_than<T: Integer>(threshold: T) -> SearchTargetRange<T> {
+  SearchTargetRange {
+    edges: [
+      None,
+      Some(SearchTargetRangeEdge {
+        permit_threshold: threshold,
+        require_threshold: threshold + T::one(),
+      }),
+    ],
+  }
+}
+
+#[inline]
+pub fn definitely_outside_range<T: Integer>(range: [T; 2]) -> SearchTargetRange<T> {
+  SearchTargetRange {
+    edges: [
+      Some(SearchTargetRangeEdge {
+        permit_threshold: range[0],
+        require_threshold: range[0] - T::one(),
+      }),
+      Some(SearchTargetRangeEdge {
+        permit_threshold: range[1],
+        require_threshold: range[1] + T::one(),
+      }),
+    ],
+  }
+}
+
+impl<T: Integer> SearchTargetRange<T> {
+  #[inline]
+  pub fn allow_skipping_only_values_greater_than(mut self, threshold: T) -> Self {
+    let edge = self.edges[0].as_mut().expect(
+      "allow_skipping_only_values_greater_than only makes sense when there is a lower edge",
+    );
+    assert!(
+      threshold < edge.permit_threshold,
+      "require_threshold must be stricter than permit_threshold"
+    );
+    edge.require_threshold = threshold;
+    self
+  }
+
+  #[inline]
+  pub fn allow_skipping_only_values_less_than(mut self, threshold: T) -> Self {
+    let edge = self.edges[1].as_mut().expect(
+      "allow_skipping_only_values_greater_than only makes sense when there is a lower edge",
+    );
+    assert!(
+      threshold > edge.permit_threshold,
+      "require_threshold must be stricter than permit_threshold"
+    );
+    edge.require_threshold = threshold;
+    self
+  }
+
+  #[inline]
+  pub fn allow_skipping_only_values_in_range(mut self, range: [T; 2]) -> Self {
+    let edges = self.edges.each_mut().map(|e| {
+      e.as_mut()
+        .expect("allow_skipping_only_values_in_range only makes sense when both edges exist")
+    });
+    assert!(
+      range[0] < edges[0].permit_threshold,
+      "require_threshold must be stricter than permit_threshold"
+    );
+    assert!(
+      range[1] > edges[1].permit_threshold,
+      "require_threshold must be stricter than permit_threshold"
+    );
+    edges[0].require_threshold = range[0];
+    edges[1].require_threshold = range[1];
+    self
+  }
+
+  #[inline]
+  pub fn after<Time: Integer>(self, time: Time) -> SearchTargetRangeWithStartTime<T, Time> {
+    SearchTargetRangeWithStartTime {
+      target_range: self,
+      start_time: time,
+    }
+  }
+}
+//
+// macro_rules! impl_filter {
+// ($Filter: ident, $operation: tt, $yesdir: expr, $nodir: expr, $validcond: tt, $validval: expr) => {
+// #[derive(Copy, Clone, Debug)]
+// pub struct $Filter<Coefficient> {
+// permit_threshold: Coefficient,
+// require_threshold: Coefficient,
+// }
+//
+// impl<Coefficient: Integer+Signed> $Filter<Coefficient> {
+// pub fn new(permit_threshold: Coefficient, require_threshold: Coefficient)->Self {
+//   assert!(require_threshold.saturating_sub(permit_threshold) $validcond ($validval), "thresholds need to be separated by at least 2 to allow for error");
+//   $Filter {permit_threshold, require_threshold}
+// }
+// }
+//
+// impl<Coefficient: Integer+Signed, Filtered: Integer+Signed+From<Coefficient>> PolynomialBoundsFilter<Filtered> for $Filter<Coefficient> {
+// fn interval_filter(&self, bounds: [Filtered; 2]) -> bool {
+//   bounds [$yesdir] $operation <Filtered as From<Coefficient>>::from(self.require_threshold)
+// }
+// fn result_filter(&self, bounds: [Filtered; 2]) -> bool {
+//   bounds [$nodir] $operation <Filtered as From<Coefficient>>::from(self.permit_threshold)
+// }
+// }
+//
+// }
+// }
+// impl_filter!(LessThanFilter, <, 0, 1, <, -Coefficient::one());
+// impl_filter!(LessThanEqualToFilter, <=, 0, 1, <, -Coefficient::one());
+// impl_filter!(GreaterThanFilter, >, 1, 0, >, Coefficient::one());
+// impl_filter!(GreaterThanEqualToFilter, >=, 1, 0, >, Coefficient::one());
 
 // pub trait PolynomialRangeSearch<Coefficient, WorkingType>: PolynomialBase {
 //   fn next_time_value_passes<Filter: PolynomialBoundsFilter<Coefficient>>(
@@ -569,27 +785,22 @@ impl_filter!(GreaterThanEqualToFilter, >=, 1, 0, >, Coefficient::one());
 impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
   Polynomial<Coefficient, COEFFICIENTS>
 {
-  pub fn next_time_value_passes<Filter: PolynomialBoundsFilter<Coefficient>>(
+  pub fn next_time_value_passes(
     &self,
     start_input: DoubleSized<Coefficient>,
     input_shift: impl ShiftSize,
-    filter: Filter,
+    target_range: SearchTargetRange<Coefficient>,
   ) -> Option<DoubleSized<Coefficient>>
   where
     [[DoubleSized<Coefficient>; 2]; COEFFICIENTS]: Default,
   {
-    struct Search<S, Coefficient, Filter, const COEFFICIENTS: usize> {
+    struct Search<S, Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize> {
       polynomial: Polynomial<Coefficient, COEFFICIENTS>,
-      filter: Filter,
+      target_range: SearchTargetRange<DoubleSized<Coefficient>>,
       input_shift: S,
-      _marker: PhantomData<Coefficient>,
     }
-    impl<
-        S: ShiftSize,
-        Coefficient: DoubleSizedSignedInteger,
-        Filter: PolynomialBoundsFilter<Coefficient>,
-        const COEFFICIENTS: usize,
-      > RangeSearch for Search<S, Coefficient, Filter, COEFFICIENTS>
+    impl<S: ShiftSize, Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize> RangeSearch
+      for Search<S, Coefficient, COEFFICIENTS>
     where
       [[DoubleSized<Coefficient>; 2]; COEFFICIENTS]: Default,
     {
@@ -615,8 +826,13 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
         endpoints: [&Self::IntegerValue; 2],
         duration: Self::Input,
       ) -> bool {
-        self.filter.interval_filter(
-          range_search::coefficient_bounds_on_integer_interval(endpoints, duration)[0],
+        self.target_range.requires_any_in_range(
+          range_search::coefficient_bounds_on_integer_interval(endpoints, duration)[0].map(|a| {
+            saturating_shl(
+              DoubleSized::<Coefficient>::from(a),
+              STANDARD_PRECISION_SHIFT,
+            )
+          }),
         )
       }
       fn fractional_interval_filter(
@@ -624,26 +840,27 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
         endpoints: [&Self::FractionalValue; 2],
         duration_shift: impl ShiftSize,
       ) -> bool {
-        self.filter.interval_filter (range_search::value_bounds_on_negative_power_of_2_interval::<_, Coefficient, COEFFICIENTS> (endpoints, duration_shift))
+        self.target_range.requires_any_in_range (range_search::value_bounds_on_negative_power_of_2_interval::<_, Coefficient, COEFFICIENTS> (endpoints, duration_shift).map(|a| a.into()))
       }
       fn tail_filter(&self, endpoint: &Self::IntegerValue) -> bool {
-        self
-          .filter
-          .interval_filter(range_search::coefficient_bounds_on_tail(endpoint)[0])
+        self.target_range.requires_any_in_range(
+          range_search::coefficient_bounds_on_tail(endpoint)[0].map(|a| {
+            saturating_shl(
+              DoubleSized::<Coefficient>::from(a),
+              STANDARD_PRECISION_SHIFT,
+            )
+          }),
+        )
       }
       fn fractional_result_filter(&self, value: &Self::FractionalValue) -> bool {
-        self.filter.result_filter([
-          saturating_downcast(shr_floor(value[0][0], STANDARD_PRECISION_SHIFT)),
-          saturating_downcast(shr_ceil(value[0][1], STANDARD_PRECISION_SHIFT)),
-        ])
+        self.target_range.permits_all_in_range(value[0])
       }
     }
     RangeSearchRunner::run(
       Search {
         polynomial: *self,
-        filter,
+        target_range: target_range.with_precision(STANDARD_PRECISION_SHIFT),
         input_shift,
-        _marker: PhantomData,
       },
       start_input,
       input_shift,
@@ -661,31 +878,29 @@ mod $m {
 impl <Coefficient: DoubleSizedSignedInteger> Polynomial <Coefficient, $coefficients> where DoubleSized<Coefficient>: DoubleSizedSignedInteger
 {
   #[live_prop_test(
-    postcondition = "next_time_magnitude_squared_passes_postconditions::<Coefficient, S, Filter, DIMENSIONS, COEFFICIENTS>(coordinates, start_input, input_shift, filter, result)"
+    postcondition = "next_time_magnitude_passes_postconditions::<Coefficient, S, DIMENSIONS, COEFFICIENTS>(coordinates, start_input, input_shift, target_range, result)"
   )]
-pub fn next_time_magnitude_squared_passes<
+pub fn next_time_magnitude_passes<
   S: ShiftSize,
-  Filter: PolynomialBoundsFilter<DoubleSized<Coefficient>>,
   const DIMENSIONS: usize,
 >(
   coordinates: &[&Self; DIMENSIONS],
   start_input: DoubleSized<Coefficient>,
   input_shift: S,
-  filter: Filter,
+  target_range: SearchTargetRange<Coefficient>,
 ) -> Option<DoubleSized<Coefficient>>
   where [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
   [[[DoubleSized<Coefficient>; 2]; 1]; DIMENSIONS]: Default,
   [[[DoubleSized<Coefficient>; 2]; 2]; DIMENSIONS]: Default,
   [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default, {
-  struct Search <'a, S, Coefficient, Filter,
-  const DIMENSIONS: usize,> {
+  struct Search <'a, S, Coefficient: DoubleSizedSignedInteger, const DIMENSIONS: usize> {
     coordinates: &'a [&'a Polynomial <Coefficient, $coefficients>; DIMENSIONS],
-    filter: Filter,
+    target_range: SearchTargetRange<DoubleSized<Coefficient>>,
     input_shift: S,
-    _marker: PhantomData <Coefficient>,
   }
-  impl<'a, S: ShiftSize, Coefficient: DoubleSizedSignedInteger, Filter: PolynomialBoundsFilter <DoubleSized<Coefficient>>,
-  const DIMENSIONS: usize,> RangeSearch for Search<'a, S, Coefficient, Filter, DIMENSIONS> where DoubleSized<Coefficient>: DoubleSizedSignedInteger {
+  impl<'a, S: ShiftSize, Coefficient: DoubleSizedSignedInteger, const DIMENSIONS: usize>
+    RangeSearch for Search<'a, S, Coefficient, DIMENSIONS>
+  where DoubleSized<Coefficient>: DoubleSizedSignedInteger {
     type Input = DoubleSized<Coefficient>;
     type IntegerValue = Polynomial <DoubleSized<Coefficient>, {$coefficients*2-1}>;
     type FractionalValue = [[DoubleSized<DoubleSized <Coefficient>>; 2]; $coefficients*2-1];
@@ -706,25 +921,21 @@ pub fn next_time_magnitude_squared_passes<
       nearest_integer_value.all_taylor_coefficients_bounds_within_half(From::from(relative_input), self.input_shift, STANDARD_PRECISION_SHIFT)
     }
    fn integer_interval_filter (&self, endpoints: [&Self::IntegerValue; 2], duration: Self::Input)->bool {
-      self.filter.interval_filter (range_search::coefficient_bounds_on_integer_interval (endpoints, duration.into()) [0])
+      self.target_range.requires_any_in_range (range_search::coefficient_bounds_on_integer_interval (endpoints, duration.into()) [0].map(|a| saturating_shl(a, STANDARD_PRECISION_SHIFT)))
     }
     fn fractional_interval_filter (&self, endpoints: [&Self::FractionalValue; 2], duration_shift: impl ShiftSize)->bool {
-      self.filter.interval_filter (range_search::value_bounds_on_negative_power_of_2_interval::<_, DoubleSized<Coefficient>, {$coefficients* 2 -1}> (endpoints, duration_shift))
+      self.target_range.requires_any_in_range (range_search::value_bounds_on_negative_power_of_2_interval::<_, DoubleSized<Coefficient>, {$coefficients* 2 -1}> (endpoints, duration_shift).map(|a| a.into()))
     }
     fn tail_filter (&self, endpoint: &Self::IntegerValue)->bool {
-      self.filter.interval_filter (range_search::coefficient_bounds_on_tail (endpoint) [0])
+      self.target_range.requires_any_in_range (range_search::coefficient_bounds_on_tail (endpoint) [0].map(|a| saturating_shl(a, STANDARD_PRECISION_SHIFT)))
     }
     fn fractional_result_filter (&self, value: &Self::FractionalValue)->bool {
-      self.filter.result_filter ([
-        saturating_downcast(shr_floor(value[0][0], STANDARD_PRECISION_SHIFT)),
-        saturating_downcast(shr_ceil(value[0][1], STANDARD_PRECISION_SHIFT)),
-      ])
+      self.target_range.permits_all_in_range (value[0].map(saturating_downcast))
     }
   }
   RangeSearchRunner::run (Search {
     coordinates,
-    filter, input_shift,
-    _marker: PhantomData
+      target_range: target_range.squared_with_precision(STANDARD_PRECISION_SHIFT), input_shift,
   }, start_input, input_shift)
 }
 }
@@ -738,7 +949,7 @@ pub fn next_time_magnitude_squared_passes<
 impl_squarable_polynomials!(m1, 1, m2, 2, m3, 3);
 
 const SQUARED_PRECISION_SHIFT: u32 = 3;
-fn square_bounds<T: Integer>(scale_down: u32, bounds: impl IntoIterator<Item = [T; 2]>) -> [T; 2] {
+fn square_bounds<T: Integer>(scale_up: u32, bounds: impl IntoIterator<Item = [T; 2]>) -> [T; 2] {
   let mut result: [T; 2] = [Zero::zero(); 2];
   for [lower, upper] in bounds {
     assert!(lower <= upper);
@@ -751,10 +962,10 @@ fn square_bounds<T: Integer>(scale_down: u32, bounds: impl IntoIterator<Item = [
     assert!(result[0] <= result[1]);
     assert!(result[0] >= T::zero());
   }
-  if scale_down > 0 {
+  if scale_up > 0 {
     result = [
-      shr_floor(result[0], scale_down),
-      shr_ceil(result[1], scale_down),
+      saturating_shl(result[0], scale_up),
+      saturating_shl(result[1], scale_up),
     ];
     assert!(result[0] <= result[1]);
     assert!(result[0] >= T::zero());
@@ -769,15 +980,11 @@ impl<Coefficient: DoubleSizedSignedInteger, const COEFFICIENTS: usize>
 where
   DoubleSized<Coefficient>: DoubleSizedSignedInteger,
 {
-  pub fn next_time_magnitude_squared_passes_trust_me<
-    S: ShiftSize,
-    Filter: PolynomialBoundsFilter<DoubleSized<Coefficient>>,
-    const DIMENSIONS: usize,
-  >(
+  pub fn next_time_magnitude_passes_trust_me<S: ShiftSize, const DIMENSIONS: usize>(
     coordinates: &[&Self; DIMENSIONS],
     start_input: DoubleSized<Coefficient>,
     input_shift: S,
-    filter: Filter,
+    target_range: SearchTargetRange<Coefficient>,
   ) -> Option<DoubleSized<Coefficient>>
   where
     [[[DoubleSized<Coefficient>; 2]; 1]; DIMENSIONS]: Default,
@@ -785,28 +992,27 @@ where
     [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default,
   {
     match COEFFICIENTS {
-      1 => Polynomial::<Coefficient, 1>::next_time_magnitude_squared_passes::<S, Filter, DIMENSIONS>(unsafe{std::mem::transmute(coordinates)}, start_input, input_shift, filter),
-      2 => Polynomial::<Coefficient, 2>::next_time_magnitude_squared_passes::<S, Filter, DIMENSIONS>(unsafe{std::mem::transmute(coordinates)}, start_input, input_shift, filter),
-      3 => Polynomial::<Coefficient, 3>::next_time_magnitude_squared_passes::<S, Filter, DIMENSIONS>(unsafe{std::mem::transmute(coordinates)}, start_input, input_shift, filter),
-      _ => panic!("next_time_magnitude_squared_passes_trust_me can only ACTUALLY be called for COEFFICIENTS in [1,2,3])")
+      1 => Polynomial::<Coefficient, 1>::next_time_magnitude_passes::<S, DIMENSIONS>(unsafe{std::mem::transmute(coordinates)}, start_input, input_shift, target_range),
+      2 => Polynomial::<Coefficient, 2>::next_time_magnitude_passes::<S,  DIMENSIONS>(unsafe{std::mem::transmute(coordinates)}, start_input, input_shift, target_range),
+      3 => Polynomial::<Coefficient, 3>::next_time_magnitude_passes::<S,  DIMENSIONS>(unsafe{std::mem::transmute(coordinates)}, start_input, input_shift, target_range),
+      _ => panic!("next_time_magnitude_passes_trust_me can only ACTUALLY be called for COEFFICIENTS in [1,2,3])")
     }
   }
 }
 
 #[live_prop_test(
-  postcondition = "next_time_magnitude_squared_passes_postconditions::<Coefficient, S, Filter, DIMENSIONS, COEFFICIENTS>(coordinates, start_input, input_shift, filter, result)"
+  postcondition = "next_time_magnitude_passes_postconditions::<Coefficient, S,  DIMENSIONS, COEFFICIENTS>(coordinates, start_input, input_shift, target_range, result)"
 )]
-pub fn next_time_magnitude_squared_passes<
+pub fn next_time_magnitude_passes<
   Coefficient: DoubleSizedSignedInteger,
   S: ShiftSize,
-  Filter: PolynomialBoundsFilter<DoubleSized<Coefficient>>,
   const DIMENSIONS: usize,
   const COEFFICIENTS: usize,
 >(
   coordinates: &[&Polynomial<Coefficient, COEFFICIENTS>; DIMENSIONS],
   start_input: DoubleSized<Coefficient>,
   input_shift: S,
-  filter: Filter,
+  target_range: SearchTargetRange<Coefficient>,
 ) -> Option<DoubleSized<Coefficient>>
 where
   // this bound is and actually needed for this function, but
@@ -817,20 +1023,24 @@ where
   [[[DoubleSized<Coefficient>; 2]; 2]; DIMENSIONS]: Default,
   [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default,
 {
-  struct Search<'a, S, Coefficient, Filter, const COEFFICIENTS: usize, const DIMENSIONS: usize> {
+  struct Search<
+    'a,
+    S,
+    Coefficient: DoubleSizedSignedInteger,
+    const COEFFICIENTS: usize,
+    const DIMENSIONS: usize,
+  > {
     coordinates: &'a [&'a Polynomial<Coefficient, COEFFICIENTS>; DIMENSIONS],
-    filter: Filter,
+    target_range: SearchTargetRange<DoubleSized<Coefficient>>,
     input_shift: S,
-    _marker: PhantomData<Coefficient>,
   }
   impl<
       'a,
       S: ShiftSize,
       Coefficient: DoubleSizedSignedInteger,
-      Filter: PolynomialBoundsFilter<DoubleSized<Coefficient>>,
       const COEFFICIENTS: usize,
       const DIMENSIONS: usize,
-    > RangeSearch for Search<'a, S, Coefficient, Filter, COEFFICIENTS, DIMENSIONS>
+    > RangeSearch for Search<'a, S, Coefficient, COEFFICIENTS, DIMENSIONS>
   where
     //DoubleSized<Coefficient>: DoubleSizedSignedInteger,
     [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
@@ -865,8 +1075,8 @@ where
       endpoints: [&Self::IntegerValue; 2],
       duration: Self::Input,
     ) -> bool {
-      self.filter.interval_filter(square_bounds(
-        0,
+      self.target_range.requires_any_in_range(square_bounds(
+        SQUARED_PRECISION_SHIFT * 2,
         endpoints[0].iter().zip(endpoints[1]).map(|(e1, e2)| {
           range_search::coefficient_bounds_on_integer_interval([e1, e2], duration)[0]
             .map(|a| a.into())
@@ -878,8 +1088,8 @@ where
       endpoints: [&Self::FractionalValue; 2],
       duration_shift: impl ShiftSize,
     ) -> bool {
-      self.filter.interval_filter(square_bounds(
-        SQUARED_PRECISION_SHIFT * 2 - STANDARD_PRECISION_SHIFT * 2,
+      self.target_range.requires_any_in_range(square_bounds(
+        0,
         endpoints[0].iter().zip(endpoints[1]).map(|(e1, e2)| {
           let b: [Coefficient; 2] =
             range_search::value_bounds_on_negative_power_of_2_interval([e1, e2], duration_shift);
@@ -888,26 +1098,24 @@ where
       ))
     }
     fn tail_filter(&self, endpoint: &Self::IntegerValue) -> bool {
-      self.filter.interval_filter(square_bounds(
-        0,
+      self.target_range.requires_any_in_range(square_bounds(
+        SQUARED_PRECISION_SHIFT * 2,
         endpoint
           .iter()
           .map(|e1| range_search::coefficient_bounds_on_tail(e1)[0].map(|a| a.into())),
       ))
     }
     fn fractional_result_filter(&self, value: &Self::FractionalValue) -> bool {
-      self.filter.result_filter(square_bounds(
-        SQUARED_PRECISION_SHIFT * 2,
-        value.iter().map(|c| c[0]),
-      ))
+      self
+        .target_range
+        .permits_all_in_range(square_bounds(0, value.iter().map(|c| c[0])))
     }
   }
   RangeSearchRunner::run(
     Search {
       coordinates,
-      filter,
+      target_range: target_range.squared_with_precision(SQUARED_PRECISION_SHIFT * 2),
       input_shift,
-      _marker: PhantomData,
     },
     start_input,
     input_shift,

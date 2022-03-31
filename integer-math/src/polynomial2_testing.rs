@@ -1,7 +1,7 @@
-use crate::polynomial2::{next_time_magnitude_squared_passes, Polynomial, PolynomialBoundsFilter};
+use crate::polynomial2::{next_time_magnitude_passes, Polynomial, SearchTargetRange};
 use crate::{DoubleSized, DoubleSizedSignedInteger, Integer, ShiftSize};
 use live_prop_test::{lpt_assert, lpt_assert_eq};
-use num::{BigInt, BigRational, One, Signed, Zero};
+use num::{BigInt, BigRational, CheckedAdd, One, Signed, ToPrimitive, Zero};
 use std::convert::TryInto;
 
 fn naive_factorial(value: usize) -> BigInt {
@@ -14,6 +14,22 @@ fn naive_factorial(value: usize) -> BigInt {
 
 fn naive_binomial_coefficient(n: usize, k: usize) -> BigInt {
   naive_factorial(n) / (naive_factorial(k) * naive_factorial(n - k))
+}
+
+fn naive_perfect_evaluate_magnitude_squared<
+  Coefficient: Integer + Signed,
+  const DIMENSIONS: usize,
+  const COEFFICIENTS: usize,
+>(
+  coordinates: &[&Polynomial<Coefficient, COEFFICIENTS>; DIMENSIONS],
+  input: &BigRational,
+) -> BigRational {
+  let mut result = BigRational::zero();
+  for coefficients in coordinates {
+    let notsq = coefficients.naive_perfect_evaluate(input);
+    result += &notsq * &notsq;
+  }
+  result
 }
 
 impl<Coefficient: Integer + Signed, const COEFFICIENTS: usize>
@@ -155,17 +171,16 @@ impl<Coefficient: Integer + Signed, const COEFFICIENTS: usize>
   }
 }
 
-pub(crate) fn next_time_magnitude_squared_passes_postconditions<
+pub(crate) fn next_time_magnitude_passes_postconditions<
   Coefficient: DoubleSizedSignedInteger,
   S: ShiftSize,
-  Filter: PolynomialBoundsFilter<DoubleSized<Coefficient>>,
   const DIMENSIONS: usize,
   const COEFFICIENTS: usize,
 >(
   coordinates: &[&Polynomial<Coefficient, COEFFICIENTS>; DIMENSIONS],
   start_input: DoubleSized<Coefficient>,
   input_shift: S,
-  filter: Filter,
+  target_range: SearchTargetRange<Coefficient>,
   result: Option<DoubleSized<Coefficient>>,
 ) -> Result<(), String>
 where
@@ -177,22 +192,77 @@ where
   [[[DoubleSized<Coefficient>; 2]; 2]; DIMENSIONS]: Default,
   [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default,
 {
-  // let coefficients_slices: Vec<_> = coefficients.iter().map (| polynomial | polynomial.as_slice()).collect();
-  // let polynomials = coefficients.map (| polynomial | Polynomial (polynomial));
-  // let time = Polynomial ::<$integer, $coefficients>::next_time_magnitude_squared_passes (&polynomials.each_ref(), input.numerator, input.shift, GreaterThanFilter::new(permit_threshold, require_threshold));
-  // prop_assume! (time .is_some());
-  // let time = time.unwrap();
-  //
-  // let exact = naive_perfect_evaluate_magnitude_squared(coefficients_slices.as_slice(), rational_input(FractionalInput::new(time, input.shift)));
-  // //if let Some(coefficients) = coefficients.all_taylor_coefficients_bounds (time, input.shift, 0u32) {
-  // prop_assert!(exact > BigRational::from(BigInt::from(permit_threshold)), "expected above {} but was {}", permit_threshold, exact);
+  let input_scale = (DoubleSized::<Coefficient>::one() << input_shift.into()).to_big_rational();
+  if let Some(result) = result {
+    let result = result.to_big_rational() / &input_scale;
+    let exact_magsq_at_result: BigRational =
+      naive_perfect_evaluate_magnitude_squared(coordinates, &result);
+    lpt_assert!(
+      target_range
+        .squared_with_precision(0)
+        .permits(&exact_magsq_at_result),
+      "result value sqrt({}) ~= {:?} at input {} not in permitted range {:?}",
+      exact_magsq_at_result,
+      ToPrimitive::to_f64(&exact_magsq_at_result).map(f64::sqrt),
+      result,
+      target_range
+    );
+  }
 
-  Polynomial::<Coefficient, COEFFICIENTS>::next_time_magnitude_squared_passes_trust_me(
-    coordinates,
-    start_input,
-    input_shift,
-    filter,
-  );
-  next_time_magnitude_squared_passes(coordinates, start_input, input_shift, filter);
+  if result != Some(start_input) {
+    let mut test_inputs = Vec::new();
+    let mut jump_size = DoubleSized::<Coefficient>::one();
+    let mut position = start_input;
+    while jump_size > Zero::zero() {
+      if let Some(next) = position.checked_add(&jump_size) {
+        if !matches!(result, Some(r) if next >= r) {
+          test_inputs.push(position);
+          position = next;
+          jump_size <<= 1;
+          continue;
+        }
+      }
+      jump_size >>= 1;
+    }
+
+    if let Some(other_result) =
+      Polynomial::<Coefficient, COEFFICIENTS>::next_time_magnitude_passes_trust_me(
+        coordinates,
+        start_input,
+        input_shift,
+        target_range,
+      )
+    {
+      if !matches!(result, Some(r) if other_result >= r) {
+        test_inputs.push(other_result);
+      }
+    }
+    if let Some(other_result) =
+      next_time_magnitude_passes(coordinates, start_input, input_shift, target_range)
+    {
+      if !matches!(result, Some(r) if other_result >= r) {
+        test_inputs.push(other_result);
+      }
+    }
+    test_inputs.sort();
+
+    for test_input in test_inputs {
+      let test_input_rational = test_input.to_big_rational() / &input_scale;
+      let exact_magsq_at_test_input: BigRational =
+        naive_perfect_evaluate_magnitude_squared(coordinates, &test_input_rational);
+      lpt_assert!(
+        !target_range
+          .squared_with_precision(0)
+          .requires(&exact_magsq_at_test_input),
+        "value sqrt({}) ~= {:?} at {} was in required range {:?}, but search returned {:?}, which is later",
+        exact_magsq_at_test_input,
+        ToPrimitive::to_f64(&exact_magsq_at_test_input).map(f64::sqrt),
+        test_input,
+        target_range,
+        result
+      );
+    }
+  }
+
   Ok(())
 }

@@ -50,6 +50,9 @@ pub trait Integer:
   fn to_big_rational(&self) -> BigRational {
     BigRational::from(self.to_bigint().unwrap())
   }
+  fn squared(self) -> Self {
+    self * self
+  }
 }
 /*impl <T: 'static + num::PrimInt + num::Integer + num::FromPrimitive + AddAssign <Self> + SubAssign <Self> + MulAssign <Self> + WrappingAdd + WrappingSub + WrappingMul + for<'a> Add <&'a Self, Output = Self> + for<'a> Sub <&'a Self, Output = Self> + for<'a> Mul <&'a Self, Output = Self> + CheckedShl + CheckedShr + Shl <u32, Output = Self> + Shr <u32, Output = Self> + ShlAssign <u32> + ShrAssign <u32> + Debug + Display + Send + Sync> Integer for T {}*/
 
@@ -295,6 +298,17 @@ pub fn overflow_checked_shl<T: Integer>(input: T, shift: impl ShiftSize) -> Opti
   Some(input << shift)
 }
 
+/// Left-shift an integer, returning Some(input*(2^shift)) if it fits within the type, T::max_value() or T::min_value() otherwise.
+pub fn saturating_shl<T: Integer>(input: T, shift: impl ShiftSize) -> T {
+  overflow_checked_shl(input, shift).unwrap_or_else(|| {
+    if input >= T::zero() {
+      T::max_value()
+    } else {
+      T::min_value()
+    }
+  })
+}
+
 /// Compute the arithmetic mean of two integers, rounded towards negative infinity. Never overflows.
 pub fn mean_floor<T: Integer>(first: T, second: T) -> T {
   (first >> 1u32) + (second >> 1u32) + (first & second & T::one())
@@ -457,6 +471,7 @@ mod trajectory_impls;
 mod tests {
   use super::*;
   use num::bigint::BigInt;
+  use num::bigint::ToBigInt;
   use num::rational::Ratio;
   use num::{BigRational, Integer, One, ToPrimitive};
   use proptest::prelude::*;
@@ -620,6 +635,13 @@ mod tests {
       let result = overflow_checked_shl (input, shift);
       let perfect_result = BigInt::from (input) << shift as usize;
       prop_assert_eq!(result, perfect_result.to_i32())
+    }
+
+    #[test]
+    fn randomly_test_saturating_shl (input in any::<i32>(), shift in 0u32..40) {
+      let result = saturating_shl (input, shift);
+      let perfect_result = BigInt::from (input) << shift as usize;
+      prop_assert_eq!(result.to_bigint().unwrap(), num::clamp(perfect_result, i32::MIN.to_bigint().unwrap(), i32::MAX.to_bigint().unwrap()))
     }
 
     #[test]
