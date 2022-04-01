@@ -878,7 +878,7 @@ mod $m {
 impl <Coefficient: DoubleSizedSignedInteger> Polynomial <Coefficient, $coefficients> where DoubleSized<Coefficient>: DoubleSizedSignedInteger
 {
   #[live_prop_test(
-    postcondition = "next_time_magnitude_passes_postconditions::<Coefficient, S, DIMENSIONS, COEFFICIENTS>(coordinates, start_input, input_shift, target_range, result)"
+    postcondition = "next_time_magnitude_passes_postconditions::<Coefficient, S, DIMENSIONS, COEFFICIENTS>(coordinates, start_input, input_shift, target_range, result, false)"
   )]
 pub fn next_time_magnitude_passes<
   S: ShiftSize,
@@ -1001,7 +1001,7 @@ where
 }
 
 #[live_prop_test(
-  postcondition = "next_time_magnitude_passes_postconditions::<Coefficient, S,  DIMENSIONS, COEFFICIENTS>(coordinates, start_input, input_shift, target_range, result)"
+  postcondition = "next_time_magnitude_passes_postconditions::<Coefficient, S,  DIMENSIONS, COEFFICIENTS>(coordinates, start_input, input_shift, target_range, result, true)"
 )]
 pub fn next_time_magnitude_passes<
   Coefficient: DoubleSizedSignedInteger,

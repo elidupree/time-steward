@@ -1,5 +1,6 @@
 use crate::polynomial2::{next_time_magnitude_passes, Polynomial, SearchTargetRange};
 use crate::{DoubleSized, DoubleSizedSignedInteger, Integer, ShiftSize};
+use guard::guard;
 use live_prop_test::{lpt_assert, lpt_assert_eq};
 use num::{BigInt, BigRational, CheckedAdd, One, Signed, ToPrimitive, Zero};
 use std::convert::TryInto;
@@ -16,7 +17,7 @@ fn naive_binomial_coefficient(n: usize, k: usize) -> BigInt {
   naive_factorial(n) / (naive_factorial(k) * naive_factorial(n - k))
 }
 
-fn naive_perfect_evaluate_magnitude_squared<
+fn perfect_evaluate_magnitude_squared<
   Coefficient: Integer + Signed,
   const DIMENSIONS: usize,
   const COEFFICIENTS: usize,
@@ -26,8 +27,8 @@ fn naive_perfect_evaluate_magnitude_squared<
 ) -> BigRational {
   let mut result = BigRational::zero();
   for coefficients in coordinates {
-    let notsq = coefficients.naive_perfect_evaluate(input);
-    result += &notsq * &notsq;
+    let notsq = coefficients.perfect_evaluate(input);
+    result += notsq.pow(2);
   }
   result
 }
@@ -42,13 +43,12 @@ impl<Coefficient: Integer + Signed, const COEFFICIENTS: usize>
       .map(|&coefficient| coefficient.to_big_rational())
   }
 
-  pub(crate) fn naive_perfect_evaluate(&self, input: &BigRational) -> BigRational {
-    let mut result = BigRational::zero();
-    for (exponent, mut term) in self.big_rational_coefficients().enumerate() {
-      for _ in 0..exponent {
-        term *= input;
-      }
-      result += term;
+  pub(crate) fn perfect_evaluate(&self, input: &BigRational) -> BigRational {
+    guard!(let Some((last, rest)) = self.0.split_last() else { return BigRational::zero() });
+    let mut result = last.to_big_rational();
+    for &coefficient in rest.iter().rev() {
+      result *= input;
+      result += coefficient.to_bigint().unwrap();
     }
     result
   }
@@ -182,6 +182,7 @@ pub(crate) fn next_time_magnitude_passes_postconditions<
   input_shift: S,
   target_range: SearchTargetRange<Coefficient>,
   result: Option<DoubleSized<Coefficient>>,
+  new_algo: bool,
 ) -> Result<(), String>
 where
   // this bound is and actually needed for this function, but
@@ -196,7 +197,7 @@ where
   if let Some(result) = result {
     let result = result.to_big_rational() / &input_scale;
     let exact_magsq_at_result: BigRational =
-      naive_perfect_evaluate_magnitude_squared(coordinates, &result);
+      perfect_evaluate_magnitude_squared(coordinates, &result);
     lpt_assert!(
       target_range
         .squared_with_precision(0)
@@ -221,25 +222,24 @@ where
           jump_size <<= 1;
           continue;
         }
+      } else {
+        break;
       }
       jump_size >>= 1;
     }
 
-    if let Some(other_result) =
+    let other_algo_result = if new_algo {
       Polynomial::<Coefficient, COEFFICIENTS>::next_time_magnitude_passes_trust_me(
         coordinates,
         start_input,
         input_shift,
         target_range,
       )
-    {
-      if !matches!(result, Some(r) if other_result >= r) {
-        test_inputs.push(other_result);
-      }
-    }
-    if let Some(other_result) =
+    } else {
       next_time_magnitude_passes(coordinates, start_input, input_shift, target_range)
-    {
+    };
+
+    if let Some(other_result) = other_algo_result {
       if !matches!(result, Some(r) if other_result >= r) {
         test_inputs.push(other_result);
       }
@@ -249,7 +249,7 @@ where
     for test_input in test_inputs {
       let test_input_rational = test_input.to_big_rational() / &input_scale;
       let exact_magsq_at_test_input: BigRational =
-        naive_perfect_evaluate_magnitude_squared(coordinates, &test_input_rational);
+        perfect_evaluate_magnitude_squared(coordinates, &test_input_rational);
       lpt_assert!(
         !target_range
           .squared_with_precision(0)
