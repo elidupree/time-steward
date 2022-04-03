@@ -357,6 +357,9 @@ impl<
     .map(|a| a.into() + self.rounded_origin_numerator())
   }
 
+  // Situation: This test currently fails because the polynomial search functions determine their permit/require bounds in relation to the exact polynomial output, but this test says trajectory should determine the bounds such that the computed position will still meet them even after rounding (since you are likely planning to change the trajectory, which introduces rounding error, at this point)
+  //
+  // Open question: exactly which layer of the abstractions should we change to account for this? main goal: client code should "not have to worry about" rounding error (but hypothetically, their code could end up changing the trajectory more than once, applying more error than expected...)
   pub fn next_time_magnitude_is_postconditions(
     &self,
     target: impl SearchBuilder<Coefficient, Time>,
