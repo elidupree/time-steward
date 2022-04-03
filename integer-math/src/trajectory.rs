@@ -1,12 +1,14 @@
 use crate::maybe_const::ConstU32;
 use crate::polynomial2::{
   definitely_outside_range, next_time_magnitude_passes, OverflowError, Polynomial, SearchBuilder,
+  SearchTargetRange,
 };
 use crate::{
   mean_round_to_even, shr_round_to_even, DoubleSized, DoubleSizedSignedInteger, Integer, Vector,
   VectorLike,
 };
 use derivative::Derivative;
+use live_prop_test::{live_prop_test, lpt_assert};
 use num::{Signed, Zero};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -42,6 +44,7 @@ pub struct Trajectory<
   pub(crate) unrounded_origin: Time,
 }
 
+#[live_prop_test]
 impl<
     Coefficient: DoubleSizedSignedInteger,
     Time: Integer
@@ -278,6 +281,23 @@ impl<
     )
   }
 
+  fn build_search(
+    &self,
+    target: impl SearchBuilder<Coefficient, Time>,
+  ) -> (SearchTargetRange<Coefficient>, Time) {
+    let (target_range, start_time) = target.build();
+    let start_time = if let Some(start_time) = start_time {
+      assert!(
+        start_time >= self.unrounded_origin,
+        "searching earlier than the origin of a Trajectory"
+      );
+      start_time
+    } else {
+      self.unrounded_origin
+    };
+    (target_range, start_time)
+  }
+
   // TODO: the below functions come pre-deprecated;
   // I'm going to replace the interface, but I'm writing them for now so I can
   // plug this into bouncy_circles in order to test and run benchmarks
@@ -313,6 +333,7 @@ impl<
   }
 
   // TODO: DoubleSized<Coefficient>: DoubleSizedSignedInteger can be removed once I settle on the new magnitude bound search implementation
+  #[live_prop_test(postcondition = "self.next_time_magnitude_is_postconditions(target, result)")]
   pub fn next_time_magnitude_is(
     &self,
     target: impl SearchBuilder<Coefficient, Time>,
@@ -324,16 +345,7 @@ impl<
     [[[DoubleSized<Coefficient>; 2]; 2]; DIMENSIONS]: Default,
     [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default,
   {
-    let (target_range, start_time) = target.build();
-    let start_time = if let Some(start_time) = start_time {
-      assert!(
-        start_time >= self.unrounded_origin,
-        "searching earlier than the origin of a Trajectory"
-      );
-      start_time
-    } else {
-      self.unrounded_origin
-    };
+    let (target_range, start_time) = self.build_search(target);
     next_time_magnitude_passes(
       &self.coordinates.each_ref(),
       (start_time - self.rounded_origin_numerator())
@@ -343,6 +355,85 @@ impl<
       target_range,
     )
     .map(|a| a.into() + self.rounded_origin_numerator())
+  }
+
+  pub fn next_time_magnitude_is_postconditions(
+    &self,
+    target: impl SearchBuilder<Coefficient, Time>,
+    result: Option<Time>,
+  ) -> Result<(), String>
+  where
+    DoubleSized<Coefficient>: DoubleSizedSignedInteger + Into<Time>,
+    [[[DoubleSized<Coefficient>; 2]; COEFFICIENTS]; DIMENSIONS]: Default,
+    [[[DoubleSized<Coefficient>; 2]; 1]; DIMENSIONS]: Default,
+    [[[DoubleSized<Coefficient>; 2]; 2]; DIMENSIONS]: Default,
+    [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default,
+  {
+    let (target_range, start_time) = self.build_search(target);
+    if let Some(result) = result {
+      let position_at_result = self
+        .position_vector(result)
+        .ok_or("A successful next_time shouldn't result in overflow")?;
+      let magsq_at_result: DoubleSized<Coefficient> = position_at_result
+        .to_array()
+        .iter()
+        .map(|&a| DoubleSized::<Coefficient>::from(a).squared())
+        .sum();
+      lpt_assert!(
+        target_range
+          .squared_with_precision(0)
+          .permits(&magsq_at_result.to_big_rational()),
+        "result value ||{:?}|| = sqrt({}) ~= {:?} at input {} not in permitted range {:?}",
+        position_at_result,
+        magsq_at_result,
+        num::ToPrimitive::to_f64(&magsq_at_result).map(f64::sqrt),
+        result,
+        target_range
+      );
+    }
+
+    if result != Some(start_time) {
+      let mut test_inputs = Vec::new();
+      let mut jump_size = Time::one();
+      let mut position = start_time;
+      while jump_size > Zero::zero() {
+        if let Some(next) = position.checked_add(&jump_size) {
+          if !matches!(result, Some(r) if next >= r) {
+            test_inputs.push(position);
+            position = next;
+            jump_size <<= 1;
+            continue;
+          }
+        } else {
+          break;
+        }
+        jump_size >>= 1;
+      }
+
+      for test_input in test_inputs {
+        if let Some(position_at_test_input) = self.position_vector(test_input) {
+          let magsq_at_test_input: DoubleSized<Coefficient> = position_at_test_input
+            .to_array()
+            .iter()
+            .map(|&a| DoubleSized::<Coefficient>::from(a).squared())
+            .sum();
+          lpt_assert!(
+            !target_range
+              .squared_with_precision(0)
+              .requires(&magsq_at_test_input.to_big_rational()),
+            "value ||{:?}|| = sqrt({}) ~= {:?} at {} was in required range {:?}, but search returned {:?}, which is later",
+            position_at_test_input,
+            magsq_at_test_input,
+            num::ToPrimitive::to_f64(&magsq_at_test_input).map(f64::sqrt),
+            test_input,
+            target_range,
+            result
+          );
+        }
+      }
+    }
+
+    Ok(())
   }
 }
 

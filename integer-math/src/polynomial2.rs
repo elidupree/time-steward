@@ -598,22 +598,25 @@ impl<T: Integer> SearchTargetRange<T> {
   }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub struct SearchTargetRangeWithStartTime<T, Time> {
   target_range: SearchTargetRange<T>,
   start_time: Time,
 }
 
-pub trait SearchBuilder<T, Time> {
+pub trait SearchBuilder<T, Time>: Copy + Clone {
   fn build(self) -> (SearchTargetRange<T>, Option<Time>);
 }
 
 impl<T: Integer, Time> SearchBuilder<T, Time> for SearchTargetRange<T> {
+  #[inline]
   fn build(self) -> (SearchTargetRange<T>, Option<Time>) {
     (self, None)
   }
 }
 
 impl<T: Integer, Time: Integer> SearchBuilder<T, Time> for SearchTargetRangeWithStartTime<T, Time> {
+  #[inline]
   fn build(self) -> (SearchTargetRange<T>, Option<Time>) {
     (self.target_range, Some(self.start_time))
   }

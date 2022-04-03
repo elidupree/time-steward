@@ -36,6 +36,7 @@ pub trait Integer:
   + Shr<u32, Output = Self>
   + ShlAssign<u32>
   + ShrAssign<u32>
+  + std::iter::Sum
   + Debug
   + Display
   + Default
