@@ -604,7 +604,7 @@ pub struct SearchTargetRangeWithStartTime<T, Time> {
   start_time: Time,
 }
 
-pub trait SearchBuilder<T, Time>: Copy + Clone {
+pub trait SearchBuilder<T, Time>: Copy + Clone + Debug {
   fn build(self) -> (SearchTargetRange<T>, Option<Time>);
 }
 

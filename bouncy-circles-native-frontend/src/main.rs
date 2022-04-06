@@ -1,5 +1,5 @@
 use glium::{glutin, implement_vertex, Blend, BlendingFunction, LinearBlendingFactor, Surface};
-use serde::Deserialize;
+// use serde::Deserialize;
 use std::time::{Duration, Instant};
 
 use time_steward::{
@@ -24,14 +24,14 @@ Options:
   -c, --connect  Start a synchronized simulation by making a TCP connection.
 ";*/
 
-#[derive(Debug, Deserialize)]
-struct Args {
-  flag_listen: bool,
-  flag_connect: bool,
-
-  arg_host: Option<String>,
-  arg_port: Option<u16>,
-}
+// #[derive(Debug, Deserialize)]
+// struct Args {
+//   flag_listen: bool,
+//   flag_connect: bool,
+//
+//   arg_host: Option<String>,
+//   arg_port: Option<u16>,
+// }
 
 #[derive(Copy, Clone)]
 

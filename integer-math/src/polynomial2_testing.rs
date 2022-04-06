@@ -1,5 +1,5 @@
 use crate::polynomial2::{next_time_magnitude_passes, Polynomial, SearchTargetRange};
-use crate::{DoubleSized, DoubleSizedSignedInteger, Integer, ShiftSize};
+use crate::{DoubleSized, DoubleSizedSignedInteger, Integer, ShiftSize, VectorLike};
 use guard::guard;
 use live_prop_test::{lpt_assert, lpt_assert_eq};
 use num::{BigInt, BigRational, CheckedAdd, One, Signed, ToPrimitive, Zero};
@@ -31,6 +31,16 @@ fn perfect_evaluate_magnitude_squared<
     result += notsq.pow(2);
   }
   result
+}
+
+pub(crate) fn input_scale_rational(input_shift: impl ShiftSize) -> BigRational {
+  BigRational::new(BigInt::one(), BigInt::one() << input_shift.into())
+}
+
+pub(crate) fn rational_vector_magnitude_squared<const COEFFICIENTS: usize>(
+  vector: &impl VectorLike<BigRational, COEFFICIENTS>,
+) -> BigRational {
+  vector.to_array().iter().map(|a| a.pow(2)).sum()
 }
 
 impl<Coefficient: Integer + Signed, const COEFFICIENTS: usize>

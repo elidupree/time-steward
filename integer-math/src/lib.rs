@@ -1,4 +1,4 @@
-#![feature(array_methods, array_zip, array_from_fn)]
+#![feature(array_methods, array_zip, array_from_fn, array_try_map)]
 
 #[cfg(test)]
 #[macro_use]
@@ -68,10 +68,14 @@ pub trait VectorLike<Coordinate: nalgebra::Scalar, const DIMENSIONS: usize> {
   fn to_array(&self) -> [Coordinate; DIMENSIONS] {
     std::array::from_fn(|which| self.coordinate(which))
   }
+  fn from_array(array: [Coordinate; DIMENSIONS]) -> Self;
 }
 impl<T: nalgebra::Scalar> VectorLike<T, 1> for T {
   fn coordinate(&self, _which: usize) -> T {
     self.clone()
+  }
+  fn from_array([value]: [T; 1]) -> Self {
+    value
   }
 }
 
@@ -133,10 +137,18 @@ pub mod impls {
     fn coordinate(&self, which: usize) -> T {
       self[which].clone()
     }
+
+    fn from_array(array: [T; DIMENSIONS]) -> Self {
+      array.to_vector()
+    }
   }
   impl<T: nalgebra::Scalar, const DIMENSIONS: usize> VectorLike<T, DIMENSIONS> for [T; DIMENSIONS] {
     fn coordinate(&self, which: usize) -> T {
       self[which].clone()
+    }
+
+    fn from_array(array: [T; DIMENSIONS]) -> Self {
+      array
     }
   }
   macro_rules! impl_integer {

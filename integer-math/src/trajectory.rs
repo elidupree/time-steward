@@ -3,13 +3,14 @@ use crate::polynomial2::{
   definitely_outside_range, next_time_magnitude_passes, OverflowError, Polynomial, SearchBuilder,
   SearchTargetRange,
 };
+use crate::polynomial2_testing::{input_scale_rational, rational_vector_magnitude_squared};
 use crate::{
-  mean_round_to_even, shr_round_to_even, DoubleSized, DoubleSizedSignedInteger, Integer, Vector,
-  VectorLike,
+  mean_round_to_even, overflow_checked_shl, shr_round_to_even, DoubleSized,
+  DoubleSizedSignedInteger, Integer, Vector, VectorLike,
 };
 use derivative::Derivative;
 use live_prop_test::{live_prop_test, lpt_assert};
-use num::{Signed, Zero};
+use num::{BigRational, Signed, Zero};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::cmp::Ordering;
@@ -164,17 +165,17 @@ impl<
     n: usize,
     time: Time,
   ) -> Option<Vector<Coefficient, DIMENSIONS>> {
-    let mut result = Vector::<Coefficient, DIMENSIONS>::zero();
     let relative_time = self.relative_to_rounded_origin(time)?;
-    for dimension in 0..DIMENSIONS {
-      let bounds = self.coordinates[dimension].all_taylor_coefficients_bounds(
-        relative_time,
-        ConstU32::<TIME_SHIFT>,
-        0,
-      )?[n];
-      result[dimension] = mean_round_to_even(bounds[0], bounds[1]).try_into().ok()?;
-    }
-    Some(result)
+    Some(
+      self
+        .coordinates
+        .try_map(|coordinate| {
+          let bounds =
+            coordinate.all_taylor_coefficients_bounds(relative_time, ConstU32::<TIME_SHIFT>, 0)?[n];
+          mean_round_to_even(bounds[0], bounds[1]).try_into().ok()
+        })?
+        .to_vector(),
+    )
   }
 
   pub fn set_nth_coefficient(
@@ -207,6 +208,21 @@ impl<
     self.set_nth_coefficient(n, time, current_value + added_value.to_vector())
   }
 
+  pub fn nth_coefficient_vector_exact(
+    &self,
+    n: usize,
+    time: Time,
+  ) -> Option<Vector<BigRational, DIMENSIONS>> {
+    let relative_time = self.relative_to_rounded_origin(time)?.to_big_rational()
+      * input_scale_rational(ConstU32::<TIME_SHIFT>);
+    Some(
+      self
+        .coordinates
+        .map(|coordinate| coordinate.naive_perfect_nth_taylor_coefficient(&relative_time, n))
+        .to_vector(),
+    )
+  }
+
   pub fn position_vector(&self, time: Time) -> Option<Vector<Coefficient, DIMENSIONS>> {
     self.nth_coefficient_vector(0, time)
   }
@@ -216,12 +232,31 @@ impl<
   }
 
   pub fn acceleration_vector(&self, time: Time) -> Option<Vector<Coefficient, DIMENSIONS>> {
-    unimplemented!()
-    // Some(
-    // self
-    //   .nth_coefficient(1, time, ConstU32::<TIME_SHIFT>)?
-    //   .checked_mul(2)?,
-    // )
+    Some(
+      self
+        .nth_coefficient_vector(1, time)?
+        .to_array()
+        .try_map(|coordinate: Coefficient| overflow_checked_shl(coordinate, 1))?
+        .to_vector(),
+    )
+  }
+
+  pub fn position_vector_exact(&self, time: Time) -> Option<Vector<BigRational, DIMENSIONS>> {
+    self.nth_coefficient_vector_exact(0, time)
+  }
+
+  pub fn velocity_vector_exact(&self, time: Time) -> Option<Vector<BigRational, DIMENSIONS>> {
+    self.nth_coefficient_vector_exact(1, time)
+  }
+
+  pub fn acceleration_vector_exact(&self, time: Time) -> Option<Vector<BigRational, DIMENSIONS>> {
+    Some(
+      self
+        .nth_coefficient_vector_exact(1, time)?
+        .to_array()
+        .map(|coordinate: BigRational| coordinate * (2u32.to_big_rational()))
+        .to_vector(),
+    )
   }
 
   pub fn set_position(
@@ -240,20 +275,21 @@ impl<
     self.set_nth_coefficient(1, time, value)
   }
 
-  // pub fn set_acceleration(
-  //   &mut self,
-  //   time: Time,
-  //   value: &Vector<Coefficient, DIMENSIONS>,
-  // ) -> Result<(), OverflowError> {
-  //   self.set_nth_coefficient(
-  //     2,
-  //     time,
-  //
-  //     // note: we don't have to use shr_nicely_rounded because it's always at 0.5
-  //     // TODO: do this with slightly better precision
-  //     value.map_coordinates(|coordinate| shr_round_to_even(coordinate, 1u32)),
-  //   )
-  // }
+  pub fn set_acceleration(
+    &mut self,
+    time: Time,
+    value: impl VectorLike<Coefficient, DIMENSIONS>,
+  ) -> Result<(), OverflowError> {
+    self.set_nth_coefficient(
+      2,
+      time,
+      // note: we don't have to use shr_nicely_rounded because it's always at 0.5
+      // TODO: do this with slightly better precision
+      value
+        .to_array()
+        .map(|coordinate| shr_round_to_even(coordinate, 1u32)),
+    )
+  }
 
   pub fn add_position(&mut self, value: impl VectorLike<Coefficient, DIMENSIONS>) {
     *self += value.to_vector()
@@ -332,6 +368,7 @@ impl<
       .min()
   }
 
+  /// note that the target range is relative to the EXACT value of the polynomial, so it may be off after rounding
   // TODO: DoubleSized<Coefficient>: DoubleSizedSignedInteger can be removed once I settle on the new magnitude bound search implementation
   #[live_prop_test(postcondition = "self.next_time_magnitude_is_postconditions(target, result)")]
   pub fn next_time_magnitude_is(
@@ -375,17 +412,13 @@ impl<
     let (target_range, start_time) = self.build_search(target);
     if let Some(result) = result {
       let position_at_result = self
-        .position_vector(result)
+        .position_vector_exact(result)
         .ok_or("A successful next_time shouldn't result in overflow")?;
-      let magsq_at_result: DoubleSized<Coefficient> = position_at_result
-        .to_array()
-        .iter()
-        .map(|&a| DoubleSized::<Coefficient>::from(a).squared())
-        .sum();
+      let magsq_at_result = rational_vector_magnitude_squared(&position_at_result);
       lpt_assert!(
         target_range
           .squared_with_precision(0)
-          .permits(&magsq_at_result.to_big_rational()),
+          .permits(&magsq_at_result),
         "result value ||{:?}|| = sqrt({}) ~= {:?} at input {} not in permitted range {:?}",
         position_at_result,
         magsq_at_result,
@@ -414,16 +447,12 @@ impl<
       }
 
       for test_input in test_inputs {
-        if let Some(position_at_test_input) = self.position_vector(test_input) {
-          let magsq_at_test_input: DoubleSized<Coefficient> = position_at_test_input
-            .to_array()
-            .iter()
-            .map(|&a| DoubleSized::<Coefficient>::from(a).squared())
-            .sum();
+        if let Some(position_at_test_input) = self.position_vector_exact(test_input) {
+          let magsq_at_test_input = rational_vector_magnitude_squared(&position_at_test_input);
           lpt_assert!(
             !target_range
               .squared_with_precision(0)
-              .requires(&magsq_at_test_input.to_big_rational()),
+              .requires(&magsq_at_test_input),
             "value ||{:?}|| = sqrt({}) ~= {:?} at {} was in required range {:?}, but search returned {:?}, which is later",
             position_at_test_input,
             magsq_at_test_input,
