@@ -213,7 +213,7 @@ pub trait EventAccessor<'acc>: InitializedAccessor<'acc> + CreateEntityAccessor 
   }
 
   /**
-  Cancel any current scheduled for this entity to wake.
+  Cancel any current schedule for this entity to wake.
 
   This is equivalent to `set_schedule` with None as the argument.
   */

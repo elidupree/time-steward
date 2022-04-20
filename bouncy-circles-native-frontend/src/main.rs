@@ -1,9 +1,12 @@
+#![feature(array_methods)]
 use glium::{glutin, implement_vertex, Blend, BlendingFunction, LinearBlendingFactor, Surface};
 // use serde::Deserialize;
 use std::time::{Duration, Instant};
 
+use time_steward::integer_math::polynomial2::definitely_less_than;
 use time_steward::{
-  ConstructibleTimeSteward, EntityId, InitializedAccessor, ReadAccess, Snapshot, TimeSteward,
+  Accessor, ConstructibleTimeSteward, EntityId, InitializedAccessor, ReadAccess, Snapshot,
+  TimeSteward,
 };
 
 use bouncy_circles::physics::*;
@@ -126,7 +129,7 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
     let events_loop = glutin::event_loop::EventLoop::new();
     let wb = glutin::window::WindowBuilder::new()
       .with_title("bouncy-circles")
-      .with_inner_size(glutin::dpi::LogicalSize::new(600, 600));
+      .with_inner_size(glutin::dpi::LogicalSize::new(600i32, 600i32));
     let cb = glutin::ContextBuilder::new();
     let display = glium::Display::new(wb, cb, &events_loop).unwrap();
     let program =
@@ -210,6 +213,63 @@ gl_FragColor = vec4 (0.0, 0.0, 0.0, 0.0);
         .expect("steward failed to provide snapshot");
       stew.forget_before(time);
       settle(&mut stew, time);
+      snapshot.with_accessor(|accessor| {
+        for handle in accessor.globals().circles.iter() {
+          let circle = handle.read(accessor);
+          for relationship in circle.relationships.iter() {
+            let centers = relationship.circles.each_ref().map(|c| {
+              c.read(accessor)
+                .position
+                .position_at(*accessor.now())
+                .unwrap()
+            });
+            let displacement = (centers[1] - centers[0]).map(i64::from);
+            let distance = (displacement.dot(&displacement) as f64).sqrt();
+            if distance
+              < ((relationship.circles[0].radius + relationship.circles[1].radius) - 4) as f64
+              && relationship.read(accessor).induced_acceleration.is_none()
+            {
+              let schedules = relationship
+                .circles
+                .each_ref()
+                .map(|c| accessor.raw_read_schedule(c.borrow()));
+
+              let trajectories = relationship
+                .circles
+                .each_ref()
+                .map(|c| c.read(accessor).position);
+
+              let matched =
+                Trajectory::with_matching_origins(trajectories[0], trajectories[1]).unwrap();
+              let difference = trajectories[1] - trajectories[0];
+              let radius = relationship.circles[0].radius + relationship.circles[1].radius;
+              let predict1 = difference.next_time_magnitude_is(definitely_less_than(radius - 2));
+              let predict2 = difference
+                .next_time_magnitude_is(definitely_less_than(radius - 2).after(*accessor.now()));
+              dbg!(trajectories, matched, difference, matched.1 - matched.0,);
+              assert_eq!(
+                difference
+                  .position_at(*accessor.now())
+                  .unwrap()
+                  .map(i64::from),
+                displacement
+              );
+
+              panic!(
+                "caught undetected intersection: {:?}",
+                (
+                  accessor.now(),
+                  schedules,
+                  predict1,
+                  predict2,
+                  trajectories,
+                  relationship.circles.each_ref().map(|c| ((**c).clone(),))
+                )
+              );
+            }
+          }
+        }
+      });
       snapshot.with_accessor(|accessor| {
         for handle in accessor.globals().circles.iter() {
           let circle = handle.read(accessor);

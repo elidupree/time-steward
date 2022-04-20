@@ -21,8 +21,8 @@ impl<
     self,
     rhs: Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>,
   ) -> Self::Output {
-    let (a, b) = Trajectory::with_matching_rounded_origins(self, rhs)
-      .expect("overflow in Trajectory arithmetic");
+    let (a, b) =
+      Trajectory::with_matching_origins(self, rhs).expect("overflow in Trajectory arithmetic");
     Trajectory {
       coordinates: a.coordinates.zip(b.coordinates).map(|(a, b)| a + b),
       unrounded_origin: a.unrounded_origin,
@@ -43,7 +43,7 @@ impl<
     &self,
     rhs: &Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>,
   ) -> Option<Self> {
-    let (mut a, b) = Trajectory::with_matching_rounded_origins(*self, *rhs)?;
+    let (mut a, b) = Trajectory::with_matching_origins(*self, *rhs)?;
     for (a, b) in a.coordinates.iter_mut().zip(b.coordinates) {
       *a = a.checked_add(&b)?;
     }
@@ -163,8 +163,8 @@ impl<
     self,
     rhs: Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>,
   ) -> Self::Output {
-    let (a, b) = Trajectory::with_matching_rounded_origins(self, rhs)
-      .expect("overflow in Trajectory arithmetic");
+    let (a, b) =
+      Trajectory::with_matching_origins(self, rhs).expect("overflow in Trajectory arithmetic");
     Trajectory {
       coordinates: a.coordinates.zip(b.coordinates).map(|(a, b)| a - b),
       unrounded_origin: a.unrounded_origin,
@@ -185,7 +185,7 @@ impl<
     &self,
     rhs: &Trajectory<Coefficient, Time, DIMENSIONS, COEFFICIENTS, TIME_SHIFT>,
   ) -> Option<Self> {
-    let (mut a, b) = Trajectory::with_matching_rounded_origins(*self, *rhs)?;
+    let (mut a, b) = Trajectory::with_matching_origins(*self, *rhs)?;
     for (a, b) in a.coordinates.iter_mut().zip(b.coordinates) {
       *a = a.checked_sub(&b)?;
     }

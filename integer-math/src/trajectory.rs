@@ -9,7 +9,7 @@ use crate::{
   DoubleSizedSignedInteger, Integer, Vector, VectorLike,
 };
 use derivative::Derivative;
-use live_prop_test::{live_prop_test, lpt_assert};
+use live_prop_test::{live_prop_test, lpt_assert, lpt_assert_eq};
 use num::{BigRational, Signed, Zero};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -23,7 +23,7 @@ This is a convenience type, mostly a wrapper around various `Polynomial` functio
 
 A Trajectory type has a constant `TIME_SHIFT`; all methods that interact with Time are interpreting it as a *fractional* input (time / 2^TIME_SHIFT) to the underlying polynomials. (TODO: explain the motivation better for a newcomer)
 
-A Trajectory has an _origin_ – the Time of the last change that was made to it. Time only goes forwards, so querying a Trajectory earlier than its origin is an error and may panic or misbehave. (TODO: make it always panic) (TODO: explain how this helps with overflow)
+A Trajectory has an _origin_ – the Time of the last change that was made to it. Time only goes forwards, so querying a Trajectory earlier than its origin is an error and may panic or misbehave. (TODO: make it always panic) (TODO: explain how "having an origin" helps with overflow)
 */
 #[serde_as]
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize, Derivative)]
@@ -83,9 +83,14 @@ impl<
   }
 
   fn relative_to_rounded_origin(&self, time_numerator: Time) -> Option<DoubleSized<Coefficient>> {
-    (time_numerator - self.rounded_origin_numerator())
+    // TODO: bailing out at checked_sub assumes that Time is at least as big as DoubleSized<Coefficient>, are we assuming this?
+    (time_numerator.checked_sub(&self.rounded_origin_numerator())?)
       .try_into()
       .ok()
+  }
+
+  pub fn origin(&self) -> Time {
+    self.unrounded_origin
   }
 
   pub fn set_origin(&mut self, new_origin: Time) {
@@ -96,15 +101,20 @@ impl<
         .try_into()
         .ok()
         .expect("Overflow in Trajectory::set_origin");
-      for coordinate in &mut self.coordinates {
-        *coordinate = coordinate
-          .all_taylor_coefficients(integer_duration)
-          .expect("Overflow in Trajectory::set_origin");
+      if !integer_duration.is_zero() {
+        for coordinate in &mut self.coordinates {
+          *coordinate = coordinate
+            .all_taylor_coefficients(integer_duration)
+            .expect("Overflow in Trajectory::set_origin");
+        }
       }
     }
     self.unrounded_origin = new_origin;
   }
 
+  #[live_prop_test(
+    postcondition = "self.try_set_origin_postconditions(new_origin, old(*self), result)"
+  )]
   pub fn try_set_origin(&mut self, new_origin: Time) -> Result<(), OverflowError> {
     if !self.is_constant() {
       let integer_duration: DoubleSized<Coefficient> =
@@ -112,13 +122,34 @@ impl<
           - Self::time_numerator_to_nearest_integer(self.unrounded_origin))
         .try_into()
         .map_err(|_| OverflowError)?;
-      for coordinate in &mut self.coordinates {
-        *coordinate = coordinate
-          .all_taylor_coefficients(integer_duration)
-          .ok_or(OverflowError)?;
+      if !integer_duration.is_zero() {
+        for coordinate in &mut self.coordinates {
+          *coordinate = coordinate
+            .all_taylor_coefficients(integer_duration)
+            .ok_or(OverflowError)?;
+        }
       }
     }
     self.unrounded_origin = new_origin;
+    Ok(())
+  }
+
+  pub fn try_set_origin_postconditions(
+    &self,
+    new_origin: Time,
+    old_self: Self,
+    result: Result<(), OverflowError>,
+  ) -> Result<(), String> {
+    if let Ok(()) = result {
+      lpt_assert_eq!(self.unrounded_origin, new_origin);
+      lpt_assert_eq!(
+        self.position_vector(new_origin),
+        old_self.position_vector(new_origin)
+      );
+      if let Some(i2) = new_origin.checked_add(&Time::one()) {
+        lpt_assert_eq!(self.position_vector(i2), old_self.position_vector(i2));
+      }
+    }
     Ok(())
   }
 
@@ -130,14 +161,11 @@ impl<
   }
 
   #[inline]
-  pub(crate) fn with_matching_rounded_origins(a: Self, b: Self) -> Option<(Self, Self)> {
-    match a
-      .rounded_origin_numerator()
-      .cmp(&b.rounded_origin_numerator())
-    {
+  pub fn with_matching_origins(a: Self, b: Self) -> Option<(Self, Self)> {
+    match a.unrounded_origin.cmp(&b.unrounded_origin) {
       Ordering::Less => Some((a.with_origin(b.unrounded_origin)?, b)),
-      Ordering::Equal => Some((a, b.with_origin(a.unrounded_origin)?)),
-      Ordering::Greater => Some((a, b)),
+      Ordering::Greater => Some((a, b.with_origin(a.unrounded_origin)?)),
+      Ordering::Equal => Some((a, b)),
     }
   }
 
@@ -165,7 +193,28 @@ impl<
     n: usize,
     time: Time,
   ) -> Option<Vector<Coefficient, DIMENSIONS>> {
-    let relative_time = self.relative_to_rounded_origin(time)?;
+    let relative_time = match self.relative_to_rounded_origin(time) {
+      Some(t) => t,
+      None => {
+        // Annoying special case: Even if the time is overflowing,
+        // the result will be non-overflowing as long as _this coefficient_ remains constant
+        // (even if the whole polynomial is not constant, e.g. you can check the velocity
+        // at an overflowing time if the velocity is nonzero but the acceleration is zero)
+        return Some(
+          self
+            .coordinates
+            .try_map(|coordinate| {
+              coordinate
+                .iter()
+                .skip(n + 1)
+                .all(|&a| a == Coefficient::zero())
+                .then(|| coordinate[n])
+            })?
+            .to_vector(),
+        );
+      }
+    };
+
     Some(
       self
         .coordinates
@@ -410,6 +459,7 @@ impl<
     [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default,
   {
     let (target_range, start_time) = self.build_search(target);
+    //let start = std::time::Instant::now();
     if let Some(result) = result {
       let position_at_result = self
         .position_vector_exact(result)
@@ -427,6 +477,7 @@ impl<
         target_range
       );
     }
+    //println!("TA {:?}", (start.elapsed()));
 
     if result != Some(start_time) {
       let mut test_inputs = Vec::new();
@@ -464,6 +515,7 @@ impl<
         }
       }
     }
+    //println!("Ttested {:?}", (self, start.elapsed()));
 
     Ok(())
   }

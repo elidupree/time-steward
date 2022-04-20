@@ -18,7 +18,7 @@ use serde_with::serde_as;
 use std::cmp::{max, min, Ordering};
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Copy, Clone, Error, Debug)]
 #[error("Overflow")]
 pub struct OverflowError;
 

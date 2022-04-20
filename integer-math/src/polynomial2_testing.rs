@@ -203,6 +203,7 @@ where
   [[[DoubleSized<Coefficient>; 2]; 2]; DIMENSIONS]: Default,
   [[[DoubleSized<Coefficient>; 2]; 3]; DIMENSIONS]: Default,
 {
+  //let start = std::time::Instant::now();
   let input_scale = (DoubleSized::<Coefficient>::one() << input_shift.into()).to_big_rational();
   if let Some(result) = result {
     let result = result.to_big_rational() / &input_scale;
@@ -219,6 +220,7 @@ where
       target_range
     );
   }
+  //println!("A {:?}", (start.elapsed()));
 
   if result != Some(start_input) {
     let mut test_inputs = Vec::new();
@@ -255,6 +257,7 @@ where
       }
     }
     test_inputs.sort();
+    //println!("B {:?}", (start.elapsed()));
 
     for test_input in test_inputs {
       let test_input_rational = test_input.to_big_rational() / &input_scale;
@@ -273,6 +276,7 @@ where
       );
     }
   }
+  //println!("tested {:?}", (coordinates, start.elapsed()));
 
   Ok(())
 }
