@@ -3,22 +3,13 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::io::Read;
 use std::ops::{Deref, DerefMut};
+use type_utils::SimulationStateData;
 
 use crate::type_utils::list_of_types::ListOfTypes;
 use crate::{
   DynHandle, EntityHandleKind, EntityHandleKindDeref, EntityId, EntityKind, Globals, ImmutableData,
   MutableData, TypedHandle, TypedHandleRef,
 };
-
-/// Data used for a TimeSteward simulation, such as times, entities, and events.
-///
-/// We used to require `Send + Sync` for SimulationStateData, but now that EntityHandles can be part of SimulationStateData, we have to omit that to support TimeSteward types that have !Send/!Sync handles (like Rc)
-///
-/// Requiring DeserializeOwned is improper because you can't deserialize EntityHandles without more
-///  information; the current approach is a hack where Deserialize
-/// uses a thread-local context for that; it may later be replaced with a proper custom derive of my own.
-pub trait SimulationStateData: Any + Clone + Eq + Serialize + DeserializeOwned + Debug {}
-impl<T: Any + Clone + Eq + Serialize + DeserializeOwned + Debug> SimulationStateData for T {}
 
 // Model: events interact with the physics only through queries at their exact time (which are forbidden to query other timelines or have any side effects) and modifications at their exact time (which are forbidden to return any information). Those modifications, in practice, change the state *going forward from* that time.
 

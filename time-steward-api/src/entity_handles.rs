@@ -1,11 +1,10 @@
+use crate::type_utils::{PersistentlyIdentifiedType, SimulationStateData};
+use crate::{EntityId, SimulationSpec};
 use derivative::Derivative;
 use std::fmt::Debug;
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::mem;
-
-use crate::type_utils::PersistentlyIdentifiedType;
-use crate::{EntityId, SimulationSpec, SimulationStateData};
-use std::hash::Hash;
 
 pub trait EntityHandle: Clone + Debug {
   fn id(&self) -> EntityId;

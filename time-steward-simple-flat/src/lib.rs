@@ -40,6 +40,7 @@ use time_steward_implementation_support::accessor_cell::AccessorCell;
 use time_steward_implementation_support::{
   accessor_cell, EventChildrenIdGenerator, GlobalsConstructionIdGenerator,
 };
+use time_steward_type_utils::SimulationStateData;
 
 // ###################################################
 // ############     Handle definitions    ############

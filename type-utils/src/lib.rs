@@ -1,10 +1,25 @@
-#![feature(never_type, specialization)]
+#![feature(never_type, specialization, generic_associated_types)]
 #![allow(incomplete_features)]
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 
+mod lens;
 pub mod list_of_types;
 pub mod visit_serialized;
+
+pub use self::lens::*;
+
+/// Data used for a TimeSteward simulation, such as times, entities, and events.
+///
+/// We used to require `Send + Sync` for SimulationStateData, but now that EntityHandles can be part of SimulationStateData, we have to omit that to support TimeSteward types that have !Send/!Sync handles (like Rc)
+///
+/// Requiring DeserializeOwned is improper because you can't deserialize EntityHandles without more
+///  information; the current approach is a hack where Deserialize
+/// uses a thread-local context for that; it may later be replaced with a proper custom derive of my own.
+pub trait SimulationStateData: 'static + Clone + Eq + Serialize + DeserializeOwned + Debug {}
+impl<T: 'static + Clone + Eq + Serialize + DeserializeOwned + Debug> SimulationStateData for T {}
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug)]
 pub struct PersistentTypeId(pub u64);
